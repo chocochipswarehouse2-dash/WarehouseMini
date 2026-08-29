@@ -25,14 +25,14 @@ export default defineConfig(() => {
           theme_color: '#b7550e',
           background_color: '#0f172a',
           display: 'standalone',
-          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+          display_override: ['window-controls-overlay', 'tabbed', 'standalone', 'minimal-ui'],
           orientation: 'portrait',
           scope: '/WarehouseMini/',
           start_url: '/WarehouseMini/',
           lang: 'id',
           dir: 'ltr',
           categories: ['business', 'productivity', 'utilities'],
-          iarc_rating_id: 'e-123',
+          iarc_rating_id: 'e-84b0d5f2-7ce9-4b8a-9a91-4d32e9d2ab82',
           prefer_related_applications: false,
           related_applications: [
             {
@@ -40,7 +40,31 @@ export default defineConfig(() => {
               url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
             }
           ],
-          scope_extensions: [{ origin: '*.github.io' }],
+          scope_extensions: [{ origin: '*.github.io' }, { origin: 'https://chocochipswarehouse2-dash.github.io' }],
+          note_taking: {
+            new_note_url: '/WarehouseMini/'
+          },
+          edge_side_panel: {
+            preferred_width: 400
+          },
+          widgets: [
+            {
+              name: 'Scanner Widget',
+              short_name: 'Scanner',
+              description: 'Quick access to Warehouse Scanner',
+              tag: 'scanner-widget',
+              ms_ac_template: 'widgets/template.json',
+              data: 'widgets/data.json',
+              type: 'application/json',
+              icons: [
+                {
+                  src: 'icon-192.png',
+                  sizes: '192x192',
+                  type: 'image/png'
+                }
+              ]
+            }
+          ],
           file_handlers: [
             {
               action: '/WarehouseMini/',
