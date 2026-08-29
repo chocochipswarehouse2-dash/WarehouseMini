@@ -14,18 +14,15 @@ export const ScanMethodSelector: React.FC<ScanMethodSelectorProps> = ({
   return (
     <div
       id="scanMethodContainer"
-      className="bg-white dark:bg-[#0F0F12] px-4 py-3 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+      className="bg-white dark:bg-[#0F0F12] px-2 py-1.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
     >
       <div className="max-w-lg mx-auto">
-        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 text-center">
-          Metode Pemindaian
-        </label>
-        <div className="flex bg-slate-100 dark:bg-[#09090B] p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="flex bg-slate-100 dark:bg-[#09090B] p-0.5 rounded-xl border border-slate-200 dark:border-slate-800">
           <button
             id="btnModeFisik"
             type="button"
             onClick={() => onSelectMode('fisik')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               currentMode === 'fisik'
                 ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm border border-slate-200 dark:border-slate-700/80 font-bold'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'

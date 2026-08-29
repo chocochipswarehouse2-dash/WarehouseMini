@@ -74,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header
       id="mainNavbar"
-      className="bg-white/95 dark:bg-[#131d31]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-2.5 flex justify-between items-center sticky top-0 z-30 transition-colors shadow-xs"
+      className="bg-white/95 dark:bg-[#131d31]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-1.5 flex justify-between items-center sticky top-0 z-30 transition-colors shadow-xs"
     >
       {/* Left side: Hamburger Toggle & Active Page Title */}
       <div className="flex items-center gap-2.5 sm:gap-3.5">

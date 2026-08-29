@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, Square, Play, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
+import { Camera, Square, Play, RefreshCw, AlertCircle, Sparkles, Zap, ZapOff } from 'lucide-react';
 import { CameraDevice } from '../types';
 
 interface CameraScannerProps {
@@ -14,6 +14,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanTimeRef = useRef<number>(0);
@@ -57,32 +58,32 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
     try {
       if (scannerRef.current) {
         try {
-          await scannerRef.current.stop();
+          if (scannerRef.current.isScanning) {
+            await scannerRef.current.stop();
+          }
+          scannerRef.current.clear();
         } catch {
           // ignore
         }
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
 
       const html5QrCode = new Html5Qrcode('reader-canvas');
       scannerRef.current = html5QrCode;
 
       const targetCamId = cameraIdToUse || selectedCameraId;
-      const cameraConstraint = targetCamId
-        ? { deviceId: { exact: targetCamId } }
-        : { facingMode: 'environment' };
+      const cameraConstraint = targetCamId ? targetCamId : { facingMode: 'environment' };
 
       await html5QrCode.start(
         cameraConstraint,
         {
-          fps: 12,
-          qrbox: { width: 260, height: 160 },
-          aspectRatio: 1.333333,
+          fps: 10,
+          qrbox: { width: 260, height: 260 }
         },
         (decodedText) => {
           const now = Date.now();
           const cleanText = decodedText.trim().toUpperCase();
 
-          // Throttle identical scan for 1.8 seconds
           if (cleanText === lastScanCodeRef.current && now - lastScanTimeRef.current < 1800) {
             return;
           }
@@ -100,6 +101,31 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
       setIsScanning(true);
     } catch (err: unknown) {
       console.error('Error start scanner:', err);
+      
+      // Fallback for strict camera APIs that throw NotReadableError when passing specific IDs or strict constraints
+      if (err && typeof err === 'object' && err.toString().includes('NotReadableError') && (cameraIdToUse || selectedCameraId)) {
+          try {
+              if (scannerRef.current) {
+                  try { if (scannerRef.current.isScanning) await scannerRef.current.stop(); scannerRef.current.clear(); } catch {}
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  
+                  const html5QrCode = new Html5Qrcode('reader-canvas');
+                  scannerRef.current = html5QrCode;
+                  await html5QrCode.start(
+                    { facingMode: 'environment' },
+                    { fps: 10, qrbox: { width: 260, height: 260 } },
+                    (decodedText) => { onScan(decodedText.trim().toUpperCase()); },
+                    () => {}
+                  );
+                  setIsScanning(true);
+                  setIsInitializing(false);
+                  return; // Successfully started with fallback
+              }
+          } catch (fallbackErr) {
+              console.error('Fallback start scanner failed:', fallbackErr);
+          }
+      }
+
       const msg = err instanceof Error ? err.message : 'Gagal mengakses kamera.';
       setError(`Kamera gagal dibuka: ${msg}. Pastikan izin kamera aktif.`);
       setIsScanning(false);
@@ -111,7 +137,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
   const stopCamera = async () => {
     if (scannerRef.current) {
       try {
-        await scannerRef.current.stop();
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
         scannerRef.current.clear();
       } catch (err) {
         console.warn('Stop scanner error:', err);
@@ -119,6 +147,30 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
       scannerRef.current = null;
     }
     setIsScanning(false);
+    setIsTorchOn(false);
+  };
+
+  const toggleTorch = async () => {
+    if (!scannerRef.current || !isScanning) return;
+    try {
+      const newTorchState = !isTorchOn;
+      // Use any to bypass strict type checking for applyVideoConstraints if it's missing
+      await (scannerRef.current as any).applyVideoConstraints({
+        advanced: [{ torch: newTorchState }]
+      });
+      setIsTorchOn(newTorchState);
+      setError(null);
+    } catch (err) {
+      console.warn("Torch failed:", err);
+      try {
+        await (scannerRef.current as any).applyVideoConstraints({ torch: !isTorchOn });
+        setIsTorchOn(!isTorchOn);
+        setError(null);
+      } catch (err2) {
+        console.error("Torch fallback failed:", err2);
+        setError("Senter (Flash) tidak didukung pada kamera ini.");
+      }
+    }
   };
 
   const handleCameraChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -137,7 +189,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
     >
       <div className="max-w-lg mx-auto overflow-hidden">
         {/* Camera Viewport */}
-        <div className="bg-black relative aspect-[4/3] w-full flex items-center justify-center overflow-hidden">
+        <div className="bg-black relative aspect-[4/3] w-full max-h-[30vh] sm:max-h-[250px] flex items-center justify-center overflow-hidden">
           {/* Start overlay when camera is paused */}
           {!isScanning && (
             <div
@@ -175,26 +227,42 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
           )}
 
           {/* HTML5 QR Canvas container */}
-          <div id="reader-canvas" className="w-full h-full"></div>
+          <div id="reader-canvas" className="w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full [&>video]:!max-h-[30vh] sm:[&>video]:!max-h-[250px]"></div>
 
           {/* Scanning frame overlay with laser effect when active */}
           {isScanning && (
             <>
               <div className="absolute inset-0 pointer-events-none border border-emerald-500/30 z-10">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-36 border-2 border-dashed border-emerald-400/80 rounded-xl">
-                  <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_10px_#10b981] animate-bounce my-16"></div>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-28 border-2 border-dashed border-emerald-400/80 rounded-xl">
+                  <div className="w-full h-0.5 bg-emerald-400 shadow-[0_0_10px_#10b981] animate-bounce my-12"></div>
                 </div>
               </div>
 
-              <button
-                type="button"
-                id="btnStopCamera"
-                onClick={stopCamera}
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 bg-rose-600/90 hover:bg-rose-500 backdrop-blur text-white font-bold px-4 py-2 rounded-full shadow-xl text-xs flex items-center gap-1.5 transition-all active:scale-95"
-              >
-                <Square className="w-3.5 h-3.5 fill-white" />
-                <span>Stop Kamera</span>
-              </button>
+              <div className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-3 z-20 pointer-events-none">
+                <button
+                  type="button"
+                  id="btnToggleTorch"
+                  onClick={toggleTorch}
+                  className={`pointer-events-auto backdrop-blur font-bold px-4 py-2 rounded-full shadow-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 ${
+                    isTorchOn 
+                      ? 'bg-amber-500/90 hover:bg-amber-400 text-black' 
+                      : 'bg-slate-800/90 hover:bg-slate-700 text-white'
+                  }`}
+                >
+                  {isTorchOn ? <Zap className="w-4 h-4 fill-black" /> : <ZapOff className="w-4 h-4" />}
+                  <span>{isTorchOn ? 'Flash On' : 'Flash Off'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="btnStopCamera"
+                  onClick={stopCamera}
+                  className="pointer-events-auto bg-rose-600/90 hover:bg-rose-500 backdrop-blur text-white font-bold px-4 py-2 rounded-full shadow-xl text-xs flex items-center gap-1.5 transition-all active:scale-95"
+                >
+                  <Square className="w-3.5 h-3.5 fill-white" />
+                  <span>Stop Kamera</span>
+                </button>
+              </div>
             </>
           )}
         </div>

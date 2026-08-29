@@ -23,9 +23,9 @@ export const BottomSaveBar: React.FC<BottomSaveBarProps> = ({
   return (
     <div
       id="bottomSaveContainer"
-      className="fixed bottom-0 left-0 right-0 p-3 bg-white/90 dark:bg-[#09090B]/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/80 shadow-2xl z-30 transition-colors"
+      className="p-4 bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md mt-4 transition-colors"
     >
-      <div className="max-w-lg mx-auto flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
         {/* Keterangan Note input */}
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">

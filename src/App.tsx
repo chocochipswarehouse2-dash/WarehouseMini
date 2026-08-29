@@ -610,12 +610,12 @@ export default function App() {
         />
 
         {/* Main Content Area based on active navigation tab */}
-        <main className="flex-1 pb-32 p-3 sm:p-5">
+        <main className="flex-1 pb-6 p-1.5 sm:p-4">
           {activePage === 'scanner' && (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
-              <div className="sticky top-[52px] sm:top-[58px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-2 -mt-1 pt-1">
-                <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
+              <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
+                <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
                   <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
 
                   {scanMode === 'fisik' && (
@@ -652,6 +652,14 @@ export default function App() {
                 onRemoveItem={handleRemoveItem}
                 onClearAll={handleClearAll}
               />
+              
+              <BottomSaveBar
+                items={scannedData}
+                keterangan={keterangan}
+                onChangeKeterangan={setKeterangan}
+                onSave={handleSaveData}
+                isSaving={isSaving}
+              />
             </div>
           )}
 
@@ -673,17 +681,6 @@ export default function App() {
           )}
         </main>
       </div>
-
-      {/* Floating Bottom Save Action Bar (Scanner mode only) */}
-      {activePage === 'scanner' && (
-        <BottomSaveBar
-          items={scannedData}
-          keterangan={keterangan}
-          onChangeKeterangan={setKeterangan}
-          onSave={handleSaveData}
-          isSaving={isSaving}
-        />
-      )}
 
       {/* Live Inventory & Real-time Audit Drawer */}
       <LiveInventoryDrawer

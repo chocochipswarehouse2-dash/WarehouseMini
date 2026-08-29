@@ -9,7 +9,7 @@ interface QuickTagToolbarProps {
   onSelectLocation: (loc: string) => void;
 }
 
-const COMMON_LOCATIONS = ['A01', 'A02', 'B01', 'B02', 'C01', 'T01', 'KOLI'];
+const COMMON_LOCATIONS = ['SHOPEE', 'TIKTOK', 'STUDIO'];
 
 export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
   currentCategory,
@@ -20,9 +20,9 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
   return (
     <div
       id="quickTagToolbar"
-      className="bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800/80 px-4 py-2.5 transition-colors"
+      className="bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800/80 px-2 py-1.5 transition-colors"
     >
-      <div className="max-w-lg mx-auto flex flex-col gap-2.5">
+      <div className="max-w-lg mx-auto flex flex-col gap-1.5">
         {/* Category Mode Quick Toggle & Active Indicator */}
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1 flex-shrink-0">
