@@ -83,11 +83,20 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
   const [soDiffFilter, setSoDiffFilter] = useState<'ALL' | 'DIFF' | 'PLUS' | 'MINUS' | 'ZERO'>('ALL');
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([]);
 
-  // Tab 3: Stock Lokasi filters & search
+// Tab 3: Stock Lokasi filters & search
   const [stockSearch, setStockSearch] = useState('');
   const [stockLocationMode, setStockLocationMode] = useState<'ALL' | 'ACTIVE_ONLY'>('ALL');
   const [stockAreaFilter, setStockAreaFilter] = useState<string>('ALL');
   const [showDealposComparison, setShowDealposComparison] = useState(true);
+
+  // Pagination limits to prevent DOM crash
+  const [logDisplayLimit, setLogDisplayLimit] = useState(100);
+  const [soDisplayLimit, setSoDisplayLimit] = useState(100);
+  const [stockDisplayLimit, setStockDisplayLimit] = useState(100);
+
+  useEffect(() => { setLogDisplayLimit(100) }, [logSearch, logTypeFilter, logAreaFilter]);
+  useEffect(() => { setSoDisplayLimit(100) }, [soSearch, soStatusFilter, soDiffFilter]);
+  useEffect(() => { setStockDisplayLimit(100) }, [stockSearch, stockAreaFilter]);
 
   // Map product catalog by SKU for rapid DealPOS comparison
   const catalogMap = useMemo(() => {
@@ -108,10 +117,10 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
     setIsLoading(true);
     try {
       if (activeTab === 'logs') {
-        const data = await fetchAllLogs(50000);
+        const data = await fetchAllLogs(15000);
         setLogs(data);
       } else if (activeTab === 'so') {
-        const data = await fetchStockOpnameQueue('ALL', 50000);
+        const data = await fetchStockOpnameQueue('ALL', 15000);
         setSoQueue(data);
         setSelectedSoIds([]); // reset selection
       } else if (activeTab === 'stock') {
@@ -119,7 +128,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
           const data = await fetchStockForLocations(currentLocations);
           setStockList(data);
         } else {
-          const data = await fetchAllStockRealtime(50000);
+          const data = await fetchAllStockRealtime(15000);
           setStockList(data);
         }
       }
@@ -644,7 +653,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredLogs.map((log, idx) => {
+                                    {filteredLogs.slice(0, logDisplayLimit).map((log, idx) => {
                     const isAdj = log.type === 'ADJ_IN' || log.type === 'ADJ_OUT';
                     const isIn = log.type === 'IN' || log.type === 'ADJ_IN';
 
@@ -729,6 +738,14 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                       </div>
                     );
                   })}
+                  {filteredLogs.length > logDisplayLimit && (
+                    <button
+                      onClick={() => setLogDisplayLimit(prev => prev + 100)}
+                      className="w-full py-3 mt-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      Tampilkan lebih banyak ({filteredLogs.length - logDisplayLimit} tersisa)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -928,7 +945,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {filteredSoQueue.map((item, idx) => {
+                                    {filteredSoQueue.slice(0, soDisplayLimit).map((item, idx) => {
                     const isSelected = item.id ? selectedSoIds.includes(item.id) : false;
                     const statusUpper = (item.status || 'PENDING').toUpperCase();
                     const isPending = statusUpper === 'PENDING';
@@ -1093,6 +1110,14 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                       </div>
                     );
                   })}
+                  {filteredSoQueue.length > soDisplayLimit && (
+                    <button
+                      onClick={() => setSoDisplayLimit(prev => prev + 100)}
+                      className="w-full py-3 mt-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      Tampilkan lebih banyak ({filteredSoQueue.length - soDisplayLimit} tersisa)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1234,7 +1259,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredStockList.map((st, idx) => {
+                                    {filteredStockList.slice(0, stockDisplayLimit).map((st, idx) => {
                     const catalogItem = catalogMap.get((st.sku || '').toUpperCase());
                     const namaProduk = st.nama_produk || catalogItem?.p || st.sku;
                     const size = st.size || catalogItem?.s || '-';
@@ -1344,6 +1369,14 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                       </div>
                     );
                   })}
+                  {filteredStockList.length > stockDisplayLimit && (
+                    <button
+                      onClick={() => setStockDisplayLimit(prev => prev + 100)}
+                      className="w-full py-3 mt-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      Tampilkan lebih banyak ({filteredStockList.length - stockDisplayLimit} tersisa)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
