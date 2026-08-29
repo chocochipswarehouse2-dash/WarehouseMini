@@ -18,15 +18,22 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}']
         },
         manifest: {
+          id: '/WarehouseMini/',
           name: 'Warehouse Mini',
           short_name: 'Warehouse Mini',
           description: 'Aplikasi Scanner Barcode & WMS Warehouse Management System dengan sinkronisasi Supabase real-time',
           theme_color: '#b7550e',
           background_color: '#0f172a',
           display: 'standalone',
+          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
           orientation: 'portrait',
           scope: '/WarehouseMini/',
           start_url: '/WarehouseMini/',
+          lang: 'id',
+          dir: 'ltr',
+          categories: ['business', 'productivity', 'utilities'],
+          prefer_related_applications: false,
+          related_applications: [],
           icons: [
             {
               src: 'icon-192.png',
@@ -39,6 +46,31 @@ export default defineConfig(() => {
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable'
+            }
+          ],
+          screenshots: [
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              form_factor: 'wide',
+              label: 'Warehouse Mini Dashboard'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              form_factor: 'narrow',
+              label: 'Warehouse Mini Mobile Scanner'
+            }
+          ],
+          shortcuts: [
+            {
+              name: 'Scan Barcode',
+              short_name: 'Scan',
+              description: 'Buka pemindai',
+              url: '/WarehouseMini/',
+              icons: [{ src: 'icon-192.png', sizes: '192x192' }]
             }
           ]
         }
