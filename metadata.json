@@ -1,5 +1,5 @@
 {
-  "name": "WMS Scanner Pintar",
+  "name": "Warehouse Mini",
   "description": "Aplikasi Android & Web Scanner Gudang Pintar dengan sinkronisasi Supabase real-time, push notification, multi-mode scan, modul Peminjaman Sementara (SPS) Live Studio/Shopee/TikTok, dan dark mode",
   "requestFramePermissions": [
     "camera"

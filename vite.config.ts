@@ -18,8 +18,8 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}']
         },
         manifest: {
-          name: 'WMS Scanner Gudang Pintar',
-          short_name: 'WMS Scanner',
+          name: 'Warehouse Mini',
+          short_name: 'Warehouse Mini',
           description: 'Aplikasi Scanner Barcode & WMS Warehouse Management System dengan sinkronisasi Supabase real-time',
           theme_color: '#b7550e',
           background_color: '#0f172a',
