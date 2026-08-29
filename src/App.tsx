@@ -62,11 +62,15 @@ import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLoc
 export default function App() {
   // Session & Auth (Multi-Role User Session)
   const [session, setSession] = useState<UserSession | null>(() => {
-    const token = localStorage.getItem('wms_session_token') || 'local_session_token';
-    const username = localStorage.getItem('wms_session_username') || 'Superadmin';
-    const role = localStorage.getItem('wms_user_role') || 'Superadmin';
-    const endpointUrl = localStorage.getItem('wms_endpoint_url') || DEFAULT_GAS_ENDPOINT;
-    return { token, username, role, endpointUrl };
+    const token = localStorage.getItem('wms_session_token');
+    const username = localStorage.getItem('wms_session_username');
+    const role = localStorage.getItem('wms_user_role');
+    const endpointUrl = localStorage.getItem('wms_endpoint_url');
+    
+    if (token && username && role) {
+      return { token, username, role, endpointUrl: endpointUrl || DEFAULT_GAS_ENDPOINT };
+    }
+    return null;
   });
 
   // Dark / Light Theme Mode
