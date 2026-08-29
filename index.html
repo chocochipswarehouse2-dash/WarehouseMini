@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="WMS Scanner" />
-    <link rel="manifest" href="/manifest.json" />
+    
 
     <!-- Google Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,19 +22,7 @@
   <body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-amber-500 selection:text-white min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          // Detect base path automatically for GitHub pages
-          const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-          const swPath = isLocal ? '/sw.js' : '/WarehouseMini/sw.js';
-          
-          navigator.serviceWorker.register(swPath).catch(err => {
-            console.log('SW registration error:', err);
-          });
-        });
-      }
-    </script>
+    
   </body>
 </html>
 

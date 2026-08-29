@@ -1,13 +1,15 @@
-import { VitePWA } from 'vite-plugin-pwa';
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
+import re
 
-export default defineConfig(() => {
-  return {
-    base: '/WarehouseMini/',
-    plugins: [
+with open('vite.config.ts', 'r') as f:
+    content = f.read()
+
+import_statement = "import { VitePWA } from 'vite-plugin-pwa';\n"
+if "vite-plugin-pwa" not in content:
+    content = import_statement + content
+    
+    # Add VitePWA() to plugins
+    plugins_bad = "plugins: [react(), tailwindcss()],"
+    plugins_good = """plugins: [
       react(),
       tailwindcss(),
       VitePWA({
@@ -42,18 +44,8 @@ export default defineConfig(() => {
           ]
         }
       })
-    ],
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
-    },
-  };
-});
+    ],"""
+    content = content.replace(plugins_bad, plugins_good)
+    
+    with open('vite.config.ts', 'w') as f:
+        f.write(content)
