@@ -1,0 +1,10 @@
+{
+  "name": "WMS Scanner Pintar",
+  "description": "Aplikasi Android & Web Scanner Gudang Pintar dengan sinkronisasi Supabase real-time, push notification, multi-mode scan, modul Peminjaman Sementara (SPS) Live Studio/Shopee/TikTok, dan dark mode",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

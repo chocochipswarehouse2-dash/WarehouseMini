@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  code, kbd, samp, pre {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Orange + Grey + White Theme Palette */
+:root {
+  --primary-orange: #ff7a00;
+  --primary-orange-hover: #e06c00;
+  --primary-orange-light: rgba(255, 122, 0, 0.12);
+  --grey-bg: #f3f4f6;
+  --grey-surface: #ffffff;
+  --grey-card: #ffffff;
+  --grey-border: #e5e7eb;
+}
+
+[data-theme="light"] {
+  --bg-app: #f4f6f8;
+  --bg-card: #ffffff;
+  --bg-card-alt: #f9fafb;
+  --text-main: #1f2937;
+  --text-muted: #6b7280;
+  --border-main: #e5e7eb;
+}
+
+[data-theme="dark"] {
+  --bg-app: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-alt: #0f172a;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-main: #334155;
+}
+
+/* Sleek minimalist scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff7a00;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
