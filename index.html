@@ -25,7 +25,11 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(err => {
+          // Detect base path automatically for GitHub pages
+          const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          const swPath = isLocal ? '/sw.js' : '/WarehouseMini/sw.js';
+          
+          navigator.serviceWorker.register(swPath).catch(err => {
             console.log('SW registration error:', err);
           });
         });

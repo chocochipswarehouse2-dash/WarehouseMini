@@ -1,9 +1,10 @@
 // Service Worker for WMS Scanner Gudang Pintar
 const CACHE_NAME = 'wms-scanner-v1';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+  './',
+  './index.html',
+  './manifest.json',
+  './icon-192.png'
 ];
 
 self.addEventListener('install', (event) => {

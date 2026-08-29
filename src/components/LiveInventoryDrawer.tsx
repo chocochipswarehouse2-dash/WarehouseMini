@@ -118,10 +118,13 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
     try {
       if (activeTab === 'logs') {
         const data = await fetchAllLogs(15000);
-        setLogs(data);
+        // Deduplicate
+        const unique = Array.from(new Map(data.map(item => [item.id || Math.random(), item])).values());
+        setLogs(unique);
       } else if (activeTab === 'so') {
         const data = await fetchStockOpnameQueue('ALL', 15000);
-        setSoQueue(data);
+        const unique = Array.from(new Map(data.map(item => [item.id || Math.random(), item])).values());
+        setSoQueue(unique);
         setSelectedSoIds([]); // reset selection
       } else if (activeTab === 'stock') {
         if (stockLocationMode === 'ACTIVE_ONLY' && currentLocations.length > 0) {
@@ -659,7 +662,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
                     return (
                       <div
-                        key={log.id || `${log.sku}_${idx}`}
+                        key={`${log.id || log.sku}_${idx}`}
                         className="p-3 bg-white dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-1.5 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm"
                       >
                         {/* Header Row */}
@@ -954,7 +957,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
                     return (
                       <div
-                        key={item.id || `${item.sku}_${idx}`}
+                        key={`${item.id || item.sku}_${idx}`}
                         className={`p-3.5 bg-white dark:bg-[#0F0F12] border rounded-xl text-xs space-y-2.5 transition-all shadow-sm ${
                           isSelected
                             ? 'border-emerald-500 ring-1 ring-emerald-500/40 bg-emerald-50/10 dark:bg-emerald-950/10'
@@ -1282,7 +1285,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
                     return (
                       <div
-                        key={st.id || `${st.sku}_${st.lokasi}_${idx}`}
+                        key={`${st.id || st.sku}_${st.lokasi}_${idx}`}
                         className="p-3 bg-white dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-2 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm"
                       >
                         {/* Top: SKU, Location, Area */}
