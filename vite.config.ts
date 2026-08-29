@@ -32,8 +32,42 @@ export default defineConfig(() => {
           lang: 'id',
           dir: 'ltr',
           categories: ['business', 'productivity', 'utilities'],
+          iarc_rating_id: 'e-123',
           prefer_related_applications: false,
-          related_applications: [],
+          related_applications: [
+            {
+              platform: 'webapp',
+              url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
+            }
+          ],
+          scope_extensions: [{ origin: '*.github.io' }],
+          file_handlers: [
+            {
+              action: '/WarehouseMini/',
+              accept: {
+                'text/csv': ['.csv']
+              }
+            }
+          ],
+          share_target: {
+            action: '/WarehouseMini/',
+            method: 'GET',
+            enctype: 'application/x-www-form-urlencoded',
+            params: {
+              title: 'title',
+              text: 'text',
+              url: 'url'
+            }
+          },
+          launch_handler: {
+            client_mode: 'navigate-existing'
+          },
+          protocol_handlers: [
+            {
+              protocol: 'web+wms',
+              url: '/WarehouseMini/?query=%s'
+            }
+          ],
           icons: [
             {
               src: 'icon-192.png',
