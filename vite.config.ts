@@ -15,7 +15,8 @@ export default defineConfig(() => {
         injectRegister: 'auto',
         manifestFilename: 'manifest.json',
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          importScripts: ['pwa-extras.js']
         },
         manifest: {
           id: '/WarehouseMini/',
@@ -26,6 +27,9 @@ export default defineConfig(() => {
           background_color: '#0f172a',
           display: 'standalone',
           display_override: ['window-controls-overlay', 'tabbed', 'standalone', 'minimal-ui'],
+          tab_strip: {
+            home_tab: 'auto'
+          },
           orientation: 'portrait',
           scope: '/WarehouseMini/',
           start_url: '/WarehouseMini/',
@@ -40,7 +44,7 @@ export default defineConfig(() => {
               url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
             }
           ],
-          scope_extensions: [{ origin: '*.github.io' }, { origin: 'https://chocochipswarehouse2-dash.github.io' }],
+          scope_extensions: [{ origin: '*.github.io' }],
           note_taking: {
             new_note_url: '/WarehouseMini/'
           },
@@ -53,8 +57,9 @@ export default defineConfig(() => {
               short_name: 'Scanner',
               description: 'Quick access to Warehouse Scanner',
               tag: 'scanner-widget',
-              ms_ac_template: 'widgets/template.json',
-              data: 'widgets/data.json',
+              template_url: '/WarehouseMini/',
+              ms_ac_template: '/WarehouseMini/',
+              data: '/WarehouseMini/',
               type: 'application/json',
               icons: [
                 {
