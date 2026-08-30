@@ -15,6 +15,8 @@ import {
   Package,
   FileText,
   PanelLeft,
+  ClipboardList,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 
@@ -32,7 +34,6 @@ interface NavbarProps {
   isRealtimeConnected: boolean;
   onOpenSettings: () => void;
   onOpenApkModal: () => void;
-  onOpenInventoryDrawer: () => void;
   onLogout: () => void;
   totalScannedCount: number;
 }
@@ -51,7 +52,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   isRealtimeConnected,
   onOpenSettings,
   onOpenApkModal,
-  onOpenInventoryDrawer,
   onLogout,
   totalScannedCount,
 }) => {
@@ -59,6 +59,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     switch (activePage) {
       case 'scanner':
         return { title: 'Scanner Barcode', subtitle: 'Tembak Lokasi & SKU', icon: ScanBarcode };
+      case 'inventory':
+        return { title: 'Inventory & Stok Realtime', subtitle: 'Audit Saldo Fisik Rak & DealPOS', icon: Layers };
+      case 'stock_opname':
+        return { title: 'Stock Opname (SO)', subtitle: 'Audit & Otorisasi Penyesuaian', icon: ClipboardList };
+      case 'mutasi_log':
+        return { title: 'Mutasi Log Produk', subtitle: 'Riwayat IN/OUT, Edit & Hapus Baris', icon: ArrowRightLeft };
       case 'picking_tasks':
         return { title: 'Tugas Picking', subtitle: 'Ambil Barang Surat Jalan', icon: Package };
       case 'peminjaman':
@@ -142,21 +148,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right side: Quick Action Buttons & User Summary */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Realtime Inventory Drawer */}
-        <button
-          id="btnOpenInventory"
-          onClick={onOpenInventoryDrawer}
-          title="Lihat Stok & Riwayat Real-time"
-          className="relative p-2 text-slate-600 dark:text-slate-300 hover:text-[#ff7a00] bg-slate-100 hover:bg-slate-200 dark:bg-[#0f172a] dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95"
-        >
-          <Layers className="w-4 h-4" />
-          {totalScannedCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 bg-[#ff7a00] text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
-              {totalScannedCount}
-            </span>
-          )}
-        </button>
-
         {/* APK / PWA Install Button */}
         <button
           id="btnOpenApkModal"

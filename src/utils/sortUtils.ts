@@ -31,15 +31,29 @@ export function sortAlphabeticalAndSize<T>(
   });
 }
 
+let lastQueryFuzzy = '';
+let lastTermsFuzzy: string[] = [];
+
+function getTerms(query: string): string[] {
+  if (query !== lastQueryFuzzy) {
+    lastQueryFuzzy = query;
+    lastTermsFuzzy = query.toLowerCase().trim().split(/\s+/);
+  }
+  return lastTermsFuzzy;
+}
+
 /**
  * Fuzzy search that splits a search query by spaces and checks if ALL terms exist
  * within the target string.
  */
 export function fuzzySearch(query: string, target: string): boolean {
   if (!query.trim()) return true;
-  const terms = query.toLowerCase().trim().split(/\s+/);
+  const terms = getTerms(query);
   const targetLower = (target || '').toLowerCase();
-  return terms.every(term => targetLower.includes(term));
+  for (let i = 0; i < terms.length; i++) {
+    if (!targetLower.includes(terms[i])) return false;
+  }
+  return true;
 }
 
 /**
@@ -48,10 +62,20 @@ export function fuzzySearch(query: string, target: string): boolean {
  */
 export function fuzzySearchMultiple(query: string, targets: (string | undefined)[]): boolean {
   if (!query.trim()) return true;
-  const terms = query.toLowerCase().trim().split(/\s+/);
-  const targetsLower = targets.map(t => (t || '').toLowerCase());
+  const terms = getTerms(query);
   
-  return terms.every(term => {
-    return targetsLower.some(target => target.includes(term));
-  });
+  // Avoid array map allocation if possible, use simple loops
+  for (let i = 0; i < terms.length; i++) {
+    const term = terms[i];
+    let found = false;
+    for (let j = 0; j < targets.length; j++) {
+      const t = targets[j];
+      if (t && t.toLowerCase().includes(term)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) return false;
+  }
+  return true;
 }

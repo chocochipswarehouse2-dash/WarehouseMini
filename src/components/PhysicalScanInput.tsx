@@ -32,6 +32,42 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
     setValue(e.target.value);
   };
 
+  const renderSuggestions = () => {
+    if (!isFocused || !value.trim()) return null;
+    
+    // Check if exact match to prevent redundant popup
+    if (products.some(p => p.k.toUpperCase() === value.trim().toUpperCase())) return null;
+
+    const lower = value.trim().toLowerCase();
+    const suggestions = products
+      .filter((p) => p.k.toLowerCase().includes(lower) || p.p.toLowerCase().includes(lower))
+      .slice(0, 20);
+
+    if (suggestions.length === 0) return null;
+
+    return (
+      <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 max-h-60 overflow-y-auto">
+        {suggestions.map((s) => (
+          <div
+            key={s.k}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onScan(s.k);
+              setValue('');
+              inputRef.current?.focus();
+            }}
+            className="px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 flex justify-between items-center transition-colors"
+          >
+            <div className="min-w-0 pr-2">
+              <div className="font-bold text-slate-800 dark:text-slate-200 text-sm whitespace-normal break-words leading-tight">{s.p} {s.s && s.s !== 'ALL' ? `(Size: ${s.s})` : ''}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">SKU: {s.k}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div
       id="containerPhysical"
@@ -46,7 +82,6 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
             ref={inputRef}
             id="inputPhysicalSku"
             type="text"
-            list="productDatalistPhysical"
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
@@ -57,13 +92,6 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
             autoComplete="off"
             autoFocus
           />
-          <datalist id="productDatalistPhysical">
-            {products.map((p) => (
-              <option key={p.k} value={p.k}>
-                {p.p} {p.s ? `(Size: ${p.s})` : ''}
-              </option>
-            ))}
-          </datalist>
 
           <button
             type="button"
@@ -79,6 +107,7 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
           >
             <CornerDownLeft className="w-4 h-4" />
           </button>
+          {renderSuggestions()}
         </div>
 
         <div className="flex items-center justify-between px-1">

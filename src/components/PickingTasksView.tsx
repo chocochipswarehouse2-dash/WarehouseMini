@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useDeferredValue } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Package,
@@ -47,6 +47,7 @@ import {
   Navigation,
 } from 'lucide-react';
 import { CameraScanner } from './CameraScanner';
+import { FulfillmentRefillModal } from './FulfillmentRefillModal';
 import {
   PickingListItem,
   PickingSuratJalanGroup,
@@ -90,6 +91,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
   const [rawItems, setRawItems] = useState<PickingListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'SELESAI'>('ACTIVE');
 
   // Realtime Stock cache per SKU across all warehouse locations
@@ -424,16 +426,17 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
   }, [rawItems]);
 
   // Filtered SJ list for display
-  const filteredSJs = sjGroups.filter((g) => {
+  const filteredSJs = React.useMemo(() => {
+    return sjGroups.filter((g) => {
     let matchSearch = true;
-    if (search.trim()) {
+    if (deferredSearch.trim()) {
       // Create an array of strings to search through: no_sj, tujuan, and all item SKUs and names
       const searchTargets = [
         g.no_sj,
         g.tujuan,
         ...g.items.flatMap(it => [it.sku, it.nama_produk])
       ];
-      matchSearch = fuzzySearchMultiple(search, searchTargets);
+      matchSearch = fuzzySearchMultiple(deferredSearch, searchTargets);
     }
 
     if (!matchSearch) return false;
@@ -445,7 +448,8 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       return g.status === 'SELESAI';
     }
     return true;
-  });
+    });
+  }, [sjGroups, deferredSearch, statusFilter]);
 
   // Action: Petugas GET 1 SJ (Mulai Picking)
   const handleSelectSJ = (sj: PickingSuratJalanGroup) => {
@@ -2354,7 +2358,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
             )}
           </div>
         ) : (
-          filteredSJs.map((group) => {
+          filteredSJs.slice(0, 100).map((group) => {
             const isDone = group.status === 'SELESAI';
             const percent =
               group.total_qty_req > 0
@@ -3016,161 +3020,27 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
         </div>
       )}
 
-      {/* MODAL BUAT SURAT JALAN BARU */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-[#131d31] w-full max-w-2xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
-              <div>
-                <span className="text-[10px] font-extrabold text-[#ff7a00] uppercase tracking-wider">
-                  Input Tugas Baru
-                </span>
-                <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase">
-                  Buat Surat Jalan / Invoice Baru
-                </h2>
-              </div>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveNewSJ} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Nomor Surat Jalan / No. Invoice *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newSjNumber}
-                    onChange={(e) => setNewSjNumber(e.target.value)}
-                    placeholder="Contoh: SJ-MKG-8821"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Tujuan Pengiriman / Channel *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newSjTujuan}
-                    onChange={(e) => setNewSjTujuan(e.target.value)}
-                    placeholder="Contoh: Store Mall Kelapa Gading / Shopee Live"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
-                  />
-                </div>
-              </div>
-
-              {/* Items Table */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Daftar Produk yang Harus Dipick
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAddNewSjRow}
-                    className="text-[11px] font-extrabold text-[#ff7a00] hover:underline flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Tambah Baris
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {newSjRows.map((row, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 bg-slate-50 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-800 grid grid-cols-12 gap-2 items-center"
-                    >
-                      <div className="col-span-4 sm:col-span-3">
-                        <input
-                          type="text"
-                          required
-                          placeholder="SKU Barcode"
-                          value={row.sku}
-                          onChange={(e) => handleNewSjRowChange(idx, 'sku', e.target.value)}
-                          className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div className="col-span-5 sm:col-span-4">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Nama Produk"
-                          value={row.nama_produk}
-                          onChange={(e) => handleNewSjRowChange(idx, 'nama_produk', e.target.value)}
-                          className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div className="col-span-3 sm:col-span-2">
-                        <input
-                          type="text"
-                          placeholder="Lokasi Rak"
-                          value={row.lokasi}
-                          onChange={(e) => handleNewSjRowChange(idx, 'lokasi', e.target.value)}
-                          className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div className="col-span-10 sm:col-span-2">
-                        <input
-                          type="number"
-                          min="1"
-                          required
-                          placeholder="Qty"
-                          value={row.qty_req}
-                          onChange={(e) => handleNewSjRowChange(idx, 'qty_req', Number(e.target.value))}
-                          className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div className="col-span-2 sm:col-span-1 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveNewSjRow(idx)}
-                          className="text-slate-400 hover:text-rose-500 p-1"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] -mx-4 -mb-4 sm:-mx-5 sm:-mb-5 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 font-bold text-xs rounded-xl"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreatingSj}
-                  className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-extrabold text-xs uppercase rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
-                >
-                  {isCreatingSj ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Menyimpan...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4" /> Simpan ke Database
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* MODAL FULFILLMENT REFILL (MULTI-CSV & MANUAL) */}
+      <FulfillmentRefillModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        currentUser={currentUser}
+        productCatalog={productCatalog}
+        existingSJs={sjGroups.map((g) => g.no_sj)}
+        onSuccess={(msg, newItems) => {
+          onNotify(msg, 'success');
+          if (newItems && newItems.length > 0) {
+            setRawItems((prev) => {
+              const prevFiltered = prev.filter(
+                (p) => !newItems.some((n) => n.no_sj.toUpperCase() === p.no_sj?.toUpperCase() && n.sku.toUpperCase() === p.sku?.toUpperCase())
+              );
+              return [...newItems, ...prevFiltered];
+            });
+          }
+          loadPickingList();
+        }}
+        onNotify={onNotify}
+      />
     </div>
   );
 };

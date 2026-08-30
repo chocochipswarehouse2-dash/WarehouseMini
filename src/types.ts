@@ -4,8 +4,11 @@ export type CategoryType = 'IN' | 'OUT' | 'SO';
 
 export type ActivePage =
   | 'scanner'
+  | 'picking_tasks'
   | 'peminjaman'
-  | 'picking_tasks';
+  | 'stock_opname'
+  | 'mutasi_log'
+  | 'inventory';
 
 export type UserRole =
   | 'Superadmin'
@@ -135,6 +138,8 @@ export interface PeminjamanItemForm {
   stokStudio?: number;
   stokShp?: number;
   stokTtk?: number;
+  stokBlokF?: number;
+  stokWh?: number;
   [key: string]: unknown;
 }
 
@@ -176,6 +181,8 @@ export interface ChannelStockItem {
   studioQty?: number;
   shpQty?: number;
   ttkQty?: number;
+  blokFQty?: number;
+  whQty?: number;
   locStr?: string;
   [key: string]: unknown;
 }
@@ -226,6 +233,7 @@ export interface StockOpnameQueueItem {
   invoice: string;
   approved_by?: string;
   tanggal_approve?: string;
+  created_at?: string;
 }
 
 export interface PenerimaanProduksiItem {

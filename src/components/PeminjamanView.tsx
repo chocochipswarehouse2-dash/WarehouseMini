@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   FileText,
   Plus,
@@ -32,12 +32,13 @@ import {
   savePeminjamanToSupabase,
   returnPeminjamanSupabase,
   fetchRealtimeChannelStocksSupabase,
+  fetchAllStockRealtime,
 } from '../services/supabase';
 import {
   getLocalPeminjamanRecords,
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
-} from '../services/gasApi';
+} from '../utils/localStore';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch } from '../utils/sortUtils';
 
 interface PeminjamanViewProps {
@@ -76,15 +77,15 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
   ]);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  // Search & Combobox active state
-  const [activeComboboxId, setActiveComboboxId] = useState<string | null>(null);
-  const [comboboxSearch, setComboboxSearch] = useState<string>('');
-
   // Channel stock state - Loaded directly from Supabase realtime
-  const [selectedChannel, setSelectedChannel] = useState<'BLOK_F' | 'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('BLOK_F');
+  const [selectedChannel, setSelectedChannel] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('STUDIO');
   const [searchStock, setSearchStock] = useState<string>('');
   const [channelStocks, setChannelStocks] = useState<ChannelStockItem[]>([]);
   const [loadingStock, setLoadingStock] = useState<boolean>(false);
+  const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
+  const [activeComboIndex, setActiveComboIndex] = useState<number>(-1);
+  const [inputSearchTerm, setInputSearchTerm] = useState<{ [id: string]: string }>({});
+  const [extraSearchedProducts, setExtraSearchedProducts] = useState<ProductItem[]>([]);
 
   // Load real channel stocks from Supabase
   const loadChannelStocks = async (showToast = false, keyword?: string) => {
@@ -94,7 +95,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
       if (liveStocks && liveStocks.length > 0) {
         setChannelStocks((prev) => {
           const map = new Map<string, ChannelStockItem>();
-          // If searching, keep existing and merge/override with fresh query
           if (keyword) {
             prev.forEach((it) => map.set(it.sku.toUpperCase(), it));
           }
@@ -108,20 +108,40 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
       } else if (productCatalog && productCatalog.length > 0 && channelStocks.length === 0) {
         // Fallback to catalog if no stock logs yet
         const mapped: ChannelStockItem[] = productCatalog.map((p) => ({
-          sku: p.k,
-          produk: p.p,
+          sku: p.k || '',
+          produk: p.p || p.k || '',
           size: p.s || 'ALL',
-          locStr: p.lokasi || 'BLOK F',
+          locStr: p.lokasi || 'Warehouse',
           studioQty: p.stokStudio || 0,
           shpQty: p.stokShp || 0,
           ttkQty: p.stokTtk || 0,
-          totalQty: (p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0),
+          whQty: 0,
+          totalQty: Math.max(0, (p.stokMap !== undefined ? Number(p.stokMap) : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0)))),
         }));
         setChannelStocks(mapped);
       }
     } catch (err) {
       console.warn('Error loading real stock from Supabase:', err);
       if (showToast) onShowToast('Gagal memuat stok real Database', 'error');
+    } finally {
+      setLoadingStock(false);
+    }
+  };
+
+  // Full Refresh method matching GAS loadPeminjamanInitData
+  const handleFullRefresh = async () => {
+    setLoadingStock(true);
+    try {
+      onRefreshCatalog();
+      await loadChannelStocks(true);
+      const data = await fetchPeminjamanFromSupabase();
+      if (data && data.length > 0) {
+        setRecords(data);
+      }
+      onShowToast('Data SPS & Stok Peminjaman berhasil diperbarui!', 'success');
+    } catch (e) {
+      console.warn('Refresh error:', e);
+      onShowToast('Gagal menyinkronkan data', 'error');
     } finally {
       setLoadingStock(false);
     }
@@ -202,70 +222,346 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
     );
   };
 
-  // Select item from combobox
-  const handleSelectProduct = (itemId: string, prod: any) => {
-    const isChannel = 'studioQty' in prod;
-    const prodSize: string = (isChannel ? prod.size : prod.s) || 'ALL';
-    const prodSku: string = String(isChannel ? prod.sku : prod.k || '');
-    const prodName: string = String((isChannel ? prod.produk : prod.p || prod.n) || '');
-    
-    // Look up in channel stocks for exact live inventory
-    const matchedStock = channelStocks.find((c) => (c.sku || '').toUpperCase() === prodSku.toUpperCase());
+  // Memoized fast lookup maps and datalist options (Zero-lag, 0ms input delay)
+  const { productOptionsList, skuLookupMap, nameLookupMap } = useMemo(() => {
+    const skuMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
+    const nameMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
 
-    const studioQty = matchedStock?.studioQty ?? (isChannel ? prod.studioQty : prod.stokStudio ?? 0);
-    const shpQty = matchedStock?.shpQty ?? (isChannel ? prod.shpQty : prod.stokShp ?? 0);
-    const ttkQty = matchedStock?.ttkQty ?? (isChannel ? prod.ttkQty : prod.stokTtk ?? 0);
-    const totalQty = matchedStock?.totalQty ?? (prod.stokMap ?? (studioQty + shpQty + ttkQty));
-    const locStr: string = matchedStock?.locStr || (isChannel ? prod.locStr : prod.lokasi) || 'BLOK F';
-
-    handleItemChange(itemId, {
-      produk: prodName,
-      sku: prodSku,
-      size: prodSize,
-      lokasi: locStr,
-      stokMap: totalQty,
-      stokStudio: studioQty,
-      stokShp: shpQty,
-      stokTtk: ttkQty,
+    // 1. Process ChannelStocks first (direct realtime from view_stok_realtime)
+    channelStocks.forEach((cs) => {
+      const skuUpper = (cs.sku || '').toUpperCase().trim();
+      if (!skuUpper) return;
+      const total = typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0));
+      const itemData = {
+        sku: cs.sku,
+        produk: cs.produk || cs.sku,
+        size: cs.size || 'ALL',
+        lokasi: cs.locStr || 'Warehouse',
+        stok: Math.max(0, total),
+        whQty: cs.whQty || 0,
+        studioQty: cs.studioQty || 0,
+        shpQty: cs.shpQty || 0,
+        ttkQty: cs.ttkQty || 0,
+      };
+      skuMap.set(skuUpper, itemData);
+      if (itemData.produk) {
+        nameMap.set(itemData.produk.toLowerCase().trim(), itemData);
+        nameMap.set(`${itemData.produk.toLowerCase()} ${itemData.size.toLowerCase()}`.trim(), itemData);
+      }
     });
-    setActiveComboboxId(null);
-    setComboboxSearch('');
+
+    // 2. Merge with productCatalog (from master_produk / catalog)
+    const combinedCatalog = [...productCatalog, ...extraSearchedProducts];
+    combinedCatalog.forEach((p) => {
+      const skuUpper = (p.k || '').toUpperCase().trim();
+      if (!skuUpper) return;
+      
+      const existing = skuMap.get(skuUpper);
+      if (existing) {
+        // If existing has 0 stok but p has stokMap or channel stock
+        if (existing.stok === 0 && p.stokMap !== undefined && p.stokMap > 0) {
+          existing.stok = p.stokMap;
+        }
+        if (existing.produk === skuUpper && p.p && p.p !== skuUpper) {
+          existing.produk = p.p;
+        }
+        if ((!existing.size || existing.size === 'ALL') && p.s) {
+          existing.size = p.s;
+        }
+        return;
+      }
+
+      const stok = p.stokMap !== undefined
+        ? Number(p.stokMap)
+        : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0));
+
+      const itemData = {
+        sku: p.k || '',
+        produk: p.p || p.k || '',
+        size: p.s || 'ALL',
+        lokasi: p.lokasi || 'Warehouse',
+        stok: Math.max(0, stok || 0),
+        whQty: 0,
+        studioQty: p.stokStudio || 0,
+        shpQty: p.stokShp || 0,
+        ttkQty: p.stokTtk || 0,
+      };
+      skuMap.set(skuUpper, itemData);
+      if (itemData.produk) {
+        nameMap.set(itemData.produk.toLowerCase().trim(), itemData);
+        nameMap.set(`${itemData.produk.toLowerCase()} ${itemData.size.toLowerCase()}`.trim(), itemData);
+      }
+    });
+
+    const list = Array.from(skuMap.values()).sort((a, b) => {
+      if (b.stok !== a.stok) return b.stok - a.stok;
+      return a.produk.localeCompare(b.produk);
+    });
+    return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: nameMap };
+  }, [productCatalog, channelStocks, extraSearchedProducts]);
+
+  // Debounced search on Supabase master_produk when typing
+  const searchSupabaseMaster = async (query: string) => {
+    if (!query || query.trim().length < 2) return;
+    try {
+      const qClean = encodeURIComponent(query.trim());
+      const res = await supabaseFetch<any[]>(
+        'master_produk',
+        'GET',
+        undefined,
+        `or=(sku.ilike.*${qClean}*,nama_produk.ilike.*${qClean}*)&select=sku,nama_produk,size&limit=25`
+      );
+      if (res && Array.isArray(res) && res.length > 0) {
+        const newItems: ProductItem[] = res.map((r: any) => ({
+          k: String(r.sku || ''),
+          p: String(r.nama_produk || r.sku || ''),
+          s: String(r.size || 'ALL'),
+          lokasi: 'Warehouse',
+          stokMap: 0,
+          stokStudio: 0,
+          stokShp: 0,
+          stokTtk: 0,
+        }));
+        setExtraSearchedProducts((prev) => {
+          const map = new Map<string, ProductItem>();
+          prev.forEach((p) => map.set((p.k || '').toUpperCase(), p));
+          newItems.forEach((n) => map.set((n.k || '').toUpperCase(), n));
+          return Array.from(map.values());
+        });
+      }
+    } catch (e) {
+      console.warn('Supabase master search error:', e);
+    }
   };
 
-  // Quick Add from Stock table to Form
-  const handleQuickAddFromStock = (stock: ChannelStockItem) => {
-    // Check if there is an empty item row
-    const emptyIndex = items.findIndex((it) => !it.produk.trim());
-    if (emptyIndex >= 0) {
-      handleItemChange(items[emptyIndex].id, {
-        produk: stock.produk,
-        sku: stock.sku,
-        size: stock.size,
-        lokasi: stock.locStr || 'BLOK F',
-        stokStudio: stock.studioQty,
-        stokShp: stock.shpQty,
-        stokTtk: stock.ttkQty,
-        stokMap: stock.totalQty,
-      });
-    } else {
-      setItems((prev) => [
-        ...prev,
-        {
-          id: `item-${Date.now()}`,
-          produk: stock.produk,
-          sku: stock.sku,
-          size: stock.size,
-          qty: 1,
-          lokasi: stock.locStr || 'BLOK F',
-          stokStudio: stock.studioQty,
-          stokShp: stock.shpQty,
-          stokTtk: stock.ttkQty,
-          stokMap: stock.totalQty,
-        },
-      ]);
+  // Fast Product Input Change Handler (Handles Datalist chip click / barcode scan / typing)
+  const handleProductInputChange = (itemId: string, rawVal: string) => {
+    setActiveComboIndex(-1);
+    const trimmed = rawVal.trim();
+    const upper = trimmed.toUpperCase();
+
+    // Trigger debounced Supabase lookup if 2+ characters
+    if (trimmed.length >= 2) {
+      const timer = setTimeout(() => {
+        searchSupabaseMaster(trimmed);
+      }, 250);
+      // Cleanup timer via input state if needed
     }
-    setActiveTab('form');
-    onShowToast(`Ditambahkan ke form: ${stock.produk} (${stock.size})`, 'success');
+
+    // 1. Direct O(1) matching against SKU map
+    if (skuLookupMap.has(upper)) {
+      const matched = skuLookupMap.get(upper)!;
+      handleItemChange(itemId, {
+        sku: matched.sku,
+        produk: matched.produk,
+        size: matched.size,
+        lokasi: matched.lokasi,
+        stokMap: matched.stok,
+        stokStudio: matched.studioQty,
+        stokShp: matched.shpQty,
+        stokTtk: matched.ttkQty,
+      });
+      return;
+    }
+
+    // 2. Direct O(1) matching against Name map
+    const lower = trimmed.toLowerCase();
+    if (nameLookupMap.has(lower)) {
+      const matched = nameLookupMap.get(lower)!;
+      handleItemChange(itemId, {
+        sku: matched.sku,
+        produk: matched.produk,
+        size: matched.size,
+        lokasi: matched.lokasi,
+        stokMap: matched.stok,
+        stokStudio: matched.studioQty,
+        stokShp: matched.shpQty,
+        stokTtk: matched.ttkQty,
+      });
+      return;
+    }
+
+    // If typing custom / in-progress text
+    handleItemChange(itemId, {
+      sku: rawVal,
+      produk: rawVal,
+    });
+  };
+
+  // Fast custom dropdown renderer inside form with keyboard navigation
+  const renderSuggestions = (itemId: string, currentVal: string) => {
+    if (focusedItemId !== itemId || !currentVal.trim()) return null;
+    const lower = currentVal.trim().toLowerCase();
+    const keywords = lower.split(/\s+/).filter(Boolean);
+    
+    // Exact SKU match doesn't need dropdown if it's already selected
+    if (skuLookupMap.has(currentVal.trim().toUpperCase())) return null;
+
+    // Multi-keyword filter + cap to 30 items
+    const suggestions = productOptionsList
+      .filter((p) => {
+        const text = `${p.sku} ${p.produk} ${p.size}`.toLowerCase();
+        return keywords.every((kw) => text.includes(kw));
+      })
+      .slice(0, 30);
+
+    if (suggestions.length === 0) {
+      return (
+        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 p-4 text-center text-xs text-slate-400 italic">
+          ❌ Produk tidak ditemukan
+        </div>
+      );
+    }
+
+    return (
+      <div
+        id={`combo-panel-${itemId}`}
+        className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 max-h-64 overflow-y-auto"
+      >
+        {suggestions.map((s, idx) => {
+          const isActive = idx === activeComboIndex;
+          return (
+            <div
+              key={s.sku}
+              data-index={idx}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleItemChange(itemId, {
+                  sku: s.sku,
+                  produk: s.produk,
+                  size: s.size,
+                  lokasi: s.lokasi,
+                  stokMap: s.stok,
+                  stokStudio: s.studioQty,
+                  stokShp: s.shpQty,
+                  stokTtk: s.ttkQty,
+                });
+                setFocusedItemId(null);
+                setActiveComboIndex(-1);
+              }}
+              className={`px-3 py-2.5 text-xs cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 transition-colors ${
+                isActive
+                  ? 'bg-emerald-500/10 border-l-4 border-l-emerald-500 pl-2'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight">
+                    {s.produk}
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                    <span className="bg-slate-100 dark:bg-slate-800 px-1 py-0.2 rounded font-semibold text-slate-600 dark:text-slate-300">
+                      {s.sku}
+                    </span>
+                    <span>&bull;</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      Size: {s.size && s.size !== 'ALL' ? s.size : 'ALL'}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${s.stok > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-500/20' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-500/20'}`}>
+                    {s.stok > 0 ? `${s.stok} pcs` : 'Kosong'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Channel Stock Breakdown Pills */}
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                <span className={`inline-flex items-center text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${s.stok > 0 ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-slate-100/50 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500'}`}>
+                  🏢 MAP: {s.stok || 0}
+                </span>
+                {(s.studioQty || 0) > 0 && (
+                  <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold border border-emerald-500/20">
+                    📍 Studio: {s.studioQty}
+                  </span>
+                )}
+                {(s.shpQty || 0) > 0 && (
+                  <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded font-mono font-bold border border-amber-500/20">
+                    🧡 SHP: {s.shpQty}
+                  </span>
+                )}
+                {(s.ttkQty || 0) > 0 && (
+                  <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                    🖤 TTK: {s.ttkQty}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Keyboard navigation handler for Combobox input
+  const handleProductInputKeyDown = (e: React.KeyboardEvent, itemId: string, currentVal: string) => {
+    const lower = currentVal.trim().toLowerCase();
+    const keywords = lower.split(/\s+/).filter(Boolean);
+    const suggestions = productOptionsList
+      .filter((p) => {
+        const text = `${p.sku} ${p.produk} ${p.size}`.toLowerCase();
+        return keywords.every((kw) => text.includes(kw));
+      })
+      .slice(0, 30);
+
+    if (suggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveComboIndex((prev) => (prev + 1) % suggestions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveComboIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+    } else if (e.key === 'Enter') {
+      if (activeComboIndex >= 0 && activeComboIndex < suggestions.length) {
+        e.preventDefault();
+        const s = suggestions[activeComboIndex];
+        handleItemChange(itemId, {
+          sku: s.sku,
+          produk: s.produk,
+          size: s.size,
+          lokasi: s.lokasi,
+          stokMap: s.stok,
+          stokStudio: s.studioQty,
+          stokShp: s.shpQty,
+          stokTtk: s.ttkQty,
+        });
+        setFocusedItemId(null);
+        setActiveComboIndex(-1);
+      }
+    } else if (e.key === 'Escape') {
+      setFocusedItemId(null);
+      setActiveComboIndex(-1);
+    }
+  };
+
+  // Blur / Enter matching for partial input (e.g. typing "Taylor" then tapping outside / next)
+  const handleProductInputBlur = (itemId: string, currentVal: string) => {
+    const trimmed = currentVal.trim();
+    if (!trimmed) return;
+    const upper = trimmed.toUpperCase();
+    if (skuLookupMap.has(upper)) return;
+
+    // Check prefix / substring match (case insensitive)
+    const found = productOptionsList.find((p) =>
+      p.sku.toUpperCase() === upper ||
+      p.sku.toUpperCase().includes(upper) ||
+      p.produk.toLowerCase().includes(trimmed.toLowerCase())
+    );
+    if (found) {
+      handleItemChange(itemId, {
+        sku: found.sku,
+        produk: found.produk,
+        size: found.size,
+        lokasi: found.lokasi,
+        stokMap: found.stok,
+        stokStudio: found.studioQty,
+        stokShp: found.shpQty,
+        stokTtk: found.ttkQty,
+      });
+    }
   };
 
   // Submit Peminjaman Form
@@ -375,22 +671,40 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
 
   // Export Channel Stock to CSV
   const handleExportStockCSV = () => {
-    if (channelStocks.length === 0) {
+    if (filteredStocks.length === 0) {
       onShowToast('Tidak ada data stok untuk diexport', 'warning');
       return;
     }
 
-    const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI / RAK', 'STUDIO (BLOK F)', 'SHOPEE (SHP)', 'TIKTOK (TTK)', 'TOTAL QTY'];
-    const rows = channelStocks.map((it) => [
-      `"${it.produk.replace(/"/g, '""')}"`,
-      `"${it.size}"`,
-      `"${it.sku}"`,
-      `"${it.locStr || '-'}"`,
-      it.studioQty,
-      it.shpQty,
-      it.ttkQty,
-      it.totalQty,
-    ]);
+    let headers: string[] = [];
+    let rows: (string | number)[][] = [];
+
+    if (selectedChannel === 'ALL') {
+      headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI / RAK', 'STUDIO (BLOK F)', 'SHOPEE (SHP)', 'TIKTOK (TTK)', 'TOTAL LIVE'];
+      rows = filteredStocks.map((it) => [
+        `"${it.produk.replace(/"/g, '""')}"`,
+        `"${it.size}"`,
+        `"${it.sku}"`,
+        `"${it.locStr || '-'}"`,
+        it.studioQty,
+        it.shpQty,
+        it.ttkQty,
+        it.studioQty + it.shpQty + it.ttkQty,
+      ]);
+    } else {
+      const channelLabel = selectedChannel === 'STUDIO' ? 'STUDIO' : selectedChannel === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK';
+      headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI / RAK', `QTY ${channelLabel}`];
+      rows = filteredStocks.map((it) => {
+        const qty = selectedChannel === 'STUDIO' ? it.studioQty : selectedChannel === 'SHOPEE' ? it.shpQty : it.ttkQty;
+        return [
+          `"${it.produk.replace(/"/g, '""')}"`,
+          `"${it.size}"`,
+          `"${it.sku}"`,
+          `"${it.locStr || '-'}"`,
+          qty,
+        ];
+      });
+    }
 
     const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.map((r) => r.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -404,32 +718,27 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
   };
 
   // Filter channel stocks
-  const filteredStocks = (() => {
+  const deferredSearchStock = useDeferredValue(searchStock);
+  const filteredStocks = useMemo(() => {
     const filtered = channelStocks.filter((it) => {
       // Channel / Area filter
-      if (selectedChannel === 'BLOK_F') {
-        const inBlokF =
-          it.locStr.toUpperCase().includes('BLOK F') ||
-          it.locStr.toUpperCase().includes('RAK F') ||
-          it.studioQty > 0 ||
-          it.shpQty > 0 ||
-          it.ttkQty > 0;
-        if (!inBlokF && it.totalQty <= 0) return false;
-      } else if (selectedChannel === 'STUDIO') {
-        if (it.studioQty <= 0 && !it.locStr.toUpperCase().includes('STUDIO')) return false;
+      if (selectedChannel === 'STUDIO') {
+        if (it.studioQty <= 0) return false;
       } else if (selectedChannel === 'SHOPEE') {
-        if (it.shpQty <= 0 && !it.locStr.toUpperCase().includes('SHOPEE') && !it.locStr.toUpperCase().includes('SHP')) return false;
+        if (it.shpQty <= 0) return false;
       } else if (selectedChannel === 'TIKTOK') {
-        if (it.ttkQty <= 0 && !it.locStr.toUpperCase().includes('TIKTOK') && !it.locStr.toUpperCase().includes('TTK')) return false;
+        if (it.ttkQty <= 0) return false;
+      } else if (selectedChannel === 'ALL') {
+        if ((it.studioQty <= 0) && (it.shpQty <= 0) && (it.ttkQty <= 0) && ((it.totalQty || 0) <= 0)) return false;
       }
 
       // Search query filter
-      if (!searchStock.trim()) return true;
-      return fuzzySearchMultiple(searchStock, [it.sku, it.produk, it.size, it.locStr]);
+      if (!deferredSearchStock.trim()) return true;
+      return fuzzySearchMultiple(deferredSearchStock, [it.sku, it.produk, it.size, it.locStr]);
     });
     
-    return sortAlphabeticalAndSize(filtered, (i) => i.produk || i.sku || '', (i) => i.size || '');
-  })();
+    return sortAlphabeticalAndSize<ChannelStockItem>(filtered, (i) => i.produk || i.sku || '', (i) => i.size || '');
+  }, [channelStocks, selectedChannel, deferredSearchStock]);
 
   // Calculate totals
   const totalStockItems = filteredStocks.length;
@@ -437,7 +746,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
     if (selectedChannel === 'STUDIO') return acc + curr.studioQty;
     if (selectedChannel === 'SHOPEE') return acc + curr.shpQty;
     if (selectedChannel === 'TIKTOK') return acc + curr.ttkQty;
-    return acc + curr.totalQty;
+    return acc + curr.studioQty + curr.shpQty + curr.ttkQty;
   }, 0);
 
   // WhatsApp Message Generator
@@ -691,15 +1000,25 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
-                1. INFORMASI PEMINJAM
+                📝 FORM PENGAJUAN PEMINJAMAN SEMENTARA (SPS)
               </span>
             </div>
-            <span className="text-[11px] text-slate-400 font-mono">
-              User: <b className="text-slate-700 dark:text-slate-300">{session?.username || 'Operator'}</b>
-            </span>
+            <button
+              type="button"
+              onClick={handleFullRefresh}
+              className="px-2.5 py-1 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1.5 transition-all"
+              title="Refresh Stok & Data SPS"
+            >
+              <RefreshCw className={`w-3 h-3 text-emerald-500 ${loadingStock ? 'animate-spin' : ''}`} />
+              <span>REFRESH</span>
+            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
+              1. INFORMASI PEMINJAM (DIVISI LIVE / STUDIO)
+            </div>
+
             {/* PIC & Keperluan 2-Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -728,7 +1047,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                   required
                   value={keperluan}
                   onChange={(e) => setKeperluan(e.target.value)}
-                  placeholder="Contoh: Live TikTok / Shopee / Studio"
+                  placeholder="Contoh: Live TikTok / Live Shopee / Studio"
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
@@ -759,132 +1078,106 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                 </span>
                 <button
                   type="button"
+                  id="btnTambahItemAtas"
                   onClick={handleAddItem}
                   className="px-2.5 py-1 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all"
                 >
                   <Plus className="w-3 h-3 text-emerald-500" />
-                  <span>Tambah Item</span>
+                  <span>+ TAMBAH ITEM</span>
                 </button>
               </div>
 
               {/* Items List */}
-              <div className="space-y-3">
+              <div className="space-y-3" id="itemContainer">
                 {items.map((item, index) => {
-                  const isComboboxOpen = activeComboboxId === item.id;
-                  const pool = channelStocks.length > 0 ? channelStocks : productCatalog;
-                  const filteredProductOpts = (() => {
-                    const filtered = pool.filter((p) => {
-                      const name = 'p' in p ? p.p : p.produk;
-                      const sku = 'k' in p ? p.k : p.sku;
-                      return fuzzySearchMultiple(comboboxSearch, [name, sku]);
-                    });
-                    return sortAlphabeticalAndSize(filtered, (p) => ('p' in p ? p.p : p.produk) || ('k' in p ? p.k : p.sku) || '', (p) => ('s' in p ? p.s : p.size) || '');
-                  })();
+                  const hasSelected = Boolean(item.sku || item.produk);
+                  const mapStok = item.stokMap || 0;
+                  const isKosong = mapStok <= 0;
+                  const isKurang = item.qty > mapStok;
 
                   return (
                     <div
                       key={item.id}
-                      className="p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800/80 rounded-xl space-y-2 relative"
+                      className="p-3.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800/80 rounded-xl space-y-2.5 relative shadow-sm"
                     >
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-slate-500 dark:text-slate-400">
-                          Item #{index + 1}
+                        <span className="font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] flex items-center justify-center font-black">
+                            {index + 1}
+                          </span>
+                          <span>PILIH PRODUK &amp; SIZE <span className="text-rose-500">*</span></span>
                         </span>
-                        {item.produk && (
+                        {hasSelected && (
                           <span
-                            className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded ${
-                              (item.stokMap || 0) <= 0
-                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                                : item.qty > (item.stokMap || 0)
-                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                              isKosong
+                                ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                                : isKurang
+                                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                             }`}
                           >
-                            Lokasi: {item.lokasi || 'BLOK F'} | Studio: {item.stokStudio || 0} | Shopee: {item.stokShp || 0} | TikTok: {item.stokTtk || 0}
+                            {isKosong ? '❌ MAP KOSONG' : isKurang ? `⚠️ SISA MAP: ${mapStok}` : `✅ STOK MAP: ${mapStok}`}
                           </span>
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                        {/* Combobox Select Product (7 cols) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        {/* Barcode / SKU / Text Input with floating instant search suggestions (7 cols) */}
                         <div className="sm:col-span-7 relative">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                            Pilih Produk & Size <span className="text-rose-500">*</span>
-                          </label>
                           <div className="relative">
                             <input
+                              id={`inputPeminjamanSku-${item.id}`}
                               type="text"
-                              value={item.produk ? `${item.produk} ${item.size ? `(${item.size})` : ''}` : comboboxSearch}
-                              onFocus={() => {
-                                setActiveComboboxId(item.id);
-                                setComboboxSearch('');
-                              }}
+                              value={item.sku || item.produk || ''}
                               onChange={(e) => {
-                                setComboboxSearch(e.target.value);
-                                handleItemChange(item.id, { produk: e.target.value });
+                                handleProductInputChange(item.id, e.target.value);
+                              }}
+                              onKeyDown={(e) => handleProductInputKeyDown(e, item.id, item.sku || item.produk || '')}
+                              onFocus={() => setFocusedItemId(item.id)}
+                              onBlur={(e) => {
+                                setTimeout(() => {
+                                  if (focusedItemId === item.id) setFocusedItemId(null);
+                                  handleProductInputBlur(item.id, e.target.value);
+                                }, 250);
                               }}
                               placeholder="Ketik nama produk / SKU..."
-                              className="w-full px-3 py-2 bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500"
+                              className="w-full pl-3 pr-8 py-2 bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+                              autoComplete="off"
                             />
-                            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                            {item.sku && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleItemChange(item.id, { produk: '', sku: '', size: '', stokMap: 0 });
+                                }}
+                                className="absolute right-2 top-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+                                title="Hapus / Reset"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {renderSuggestions(item.id, item.sku || item.produk || '')}
                           </div>
 
-                          {/* Search dropdown panel */}
-                          {isComboboxOpen && (
-                            <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-1 space-y-1">
-                              <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                                <span>Pilih dari Real-Time Stok Database</span>
-                                <span className="text-[9px] text-emerald-500 font-mono font-normal">Area BLOK F</span>
-                              </div>
-                              {filteredProductOpts.length === 0 ? (
-                                <div className="p-3 text-center text-slate-400 italic text-xs">
-                                  Produk tidak ditemukan
+                          {/* Selected Item Detail preview card */}
+                          {item.produk && item.sku && (
+                            <div className="mt-1.5 px-2.5 py-1.5 bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800 rounded-lg flex items-center justify-between text-xs">
+                              <div className="min-w-0 pr-2">
+                                <div className="font-bold text-slate-900 dark:text-slate-100 whitespace-normal break-words leading-tight text-[11px]">
+                                  {item.produk}
                                 </div>
-                              ) : (
-                                filteredProductOpts.slice(0, 30).map((opt) => {
-                                  const optName = 'p' in opt ? opt.p : opt.produk;
-                                  const optSku = 'k' in opt ? opt.k : opt.sku;
-                                  const optSize = 's' in opt ? opt.s : opt.size;
-                                  const optStudio = 'studioQty' in opt ? opt.studioQty : (opt.stokStudio || 0);
-                                  const optShp = 'shpQty' in opt ? opt.shpQty : (opt.stokShp || 0);
-                                  const optTtk = 'ttkQty' in opt ? opt.ttkQty : (opt.stokTtk || 0);
-                                  const optLoc = 'locStr' in opt ? opt.locStr : (opt.lokasi || 'BLOK F');
-
-                                  return (
-                                    <button
-                                      key={optSku}
-                                      type="button"
-                                      onClick={() => handleSelectProduct(item.id, opt)}
-                                      className="w-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800/70 rounded-lg text-left text-xs transition-colors flex items-center justify-between group cursor-pointer"
-                                    >
-                                      <div>
-                                        <div className="font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-500 flex items-center gap-1.5">
-                                          <span>{optName}</span>
-                                          {optStudio + optShp + optTtk === 0 && (
-                                            <span className="text-[9px] font-black px-1.5 py-0.2 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded uppercase">
-                                              Sold / Kosong
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="text-[10px] font-mono text-slate-400">
-                                          SKU: {optSku} &bull; Size: {optSize || 'ALL'} &bull; <span className="text-slate-500">{optLoc}</span>
-                                        </div>
-                                      </div>
-                                      <div className="text-right flex items-center gap-1">
-                                        <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${optStudio > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`} title="Stok Studio">
-                                          Studio: {optStudio}
-                                        </span>
-                                        <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${optShp > 0 ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`} title="Stok Shopee">
-                                          SHP: {optShp}
-                                        </span>
-                                        <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${optTtk > 0 ? 'bg-slate-900 text-white dark:bg-slate-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`} title="Stok TikTok">
-                                          TTK: {optTtk}
-                                        </span>
-                                      </div>
-                                    </button>
-                                  );
-                                })
-                              )}
+                                <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5">
+                                  <span>SKU: <b className="text-slate-700 dark:text-slate-300">{item.sku}</b></span>
+                                  <span>&bull;</span>
+                                  <span>Size: <b className="text-emerald-600 dark:text-emerald-400">{item.size || 'ALL'}</b></span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
+                                  {(item.stokMap || 0) > 0 ? `${item.stokMap} pcs` : 'Sold'}
+                                </span>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -892,7 +1185,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                         {/* Qty Stepper (3 cols) */}
                         <div className="sm:col-span-3">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                            Jumlah (Qty) <span className="text-rose-500">*</span>
+                            QTY <span className="text-rose-500">*</span>
                           </label>
                           <div className="flex items-center border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-[#09090B] overflow-hidden">
                             <button
@@ -900,14 +1193,23 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                               onClick={() => handleItemChange(item.id, { qty: Math.max(1, item.qty - 1) })}
                               className="px-2.5 py-2 text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold"
                             >
-                              -
+                              −
                             </button>
                             <input
                               type="number"
                               min="1"
-                              value={item.qty}
-                              onChange={(e) => handleItemChange(item.id, { qty: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                              className="w-full text-center bg-transparent border-none outline-none text-xs font-extrabold font-mono text-slate-800 dark:text-slate-100"
+                              value={item.qty || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleItemChange(item.id, { qty: val === '' ? 0 : Math.max(1, parseInt(val, 10) || 1) });
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value;
+                                if (val === '' || parseInt(val, 10) < 1) {
+                                  handleItemChange(item.id, { qty: 1 });
+                                }
+                              }}
+                              className="w-full min-w-[30px] text-center bg-transparent border-none outline-none text-xs font-extrabold font-mono text-slate-800 dark:text-slate-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <button
                               type="button"
@@ -925,10 +1227,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                             type="button"
                             disabled={items.length <= 1}
                             onClick={() => handleRemoveItem(item.id)}
-                            className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border border-rose-500/20 transition-all disabled:opacity-40 disabled:pointer-events-none"
+                            className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border border-rose-500/20 transition-all disabled:opacity-30 disabled:pointer-events-none"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            <span className="sm:hidden">Hapus</span>
+                            <span>HAPUS</span>
                           </button>
                         </div>
                       </div>
@@ -981,11 +1283,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
-                  STOK TERSEDIA (DIVISI LIVE)
+                  {selectedChannel === 'STUDIO'
+                    ? '📍 STOK TERSEDIA DI STUDIO (BLOK F)'
+                    : selectedChannel === 'SHOPEE'
+                    ? '🧡 STOK TERSEDIA DI SHOPEE (SHP)'
+                    : selectedChannel === 'TIKTOK'
+                    ? '🖤 STOK TERSEDIA DI TIKTOK (TTK)'
+                    : '🌐 GABUNGAN STOK (STUDIO / SHP / TTK)'}
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                Total: <b className="text-slate-800 dark:text-slate-200">{totalStockItems} SKU</b> &bull; <b className="text-emerald-500">{totalStockPcs} Pcs</b>
+                Total: <b className="text-slate-800 dark:text-slate-200">{totalStockItems} SKU</b> &bull; <b className="text-emerald-500">{totalStockPcs} Pcs Tersedia</b>
               </div>
             </div>
 
@@ -1014,18 +1322,18 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
             </div>
           </div>
 
-          {/* Segmented Channel & Location Buttons */}
-          <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100 dark:bg-black/50 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] sm:text-[11px] font-bold">
+          {/* Segmented Channel & Location Buttons (4-tabs including SEMUA) */}
+          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-black/50 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] sm:text-[11px] font-bold">
             <button
               type="button"
-              onClick={() => setSelectedChannel('BLOK_F')}
+              onClick={() => setSelectedChannel('STUDIO')}
               className={`py-1.5 rounded-lg transition-all text-center ${
-                selectedChannel === 'BLOK_F'
-                  ? 'bg-blue-600 text-white font-extrabold shadow-[0_0_10px_rgba(37,99,235,0.3)]'
+                selectedChannel === 'STUDIO'
+                  ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_10px_rgba(16,185,129,0.3)]'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              🏢 Blok F
+              📍 Studio
             </button>
             <button
               type="button"
@@ -1051,26 +1359,23 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setSelectedChannel('STUDIO')}
-              className={`py-1.5 rounded-lg transition-all text-center ${
-                selectedChannel === 'STUDIO'
-                  ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              📍 Studio
-            </button>
-            <button
-              type="button"
               onClick={() => setSelectedChannel('ALL')}
               className={`py-1.5 rounded-lg transition-all text-center ${
                 selectedChannel === 'ALL'
-                  ? 'bg-slate-700 text-white font-extrabold shadow-md'
+                  ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)]'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               🌐 Semua
             </button>
+          </div>
+
+          {/* Guide Callout Box */}
+          <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+            <span className="shrink-0 mt-0.5">💡</span>
+            <p className="leading-snug">
+              <b>Acuan Peminjam Divisi Live:</b> Daftar barang yang sudah tersedia di channel/lokasi terpilih. Anda dapat meminjam langsung atau menghindari pengajuan ganda.
+            </p>
           </div>
 
           {/* Search stock input */}
@@ -1080,7 +1385,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
               type="text"
               value={searchStock}
               onChange={(e) => setSearchStock(e.target.value)}
-              placeholder="🔍 Cari nama produk / SKU di channel / lokasi..."
+              placeholder="🔍 Cari Nama Produk / SKU / Lokasi..."
               className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
             />
           </div>
@@ -1089,17 +1394,29 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
           <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[380px] overflow-y-auto">
             <table className="w-full text-left text-xs border-collapse font-sans">
               <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="p-2.5">Produk & Lokasi</th>
-                  <th className="p-2.5 text-center w-12">Size</th>
-                  <th className="p-2.5 text-center w-14">Qty</th>
-                  <th className="p-2.5 text-right w-16">Aksi</th>
-                </tr>
+                {selectedChannel === 'ALL' ? (
+                  <tr>
+                    <th className="p-2.5">Produk & SKU</th>
+                    <th className="p-2.5 text-center w-10">Size</th>
+                    <th className="p-2.5 text-center w-12 text-emerald-600 dark:text-emerald-400">Studio</th>
+                    <th className="p-2.5 text-center w-12 text-amber-600 dark:text-amber-400">SHP</th>
+                    <th className="p-2.5 text-center w-12 text-slate-700 dark:text-slate-300">TTK</th>
+                    <th className="p-2.5 text-center w-12 text-cyan-600 dark:text-cyan-400">Total</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th className="p-2.5">Produk & Lokasi</th>
+                    <th className="p-2.5 text-center w-12">Size</th>
+                    <th className="p-2.5 text-center w-14">
+                      {selectedChannel === 'STUDIO' ? 'Studio' : selectedChannel === 'SHOPEE' ? 'Shopee' : 'TikTok'}
+                    </th>
+                  </tr>
+                )}
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {loadingStock ? (
                   <tr>
-                    <td colSpan={4} className="p-6 text-center text-slate-400 italic text-xs">
+                    <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
                       <div className="flex items-center justify-center gap-2">
                         <RefreshCw className="w-4 h-4 animate-spin text-emerald-500" />
                         <span>Memuat stok real-time dari Database...</span>
@@ -1108,7 +1425,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                   </tr>
                 ) : filteredStocks.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="p-6 text-center text-slate-400 italic text-xs">
+                    <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
                       Tidak ada stok pada filter ini
                     </td>
                   </tr>
@@ -1119,9 +1436,54 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                         ? stk.studioQty
                         : selectedChannel === 'SHOPEE'
                         ? stk.shpQty
-                        : selectedChannel === 'TIKTOK'
-                        ? stk.ttkQty
-                        : stk.totalQty;
+                        : stk.ttkQty;
+
+                    const totalLive = (stk.studioQty || 0) + (stk.shpQty || 0) + (stk.ttkQty || 0);
+
+                    if (selectedChannel === 'ALL') {
+                      return (
+                        <tr
+                          key={stk.sku}
+                          className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                        >
+                          <td className="p-2.5">
+                            <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                              {stk.produk}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                              <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
+                              <span>&bull;</span>
+                              <span className="text-emerald-600 dark:text-emerald-400">{stk.locStr}</span>
+                            </div>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                              {stk.size}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className={`font-mono text-xs font-bold ${stk.studioQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-300 dark:text-slate-600'}`}>
+                              {stk.studioQty || 0}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className={`font-mono text-xs font-bold ${stk.shpQty > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-300 dark:text-slate-600'}`}>
+                              {stk.shpQty || 0}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className={`font-mono text-xs font-bold ${stk.ttkQty > 0 ? 'text-slate-800 dark:text-slate-200 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                              {stk.ttkQty || 0}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
+                              {totalLive}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
 
                     return (
                       <tr
@@ -1129,7 +1491,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                         className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
                       >
                         <td className="p-2.5">
-                          <div className="font-bold text-slate-800 dark:text-slate-200 line-clamp-1 text-xs">
+                          <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
                             {stk.produk}
                           </div>
                           <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
@@ -1137,7 +1499,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                             <span>&bull;</span>
                             <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{stk.locStr}</span>
                           </div>
-                          {/* Channel breakdown pills if multi-location */}
+                          {/* Channel breakdown pills */}
                           <div className="flex flex-wrap gap-1 mt-1">
                             {stk.ttkQty > 0 && (
                               <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
@@ -1171,20 +1533,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                               Sold
                             </span>
                           )}
-                        </td>
-                        <td className="p-2.5 text-right">
-                          <button
-                            type="button"
-                            disabled={displayQty <= 0}
-                            onClick={() => handleQuickAddFromStock(stk)}
-                            className={`px-2 py-1 rounded text-[10px] font-extrabold tracking-wider uppercase transition-colors ${
-                              displayQty > 0
-                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 cursor-pointer active:scale-95'
-                                : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60'
-                            }`}
-                          >
-                            {displayQty > 0 ? '+ Pinjam' : 'Kosong'}
-                          </button>
                         </td>
                       </tr>
                     );
@@ -1266,6 +1614,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                       <FileText className="w-3 h-3 text-emerald-400" />
                       <span>Detail</span>
                     </button>
+                    {['Superadmin', 'Fulfillment', 'Admin'].includes(session?.role || '') && (
                     <button
                       type="button"
                       onClick={() => handlePrintSJ(rec)}
@@ -1274,6 +1623,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                       <Printer className="w-3 h-3" />
                       <span>Cetak SJ</span>
                     </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleCopyWa(rec, 'grup')}

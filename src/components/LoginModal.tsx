@@ -14,11 +14,9 @@ import {
   CheckCircle2,
   Package,
 } from 'lucide-react';
-import { DEFAULT_GAS_ENDPOINT } from '../services/gasApi';
-
 interface LoginModalProps {
   isOpen: boolean;
-  onLogin: (endpoint: string, user: string, pass: string) => Promise<void>;
+  onLogin: (user: string, pass: string) => Promise<void>;
   darkMode: boolean;
   onToggleDarkMode: () => void;
 }
@@ -29,9 +27,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
-  const [endpoint, setEndpoint] = useState<string>(() => {
-    return localStorage.getItem('wms_endpoint_url') || DEFAULT_GAS_ENDPOINT;
-  });
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -42,7 +37,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!endpoint.trim() || !username.trim()) {
+    if (!username.trim()) {
       setError('Mohon isi field username dan password');
       return;
     }
@@ -51,7 +46,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setError(null);
 
     try {
-      await onLogin(endpoint.trim(), username.trim(), password.trim());
+      await onLogin(username.trim(), password.trim());
     } catch (err: unknown) {
       const errMsg =
         err instanceof Error
@@ -69,7 +64,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setError(null);
     setLoading(true);
     try {
-      await onLogin(endpoint.trim(), u, p);
+      await onLogin(u, p);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Login gagal.';
       setError(errMsg);

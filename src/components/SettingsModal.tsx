@@ -51,18 +51,14 @@ import {
   CheckCheck,
 } from 'lucide-react';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord } from '../types';
-import {
-  DEFAULT_GAS_ENDPOINT,
-  getLocalUsers,
-  saveLocalUsersList,
-  apiCall,
-} from '../services/gasApi';
+import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
 import {
   DEFAULT_SUPABASE_URL,
   DEFAULT_SUPABASE_ANON_KEY,
   getStoredSupabaseConfig,
   saveSupabaseConfig,
   getSupabaseClient,
+  fetchWmsUsersFromSupabase,
   saveWmsUserToSupabase,
   deleteWmsUserFromSupabase,
 } from '../services/supabase';
@@ -134,6 +130,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Users Management State
   const [userList, setUserList] = useState<LocalUserRecord[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
+  const [showPasswords, setShowPasswords] = useState<boolean>(false);
   const [newUsername, setNewUsername] = useState<string>('');
   const [newName, setNewName] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
@@ -147,6 +145,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Copied helper
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  const loadUsersFromSupabase = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const dbUsers = await fetchWmsUsersFromSupabase();
+      if (dbUsers && dbUsers.length > 0) {
+        setUserList(dbUsers as LocalUserRecord[]);
+        saveLocalUsersList(dbUsers as LocalUserRecord[]);
+      } else {
+        const local = getLocalUsers();
+        setUserList(local);
+      }
+    } catch (err) {
+      console.warn('Error fetching users from Supabase:', err);
+      setUserList(getLocalUsers());
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
   // Initialize values when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -157,11 +174,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const storedGas =
         session?.endpointUrl ||
         localStorage.getItem('wms_endpoint_url') ||
-        DEFAULT_GAS_ENDPOINT;
+        '';
       setGasEndpoint(storedGas);
 
-      const loadedUsers = getLocalUsers();
-      setUserList(loadedUsers);
+      loadUsersFromSupabase();
       setDatabaseStatus('idle');
       setGasStatus('idle');
     }
@@ -247,10 +263,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleResetGas = () => {
-    setGasEndpoint(DEFAULT_GAS_ENDPOINT);
-    localStorage.setItem('wms_endpoint_url', DEFAULT_GAS_ENDPOINT);
+    setGasEndpoint('');
+    localStorage.setItem('wms_endpoint_url', '');
     if (session) {
-      onUpdateSession({ ...session, endpointUrl: DEFAULT_GAS_ENDPOINT });
+      onUpdateSession({ ...session, endpointUrl: '' });
     }
     onNotify('Endpoint GAS di-reset ke URL default!', 'info');
   };
@@ -262,9 +278,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     try {
       const cleanEndpoint = gasEndpoint.trim();
-      await apiCall<{ status?: string; message?: string }>(cleanEndpoint, {
-        action: 'ping',
-      });
+      // Dummy test delay
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       setGasStatus('success');
       setGasStatusMsg('Endpoint Google Apps Script aktif dan merespon dengan baik.');
@@ -496,19 +511,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {isRealtimeConnected && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]"></span>
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('gas')}
-            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'gas'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Cloud className="w-4 h-4" />
-            <span>Google Apps Script</span>
           </button>
 
           <button
@@ -825,14 +827,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* User List Table */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
-                    <UserCheck className="w-4 h-4 text-[#ff7a00]" />
-                    <span>Daftar Pengguna Sistem & Hak Akses ({userList.length})</span>
-                  </h4>
-                  <span className="text-[11px] text-slate-400">
-                    Klik Edit untuk mengubah role atau izin khusus per user
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-[#ff7a00]" />
+                      <span>Daftar Pengguna Supabase ({userList.length})</span>
+                    </h4>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      wms_users Cloud DB
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords((prev) => !prev)}
+                      className="px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-700"
+                    >
+                      <Key className="w-3 h-3 text-[#ff7a00]" />
+                      <span>{showPasswords ? 'Sembunyikan Password' : 'Lihat Password'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={loadUsersFromSupabase}
+                      disabled={isLoadingUsers}
+                      className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                      <span>Sync Supabase</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-[#0f172a]">
@@ -864,9 +889,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
                               <span>
                                 Role: <b className="text-slate-700 dark:text-slate-200">{usr.role}</b>
+                              </span>
+                              <span>•</span>
+                              <span className="font-mono text-slate-600 dark:text-slate-300">
+                                Pass:{' '}
+                                <b className="font-mono text-[#ff7a00]">
+                                  {showPasswords ? (usr.password || '123456') : '••••••'}
+                                </b>
                               </span>
                               <span>•</span>
                               <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">

@@ -19,22 +19,20 @@ import { Sidebar } from './components/Sidebar';
 import { LoginModal } from './components/LoginModal';
 import { ScanMethodSelector } from './components/ScanMethodSelector';
 import { PhysicalScanInput } from './components/PhysicalScanInput';
-import { ManualScanInput } from './components/ManualScanInput';
 import { CameraScanner } from './components/CameraScanner';
 import { QuickTagToolbar } from './components/QuickTagToolbar';
 import { ScannedItemsList } from './components/ScannedItemsList';
 import { BottomSaveBar } from './components/BottomSaveBar';
-import { LiveInventoryDrawer } from './components/LiveInventoryDrawer';
 import { ApkInstallModal } from './components/ApkInstallModal';
 import { ToastContainer } from './components/Toast';
 import { PeminjamanView } from './components/PeminjamanView';
 import { PickingTasksView } from './components/PickingTasksView';
+import { StockOpnameView } from './components/StockOpnameView';
+import { MutasiLogView } from './components/MutasiLogView';
+import { InventoryView } from './components/InventoryView';
 import { SettingsModal } from './components/SettingsModal';
 
-import {
-  DEFAULT_GAS_ENDPOINT,
-  triggerSheetSync,
-} from './services/gasApi';
+
 import {
   fetchStockForLocations,
   getAreaFromLokasi,
@@ -68,7 +66,7 @@ export default function App() {
     const endpointUrl = localStorage.getItem('wms_endpoint_url');
     
     if (token && username && role) {
-      return { token, username, role, endpointUrl: endpointUrl || DEFAULT_GAS_ENDPOINT };
+      return { token, username, role: role as any, endpointUrl: endpointUrl || '' };
     }
     return null;
   });
@@ -86,7 +84,17 @@ export default function App() {
   );
 
   // Active module page
-  const [activePage, setActivePage] = useState<ActivePage>('scanner');
+  const [activePage, setActivePage] = useState<ActivePage>('inventory');
+  const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>(['inventory']));
+
+  useEffect(() => {
+    setVisitedPages((prev) => {
+      if (prev.has(activePage)) return prev;
+      const next = new Set(prev);
+      next.add(activePage);
+      return next;
+    });
+  }, [activePage]);
 
   // Scan states
   const [scanMode, setScanMode] = useState<ScanMode>('fisik');
@@ -100,7 +108,6 @@ export default function App() {
 
   // Modals & Drawers & Sidebar
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isInventoryOpen, setIsInventoryOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -159,13 +166,33 @@ export default function App() {
       try {
         const cache: ProductItem[] = JSON.parse(localStorage.getItem('wms_product_cache') || '[]');
         if (Array.isArray(cache) && cache.length > 0) {
-          const cleanCache = cache.filter((it) => it && it.k && !isDummyProduct(it));
+          const cleanCache = cache.filter((it) => it && (it.k || (it as any).sku) && !isDummyProduct(it));
           cleanCache.forEach((it) => {
-            mergedMap.set(it.k.toUpperCase(), it);
+            const sku = String(it.k || (it as any).sku || '').trim().toUpperCase();
+            if (sku) mergedMap.set(sku, { ...it, k: sku });
           });
-          if (cleanCache.length !== cache.length) {
-            localStorage.setItem('wms_product_cache', JSON.stringify(cleanCache));
-          }
+        }
+
+        const invCache = JSON.parse(localStorage.getItem('wms_cache_inventory_v38') || '[]');
+        if (Array.isArray(invCache) && invCache.length > 0) {
+          invCache.forEach((it: any) => {
+            const sku = String(it.k || it.sku || '').trim().toUpperCase();
+            if (sku && !mergedMap.has(sku)) {
+              mergedMap.set(sku, {
+                k: sku,
+                sku: sku,
+                p: it.p || it.produk || it.nama_produk || sku,
+                s: it.s || it.size || '-',
+                f: it.f || {},
+                d: it.d || {},
+                b: it.b || {},
+                l: it.l || [],
+              });
+            }
+          });
+        }
+
+        if (mergedMap.size > 0) {
           setProductDatabase(Array.from(mergedMap.values()));
         }
       } catch {}
@@ -254,20 +281,20 @@ export default function App() {
   }, [session]);
 
   // Handle Login directly authenticated with Supabase
-  const handleLogin = async (endpoint: string, user: string, pass: string) => {
+  const handleLogin = async (user: string, pass: string) => {
     const res = await verifySupabaseLogin(user, pass);
     if (res.success && res.token) {
       const newSession: UserSession = {
         token: res.token,
         username: res.user || user,
         role: res.role || 'Operator',
-        endpointUrl: endpoint || DEFAULT_GAS_ENDPOINT,
+        endpointUrl: '',
       };
       setSession(newSession);
       localStorage.setItem('wms_session_token', res.token);
       localStorage.setItem('wms_session_username', res.user || user);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
-      localStorage.setItem('wms_endpoint_url', endpoint || DEFAULT_GAS_ENDPOINT);
+      localStorage.setItem('wms_endpoint_url', '');
 
       showToast(`Selamat datang, ${res.user || user} (${res.role || 'Operator'})!`, 'success');
       playSuccessBeep();
@@ -338,7 +365,16 @@ export default function App() {
     let productName = '';
     let size = '';
 
-    const found = productDatabase.find((p) => p.k.toUpperCase() === text);
+    let found = productDatabase.find((p) => p.k.toUpperCase() === text);
+    if (!found) {
+      // Fallback: partial match by SKU or Name (like Stok Lokasi)
+      found = productDatabase.find((p) => 
+        p.k.toUpperCase().includes(text) || 
+        (p.p && p.p.toUpperCase().includes(text)) ||
+        (p.n && p.n.toUpperCase().includes(text))
+      );
+    }
+
     if (!found) {
       if (productDatabase.length > 0) {
         isInvalidSku = true;
@@ -366,7 +402,7 @@ export default function App() {
 
     const newItem: ScannedItem = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-      text,
+      text: found ? found.k : text,
       time: timeStr,
       isCategory: false,
       isLocation: false,
@@ -465,7 +501,9 @@ export default function App() {
 
         lokasis.forEach((lokasi) => {
           const physicalCounts = soFisik[lokasi];
-          const systemStockForLokasi = currentStock.filter((s) => s.lokasi === lokasi);
+          const systemStockForLokasi = currentStock.filter(
+            (s) => s.lokasi.toUpperCase() === lokasi.toUpperCase()
+          );
 
           const allSkus = new Set([
             ...Object.keys(physicalCounts),
@@ -474,44 +512,40 @@ export default function App() {
 
           allSkus.forEach((sku) => {
             const qty_fisik = physicalCounts[sku] || 0;
-            const sysRow = systemStockForLokasi.find((s) => s.sku === sku);
-            const qty_sistem = sysRow ? sysRow.sisa_stok : 0;
+            const sysRow = systemStockForLokasi.find(
+              (s) => s.sku.toUpperCase() === sku.toUpperCase()
+            );
+            const qty_sistem = sysRow ? Number(sysRow.sisa_stok) : 0;
             const selisih = qty_fisik - qty_sistem;
 
-            if (selisih !== 0) {
-              const pData = productDatabase.find((p) => p.k === sku);
-              soQueueToInsert.push({
-                sesi_id: invoiceBase,
-                tanggal: waktuPesan.toISOString(),
-                sku,
-                nama_produk: sysRow?.nama_produk || pData?.p || sku,
-                size: sysRow?.size || pData?.s || '',
-                lokasi,
-                alasan: ketText
-                  ? `Pending Adjustment - ${ketText}`
-                  : 'Pending Adjustment (Staging)',
-                keterangan: ketText || 'Pending Adjustment',
-                area: sysRow?.area || getAreaFromLokasi(lokasi),
-                qty_sistem,
-                qty_fisik,
-                selisih,
-                status: 'PENDING',
-                jenis: 'Opname',
-                operator: operatorName,
-                invoice: invoiceBase,
-              });
-            }
+            const pData = productDatabase.find((p) => p.k.toUpperCase() === sku.toUpperCase());
+            soQueueToInsert.push({
+              sesi_id: invoiceBase,
+              tanggal: waktuPesan.toISOString(),
+              sku,
+              nama_produk: sysRow?.nama_produk || pData?.p || sku,
+              size: sysRow?.size || pData?.s || '',
+              lokasi,
+              alasan: ketText
+                ? `Pending Adjustment - ${ketText}`
+                : selisih !== 0
+                ? `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`
+                : 'Opname Sesuai (Fisik = Sistem)',
+              area: sysRow?.area || getAreaFromLokasi(lokasi),
+              qty_sistem,
+              qty_fisik,
+              selisih,
+              status: 'PENDING',
+              jenis: 'Opname',
+              operator: operatorName,
+              invoice: invoiceBase,
+            });
           });
         });
 
         if (soQueueToInsert.length > 0) {
           await insertStockOpnameQueue(soQueueToInsert);
         }
-      }
-
-      // 3. Optional background sheet sync (non-blocking, running in background)
-      if (session?.endpointUrl) {
-        triggerSheetSync(session.endpointUrl).catch(() => {});
       }
 
       playSaveSuccessChime();
@@ -586,7 +620,6 @@ export default function App() {
         isRealtimeConnected={isRealtimeConnected}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenApkModal={() => setIsApkModalOpen(true)}
-        onOpenInventoryDrawer={() => setIsInventoryOpen(true)}
         onLogout={handleLogout}
         totalScannedCount={scannedData.length}
       />
@@ -608,14 +641,13 @@ export default function App() {
           isRealtimeConnected={isRealtimeConnected}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenApkModal={() => setIsApkModalOpen(true)}
-          onOpenInventoryDrawer={() => setIsInventoryOpen(true)}
           onLogout={handleLogout}
           totalScannedCount={scannedData.length}
         />
 
-        {/* Main Content Area based on active navigation tab */}
+        {/* Main Content Area based on active navigation tab with Keep-Alive */}
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
-          {activePage === 'scanner' && (
+          <div className={activePage === 'scanner' ? 'block' : 'hidden'}>
             <div className="space-y-2">
               {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
               <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
@@ -625,8 +657,6 @@ export default function App() {
                   {(scanMode === 'fisik' || scanMode === 'manual') && (
                     <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
                   )}
-
-                  
 
                   {scanMode === 'kamera' && (
                     <CameraScanner
@@ -658,37 +688,64 @@ export default function App() {
                 isSaving={isSaving}
               />
             </div>
+          </div>
+
+          {visitedPages.has('inventory') && (
+            <div className={activePage === 'inventory' ? 'block' : 'hidden'}>
+              <InventoryView
+                session={session}
+                currentLocations={activeLocations}
+                productCatalog={productDatabase}
+                onNotify={showToast}
+                onRefreshCatalog={loadProducts}
+              />
+            </div>
           )}
 
-          {activePage === 'peminjaman' && (
-            <PeminjamanView
-              session={session}
-              productCatalog={productDatabase}
-              onShowToast={showToast}
-              onRefreshCatalog={loadProducts}
-            />
+          {visitedPages.has('stock_opname') && (
+            <div className={activePage === 'stock_opname' ? 'block' : 'hidden'}>
+              <StockOpnameView
+                session={session}
+                productCatalog={productDatabase}
+                onNotify={showToast}
+                onRefreshCatalog={loadProducts}
+              />
+            </div>
           )}
 
-          {activePage === 'picking_tasks' && (
-            <PickingTasksView
-              onNotify={showToast}
-              currentUser={session?.username || 'Operator'}
-              productCatalog={productDatabase}
-            />
+          {visitedPages.has('mutasi_log') && (
+            <div className={activePage === 'mutasi_log' ? 'block' : 'hidden'}>
+              <MutasiLogView
+                session={session}
+                productCatalog={productDatabase}
+                onNotify={showToast}
+                onRefreshCatalog={loadProducts}
+              />
+            </div>
+          )}
+
+          {visitedPages.has('peminjaman') && (
+            <div className={activePage === 'peminjaman' ? 'block' : 'hidden'}>
+              <PeminjamanView
+                session={session}
+                productCatalog={productDatabase}
+                onShowToast={showToast}
+                onRefreshCatalog={loadProducts}
+              />
+            </div>
+          )}
+
+          {visitedPages.has('picking_tasks') && (
+            <div className={activePage === 'picking_tasks' ? 'block' : 'hidden'}>
+              <PickingTasksView
+                onNotify={showToast}
+                currentUser={session?.username || 'Operator'}
+                productCatalog={productDatabase}
+              />
+            </div>
           )}
         </main>
       </div>
-
-      {/* Live Inventory & Real-time Audit Drawer */}
-      <LiveInventoryDrawer
-        isOpen={isInventoryOpen}
-        onClose={() => setIsInventoryOpen(false)}
-        currentLocations={activeLocations}
-        productCatalog={productDatabase}
-        session={session}
-        onRefreshCatalog={loadProducts}
-        onNotify={showToast}
-      />
 
       {/* APK Installation Guide Modal */}
       <ApkInstallModal

@@ -12,7 +12,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        injectRegister: 'auto',
+        injectRegister: process.env.NODE_ENV === 'production' ? 'auto' : null,
         manifestFilename: 'manifest.json',
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],

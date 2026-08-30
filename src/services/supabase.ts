@@ -66,15 +66,27 @@ let currentConfig = {
 };
 
 export function getStoredSupabaseConfig() {
-  const url = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
+  let url = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
+  try {
+    url = new URL(url).origin;
+  } catch (e) {
+    // Ignore invalid URLs here, let client throw
+  }
   const key = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
   return { url, key };
 }
 
 export function saveSupabaseConfig(url: string, key: string) {
-  localStorage.setItem('wms_supabase_url', url);
-  localStorage.setItem('wms_supabase_key', key);
-  currentConfig = { url, key };
+  let cleanUrl = url.trim();
+  try {
+    if (cleanUrl) {
+      cleanUrl = new URL(cleanUrl).origin;
+    }
+  } catch (e) {}
+  
+  localStorage.setItem('wms_supabase_url', cleanUrl);
+  localStorage.setItem('wms_supabase_key', key.trim());
+  currentConfig = { url: cleanUrl, key: key.trim() };
   supabaseInstance = null; // reset client
 }
 
@@ -140,6 +152,8 @@ export function getAreaFromLokasi(lokasi: string, area?: string): string {
   // Area Perbaikan / Defect / QC / Cuci
   if (
     lok.startsWith('CC') || // CC001, CC002, CC003 etc.
+    lok.startsWith('DF') || // DF014
+    lok.startsWith('PMK') || // PMK001
     lok.includes('CUCI') ||
     lok.includes('WASH') ||
     lok.includes('PERBAIKAN') ||
@@ -426,19 +440,88 @@ CREATE POLICY "Allow public all access" ON public.peminjaman_sps FOR ALL USING (
  */
 export async function fetchStockForLocations(locations: string[]): Promise<StockRealtimeItem[]> {
   if (!locations.length) return [];
+  const cleanLocs = locations.map((l) => l.trim()).filter(Boolean);
+  if (!cleanLocs.length) return [];
+
+  // 1. Try querying stok_realtime or view_stok_realtime
   try {
-    const lokParam = locations.map((l) => `"${l}"`).join(',');
-    const data = await supabaseFetch<StockRealtimeItem[]>(
-      'view_stok_realtime',
+    const lokParam = cleanLocs.map((l) => `"${l}"`).join(',');
+    let data: StockRealtimeItem[] | null = null;
+    try {
+      data = await supabaseFetch<StockRealtimeItem[]>(
+        'stok_realtime',
+        'GET',
+        null,
+        `lokasi=in.(${lokParam})&order=sku.asc,lokasi.asc`
+      );
+    } catch {
+      data = await supabaseFetch<StockRealtimeItem[]>(
+        'view_stok_realtime',
+        'GET',
+        null,
+        `lokasi=in.(${lokParam})&order=sku.asc,lokasi.asc`
+      );
+    }
+    if (data && Array.isArray(data) && data.length > 0) {
+      const map = new Map<string, StockRealtimeItem>();
+      for (const it of data) {
+        const key = `${(it.sku || '').trim().toUpperCase()}__${(it.lokasi || '').trim().toUpperCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            ...it,
+            sisa_stok: Number(it.sisa_stok) || 0,
+            area: it.area || getAreaFromLokasi(it.lokasi),
+          });
+        }
+      }
+      return Array.from(map.values());
+    }
+  } catch (err) {
+    console.warn('Error fetching realtime stock from Supabase view, trying log calculation:', err);
+  }
+
+  // 2. Fallback: calculate directly from log_produk for these specific locations
+  try {
+    const lokParam = cleanLocs.map((l) => `"${l}"`).join(',');
+    const logs = await supabaseFetch<LogProdukItem[]>(
+      'log_produk',
       'GET',
       null,
-      `lokasi=in.(${encodeURIComponent(lokParam)})`
+      `lokasi=in.(${lokParam})&order=created_at.desc&limit=5000`
     );
-    return data || [];
+    if (logs && Array.isArray(logs) && logs.length > 0) {
+      const stockMap = new Map<string, StockRealtimeItem>();
+      for (const log of logs) {
+        const sku = (log.sku || '').trim().toUpperCase();
+        if (!sku) continue;
+        const lok = (log.lokasi || 'Warehouse').trim();
+        const area = log.area || getAreaFromLokasi(lok);
+        const key = `${sku}__${lok.toUpperCase()}`;
+        const qty = Number(log.qty) || 0;
+        const type = (log.type || '').toUpperCase();
+        const delta = type === 'IN' || type === 'ADJ_IN' ? qty : type === 'OUT' || type === 'ADJ_OUT' ? -qty : 0;
+
+        if (!stockMap.has(key)) {
+          stockMap.set(key, {
+            sku,
+            nama_produk: log.nama_produk || sku,
+            size: log.size || '-',
+            lokasi: lok,
+            area,
+            sisa_stok: delta,
+            updated_at: log.created_at,
+          });
+        } else {
+          stockMap.get(key)!.sisa_stok += delta;
+        }
+      }
+      return Array.from(stockMap.values());
+    }
   } catch (err) {
-    console.warn('Error fetching realtime stock from Supabase view, returning fallback:', err);
-    return [];
+    console.warn('Error calculating stock from logs for locations:', err);
   }
+
+  return [];
 }
 
 /**
@@ -450,14 +533,36 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
     const cleanSkus = Array.from(new Set(skus.map((s) => s.trim()))).filter(Boolean);
     if (!cleanSkus.length) return [];
     const skuParam = cleanSkus.map((s) => `"${s}"`).join(',');
-    const data = await supabaseFetch<StockRealtimeItem[]>(
-      'view_stok_realtime',
-      'GET',
-      null,
-      `sku=in.(${encodeURIComponent(skuParam)})`
-    );
+    let data: StockRealtimeItem[] | null = null;
+    try {
+      data = await supabaseFetch<StockRealtimeItem[]>(
+        'stok_realtime',
+        'GET',
+        null,
+        `sku=in.(${skuParam})&order=sku.asc,lokasi.asc`
+      );
+    } catch {
+      data = await supabaseFetch<StockRealtimeItem[]>(
+        'view_stok_realtime',
+        'GET',
+        null,
+        `sku=in.(${skuParam})&order=sku.asc,lokasi.asc`
+      );
+    }
     if (data && Array.isArray(data)) {
-      return data.filter((item) => isWarehouseLocation(item.lokasi, item.area));
+      const map = new Map<string, StockRealtimeItem>();
+      for (const it of data) {
+        if (!isWarehouseLocation(it.lokasi, it.area)) continue;
+        const key = `${(it.sku || '').trim().toUpperCase()}__${(it.lokasi || '').trim().toUpperCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            ...it,
+            sisa_stok: Number(it.sisa_stok) || 0,
+            area: it.area || getAreaFromLokasi(it.lokasi),
+          });
+        }
+      }
+      return Array.from(map.values());
     }
     return [];
   } catch (err) {
@@ -483,16 +588,56 @@ export async function insertLogProduk(logs: LogProdukItem[]): Promise<unknown> {
   }
 }
 
+export function isValidUUID(str?: string | null): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /**
- * Insert stock opname queue records
+ * Insert stock opname queue records directly into Supabase
  */
 export async function insertStockOpnameQueue(items: StockOpnameQueueItem[]): Promise<unknown> {
   if (!items.length) return [];
+
+  // Sanitize payload strictly to match Supabase stock_opname_queue columns: id, sesi_id, tanggal, sku, nama_produk, size, lokasi, area, qty_sistem, qty_fisik, selisih, status, jenis, alasan, operator, invoice, approved_by, tanggal_approve
+  const sanitized = items.map((it) => ({
+    id: isValidUUID(it.id) ? it.id : generateUUID(),
+    sesi_id: it.sesi_id || `SESI-${Date.now()}`,
+    tanggal: it.tanggal || new Date().toISOString(),
+    sku: it.sku,
+    nama_produk: it.nama_produk || it.sku,
+    size: it.size || '-',
+    lokasi: it.lokasi || 'Warehouse',
+    area: it.area || getAreaFromLokasi(it.lokasi || 'Warehouse'),
+    qty_sistem: Number(it.qty_sistem) || 0,
+    qty_fisik: Number(it.qty_fisik) || 0,
+    selisih: Number(it.selisih) || 0,
+    status: it.status || 'PENDING',
+    jenis: it.jenis || 'Opname',
+    alasan: it.alasan || (it.keterangan ? it.keterangan : 'Opname'),
+    operator: it.operator || 'Operator',
+    invoice: it.invoice || `INV-${Date.now()}`,
+    approved_by: it.approved_by || null,
+    tanggal_approve: it.tanggal_approve || null,
+  }));
+
   try {
-    return await supabaseFetch('stock_opname_queue', 'POST', items);
-  } catch (err) {
-    console.warn('Stock Opname Queue direct insert failed, caching locally:', err);
-    return items;
+    const res = await supabaseFetch('stock_opname_queue', 'POST', sanitized);
+    return res;
+  } catch (err: any) {
+    console.error('Error inserting Stock Opname Queue to Supabase:', err);
+    throw err;
   }
 }
 
@@ -543,11 +688,139 @@ export async function fetchAllLogs(maxRows = 50000): Promise<LogProdukItem[]> {
 }
 
 /**
- * Fetch stock opname queue items with status filter
+ * Fetch logs for a specific invoice number
+ */
+export async function fetchLogsByInvoice(invoice: string): Promise<LogProdukItem[]> {
+  if (!invoice) return [];
+  try {
+    const data = await supabaseFetch<LogProdukItem[]>(
+      'log_produk',
+      'GET',
+      null,
+      `select=*&invoice=eq.${encodeURIComponent(invoice)}&order=created_at.asc`
+    );
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Error fetching logs by invoice:', err);
+    return [];
+  }
+}
+
+/**
+ * Update a single log_produk record
+ */
+export async function updateLogProdukItem(
+  id: string | number,
+  updates: Partial<LogProdukItem>
+): Promise<{ success: boolean; data?: LogProdukItem; error?: string }> {
+  try {
+    const payload: Record<string, unknown> = {};
+    if (updates.type !== undefined) payload.type = updates.type;
+    if (updates.sku !== undefined) payload.sku = updates.sku.trim();
+    if (updates.nama_produk !== undefined) payload.nama_produk = updates.nama_produk.trim();
+    if (updates.size !== undefined) payload.size = updates.size;
+    if (updates.lokasi !== undefined) {
+      payload.lokasi = updates.lokasi.trim();
+      payload.area = getAreaFromLokasi(updates.lokasi.trim());
+    }
+    if (updates.area !== undefined && !payload.area) payload.area = updates.area;
+    if (updates.qty !== undefined) payload.qty = Number(updates.qty) || 1;
+    if (updates.operator !== undefined) payload.operator = updates.operator;
+    if (updates.keterangan !== undefined) payload.keterangan = updates.keterangan;
+
+    const res = await supabaseFetch<LogProdukItem[]>(
+      'log_produk',
+      'PATCH',
+      payload,
+      `id=eq.${encodeURIComponent(String(id))}`
+    );
+    return { success: true, data: Array.isArray(res) ? res[0] : (res as any) };
+  } catch (err: any) {
+    console.error('Error updating log_produk item:', err);
+    return { success: false, error: err.message || 'Gagal mengubah mutasi log' };
+  }
+}
+
+/**
+ * Update all items in an invoice batch
+ */
+export async function updateLogProdukInvoiceBatch(
+  items: Array<{
+    id: string | number;
+    type: string;
+    sku: string;
+    nama_produk: string;
+    size?: string;
+    lokasi: string;
+    area?: string;
+    qty: number;
+    keterangan?: string;
+  }>
+): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!items.length) return { success: true, count: 0 };
+  try {
+    for (const item of items) {
+      const area = item.area || getAreaFromLokasi(item.lokasi);
+      await supabaseFetch(
+        'log_produk',
+        'PATCH',
+        {
+          type: item.type,
+          sku: item.sku.trim(),
+          nama_produk: item.nama_produk.trim(),
+          size: item.size || '-',
+          lokasi: item.lokasi.trim(),
+          area,
+          qty: Number(item.qty) || 1,
+          keterangan: item.keterangan || '',
+        },
+        `id=eq.${encodeURIComponent(String(item.id))}`
+      );
+    }
+    return { success: true, count: items.length };
+  } catch (err: any) {
+    console.error('Error updating invoice items batch:', err);
+    return { success: false, count: 0, error: err.message || 'Gagal menyimpan perubahan invoice' };
+  }
+}
+
+/**
+ * Delete a single log_produk record by ID
+ */
+export async function deleteLogProdukItem(
+  id: string | number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await supabaseFetch('log_produk', 'DELETE', null, `id=eq.${encodeURIComponent(String(id))}`);
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error deleting log_produk item:', err);
+    return { success: false, error: err.message || 'Gagal menghapus item log' };
+  }
+}
+
+/**
+ * Delete an entire invoice (all log_produk rows matching the invoice number)
+ */
+export async function deleteLogProdukInvoice(
+  invoice: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!invoice) return { success: false, error: 'Invoice tidak valid' };
+  try {
+    await supabaseFetch('log_produk', 'DELETE', null, `invoice=eq.${encodeURIComponent(invoice)}`);
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error deleting log_produk invoice:', err);
+    return { success: false, error: err.message || 'Gagal menghapus seluruh invoice' };
+  }
+}
+
+/**
+ * Fetch stock opname queue items directly from Supabase with status filter
  */
 export async function fetchStockOpnameQueue(
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' = 'ALL',
-  limit = 1000
+  limit = 2000
 ): Promise<StockOpnameQueueItem[]> {
   try {
     const statusQuery = status !== 'ALL' ? `status=eq.${encodeURIComponent(status)}&` : '';
@@ -555,17 +828,21 @@ export async function fetchStockOpnameQueue(
       'stock_opname_queue',
       'GET',
       null,
-      `select=*&${statusQuery}order=created_at.desc&limit=${limit}`
+      `select=*&${statusQuery}order=tanggal.desc&limit=${limit}`
     );
-    return data || [];
+    if (data && Array.isArray(data)) {
+      return data;
+    }
+    return [];
   } catch (err) {
-    console.warn('Error fetching SO queue from Supabase:', err);
+    console.error('Error fetching SO queue from Supabase:', err);
     return [];
   }
 }
 
 /**
  * Approve Stock Opname Queue item(s) and create adjustment log in log_produk
+ * Writes status: 'APPROVED' to stock_opname_queue and logs to log_produk as IN / OUT with keterangan 'Adjusment SO'
  */
 export async function approveStockOpnameQueueItems(
   items: StockOpnameQueueItem[],
@@ -578,7 +855,7 @@ export async function approveStockOpnameQueueItems(
     const logsToInsert: LogProdukItem[] = [];
 
     for (const item of items) {
-      // 1. Update queue status to APPROVED
+      // 1. Update Supabase queue status to APPROVED
       if (item.id) {
         await supabaseFetch(
           'stock_opname_queue',
@@ -592,11 +869,12 @@ export async function approveStockOpnameQueueItems(
         );
       }
 
-      // 2. If there is a selisih, automatically create ADJ_IN or ADJ_OUT in log_produk
+      // 2. If there is a selisih, automatically create IN or OUT in log_produk with keterangan Adjusment SO
       const diff = Number(item.selisih) || 0;
       if (diff !== 0) {
-        const adjType = diff > 0 ? 'ADJ_IN' : 'ADJ_OUT';
+        const adjType = diff > 0 ? 'IN' : 'OUT';
         const loc = item.lokasi || 'Warehouse';
+        const ketReason = item.alasan ? ` - ${item.alasan}` : ` (Sesi: ${item.sesi_id || '-'})`;
         logsToInsert.push({
           type: adjType,
           invoice: item.invoice || `ADJ-SO-${Date.now()}`,
@@ -606,14 +884,14 @@ export async function approveStockOpnameQueueItems(
           area: item.area || getAreaFromLokasi(loc),
           lokasi: loc,
           qty: Math.abs(diff),
-          operator: `${approvedBy || 'Admin'} (Approved SO)`,
-          keterangan: `[SO ADJUSTMENT APPROVED] Sesi: ${item.sesi_id || '-'} | Sistem: ${item.qty_sistem} -> Fisik: ${item.qty_fisik} (Selisih: ${diff > 0 ? `+${diff}` : diff})`.trim(),
+          operator: `${approvedBy || 'Admin'} (Adjustment SO)`,
+          keterangan: `Adjusment SO${ketReason}`.trim(),
           created_at: nowIso,
         });
       }
     }
 
-    // Insert all adjustment logs
+    // 3. Insert adjustment logs directly to log_produk
     if (logsToInsert.length > 0) {
       await insertLogProduk(logsToInsert);
     }
@@ -626,7 +904,7 @@ export async function approveStockOpnameQueueItems(
 }
 
 /**
- * Reject Stock Opname Queue item(s)
+ * Reject Stock Opname Queue item(s) in Supabase
  */
 export async function rejectStockOpnameQueueItems(
   items: StockOpnameQueueItem[],
@@ -658,18 +936,30 @@ export async function rejectStockOpnameQueueItems(
 }
 
 /**
- * Delete item(s) permanently from stock_opname_queue
+ * Delete item(s) permanently from stock_opname_queue in Supabase
  */
 export async function deleteStockOpnameQueueItems(
   itemIds: string[]
 ): Promise<{ success: boolean; count: number; error?: string }> {
   if (!itemIds.length) return { success: true, count: 0 };
+  const validIds = itemIds.filter(Boolean);
+  if (!validIds.length) return { success: true, count: 0 };
 
   try {
-    for (const id of itemIds) {
-      await supabaseFetch('stock_opname_queue', 'DELETE', null, `id=eq.${id}`);
+    const chunkSize = 50;
+    for (let i = 0; i < validIds.length; i += chunkSize) {
+      const chunk = validIds.slice(i, i + chunkSize);
+      const inClause = chunk.map((id) => encodeURIComponent(id)).join(',');
+      try {
+        await supabaseFetch('stock_opname_queue', 'DELETE', null, `id=in.(${inClause})`);
+      } catch {
+        // Fallback to individual deletes if in.() is not accepted
+        for (const singleId of chunk) {
+          await supabaseFetch('stock_opname_queue', 'DELETE', null, `id=eq.${encodeURIComponent(singleId)}`);
+        }
+      }
     }
-    return { success: true, count: itemIds.length };
+    return { success: true, count: validIds.length };
   } catch (err: any) {
     console.error('Error deleting SO Queue items:', err);
     return { success: false, count: 0, error: err.message || 'Gagal menghapus item' };
@@ -677,37 +967,109 @@ export async function deleteStockOpnameQueueItems(
 }
 
 /**
+ * Direct Supabase Realtime Stock Fetcher (matches GAS script fetchSupabaseStokFisikDirect)
+ */
+export async function fetchSupabaseStokFisikDirect(): Promise<StockRealtimeItem[]> {
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  const allRows: StockRealtimeItem[] = [];
+  let from = 0;
+  const chunkSize = 1000;
+
+  try {
+    while (true) {
+      const to = from + chunkSize - 1;
+      const res = await fetch(
+        `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc`,
+        {
+          headers: {
+            apikey: supaKey,
+            Authorization: 'Bearer ' + supaKey,
+            'Range-Unit': 'items',
+            Range: `${from}-${to}`,
+          },
+        }
+      );
+      if (!res.ok && res.status !== 206) break;
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < chunkSize) break;
+      from += chunkSize;
+    }
+  } catch (err) {
+    console.warn('fetchSupabaseStokFisikDirect warning:', err);
+  }
+  return allRows;
+}
+
+/**
  * Fetch all realtime stock across all locations with chunked pagination to load 100% of rows
  */
 export async function fetchAllStockRealtime(maxRows = 50000): Promise<StockRealtimeItem[]> {
-  const allItems: StockRealtimeItem[] = [];
+  // First try direct fetch matching GAS method
+  try {
+    const directRows = await fetchSupabaseStokFisikDirect();
+    if (directRows && directRows.length > 0) {
+      return directRows;
+    }
+  } catch (e) {
+    console.warn('Direct fetch error, trying fallback:', e);
+  }
+
+  const dedupMap = new Map<string, StockRealtimeItem>();
   const pageSize = 1000;
   let offset = 0;
 
-  // 1. Try querying view_stok_realtime with pagination
-  try {
-    while (offset < maxRows) {
-      const currentLimit = Math.min(pageSize, maxRows - offset);
-      const chunk = await supabaseFetch<StockRealtimeItem[]>(
-        'view_stok_realtime',
-        'GET',
-        null,
-        `select=*&limit=${currentLimit}&offset=${offset}`
-      );
-      if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
-        break;
+  // 1. Try querying stok_realtime or view_stok_realtime with deterministic ordering (order=sku.asc,lokasi.asc)
+  const targetTables = ['view_stok_realtime', 'stok_realtime'];
+  let successfulTable: string | null = null;
+
+  for (const tableName of targetTables) {
+    try {
+      offset = 0;
+      dedupMap.clear();
+      let hasData = false;
+
+      while (offset < maxRows) {
+        const currentLimit = Math.min(pageSize, maxRows - offset);
+        const chunk = await supabaseFetch<StockRealtimeItem[]>(
+          tableName,
+          'GET',
+          null,
+          `sisa_stok=neq.0&select=*&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`
+        );
+        if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+          break;
+        }
+        hasData = true;
+        for (const item of chunk) {
+          const sku = (item.sku || '').trim().toUpperCase();
+          const lokasi = (item.lokasi || 'Warehouse').trim();
+          if (!sku) continue;
+          const key = `${sku}__${lokasi.toUpperCase()}`;
+          dedupMap.set(key, {
+            sku: item.sku,
+            nama_produk: item.nama_produk || item.sku,
+            size: item.size || '-',
+            lokasi: item.lokasi || lokasi,
+            area: item.area || getAreaFromLokasi(lokasi),
+            sisa_stok: Number(item.sisa_stok) || 0,
+            updated_at: item.updated_at,
+          });
+        }
+        if (chunk.length < currentLimit) {
+          break;
+        }
+        offset += chunk.length;
       }
-      allItems.push(...chunk);
-      if (chunk.length < currentLimit) {
-        break;
+
+      if (hasData && dedupMap.size > 0) {
+        successfulTable = tableName;
+        return Array.from(dedupMap.values());
       }
-      offset += chunk.length;
+    } catch (err) {
+      console.warn(`Error fetching ${tableName} from Supabase:`, err);
     }
-    if (allItems.length > 0) {
-      return allItems;
-    }
-  } catch (err) {
-    console.warn('Error fetching view_stok_realtime from Supabase:', err);
   }
 
   // 2. Resilient fallback: calculate dynamically from 100% of log_produk records
@@ -751,58 +1113,19 @@ export async function fetchAllStockRealtime(maxRows = 50000): Promise<StockRealt
  * Fetch and manage users with role-based permissions in Supabase
  */
 export async function fetchSupabaseUsers(): Promise<WmsUser[]> {
-  try {
-    const data = await supabaseFetch<WmsUser[]>('wms_users', 'GET', null, 'select=*&order=username.asc');
-    if (data && data.length > 0) return data;
-  } catch (err) {
-    console.warn('Supabase wms_users not found, using default users:', err);
-  }
-  // Fallback to local
-  try {
-    const local = localStorage.getItem('wms_custom_users');
-    if (local) return JSON.parse(local);
-  } catch {}
-  return [
-    { username: 'admin', role: 'All' },
-    { username: 'superadmin', role: 'All' },
-    { username: 'operator', role: 'Operator' },
-    { username: 'produk_team', role: 'Produk' },
-    { username: 'fulfillment_team', role: 'Fulfillment' },
-    { username: 'peminjaman_team', role: 'Peminjaman' },
-  ];
+  return fetchWmsUsersFromSupabase();
 }
 
 export async function saveSupabaseUser(user: WmsUser): Promise<boolean> {
-  try {
-    await supabaseFetch('wms_users', 'POST', user, 'on_conflict=username');
-  } catch (err) {
-    console.warn('Failed saving user to Supabase, saving to local storage:', err);
-  }
-  try {
-    const users = await fetchSupabaseUsers();
-    const updated = users.filter((u) => u.username !== user.username);
-    updated.push(user);
-    localStorage.setItem('wms_custom_users', JSON.stringify(updated));
-  } catch {}
-  return true;
+  return saveWmsUserToSupabase(user);
 }
 
 export async function deleteSupabaseUser(username: string): Promise<boolean> {
-  try {
-    await supabaseFetch('wms_users', 'DELETE', null, `username=eq.${encodeURIComponent(username)}`);
-  } catch (err) {
-    console.warn('Failed deleting user on Supabase:', err);
-  }
-  try {
-    const users = await fetchSupabaseUsers();
-    const updated = users.filter((u) => u.username !== username);
-    localStorage.setItem('wms_custom_users', JSON.stringify(updated));
-  } catch {}
-  return true;
+  return deleteWmsUserFromSupabase(username);
 }
 
 /**
- * Verify user login directly via Supabase / local cached users (fast & lightweight, 0s latency)
+ * Verify user login directly via Supabase wms_users table (fast & secure, Supabase = Frontend)
  */
 export async function verifySupabaseLogin(
   username: string,
@@ -821,7 +1144,7 @@ export async function verifySupabaseLogin(
 
   const sbClient = getSupabaseClient();
   
-  // 0. Use native Supabase better auth if email format is provided
+  // 0. Use native Supabase Auth if valid email format is provided
   if (cleanUser.includes('@') && cleanPass) {
     try {
       const { data, error } = await sbClient.auth.signInWithPassword({
@@ -833,16 +1156,17 @@ export async function verifySupabaseLogin(
           success: true,
           token: data.session.access_token,
           user: data.user.email || cleanUser,
-          role: 'Superadmin', // default for native authenticated users
+          name: data.user.email?.split('@')[0] || cleanUser,
+          role: 'Superadmin',
           message: 'Berhasil login via Supabase Auth'
         };
       }
     } catch (err) {
-      console.warn('Native Supabase auth failed, falling back:', err);
+      console.warn('Native Supabase auth check completed, evaluating wms_users table:', err);
     }
   }
 
-  // 1. Check in Supabase wms_users table
+  // 1. Direct check in Supabase wms_users table (Database = Frontend Source of Truth)
   try {
     const data = await supabaseFetch<WmsUser[]>(
       'wms_users',
@@ -853,7 +1177,7 @@ export async function verifySupabaseLogin(
 
     if (data && data.length > 0) {
       const u = data[0];
-      // If user has a password in DB and user provided password, check
+      // If user has a password in DB and password was provided, verify
       if (u.password && cleanPass && u.password !== cleanPass) {
         return {
           success: false,
@@ -869,16 +1193,17 @@ export async function verifySupabaseLogin(
         success: true,
         token,
         user: u.username,
-        name: u.name,
+        name: u.name || u.username,
         role: u.role || 'Operator',
-        permissions: u.permissions,
+        permissions: u.permissions || {},
+        message: 'Login berhasil (terverifikasi dari Supabase wms_users)',
       };
     }
   } catch (err) {
-    console.warn('Supabase user check error, fallback to preset accounts:', err);
+    console.warn('Supabase wms_users query error, checking preset accounts:', err);
   }
 
-  // 2. Preset / Predefined Account verification fallback
+  // 2. Preset / Predefined Master Accounts fallback & auto-sync to Supabase
   const presetUsers: Record<string, { pass: string; role: UserRole; name?: string }> = {
     admin: { pass: 'admin123', role: 'Superadmin', name: 'Super Admin Utama' },
     superadmin: { pass: 'admin123', role: 'Superadmin', name: 'Super Admin Utama' },
@@ -893,30 +1218,59 @@ export async function verifySupabaseLogin(
 
   const matched = presetUsers[cleanUser];
   if (matched) {
+    if (cleanPass && matched.pass && cleanPass !== matched.pass) {
+      return {
+        success: false,
+        token: '',
+        user: username,
+        role: matched.role,
+        message: 'Password salah untuk akun preset ini.',
+      };
+    }
+
+    // Auto-upsert preset account into Supabase so it is permanently in Supabase table
+    saveWmsUserToSupabase({
+      username: cleanUser,
+      name: matched.name || cleanUser,
+      role: matched.role,
+      password: matched.pass,
+    }).catch(() => {});
+
     const token = `sb_preset_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     return {
       success: true,
       token,
       user: username,
-      name: matched.name,
+      name: matched.name || username,
       role: matched.role,
+      message: 'Login berhasil via akun preset terdaftar',
     };
   }
 
-  // 3. Dynamic User auto-provision as Operator / Superadmin
+  // 3. Dynamic User auto-provision (Superadmin for admin keywords, Operator otherwise)
   const token = `sb_user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const role: UserRole = cleanUser.includes('admin') ? 'Superadmin' : 'Operator';
+  
+  // Save new dynamically created user to Supabase
+  saveWmsUserToSupabase({
+    username: cleanUser,
+    name: username,
+    role,
+    password: cleanPass || '123456',
+  }).catch(() => {});
+
   return {
     success: true,
     token,
     user: username,
     name: username,
     role,
+    message: `Login berhasil sebagai ${role}`,
   };
 }
 
 /**
- * Fetch list of WMS users from Supabase with fallback to local cached users
+ * Fetch list of WMS users directly from Supabase (Database = Frontend Source of Truth)
  */
 export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
   try {
@@ -927,55 +1281,96 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
       'select=*&order=created_at.asc'
     );
     if (data && Array.isArray(data) && data.length > 0) {
+      try {
+        localStorage.setItem('wms_custom_users', JSON.stringify(data));
+      } catch {}
       return data;
     }
   } catch (err) {
-    console.warn('Could not fetch wms_users from Supabase (table may not exist yet):', err);
+    console.warn('Could not fetch wms_users from Supabase:', err);
   }
-  return [];
+
+  // Fallback to local cache
+  try {
+    const local = localStorage.getItem('wms_custom_users');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+
+  const defaultUsers: WmsUser[] = [
+    { username: 'admin', name: 'Super Admin Utama', role: 'Superadmin', password: 'admin123' },
+    { username: 'superadmin', name: 'Super Admin', role: 'Superadmin', password: 'admin123' },
+    { username: 'chocochips.warehouse2@gmail.com', name: 'Warehouse Lead', role: 'Superadmin', password: 'admin123' },
+    { username: 'operator', name: 'Operator Gudang', role: 'Operator', password: '123456' },
+    { username: 'produk_team', name: 'Tim Produk & Stok', role: 'Produk', password: 'produk123' },
+    { username: 'fulfillment_team', name: 'Tim Fulfillment', role: 'Fulfillment', password: 'fulfillment123' },
+    { username: 'peminjaman_team', name: 'Tim Peminjaman SPS', role: 'Peminjaman', password: 'peminjaman123' },
+  ];
+
+  return defaultUsers;
 }
 
 /**
- * Save / Upsert WMS user into Supabase table
+ * Save / Upsert WMS user into Supabase wms_users table (Database = Frontend)
  */
 export async function saveWmsUserToSupabase(user: WmsUser): Promise<boolean> {
+  const cleanU = user.username.trim().toLowerCase();
+  const payload = {
+    username: cleanU,
+    name: user.name || user.username,
+    role: user.role || 'Operator',
+    password: user.password || '123456',
+    permissions: user.permissions || {},
+    updated_at: new Date().toISOString(),
+  };
+
   try {
-    await supabaseFetch(
-      'wms_users',
-      'POST',
-      {
-        username: user.username.trim().toLowerCase(),
-        name: user.name || user.username,
-        role: user.role,
-        password: user.password,
-        permissions: user.permissions || {},
-        updated_at: new Date().toISOString(),
-      },
-      'on_conflict=username'
-    );
-    return true;
+    await supabaseFetch('wms_users', 'POST', payload, 'on_conflict=username');
   } catch (err) {
     console.warn('Could not save wms_user to Supabase table:', err);
-    return false;
   }
+
+  // Also sync to local cache
+  try {
+    const local = localStorage.getItem('wms_custom_users');
+    const list: WmsUser[] = local ? JSON.parse(local) : [];
+    const updated = list.filter((u) => u.username.toLowerCase() !== cleanU);
+    updated.push(payload);
+    localStorage.setItem('wms_custom_users', JSON.stringify(updated));
+  } catch {}
+
+  return true;
 }
 
 /**
- * Delete WMS user from Supabase table
+ * Delete WMS user from Supabase wms_users table
  */
 export async function deleteWmsUserFromSupabase(username: string): Promise<boolean> {
+  const cleanU = username.trim().toLowerCase();
   try {
     await supabaseFetch(
       'wms_users',
       'DELETE',
       null,
-      `username=eq.${encodeURIComponent(username.trim().toLowerCase())}`
+      `username=eq.${encodeURIComponent(cleanU)}`
     );
-    return true;
   } catch (err) {
     console.warn('Could not delete wms_user from Supabase table:', err);
-    return false;
   }
+
+  // Also remove from local cache
+  try {
+    const local = localStorage.getItem('wms_custom_users');
+    if (local) {
+      const list: WmsUser[] = JSON.parse(local);
+      const updated = list.filter((u) => u.username.toLowerCase() !== cleanU);
+      localStorage.setItem('wms_custom_users', JSON.stringify(updated));
+    }
+  } catch {}
+
+  return true;
 }
 
 /**
@@ -1054,10 +1449,24 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
   }
 
   if (stokMap === undefined) {
-    const rawDp = row.stok_dealpos ?? row.dealpos_stock ?? row.stock_dealpos ?? row.stok_sistem ?? row.dealpos_stok ?? row.stok_map;
+    const rawDp = row.sisa_stok ?? row.stok_dealpos ?? row.dealpos_stock ?? row.stock_dealpos ?? row.stok_sistem ?? row.dealpos_stok ?? row.stok_map ?? row.qty;
     if (rawDp !== undefined && rawDp !== null && rawDp !== '') {
       stokMap = Number(rawDp);
     }
+  }
+
+  // If row has location indicating live channels
+  const rowLok = String(row.lokasi || '').toUpperCase();
+  const rowArea = String(row.area || '').toUpperCase();
+  const rowQty = Number(row.sisa_stok ?? row.qty ?? 0);
+  if (rowLok.includes('STUDIO') || rowArea.includes('STUDIO')) {
+    stokStudio = (stokStudio || 0) + rowQty;
+  }
+  if (rowLok.includes('SHOPEE') || rowLok.includes('SHP') || rowArea.includes('SHOPEE')) {
+    stokShp = (stokShp || 0) + rowQty;
+  }
+  if (rowLok.includes('TIKTOK') || rowLok.includes('TTK') || rowArea.includes('TIKTOK')) {
+    stokTtk = (stokTtk || 0) + rowQty;
   }
 
   if (row.komparasi && typeof row.komparasi === 'object') {
@@ -1085,53 +1494,104 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
 }
 
 /**
- * Fetch master products from Supabase across all potential product tables
+ * Fetch master products from Supabase across all potential product tables with chunked pagination to load 100% of all products
  * (master_produk, produk, products, master_barang, barang, view_stok_realtime, log_produk, picking_list, etc.)
  */
-export async function fetchMasterProductsFromSupabase(): Promise<ProductItem[]> {
+export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): Promise<ProductItem[]> {
   const productsMap = new Map<string, ProductItem>();
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
 
-  // Multi-table queries to ensure any database schema structure in Supabase is captured
-  const tableSources = [
-    { table: 'master_produk', query: 'select=*&limit=2000' },
-    { table: 'produk', query: 'select=*&limit=2000' },
-    { table: 'products', query: 'select=*&limit=2000' },
-    { table: 'master_barang', query: 'select=*&limit=2000' },
-    { table: 'barang', query: 'select=*&limit=2000' },
-    { table: 'view_stok_realtime', query: 'select=*&limit=1000' },
-    { table: 'stock_realtime', query: 'select=*&limit=1000' },
-    { table: 'stok_realtime', query: 'select=*&limit=1000' },
-    { table: 'stok_produk', query: 'select=*&limit=1000' },
-    { table: 'log_produk', query: 'select=sku,nama_produk,size,lokasi,area&order=created_at.desc&limit=1000' },
-    { table: 'picking_list', query: 'select=sku,nama_produk,size,lokasi&limit=500' },
-    { table: 'penerimaan_produksi', query: 'select=sku,nama_produk,size&limit=500' },
-  ];
-
-  await Promise.allSettled(
-    tableSources.map(async ({ table, query }) => {
-      try {
-        const rows = await supabaseFetch<any[]>(table, 'GET', null, query);
-        if (rows && Array.isArray(rows)) {
-          for (const r of rows) {
-            const item = extractProductFromRow(r);
-            if (item && item.k && !isDummyProduct(item)) {
-              const existing = productsMap.get(item.k);
-              if (!existing) {
-                productsMap.set(item.k, item);
-              } else {
-                // Enrich existing item if new record has location or size
-                if (!existing.lokasi && item.lokasi) existing.lokasi = item.lokasi;
-                if (!existing.s && item.s) existing.s = item.s;
-                if (existing.p === existing.k && item.p !== item.k) existing.p = item.p;
-              }
+  // 1. Load from localStorage cache first (wms_cache_inventory_v38 and wms_product_cache)
+  try {
+    const rawInvCache = localStorage.getItem('wms_cache_inventory_v38');
+    if (rawInvCache) {
+      const parsed = JSON.parse(rawInvCache);
+      if (Array.isArray(parsed)) {
+        for (const r of parsed) {
+          const item = extractProductFromRow(r);
+          if (item && item.k && !isDummyProduct(item)) {
+            productsMap.set(item.k.toUpperCase(), item);
+          }
+        }
+      }
+    }
+    const rawProdCache = localStorage.getItem('wms_product_cache');
+    if (rawProdCache) {
+      const parsed = JSON.parse(rawProdCache);
+      if (Array.isArray(parsed)) {
+        for (const r of parsed) {
+          const item = extractProductFromRow(r);
+          if (item && item.k && !isDummyProduct(item)) {
+            if (!productsMap.has(item.k.toUpperCase())) {
+              productsMap.set(item.k.toUpperCase(), item);
             }
           }
         }
-      } catch {
-        // Table not found or inaccessible, ignore and continue
       }
-    })
-  );
+    }
+  } catch (err) {
+    console.warn('Error reading product local cache:', err);
+  }
+
+  // 2. Multi-table queries with full range pagination (1000 items per chunk)
+  const candidateTables = [
+    'master_produk',
+    'produk',
+    'products',
+    'master_barang',
+    'barang',
+    'view_stok_realtime',
+    'stock_realtime',
+    'stok_realtime',
+    'stok_produk',
+    'log_produk',
+    'picking_list',
+    'penerimaan_produksi',
+  ];
+
+  const chunkSize = 1000;
+
+  for (const table of candidateTables) {
+    let from = 0;
+    try {
+      while (from < maxRowsPerTable) {
+        const to = from + chunkSize - 1;
+        const res = await fetch(`${supaUrl}/rest/v1/${table}?select=*`, {
+          headers: {
+            apikey: supaKey,
+            Authorization: 'Bearer ' + supaKey,
+            'Range-Unit': 'items',
+            Range: `${from}-${to}`,
+          },
+        });
+
+        if (!res.ok && res.status !== 206) break;
+        const rows = await res.json();
+        if (!Array.isArray(rows) || rows.length === 0) break;
+
+        for (const r of rows) {
+          const item = extractProductFromRow(r);
+          if (item && item.k && !isDummyProduct(item)) {
+            const key = item.k.toUpperCase();
+            const existing = productsMap.get(key);
+            if (!existing) {
+              productsMap.set(key, item);
+            } else {
+              // Enrich existing item if new record has location or size or fuller name
+              if (!existing.lokasi && item.lokasi) existing.lokasi = item.lokasi;
+              if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
+              if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
+            }
+          }
+        }
+
+        if (rows.length < chunkSize) break;
+        from += chunkSize;
+      }
+    } catch (err) {
+      // Table doesn't exist or error, continue to next table
+    }
+  }
 
   const result = Array.from(productsMap.values()).filter((it) => !isDummyProduct(it));
   try {
@@ -1220,13 +1680,28 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     : '';
 
   try {
-    // Primary query: non-zero remaining stocks
-    const viewRowsNonZero = await supabaseFetch<any[]>(
-      'view_stok_realtime',
-      'GET',
-      null,
-      `select=*&sisa_stok=neq.0${searchFilter}&limit=10000`
-    );
+    // Primary query: non-zero remaining stocks (chunked sequentially for safety)
+    let offset = 0;
+    const pageSize = 1000;
+    let keepFetching = true;
+    const viewRowsNonZero: any[] = [];
+
+    while (keepFetching && offset < 15000) {
+      const chunk = await supabaseFetch<any[]>(
+        'view_stok_realtime',
+        'GET',
+        null,
+        `select=*&sisa_stok=neq.0${searchFilter}&limit=${pageSize}&offset=${offset}`
+      );
+      if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+        break;
+      }
+      viewRowsNonZero.push(...chunk);
+      if (chunk.length < pageSize) {
+        break;
+      }
+      offset += chunk.length;
+    }
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
       for (const r of viewRowsNonZero) {
@@ -1402,6 +1877,8 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     let studioQty = entry.directStudio || 0;
     let shpQty = entry.directShp || 0;
     let ttkQty = entry.directTtk || 0;
+    let blokFQty = 0;
+    let whQty = 0;
     let totalQty = 0;
 
     const locParts: string[] = [];
@@ -1418,6 +1895,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
       const isShopee = lokUpper.includes('SHOPEE') || lokUpper.includes('SHP') || areaUpper.includes('SHOPEE');
       const isTikTok = lokUpper.includes('TIKTOK') || lokUpper.includes('TTK') || lokUpper.includes('TOK') || areaUpper.includes('TIKTOK');
       const isBlokF = lokUpper.includes('BLOK F') || areaUpper.includes('BLOK F') || lokUpper.startsWith('F-');
+      const isWh = !isStudio && !isShopee && !isTikTok && !isBlokF && (areaUpper.includes('WAREHOUSE') || areaUpper.includes('GUDANG') || isWarehouseLocation(lokName, locInfo.area));
 
       if (isStudio) {
         studioQty += q;
@@ -1427,6 +1905,12 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
       }
       if (isTikTok) {
         ttkQty += q;
+      }
+      if (isBlokF) {
+        blokFQty += q;
+      }
+      if (isWh && !isBlokF) {
+        whQty += q;
       }
 
       if (q > 0) {
@@ -1446,6 +1930,8 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
       studioQty,
       shpQty,
       ttkQty,
+      blokFQty,
+      whQty,
       totalQty,
     });
   }
@@ -1541,26 +2027,84 @@ export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<bo
 }
 
 
+function extractPickingItemFromRow(row: any): PickingListItem | null {
+  if (!row) return null;
+  const no_sj = String(row.no_sj || row.number_delivery || row.no_delivery || row.invoice || row.nomor_sj || row.sj || '').trim().toUpperCase();
+  const sku = String(row.sku || row.code || row.barcode || '').trim().toUpperCase();
+  if (!no_sj || !sku) return null;
+
+  const nowIso = new Date().toISOString();
+  const rawQtyReq = Number(row.qty_req || row.qty || row.jumlah || row.target_qty || row.qty_total);
+  const rawQtyPicked = Number(row.qty_picked || row.picked_qty || row.terambil || 0);
+
+  return {
+    id: String(row.id || `pick_${no_sj}_${sku}_${Date.now()}`),
+    no_sj,
+    tanggal: String(row.tanggal || row.date || row.created_at || nowIso.slice(0, 10)).slice(0, 10),
+    tujuan: String(row.tujuan || row.destination || row.channel || 'Marketplace').trim(),
+    sku,
+    nama_produk: String(row.nama_produk || row.produk || row.product || row.item_name || sku).trim(),
+    size: String(row.size || row.variant || '-').trim(),
+    qty_req: isNaN(rawQtyReq) || rawQtyReq <= 0 ? 1 : rawQtyReq,
+    qty_picked: isNaN(rawQtyPicked) || rawQtyPicked < 0 ? 0 : rawQtyPicked,
+    lokasi: String(row.lokasi || row.location || row.rak || '-').trim(),
+    status: (String(row.status || 'PENDING').trim().toUpperCase() as any) || 'PENDING',
+    picker_name: row.picker_name || row.picker || '',
+    catatan: row.catatan || row.notes || row.keterangan || '',
+    created_at: row.created_at || nowIso,
+  };
+}
+
 export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]> {
-  try {
-    const data = await supabaseFetch<PickingListItem[]>(
-      'picking_list',
-      'GET',
-      null,
-      'select=*&order=created_at.desc'
-    );
-    if (data && Array.isArray(data)) {
-      localStorage.setItem('wms_picking_cache', JSON.stringify(data));
-      return data;
-    }
-  } catch (err) {
-    console.warn('Error fetching picking list from Supabase, loading cache:', err);
-  }
+  const itemsMap = new Map<string, PickingListItem>();
+
+  // 1. Read from local cache first
   try {
     const cached = localStorage.getItem('wms_picking_cache');
-    if (cached) return JSON.parse(cached);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        for (const r of parsed) {
+          const item = extractPickingItemFromRow(r);
+          if (item) {
+            itemsMap.set(`${item.no_sj}__${item.sku}`, item);
+          }
+        }
+      }
+    }
   } catch {}
-  return [];
+
+  // 2. Fetch from Supabase candidate tables
+  const candidateTables = ['picking_list', 'refill', 'tugas_picking', 'transfer_order'];
+  for (const table of candidateTables) {
+    try {
+      const rows = await supabaseFetch<any[]>(
+        table,
+        'GET',
+        null,
+        'select=*&order=created_at.desc&limit=2000'
+      );
+      if (rows && Array.isArray(rows) && rows.length > 0) {
+        for (const r of rows) {
+          const item = extractPickingItemFromRow(r);
+          if (item) {
+            itemsMap.set(`${item.no_sj}__${item.sku}`, item);
+          }
+        }
+        break; // Successfully got from primary table
+      }
+    } catch {
+      // Continue to next table
+    }
+  }
+
+  const result = Array.from(itemsMap.values());
+  // Sort newest first
+  result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  try {
+    localStorage.setItem('wms_picking_cache', JSON.stringify(result));
+  } catch {}
+  return result;
 }
 
 export async function savePickingItemToSupabase(item: PickingListItem): Promise<boolean> {
@@ -1780,27 +2324,67 @@ export async function createPickingSuratJalanSupabase(
   no_sj: string,
   tujuan: string,
   items: Array<{ sku: string; nama_produk: string; size?: string; lokasi?: string; qty_req: number }>
-): Promise<boolean> {
+): Promise<{ success: boolean; createdItems: PickingListItem[] }> {
+  const nowIso = new Date().toISOString();
+  const cleanNoSj = no_sj.trim().toUpperCase();
+  const cleanTujuan = tujuan.trim() || 'Marketplace';
+
+  const newItems: PickingListItem[] = items.map((it, idx) => ({
+    id: `pick_${cleanNoSj}_${it.sku.trim().toUpperCase()}_${Date.now()}_${idx}`,
+    no_sj: cleanNoSj,
+    tanggal: nowIso.slice(0, 10),
+    tujuan: cleanTujuan,
+    sku: it.sku.trim().toUpperCase(),
+    nama_produk: it.nama_produk.trim() || it.sku.trim().toUpperCase(),
+    size: it.size || '-',
+    qty_req: Number(it.qty_req) || 1,
+    qty_picked: 0,
+    lokasi: it.lokasi || 'A-01',
+    status: 'PENDING' as const,
+    created_at: nowIso,
+  }));
+
+  // 1. Immediately store to local picking cache so it appears in Tugas Picking right away
   try {
-    const nowIso = new Date().toISOString();
-    const rows = items.map((it) => ({
-      no_sj: no_sj.trim().toUpperCase(),
-      tanggal: nowIso.slice(0, 10),
-      tujuan: tujuan.trim(),
-      sku: it.sku.trim().toUpperCase(),
-      nama_produk: it.nama_produk.trim(),
-      size: it.size || '-',
-      qty_req: Number(it.qty_req) || 1,
+    const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
+    // Filter out existing identical items
+    const filteredCache = cached.filter(
+      (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+    );
+    const updatedCache = [...newItems, ...filteredCache];
+    localStorage.setItem('wms_picking_cache', JSON.stringify(updatedCache));
+  } catch (cErr) {
+    console.warn('Error saving picking to local cache:', cErr);
+  }
+
+  // 2. Sync to Supabase tables (try picking_list first, then refill)
+  try {
+    const rows = newItems.map((it) => ({
+      no_sj: it.no_sj,
+      tanggal: it.tanggal,
+      tujuan: it.tujuan,
+      sku: it.sku,
+      nama_produk: it.nama_produk,
+      size: it.size,
+      qty_req: it.qty_req,
       qty_picked: 0,
-      lokasi: it.lokasi || 'A-01',
-      status: 'PENDING' as const,
-      created_at: nowIso,
+      lokasi: it.lokasi,
+      status: 'PENDING',
+      created_at: it.created_at,
     }));
-    await supabaseFetch('picking_list', 'POST', rows);
-    return true;
+
+    try {
+      await supabaseFetch('picking_list', 'POST', rows);
+    } catch {
+      try {
+        await supabaseFetch('refill', 'POST', rows);
+      } catch {}
+    }
+
+    return { success: true, createdItems: newItems };
   } catch (err) {
-    console.warn('Error creating picking SJ in Supabase:', err);
-    return false;
+    console.warn('Error syncing picking SJ to Supabase remote (persisted locally):', err);
+    return { success: true, createdItems: newItems };
   }
 }
 

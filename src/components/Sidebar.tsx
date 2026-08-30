@@ -16,6 +16,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  ClipboardCheck,
+  ClipboardList,
+  ArrowRightLeft,
+  Boxes,
   Lock,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
@@ -36,7 +40,6 @@ interface SidebarProps {
   isRealtimeConnected: boolean;
   onOpenSettings: () => void;
   onOpenApkModal: () => void;
-  onOpenInventoryDrawer: () => void;
   onLogout: () => void;
   totalScannedCount: number;
 }
@@ -56,7 +59,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isRealtimeConnected,
   onOpenSettings,
   onOpenApkModal,
-  onOpenInventoryDrawer,
   onLogout,
   totalScannedCount,
 }) => {
@@ -65,6 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPicking = hasPermission(session, 'can_picking');
   const canPeminjaman = hasPermission(session, 'can_peminjaman');
   const canViewInventory = hasPermission(session, 'can_view_inventory');
+  const canApproveSo = hasPermission(session, 'can_approve_so');
   const canManageUsers = hasPermission(session, 'can_manage_users');
 
   const navItems = [
@@ -75,6 +78,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ScanBarcode,
       description: 'Tembak lokasi rak & SKU',
       access: canScan,
+    },
+    {
+      id: 'inventory' as ActivePage,
+      label: 'Inventory Realtime',
+      shortLabel: 'Inventory',
+      icon: Layers,
+      description: 'Stok fisik rak & per SKU',
+      access: canViewInventory || canScan || userIsAdmin,
+    },
+    {
+      id: 'stock_opname' as ActivePage,
+      label: 'Stock Opname',
+      shortLabel: 'SO',
+      icon: ClipboardList,
+      description: 'Audit fisik & antrean approval',
+      access: canViewInventory || canScan || userIsAdmin || canApproveSo,
+    },
+    {
+      id: 'mutasi_log' as ActivePage,
+      label: 'Mutasi Log',
+      shortLabel: 'Mutasi',
+      icon: ArrowRightLeft,
+      description: 'Riwayat IN/OUT & edit invoice',
+      access: canViewInventory || canScan || userIsAdmin,
     },
     {
       id: 'picking_tasks' as ActivePage,
@@ -173,31 +200,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         Alat & Utilitas
       </div>
-
-      {/* Realtime Inventory Drawer (If user has view_inventory or scan permission) */}
-      {(canViewInventory || canScan || userIsAdmin) && (
-        <button
-          type="button"
-          onClick={() => {
-            onOpenInventoryDrawer();
-            onCloseMobile();
-          }}
-          title="Lihat Stok & Riwayat Realtime"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-            collapsed ? 'justify-center px-2' : ''
-          }`}
-        >
-          <div className="relative p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-            <Layers className="w-4 h-4 text-emerald-500" />
-            {totalScannedCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-[#ff7a00] text-white text-[9px] font-extrabold w-3.5 h-3.5 rounded-full flex items-center justify-center">
-                {totalScannedCount}
-              </span>
-            )}
-          </div>
-          {!collapsed && <span className="truncate">Audit & Stok Realtime</span>}
-        </button>
-      )}
 
       {/* APK / PWA Modal */}
       <button
