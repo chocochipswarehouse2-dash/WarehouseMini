@@ -196,7 +196,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       setRawItems(data || []);
     } catch (e) {
       console.warn('Gagal memuat picking list:', e);
-      onNotify('Gagal memuat picking list dari Supabase', 'error');
+      onNotify('Gagal memuat picking list dari Database', 'error');
     } finally {
       setLoading(false);
     }
@@ -1131,7 +1131,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
         setUnexpectedItems([]);
         loadPickingList();
       } else {
-        onNotify('Gagal menyimpan hasil rekap ke Supabase. Cek koneksi.', 'error');
+        onNotify('Gagal menyimpan hasil rekap ke Database. Cek koneksi.', 'error');
       }
     } catch (e: any) {
       onNotify(`Error: ${e.message || 'Gagal menyimpan'}`, 'error');
@@ -1176,7 +1176,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
         await createPickingSuratJalanSupabase(sj.no_sj, sj.tujuan, sj.items);
       }
 
-      onNotify('Berhasil membuat 3 contoh Surat Jalan Picking di Supabase!', 'success');
+      onNotify('Berhasil membuat 3 contoh Surat Jalan Picking di Database!', 'success');
       loadPickingList();
     } catch (e) {
       onNotify('Gagal membuat contoh Surat Jalan', 'error');
@@ -1228,14 +1228,14 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
     try {
       const ok = await createPickingSuratJalanSupabase(newSjNumber, newSjTujuan, validRows);
       if (ok) {
-        onNotify(`Surat Jalan ${newSjNumber} berhasil dibuat di Supabase!`, 'success');
+        onNotify(`Surat Jalan ${newSjNumber} berhasil dibuat di Database!`, 'success');
         setIsCreateModalOpen(false);
         setNewSjNumber('');
         setNewSjTujuan('');
         setNewSjRows([{ sku: '', nama_produk: '', size: '', lokasi: '', qty_req: 1 }]);
         loadPickingList();
       } else {
-        onNotify('Gagal menyimpan Surat Jalan baru ke Supabase', 'error');
+        onNotify('Gagal menyimpan Surat Jalan baru ke Database', 'error');
       }
     } catch (err: any) {
       onNotify(`Error: ${err.message}`, 'error');
@@ -2206,7 +2206,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                     onChange={(e) => setSyncOutLog(e.target.checked)}
                     className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00]"
                   />
-                  <span>Otomatis catat mutasi keluar (OUT) di database Supabase log_produk</span>
+                  <span>Otomatis catat mutasi keluar (OUT) di database log_produk</span>
                 </label>
               </div>
 
@@ -2264,7 +2264,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
             onClick={loadPickingList}
             disabled={loading}
             className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-[#ff7a00] text-slate-600 dark:text-slate-300 transition-colors"
-            title="Muat Ulang / Sinkronisasi Supabase"
+            title="Muat Ulang / Sinkronisasi Database"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#ff7a00]' : ''}`} />
           </button>
@@ -2275,35 +2275,6 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
           >
             <Plus className="w-4 h-4" /> Buat SJ Baru
           </button>
-        </div>
-      </div>
-
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <span className="text-[10px] font-extrabold uppercase text-slate-400">Total Surat Jalan</span>
-          <div className="text-xl font-black text-slate-800 dark:text-white mt-0.5">{sjGroups.length} SJ</div>
-        </div>
-
-        <div className="bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <span className="text-[10px] font-extrabold uppercase text-amber-500">Belum Selesai</span>
-          <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-0.5">
-            {sjGroups.filter((g) => g.status !== 'SELESAI').length} SJ
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <span className="text-[10px] font-extrabold uppercase text-blue-500">Sedang Dipick</span>
-          <div className="text-xl font-black text-blue-600 dark:text-blue-400 mt-0.5">
-            {sjGroups.filter((g) => g.status === 'SEDANG PICKING').length} SJ
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <span className="text-[10px] font-extrabold uppercase text-emerald-500">Selesai</span>
-          <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-            {sjGroups.filter((g) => g.status === 'SELESAI').length} SJ
-          </div>
         </div>
       </div>
 
@@ -2362,7 +2333,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
         {loading && sjGroups.length === 0 ? (
           <div className="text-center py-16 bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800">
             <Loader2 className="w-8 h-8 text-[#ff7a00] animate-spin mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-500">Memuat Surat Jalan dari Supabase...</p>
+            <p className="text-xs font-bold text-slate-500">Memuat Surat Jalan dari Database...</p>
           </div>
         ) : filteredSJs.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800 border-dashed p-6">
@@ -3191,7 +3162,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                     </>
                   ) : (
                     <>
-                      <Send className="w-4 h-4" /> Simpan ke Supabase
+                      <Send className="w-4 h-4" /> Simpan ke Database
                     </>
                   )}
                 </button>

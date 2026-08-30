@@ -117,8 +117,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div
           title={
             isRealtimeConnected
-              ? 'Supabase Realtime: Terhubung'
-              : 'Supabase Realtime: Menghubungkan...'
+              ? 'Database Realtime: Terhubung'
+              : 'Database Realtime: Menghubungkan...'
           }
           className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#0f172a] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-800 ml-1"
         >

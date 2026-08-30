@@ -139,7 +139,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
     } catch (e) {
       console.warn('Error loading live data:', e);
       if (onNotify) {
-        onNotify('Gagal memuat data dari Supabase.', 'warning');
+        onNotify('Gagal memuat data dari Database.', 'warning');
       }
     } finally {
       setIsLoading(false);
@@ -460,7 +460,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-bold text-sm text-slate-800 dark:text-slate-100">
-                  Supabase Real-time Sync
+                  Cloud Real-time Sync
                 </h2>
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live DB
@@ -642,7 +642,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
               {isLoading ? (
                 <div className="py-16 text-center text-slate-400 space-y-2">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />
-                  <p className="text-xs">Memuat riwayat log dari Supabase...</p>
+                  <p className="text-xs">Memuat riwayat log dari Database...</p>
                 </div>
               ) : filteredLogs.length === 0 ? (
                 <div className="text-center py-16 bg-slate-50/50 dark:bg-[#0F0F12]/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-4">
@@ -653,7 +653,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     {logSearch || logTypeFilter !== 'ALL' || logAreaFilter !== 'ALL'
                       ? 'Coba sesuaikan filter atau kata kunci pencarian.'
-                      : 'Belum ada catatan mutasi di log_produk Supabase.'}
+                      : 'Belum ada catatan mutasi di log_produk Cloud Database.'}
                   </p>
                 </div>
               ) : (
@@ -927,7 +927,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
               {isLoading ? (
                 <div className="py-16 text-center text-slate-400 space-y-2">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />
-                  <p className="text-xs">Memuat antrean Stock Opname dari Supabase...</p>
+                  <p className="text-xs">Memuat antrean Stock Opname dari Database...</p>
                 </div>
               ) : filteredSoQueue.length === 0 ? (
                 <div className="text-center py-16 bg-slate-50/50 dark:bg-[#0F0F12]/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-4">
@@ -1209,7 +1209,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
                         type="button"
                         onClick={handleManualSyncCatalog}
                         disabled={isSyncingCatalog}
-                        title="Sync Katalog & Stok DealPOS dari GAS/Sheets/Supabase"
+                        title="Sync Katalog & Stok DealPOS dari GAS/Sheets/Cloud Database"
                         className="px-2 py-1 rounded-md text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
                       >
                         <RefreshCw className={`w-3 h-3 ${isSyncingCatalog ? 'animate-spin' : ''}`} />
@@ -1248,7 +1248,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
               {isLoading ? (
                 <div className="py-16 text-center text-slate-400 space-y-2">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />
-                  <p className="text-xs">Memuat data stok lokasi dari Supabase...</p>
+                  <p className="text-xs">Memuat data stok lokasi dari Database...</p>
                 </div>
               ) : filteredStockList.length === 0 ? (
                 <div className="text-center py-16 bg-slate-50/50 dark:bg-[#0F0F12]/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-4">

@@ -104,7 +104,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
             return a.produk.localeCompare(b.produk);
           });
         });
-        if (showToast) onShowToast(`Berhasil memuat ${liveStocks.length} data stok real-time dari Supabase!`, 'success');
+        if (showToast) onShowToast(`Berhasil memuat ${liveStocks.length} data stok real-time dari Database!`, 'success');
       } else if (productCatalog && productCatalog.length > 0 && channelStocks.length === 0) {
         // Fallback to catalog if no stock logs yet
         const mapped: ChannelStockItem[] = productCatalog.map((p) => ({
@@ -121,7 +121,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
       }
     } catch (err) {
       console.warn('Error loading real stock from Supabase:', err);
-      if (showToast) onShowToast('Gagal memuat stok real Supabase', 'error');
+      if (showToast) onShowToast('Gagal memuat stok real Database', 'error');
     } finally {
       setLoadingStock(false);
     }
@@ -364,7 +364,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
         },
       ]);
 
-      onShowToast(`Peminjaman ${noSps} berhasil disimpan ke Supabase!`, 'success');
+      onShowToast(`Peminjaman ${noSps} berhasil disimpan ke Database!`, 'success');
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Gagal mengirim pengajuan peminjaman';
       onShowToast(errMsg, 'error');
@@ -833,7 +833,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                           {isComboboxOpen && (
                             <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 p-1 space-y-1">
                               <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                                <span>Pilih dari Real-Time Stok Supabase</span>
+                                <span>Pilih dari Real-Time Stok Database</span>
                                 <span className="text-[9px] text-emerald-500 font-mono font-normal">Area BLOK F</span>
                               </div>
                               {filteredProductOpts.length === 0 ? (
@@ -1004,7 +1004,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                   loadChannelStocks(true);
                   onRefreshCatalog();
                 }}
-                title="Sinkronisasi Stok Real-Time Supabase"
+                title="Sinkronisasi Stok Real-Time Database"
                 className={`p-1.5 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-400 hover:text-white text-xs transition-colors ${
                   loadingStock ? 'animate-spin text-emerald-500' : ''
                 }`}
@@ -1102,7 +1102,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                     <td colSpan={4} className="p-6 text-center text-slate-400 italic text-xs">
                       <div className="flex items-center justify-center gap-2">
                         <RefreshCw className="w-4 h-4 animate-spin text-emerald-500" />
-                        <span>Memuat stok real-time dari Supabase...</span>
+                        <span>Memuat stok real-time dari Database...</span>
                       </div>
                     </td>
                   </tr>

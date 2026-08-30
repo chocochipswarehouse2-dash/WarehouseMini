@@ -121,9 +121,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Supabase Config State
   const [supabaseUrl, setSupabaseUrl] = useState<string>('');
   const [supabaseKey, setSupabaseKey] = useState<string>('');
-  const [isTestingSupabase, setIsTestingSupabase] = useState<boolean>(false);
-  const [supabaseStatus, setSupabaseStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [supabaseStatusMsg, setSupabaseStatusMsg] = useState<string>('');
+  const [isTestingDatabase, setIsTestingDatabase] = useState<boolean>(false);
+  const [databaseStatus, setDatabaseStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [databaseStatusMsg, setDatabaseStatusMsg] = useState<string>('');
 
   // GAS Config State
   const [gasEndpoint, setGasEndpoint] = useState<string>('');
@@ -162,7 +162,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       const loadedUsers = getLocalUsers();
       setUserList(loadedUsers);
-      setSupabaseStatus('idle');
+      setDatabaseStatus('idle');
       setGasStatus('idle');
     }
   }, [isOpen, session]);
@@ -177,7 +177,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   // --- SUPABASE ACTIONS ---
-  const handleSaveSupabase = () => {
+  const handleSaveDatabase = () => {
     const cleanUrl = supabaseUrl.trim();
     const cleanKey = supabaseKey.trim();
 
@@ -191,17 +191,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     playSuccessBeep();
   };
 
-  const handleResetSupabase = () => {
+  const handleResetDatabase = () => {
     setSupabaseUrl(DEFAULT_SUPABASE_URL);
     setSupabaseKey(DEFAULT_SUPABASE_ANON_KEY);
     saveSupabaseConfig(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY);
-    onNotify('Supabase di-reset ke konfigurasi default Chocochips!', 'info');
+    onNotify('Database di-reset ke konfigurasi default Chocochips!', 'info');
   };
 
-  const handleTestSupabase = async () => {
-    setIsTestingSupabase(true);
-    setSupabaseStatus('idle');
-    setSupabaseStatusMsg('');
+  const handleTestDatabase = async () => {
+    setIsTestingDatabase(true);
+    setDatabaseStatus('idle');
+    setDatabaseStatusMsg('');
 
     try {
       saveSupabaseConfig(supabaseUrl.trim(), supabaseKey.trim());
@@ -212,20 +212,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         throw new Error(error.message);
       }
 
-      setSupabaseStatus('success');
-      setSupabaseStatusMsg('Koneksi database Supabase berhasil! Siap menyimpan data.');
+      setDatabaseStatus('success');
+      setDatabaseStatusMsg('Koneksi database berhasil! Siap menyimpan data.');
       playSuccessBeep();
       vibrateDevice(50);
-      onNotify('Koneksi Supabase berhasil terhubung!', 'success');
+      onNotify('Koneksi database berhasil terhubung!', 'success');
     } catch (err: unknown) {
       console.warn('Supabase test failed:', err);
-      setSupabaseStatus('error');
-      const msg = err instanceof Error ? err.message : 'Gagal menghubungi database Supabase.';
-      setSupabaseStatusMsg(msg);
+      setDatabaseStatus('error');
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi database.';
+      setDatabaseStatusMsg(msg);
       playErrorBeep();
-      onNotify(`Koneksi Supabase gagal: ${msg}`, 'error');
+      onNotify(`Koneksi database gagal: ${msg}`, 'error');
     } finally {
-      setIsTestingSupabase(false);
+      setIsTestingDatabase(false);
     }
   };
 
@@ -289,7 +289,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await onRefreshCatalog(gasEndpoint.trim(), session?.token || '');
       playSuccessBeep();
       vibrateDevice(50);
-      onNotify('Katalog produk master berhasil disinkronkan dari Supabase!', 'success');
+      onNotify('Katalog produk master berhasil disinkronkan dari Cloud!', 'success');
     } catch {
       playErrorBeep();
       onNotify('Gagal menyinkronkan katalog produk.', 'error');
@@ -360,7 +360,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setUserList(updated);
     saveLocalUsersList(updated);
 
-    // Also sync to Supabase table if available
+    // Also sync to Database table if available
     saveWmsUserToSupabase({
       username: cleanU,
       name: cleanName,
@@ -467,7 +467,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Supabase Cloud DB, Integrasi Google Apps Script, Manajemen Pengguna & Perangkat
+                Cloud DB, Integrasi Google Apps Script, Manajemen Pengguna & Perangkat
               </p>
             </div>
           </div>
@@ -484,15 +484,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
           <button
             type="button"
-            onClick={() => setActiveTab('supabase')}
+            onClick={() => setActiveTab('database')}
             className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'supabase'
+              activeTab === 'database'
                 ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>Supabase Database</span>
+            <span>Cloud Database</span>
             {isRealtimeConnected && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]"></span>
             )}
@@ -916,9 +916,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {/* ========================================================================= */}
-          {/* TAB: SUPABASE CONFIG (SUPERADMIN ONLY) */}
+          {/* TAB: DATABASE CONFIG (SUPERADMIN ONLY) */}
           {/* ========================================================================= */}
-          {activeTab === 'supabase' && (
+          {activeTab === 'database' && (
             <div className="space-y-5">
               <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -927,7 +927,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                      Status Supabase Realtime
+                      Status Database Realtime
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {isRealtimeConnected
@@ -940,27 +940,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleTestSupabase}
-                    disabled={isTestingSupabase}
+                    onClick={handleTestDatabase}
+                    disabled={isTestingDatabase}
                     className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingSupabase ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingDatabase ? 'animate-spin' : ''}`} />
                     <span>Tes Koneksi</span>
                   </button>
                 </div>
               </div>
 
-              {supabaseStatus === 'success' && (
+              {databaseStatus === 'success' && (
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span>{supabaseStatusMsg}</span>
+                  <span>{databaseStatusMsg}</span>
                 </div>
               )}
 
-              {supabaseStatus === 'error' && (
+              {databaseStatus === 'error' && (
                 <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                  <span>{supabaseStatusMsg}</span>
+                  <span>{databaseStatusMsg}</span>
                 </div>
               )}
 
@@ -968,14 +968,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Supabase Project URL
+                      Database Project URL
                     </label>
                     <button
                       type="button"
-                      onClick={() => handleCopy(supabaseUrl, 'Supabase URL')}
+                      onClick={() => handleCopy(supabaseUrl, 'Database URL')}
                       className="text-[11px] text-slate-500 hover:text-[#ff7a00] flex items-center gap-1 cursor-pointer"
                     >
-                      {copiedKey === 'Supabase URL' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      {copiedKey === 'Database URL' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                       <span>Salin</span>
                     </button>
                   </div>
@@ -983,7 +983,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="text"
                     value={supabaseUrl}
                     onChange={(e) => setSupabaseUrl(e.target.value)}
-                    placeholder="https://xyz.supabase.co"
+                    placeholder="https://xyz.database.co"
                     className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
                   />
                 </div>
@@ -991,14 +991,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Supabase Anon / Public API Key
+                      Database Anon / Public API Key
                     </label>
                     <button
                       type="button"
-                      onClick={() => handleCopy(supabaseKey, 'Supabase Key')}
+                      onClick={() => handleCopy(supabaseKey, 'Database Key')}
                       className="text-[11px] text-slate-500 hover:text-[#ff7a00] flex items-center gap-1 cursor-pointer"
                     >
-                      {copiedKey === 'Supabase Key' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      {copiedKey === 'Database Key' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                       <span>Salin</span>
                     </button>
                   </div>
@@ -1015,7 +1015,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={handleResetSupabase}
+                  onClick={handleResetDatabase}
                   className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -1024,11 +1024,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={handleSaveSupabase}
+                  onClick={handleSaveDatabase}
                   className="px-4 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Simpan Konfigurasi Supabase</span>
+                  <span>Simpan Konfigurasi Database</span>
                 </button>
               </div>
             </div>

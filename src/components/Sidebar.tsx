@@ -354,7 +354,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         : 'bg-amber-500'
                     }`}
                   />
-                  <span>{isRealtimeConnected ? 'Supabase Live' : 'Menghubungkan...'}</span>
+                  <span>{isRealtimeConnected ? 'Live Database' : 'Menghubungkan...'}</span>
                 </div>
               </div>
             </div>
@@ -440,7 +440,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       isRealtimeConnected ? 'bg-[#ff7a00] shadow-[0_0_6px_#ff7a00]' : 'bg-amber-500'
                     }`}
                   />
-                  <span>{isRealtimeConnected ? 'Live Supabase' : 'Syncing...'}</span>
+                  <span>{isRealtimeConnected ? 'Live Database' : 'Syncing...'}</span>
                 </div>
               </div>
             )}

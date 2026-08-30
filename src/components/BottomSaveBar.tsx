@@ -52,7 +52,7 @@ export const BottomSaveBar: React.FC<BottomSaveBarProps> = ({
           {isSaving ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-black" />
-              <span>MENYIMPAN KE SUPABASE & GAS...</span>
+              <span>MENYIMPAN DATA...</span>
             </>
           ) : (
             <>

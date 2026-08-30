@@ -525,9 +525,9 @@ export default function App() {
         });
       } catch {}
 
-      showToast('Data scan berhasil disimpan ke Supabase!', 'success');
+      showToast('Data scan berhasil disimpan ke Database!', 'success');
       showPushNotification('✅ Data Scan Tersimpan', {
-        body: `Berhasil mencatat ${scannedData.length} item scan ke Supabase.`,
+        body: `Berhasil mencatat ${scannedData.length} item scan ke Database.`,
       });
 
       setScannedData([]);
@@ -538,7 +538,7 @@ export default function App() {
     } catch (err: unknown) {
       console.error(err);
       playErrorBeep();
-      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan jaringan atau Supabase Error';
+      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan jaringan atau Database Error';
       showToast(msg, 'error');
     } finally {
       setIsSaving(false);
