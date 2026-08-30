@@ -44,6 +44,7 @@ import {
   getAreaFromLokasi,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple } from '../utils/sortUtils';
 
 interface LiveInventoryDrawerProps {
   isOpen: boolean;
@@ -194,16 +195,15 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
     return logs.filter((log) => {
       // 1. Search Query
       if (logSearch.trim()) {
-        const q = logSearch.toLowerCase().trim();
-        const matchSku = (log.sku || '').toLowerCase().includes(q);
-        const matchName = (log.nama_produk || '').toLowerCase().includes(q);
-        const matchLok = (log.lokasi || '').toLowerCase().includes(q);
-        const matchInv = (log.invoice || '').toLowerCase().includes(q);
-        const matchOp = (log.operator || '').toLowerCase().includes(q);
-        const matchKet = (log.keterangan || '').toLowerCase().includes(q);
-        if (!matchSku && !matchName && !matchLok && !matchInv && !matchOp && !matchKet) {
-          return false;
-        }
+        const isMatch = fuzzySearchMultiple(logSearch, [
+          log.sku,
+          log.nama_produk,
+          log.lokasi,
+          log.invoice,
+          log.operator,
+          log.keterangan
+        ]);
+        if (!isMatch) return false;
       }
 
       // 2. Type Filter
@@ -223,7 +223,7 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
   // Filtered SO Queue
   const filteredSoQueue = useMemo(() => {
-    return soQueue.filter((item) => {
+    const filtered = soQueue.filter((item) => {
       // 1. Status filter (Default PENDING)
       if (soStatusFilter !== 'ALL') {
         const itemStatus = (item.status || 'PENDING').toUpperCase();
@@ -238,19 +238,20 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
       // 3. Search Query
       if (soSearch.trim()) {
-        const q = soSearch.toLowerCase().trim();
-        const matchSku = (item.sku || '').toLowerCase().includes(q);
-        const matchName = (item.nama_produk || '').toLowerCase().includes(q);
-        const matchLok = (item.lokasi || '').toLowerCase().includes(q);
-        const matchOp = (item.operator || '').toLowerCase().includes(q);
-        const matchSesi = (item.sesi_id || '').toLowerCase().includes(q);
-        if (!matchSku && !matchName && !matchLok && !matchOp && !matchSesi) {
-          return false;
-        }
+        const isMatch = fuzzySearchMultiple(soSearch, [
+          item.sku,
+          item.nama_produk,
+          item.lokasi,
+          item.operator,
+          item.sesi_id
+        ]);
+        if (!isMatch) return false;
       }
 
       return true;
     });
+    
+    return sortAlphabeticalAndSize(filtered, (i) => i.nama_produk || i.sku || '', (i) => i.size || '');
   }, [soQueue, soStatusFilter, soDiffFilter, soSearch]);
 
   // Pending count for SO badge
@@ -260,16 +261,15 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
   // Filtered Stock List
   const filteredStockList = useMemo(() => {
-    return stockList.filter((item) => {
+    const filtered = stockList.filter((item) => {
       // 1. Search Query
       if (stockSearch.trim()) {
-        const q = stockSearch.toLowerCase().trim();
-        const matchSku = (item.sku || '').toLowerCase().includes(q);
-        const matchName = (item.nama_produk || '').toLowerCase().includes(q);
-        const matchLok = (item.lokasi || '').toLowerCase().includes(q);
-        if (!matchSku && !matchName && !matchLok) {
-          return false;
-        }
+        const isMatch = fuzzySearchMultiple(stockSearch, [
+          item.sku,
+          item.nama_produk,
+          item.lokasi
+        ]);
+        if (!isMatch) return false;
       }
 
       // 2. Area Filter
@@ -280,6 +280,8 @@ export const LiveInventoryDrawer: React.FC<LiveInventoryDrawerProps> = ({
 
       return true;
     });
+
+    return sortAlphabeticalAndSize(filtered, (i) => i.nama_produk || i.sku || '', (i) => i.size || '');
   }, [stockList, stockSearch, stockAreaFilter]);
 
   // Checkbox handlers for SO Queue

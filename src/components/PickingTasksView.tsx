@@ -72,6 +72,7 @@ import {
   playSaveSuccessChime,
   vibrateDevice,
 } from '../services/audio';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch } from '../utils/sortUtils';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 interface PickingTasksViewProps {
@@ -365,6 +366,22 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
 
     // Evaluate group status based on items
     const result = Array.from(map.values()).map((g) => {
+      // Sort items by lokasi (Rack location) to optimize picker route
+      g.items.sort((a, b) => {
+        const locA = (a.lokasi || '').toUpperCase().trim();
+        const locB = (b.lokasi || '').toUpperCase().trim();
+        if (locA < locB) return -1;
+        if (locA > locB) return 1;
+        
+        // If same rack, sort by product name/SKU
+        const nameA = (a.nama_produk || a.sku || '').toUpperCase().trim();
+        const nameB = (b.nama_produk || b.sku || '').toUpperCase().trim();
+        if (nameA < nameB) return -1;
+        if (nameA > nameB) return 1;
+        
+        return 0;
+      });
+
       const isAllDone = g.items.length > 0 && g.items.every((it) => it.status === 'SELESAI');
       const isAnyStarted = g.items.some((it) => it.qty_picked > 0 || it.status === 'SEDANG PICKING');
 
@@ -408,14 +425,16 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
 
   // Filtered SJ list for display
   const filteredSJs = sjGroups.filter((g) => {
-    const matchSearch =
-      g.no_sj.toLowerCase().includes(search.toLowerCase()) ||
-      g.tujuan.toLowerCase().includes(search.toLowerCase()) ||
-      g.items.some(
-        (it) =>
-          it.sku.toLowerCase().includes(search.toLowerCase()) ||
-          it.nama_produk.toLowerCase().includes(search.toLowerCase())
-      );
+    let matchSearch = true;
+    if (search.trim()) {
+      // Create an array of strings to search through: no_sj, tujuan, and all item SKUs and names
+      const searchTargets = [
+        g.no_sj,
+        g.tujuan,
+        ...g.items.flatMap(it => [it.sku, it.nama_produk])
+      ];
+      matchSearch = fuzzySearchMultiple(search, searchTargets);
+    }
 
     if (!matchSearch) return false;
 

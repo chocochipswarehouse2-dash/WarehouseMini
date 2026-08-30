@@ -38,6 +38,7 @@ import {
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
 } from '../services/gasApi';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch } from '../utils/sortUtils';
 
 interface PeminjamanViewProps {
   session: UserSession | null;
@@ -403,34 +404,32 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
   };
 
   // Filter channel stocks
-  const filteredStocks = channelStocks.filter((it) => {
-    // Channel / Area filter
-    if (selectedChannel === 'BLOK_F') {
-      const inBlokF =
-        it.locStr.toUpperCase().includes('BLOK F') ||
-        it.locStr.toUpperCase().includes('RAK F') ||
-        it.studioQty > 0 ||
-        it.shpQty > 0 ||
-        it.ttkQty > 0;
-      if (!inBlokF && it.totalQty <= 0) return false;
-    } else if (selectedChannel === 'STUDIO') {
-      if (it.studioQty <= 0 && !it.locStr.toUpperCase().includes('STUDIO')) return false;
-    } else if (selectedChannel === 'SHOPEE') {
-      if (it.shpQty <= 0 && !it.locStr.toUpperCase().includes('SHOPEE') && !it.locStr.toUpperCase().includes('SHP')) return false;
-    } else if (selectedChannel === 'TIKTOK') {
-      if (it.ttkQty <= 0 && !it.locStr.toUpperCase().includes('TIKTOK') && !it.locStr.toUpperCase().includes('TTK')) return false;
-    }
+  const filteredStocks = (() => {
+    const filtered = channelStocks.filter((it) => {
+      // Channel / Area filter
+      if (selectedChannel === 'BLOK_F') {
+        const inBlokF =
+          it.locStr.toUpperCase().includes('BLOK F') ||
+          it.locStr.toUpperCase().includes('RAK F') ||
+          it.studioQty > 0 ||
+          it.shpQty > 0 ||
+          it.ttkQty > 0;
+        if (!inBlokF && it.totalQty <= 0) return false;
+      } else if (selectedChannel === 'STUDIO') {
+        if (it.studioQty <= 0 && !it.locStr.toUpperCase().includes('STUDIO')) return false;
+      } else if (selectedChannel === 'SHOPEE') {
+        if (it.shpQty <= 0 && !it.locStr.toUpperCase().includes('SHOPEE') && !it.locStr.toUpperCase().includes('SHP')) return false;
+      } else if (selectedChannel === 'TIKTOK') {
+        if (it.ttkQty <= 0 && !it.locStr.toUpperCase().includes('TIKTOK') && !it.locStr.toUpperCase().includes('TTK')) return false;
+      }
 
-    // Search query filter
-    if (!searchStock.trim()) return true;
-    const q = searchStock.toLowerCase();
-    return (
-      it.produk.toLowerCase().includes(q) ||
-      it.sku.toLowerCase().includes(q) ||
-      it.size.toLowerCase().includes(q) ||
-      it.locStr.toLowerCase().includes(q)
-    );
-  });
+      // Search query filter
+      if (!searchStock.trim()) return true;
+      return fuzzySearchMultiple(searchStock, [it.sku, it.produk, it.size, it.locStr]);
+    });
+    
+    return sortAlphabeticalAndSize(filtered, (i) => i.produk || i.sku || '', (i) => i.size || '');
+  })();
 
   // Calculate totals
   const totalStockItems = filteredStocks.length;
@@ -773,12 +772,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                 {items.map((item, index) => {
                   const isComboboxOpen = activeComboboxId === item.id;
                   const pool = channelStocks.length > 0 ? channelStocks : productCatalog;
-                  const filteredProductOpts = pool.filter((p) => {
-                    const name = 'p' in p ? p.p : p.produk;
-                    const sku = 'k' in p ? p.k : p.sku;
-                    const q = comboboxSearch.toLowerCase();
-                    return name.toLowerCase().includes(q) || sku.toLowerCase().includes(q);
-                  });
+                  const filteredProductOpts = (() => {
+                    const filtered = pool.filter((p) => {
+                      const name = 'p' in p ? p.p : p.produk;
+                      const sku = 'k' in p ? p.k : p.sku;
+                      return fuzzySearchMultiple(comboboxSearch, [name, sku]);
+                    });
+                    return sortAlphabeticalAndSize(filtered, (p) => ('p' in p ? p.p : p.produk) || ('k' in p ? p.k : p.sku) || '', (p) => ('s' in p ? p.s : p.size) || '');
+                  })();
 
                   return (
                     <div

@@ -26,10 +26,7 @@ export default defineConfig(() => {
           theme_color: '#b7550e',
           background_color: '#0f172a',
           display: 'standalone',
-          display_override: ['window-controls-overlay', 'tabbed', 'standalone', 'minimal-ui'],
-          tab_strip: {
-            home_tab: 'auto'
-          },
+          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
           orientation: 'portrait',
           scope: '/WarehouseMini/',
           start_url: '/WarehouseMini/',
@@ -136,7 +133,7 @@ export default defineConfig(() => {
               icons: [{ src: 'icon-192.png', sizes: '192x192' }]
             }
           ]
-        }
+        } as any
       })
     ],
     resolve: {

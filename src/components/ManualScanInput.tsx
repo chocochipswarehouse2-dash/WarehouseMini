@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ProductItem } from '../types';
 import { searchProductsInSupabase, isDummyProduct } from '../services/supabase';
+import { sortAlphabeticalAndSize } from '../utils/sortUtils';
 
 interface ManualScanInputProps {
   onScan: (sku: string) => void;
@@ -93,7 +94,8 @@ export const ManualScanInput: React.FC<ManualScanInputProps> = ({
       }
     });
 
-    return Array.from(map.values()).slice(0, 25);
+    const results = Array.from(map.values()).slice(0, 25);
+    return sortAlphabeticalAndSize(results, (p) => p.p || p.k || '', (p) => p.s || '');
   }, [inputValue, products, supabaseMatches]);
 
   // Live remote search debouncer when user types

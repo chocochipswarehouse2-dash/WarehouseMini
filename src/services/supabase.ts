@@ -692,7 +692,7 @@ export async function fetchAllStockRealtime(maxRows = 50000): Promise<StockRealt
         'view_stok_realtime',
         'GET',
         null,
-        `select=*&order=updated_at.desc&limit=${currentLimit}&offset=${offset}`
+        `select=*&limit=${currentLimit}&offset=${offset}`
       );
       if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
         break;
@@ -818,6 +818,29 @@ export async function verifySupabaseLogin(
 }> {
   const cleanUser = username.trim().toLowerCase();
   const cleanPass = (password || '').trim();
+
+  const sbClient = getSupabaseClient();
+  
+  // 0. Use native Supabase better auth if email format is provided
+  if (cleanUser.includes('@') && cleanPass) {
+    try {
+      const { data, error } = await sbClient.auth.signInWithPassword({
+        email: cleanUser,
+        password: cleanPass
+      });
+      if (!error && data.session) {
+        return {
+          success: true,
+          token: data.session.access_token,
+          user: data.user.email || cleanUser,
+          role: 'Superadmin', // default for native authenticated users
+          message: 'Berhasil login via Supabase Auth'
+        };
+      }
+    } catch (err) {
+      console.warn('Native Supabase auth failed, falling back:', err);
+    }
+  }
 
   // 1. Check in Supabase wms_users table
   try {
@@ -1118,6 +1141,26 @@ export async function fetchMasterProductsFromSupabase(): Promise<ProductItem[]> 
 }
 
 /**
+ * Helper to build fuzzy search queries (AND for all words)
+ */
+export function buildFuzzySearchQuery(keyword: string, columns: string[]): string {
+  const tokens = keyword.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return '';
+  
+  if (tokens.length === 1) {
+    const term = encodeURIComponent(tokens[0]);
+    return `&or=(${columns.map(c => `${c}.ilike.*${term}*`).join(',')})`;
+  }
+  
+  const andParts = tokens.map(token => {
+    const term = encodeURIComponent(token);
+    return `or(${columns.map(c => `${c}.ilike.*${term}*`).join(',')})`;
+  });
+  
+  return `&and=(${andParts.join(',')})`;
+}
+
+/**
  * Live search products directly in Supabase with ILIKE filters
  */
 export async function searchProductsInSupabase(keyword: string): Promise<ProductItem[]> {
@@ -1126,13 +1169,13 @@ export async function searchProductsInSupabase(keyword: string): Promise<Product
 
   const foundMap = new Map<string, ProductItem>();
   const searchTargets = [
-    { table: 'master_produk', filter: `or=(sku.ilike.*${encodeURIComponent(cleanQ)}*,nama_produk.ilike.*${encodeURIComponent(cleanQ)}*,kategori.ilike.*${encodeURIComponent(cleanQ)}*)&limit=40` },
-    { table: 'produk', filter: `or=(sku.ilike.*${encodeURIComponent(cleanQ)}*,nama.ilike.*${encodeURIComponent(cleanQ)}*,nama_produk.ilike.*${encodeURIComponent(cleanQ)}*)&limit=40` },
-    { table: 'products', filter: `or=(sku.ilike.*${encodeURIComponent(cleanQ)}*,name.ilike.*${encodeURIComponent(cleanQ)}*)&limit=40` },
-    { table: 'master_barang', filter: `or=(kode_barang.ilike.*${encodeURIComponent(cleanQ)}*,nama_barang.ilike.*${encodeURIComponent(cleanQ)}*)&limit=40` },
-    { table: 'view_stok_realtime', filter: `or=(sku.ilike.*${encodeURIComponent(cleanQ)}*,nama_produk.ilike.*${encodeURIComponent(cleanQ)}*)&limit=40` },
-    { table: 'log_produk', filter: `or=(sku.ilike.*${encodeURIComponent(cleanQ)}*,nama_produk.ilike.*${encodeURIComponent(cleanQ)}*)&order=created_at.desc&limit=40` },
-    { table: 'picking_list', filter: `or=(sku.ilike.*${encodeURIComponent(cleanQ)}*,nama_produk.ilike.*${encodeURIComponent(cleanQ)}*)&limit=40` },
+    { table: 'master_produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk', 'kategori']).substring(1)}&limit=40` },
+    { table: 'produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama', 'nama_produk']).substring(1)}&limit=40` },
+    { table: 'products', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'name']).substring(1)}&limit=40` },
+    { table: 'master_barang', filter: `${buildFuzzySearchQuery(cleanQ, ['kode_barang', 'nama_barang']).substring(1)}&limit=40` },
+    { table: 'view_stok_realtime', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk']).substring(1)}&limit=40` },
+    { table: 'log_produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk']).substring(1)}&order=created_at.desc&limit=40` },
+    { table: 'picking_list', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk']).substring(1)}&limit=40` },
   ];
 
   await Promise.allSettled(
@@ -1176,7 +1219,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
 
   // 1. Fetch from view_stok_realtime prioritizing rows with sisa_stok <> 0
   const searchFilter = searchKeyword && searchKeyword.trim()
-    ? `&or=(sku.ilike.*${encodeURIComponent(searchKeyword.trim())}*,nama_produk.ilike.*${encodeURIComponent(searchKeyword.trim())}*)`
+    ? buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])
     : '';
 
   try {
@@ -1264,7 +1307,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
   // 2. Also fetch and calculate from log_produk to ensure complete realtime accuracy
   try {
     const logQuery = searchKeyword && searchKeyword.trim()
-      ? `select=sku,nama_produk,size,area,lokasi,qty,type&or=(sku.ilike.*${encodeURIComponent(searchKeyword.trim())}*,nama_produk.ilike.*${encodeURIComponent(searchKeyword.trim())}*)&order=created_at.desc&limit=2000`
+      ? `select=sku,nama_produk,size,area,lokasi,qty,type${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&order=created_at.desc&limit=2000`
       : 'select=sku,nama_produk,size,area,lokasi,qty,type&order=created_at.desc&limit=5000';
 
     const logRows = await supabaseFetch<any[]>('log_produk', 'GET', null, logQuery);
@@ -1308,7 +1351,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
   // 3. Fetch Master Produk to enrich product names & include products with 0 stock
   try {
     const masterQuery = searchKeyword && searchKeyword.trim()
-      ? `select=*&or=(sku.ilike.*${encodeURIComponent(searchKeyword.trim())}*,nama_produk.ilike.*${encodeURIComponent(searchKeyword.trim())}*)&limit=100`
+      ? `select=*${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&limit=100`
       : 'select=*&limit=3000';
 
     const masterRows = await supabaseFetch<any[]>('master_produk', 'GET', null, masterQuery);
