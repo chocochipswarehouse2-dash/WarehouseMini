@@ -179,8 +179,42 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
 
   // Load from Supabase on mount
   useEffect(() => {
+    // Check local storage for active offline session
+    try {
+      const savedSession = localStorage.getItem('wms_active_picking_session');
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession);
+        if (parsed && parsed.activeSJ) {
+          setActiveSJ(parsed.activeSJ);
+          setActiveItems(parsed.activeItems || []);
+          setUnexpectedItems(parsed.unexpectedItems || []);
+          setActiveLocation(parsed.activeLocation || '');
+          setRekapCatatan(parsed.rekapCatatan || '');
+          onNotify('Sesi Picking offline yang belum selesai berhasil dipulihkan', 'info');
+        }
+      }
+    } catch (e) {
+      console.warn('Gagal memulihkan sesi picking lokal:', e);
+    }
     loadPickingList();
   }, []);
+
+  // Save active picking session to localStorage to persist across refreshes / offline
+  useEffect(() => {
+    if (activeSJ) {
+      const sessionData = {
+        activeSJ,
+        activeItems,
+        unexpectedItems,
+        activeLocation,
+        rekapCatatan,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem('wms_active_picking_session', JSON.stringify(sessionData));
+    } else {
+      localStorage.removeItem('wms_active_picking_session');
+    }
+  }, [activeSJ, activeItems, unexpectedItems, activeLocation, rekapCatatan]);
 
   // Autofocus scanner input whenever in picking workspace
   useEffect(() => {
@@ -196,9 +230,20 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
     try {
       const data = await fetchPickingListFromSupabase();
       setRawItems(data || []);
+      localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(data || []));
     } catch (e) {
-      console.warn('Gagal memuat picking list:', e);
-      onNotify('Gagal memuat picking list dari Database', 'error');
+      console.warn('Gagal memuat picking list, menggunakan cache offline:', e);
+      try {
+        const cached = JSON.parse(localStorage.getItem('wms_raw_picking_list_cache') || '[]');
+        if (cached && cached.length > 0) {
+          setRawItems(cached);
+          onNotify('Mode Offline: Menampilkan daftar Picking terakhir', 'warning');
+        } else {
+          onNotify('Gagal memuat picking list dari Database (Offline)', 'error');
+        }
+      } catch (err) {
+        onNotify('Gagal memuat picking list dari Database (Offline)', 'error');
+      }
     } finally {
       setLoading(false);
     }
