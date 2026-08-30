@@ -89,8 +89,8 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
             <Zap className={`w-3.5 h-3.5 ${isFocused ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
             <span>
               {isFocused
-                ? 'Scanner Aktif — Siap tembak barcode'
-                : 'Klik kolom input untuk menghubungkan gun scanner'}
+                ? 'Scanner Aktif — Siap ketik / scan barcode'
+                : 'Klik kolom input untuk mengetik atau scan'}
             </span>
           </div>
 

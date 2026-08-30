@@ -23,27 +23,13 @@ export const ScanMethodSelector: React.FC<ScanMethodSelectorProps> = ({
             type="button"
             onClick={() => onSelectMode('fisik')}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              currentMode === 'fisik'
-                ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm border border-slate-200 dark:border-slate-700/80 font-bold'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <ScanLine className="w-3.5 h-3.5" />
-            <span>Fisik Gun</span>
-          </button>
-
-          <button
-            id="btnModeManual"
-            type="button"
-            onClick={() => onSelectMode('manual')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              currentMode === 'manual'
+              currentMode === 'fisik' || currentMode === 'manual'
                 ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm border border-slate-200 dark:border-slate-700/80 font-bold'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
             <Keyboard className="w-3.5 h-3.5" />
-            <span>Manual</span>
+            <span>Ketik / Gun</span>
           </button>
 
           <button

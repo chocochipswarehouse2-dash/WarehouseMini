@@ -1173,9 +1173,6 @@ export async function searchProductsInSupabase(keyword: string): Promise<Product
     { table: 'produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama', 'nama_produk']).substring(1)}&limit=40` },
     { table: 'products', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'name']).substring(1)}&limit=40` },
     { table: 'master_barang', filter: `${buildFuzzySearchQuery(cleanQ, ['kode_barang', 'nama_barang']).substring(1)}&limit=40` },
-    { table: 'view_stok_realtime', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk']).substring(1)}&limit=40` },
-    { table: 'log_produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk']).substring(1)}&order=created_at.desc&limit=40` },
-    { table: 'picking_list', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk']).substring(1)}&limit=40` },
   ];
 
   await Promise.allSettled(

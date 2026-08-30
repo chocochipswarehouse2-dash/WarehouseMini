@@ -622,18 +622,11 @@ export default function App() {
                 <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
                   <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
 
-                  {scanMode === 'fisik' && (
+                  {(scanMode === 'fisik' || scanMode === 'manual') && (
                     <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
                   )}
 
-                  {scanMode === 'manual' && (
-                    <ManualScanInput
-                      onScan={handleScannedItem}
-                      products={productDatabase}
-                      onRefreshProducts={loadProducts}
-                      onAddDiscoveredProducts={handleAddDiscoveredProducts}
-                    />
-                  )}
+                  
 
                   {scanMode === 'kamera' && (
                     <CameraScanner
