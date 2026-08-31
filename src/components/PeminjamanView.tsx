@@ -236,7 +236,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
         sku: cs.sku,
         produk: cs.produk || cs.sku,
         size: cs.size || 'ALL',
-        lokasi: cs.locStr || 'Warehouse',
+        lokasi: cs.whLocStr || cs.locStr || 'Warehouse',
         stok: Math.max(0, total),
         whQty: cs.whQty || 0,
         studioQty: cs.studioQty || 0,
@@ -609,7 +609,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
         username: session?.username || 'Operator',
       };
 
-      // 1. Save directly to Supabase peminjaman_sps
+      // 1. Save directly to Supabase peminjaman
       await savePeminjamanToSupabase(newRecord);
 
       // 2. Also create picking tasks in Supabase for Fulfillment

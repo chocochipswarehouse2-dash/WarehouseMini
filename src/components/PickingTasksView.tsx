@@ -61,7 +61,7 @@ import {
   completePickingSuratJalanSupabase,
   createPickingSuratJalanSupabase,
   savePickingBatchToSupabase,
-  updatePickingSuratJalanDetailsSupabase,
+  updatePickingSuratJalanDetailsSupabase, deletePickingSuratJalanBatchSupabase, completePickingSuratJalanBatchSupabase,
   fetchStockForSkus,
   isWarehouseLocation,
   getAreaFromLokasi,
@@ -143,6 +143,16 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
   const [newSjSkuLoc, setNewSjSkuLoc] = useState('');
   const [newSjSkuQty, setNewSjSkuQty] = useState(1);
   const [isSavingSjEdit, setIsSavingSjEdit] = useState(false);
+
+  const [selectedSJs, setSelectedSJs] = useState<string[]>([]);
+  const [editingSJGroup, setEditingSJGroup] = useState<PickingSuratJalanGroup | null>(null);
+  const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   // Modal Edit / Koreksi Item Tertentu (Ubah Qty Terambil, Rak Asal, atau Koreksi Salah Ambil)
   const [isEditItemModalOpen, setIsEditItemModalOpen] = useState(false);
@@ -497,6 +507,83 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
   }, [sjGroups, deferredSearch, statusFilter]);
 
   // Action: Petugas GET 1 SJ (Mulai Picking)
+
+  const handleSelectSJCheckbox = (no_sj: string) => {
+    setSelectedSJs((prev) =>
+      prev.includes(no_sj) ? prev.filter((id) => id !== no_sj) : [...prev, no_sj]
+    );
+  };
+
+  const handleSelectAllSJs = () => {
+    if (selectedSJs.length === filteredSJs.length) {
+      setSelectedSJs([]);
+    } else {
+      setSelectedSJs(filteredSJs.map((g) => g.no_sj));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedSJs.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Surat Jalan',
+      message: `Yakin ingin menghapus ${selectedSJs.length} Surat Jalan yang dipilih?`,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        setIsBulkActionRunning(true);
+        const success = await deletePickingSuratJalanBatchSupabase(selectedSJs);
+        if (success) {
+          onNotify(`${selectedSJs.length} Surat Jalan berhasil dihapus`, 'success');
+          setSelectedSJs([]);
+          loadPickingList();
+        } else {
+          onNotify('Gagal menghapus beberapa Surat Jalan', 'error');
+        }
+        setIsBulkActionRunning(false);
+      }
+    });
+  };
+
+  const handleMarkCompleteSelected = async () => {
+    if (selectedSJs.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Selesaikan Surat Jalan',
+      message: `Yakin ingin menandai ${selectedSJs.length} Surat Jalan sebagai SELESAI?`,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        setIsBulkActionRunning(true);
+        const success = await completePickingSuratJalanBatchSupabase(selectedSJs, currentUser);
+        if (success) {
+          onNotify(`${selectedSJs.length} Surat Jalan berhasil diselesaikan`, 'success');
+          setSelectedSJs([]);
+          loadPickingList();
+        } else {
+          onNotify('Gagal menyelesaikan beberapa Surat Jalan', 'error');
+        }
+        setIsBulkActionRunning(false);
+      }
+    });
+  };
+
+  const handleDeleteSingleSJ = async (no_sj: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Surat Jalan',
+      message: `Yakin ingin menghapus Surat Jalan ${no_sj}?`,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const success = await deletePickingSuratJalanBatchSupabase([no_sj]);
+        if (success) {
+          onNotify(`Surat Jalan ${no_sj} berhasil dihapus`, 'success');
+          loadPickingList();
+        } else {
+          onNotify('Gagal menghapus Surat Jalan', 'error');
+        }
+      }
+    });
+  };
+
   const handleSelectSJ = (sj: PickingSuratJalanGroup) => {
     if (sj.status === 'SELESAI') {
       setViewCompletedSJ(sj);
@@ -926,11 +1013,13 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
   };
 
   // Open modal to manage / edit Surat Jalan Form
-  const handleOpenEditSJModal = () => {
-    if (!activeSJ) return;
-    setEditSjTujuan(activeSJ.tujuan || '');
-    setEditSjCatatan(activeSJ.catatan || '');
-    setEditSjRows(JSON.parse(JSON.stringify(activeItems)));
+  const handleOpenEditSJModal = (sjToEdit?: PickingSuratJalanGroup) => {
+    const sj = sjToEdit || activeSJ;
+    if (!sj) return;
+    setEditingSJGroup(sj);
+    setEditSjTujuan(sj.tujuan || '');
+    setEditSjCatatan(sj.catatan || '');
+    setEditSjRows(JSON.parse(JSON.stringify(sj.items)));
     setDeletedSjItemIds([]);
     setNewSjSkuInput('');
     setNewSjSkuNama('');
@@ -983,7 +1072,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
 
   // Save changes to Surat Jalan Form
   const handleSaveEditSJModal = async () => {
-    if (!activeSJ) return;
+    if (!editingSJGroup) return;
     if (editSjRows.length === 0) {
       onNotify('Surat Jalan harus memiliki minimal 1 item SKU', 'error');
       return;
@@ -991,28 +1080,30 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
     setIsSavingSjEdit(true);
 
     try {
-      // 1. Update in local state
-      setActiveItems(editSjRows);
-      const updatedGroup: PickingSuratJalanGroup = {
-        ...activeSJ,
-        tujuan: editSjTujuan.trim(),
-        catatan: editSjCatatan.trim(),
-        items: editSjRows,
-        total_items: editSjRows.length,
-        total_qty_req: editSjRows.reduce((a, b) => a + Number(b.qty_req || 0), 0),
-      };
-      setActiveSJ(updatedGroup);
-
-      // 2. Sync changes to Supabase
+      // 1. Sync changes to Supabase FIRST
       const newItemsToAdd = editSjRows.filter((r) => !r.id);
       const existingItems = editSjRows.filter((r) => !!r.id);
       await updatePickingSuratJalanDetailsSupabase(
-        activeSJ.no_sj,
+        editingSJGroup.no_sj,
         editSjTujuan,
         existingItems,
         newItemsToAdd,
         deletedSjItemIds
       );
+
+      // 2. Update active SJ locally if it's the one currently open in workspace
+      if (activeSJ?.no_sj === editingSJGroup.no_sj) {
+        setActiveItems(editSjRows);
+        const updatedGroup: PickingSuratJalanGroup = {
+          ...activeSJ,
+          tujuan: editSjTujuan.trim(),
+          catatan: editSjCatatan.trim(),
+          items: editSjRows,
+          total_items: editSjRows.length,
+          total_qty_req: editSjRows.reduce((a, b) => a + Number(b.qty_req || 0), 0),
+        };
+        setActiveSJ(updatedGroup);
+      }
 
       playSuccessBeep();
       onNotify('Form Surat Jalan dan daftar SKU berhasil diperbarui!', 'success');
@@ -2330,6 +2421,15 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 mr-2">
+            <input
+              type="checkbox"
+              checked={selectedSJs.length === filteredSJs.length && filteredSJs.length > 0}
+              onChange={handleSelectAllSJs}
+              className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+              title="Pilih Semua"
+            />
+          </div>
           {/* Status Segmented Tabs */}
           <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
             <button
@@ -2363,6 +2463,28 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
               Selesai ({sjGroups.filter((g) => g.status === 'SELESAI').length})
             </button>
           </div>
+          {/* Multiple Actions */}
+          {selectedSJs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                {selectedSJs.length} Terpilih
+              </span>
+              <button
+                onClick={handleMarkCompleteSelected}
+                disabled={isBulkActionRunning}
+                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> Selesaikan
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isBulkActionRunning}
+                className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Hapus
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="relative">
@@ -2422,6 +2544,12 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
                   <div>
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedSJs.includes(group.no_sj)}
+                        onChange={() => handleSelectSJCheckbox(group.no_sj)}
+                        className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+                      />
                       <span className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">
                         {group.no_sj}
                       </span>
@@ -2454,7 +2582,25 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                   </div>
 
                   {/* Action Button */}
-                  <div>
+                  <div className="flex items-center gap-2">
+                    {!isDone && (
+                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenEditSJModal(group); }}
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-all"
+                          title="Edit SJ"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        </button>
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteSingleSJ(group.no_sj); }}
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-all"
+                          title="Hapus SJ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                     <button
                       onClick={() => handleSelectSJ(group)}
                       className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
@@ -2612,7 +2758,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       )}
 
       {/* MODAL EDIT / KELOLA FORM SURAT JALAN */}
-      {isEditSJModalOpen && activeSJ && (
+      {isEditSJModalOpen && editingSJGroup && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#131d31] w-full max-w-3xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
@@ -2621,7 +2767,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                   Kelola Form Surat Jalan
                 </span>
                 <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase">
-                  Edit Data & SKU Surat Jalan: {activeSJ.no_sj}
+                  Edit Data & SKU Surat Jalan: {editingSJGroup.no_sj}
                 </h2>
               </div>
               <button
@@ -3066,6 +3212,30 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       )}
 
       {/* MODAL FULFILLMENT REFILL (MULTI-CSV & MANUAL) */}
+      {/* Custom Confirm Dialog */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{confirmDialog.title}</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-sm shadow-rose-500/20 transition-all active:scale-95"
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <FulfillmentRefillModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}

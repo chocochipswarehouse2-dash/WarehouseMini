@@ -193,6 +193,7 @@ export interface ChannelStockItem {
   blokFQty?: number;
   whQty?: number;
   locStr?: string;
+  whLocStr?: string;
   [key: string]: unknown;
 }
 
