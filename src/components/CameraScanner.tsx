@@ -265,15 +265,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
               </div>
             </>
           )}
-        </div>
-
-        {/* Error message */}
-        {error && (
-          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2 border-b border-rose-200 dark:border-rose-900">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
 
         {/* Floating Camera Toggle Button */}
         {cameras.length > 1 && (
@@ -295,7 +286,16 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
             <span className="text-[10px] font-bold tracking-wider pr-1">GANTI LENSA</span>
           </button>
         )}
-      </div>
+      
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2 border-b border-rose-200 dark:border-rose-900">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}</div>
     </div>
   );
 };
