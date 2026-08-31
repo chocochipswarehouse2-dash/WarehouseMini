@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
-  Save,
+  Save, Send,
   Radio,
   Plus,
   Trash2,
@@ -48,7 +48,7 @@ import {
   Sparkles,
   Code2,
   FileCode,
-  CheckCheck,
+  CheckCheck, Share2, Loader2,
 } from 'lucide-react';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
@@ -92,7 +92,7 @@ interface SettingsModalProps {
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type SettingsTab = 'supabase' | 'gas' | 'users' | 'device' | 'deploy_apk';
+type SettingsTab = 'supabase' | 'gas' | 'users' | 'device' | 'deploy_apk' | 'whatsapp';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -127,6 +127,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSyncingCatalog, setIsSyncingCatalog] = useState<boolean>(false);
   const [gasStatus, setGasStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [gasStatusMsg, setGasStatusMsg] = useState<string>('');
+
+  // WhatsApp Config State
+  const [fonnteToken, setFonnteToken] = useState<string>('');
+  const [fonnteGroupTarget, setFonnteGroupTarget] = useState<string>('');
+  const [isTestingWa, setIsTestingWa] = useState<boolean>(false);
 
   // Users Management State
   const [userList, setUserList] = useState<LocalUserRecord[]>([]);
@@ -176,6 +181,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         localStorage.getItem('wms_endpoint_url') ||
         '';
       setGasEndpoint(storedGas);
+
+      setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
+      setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
 
       loadUsersFromSupabase();
       setDatabaseStatus('idle');
@@ -242,6 +250,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onNotify(`Koneksi database gagal: ${msg}`, 'error');
     } finally {
       setIsTestingDatabase(false);
+    }
+  };
+
+  // --- WHATSAPP FONNTE ACTIONS ---
+  const handleSaveWa = () => {
+    localStorage.setItem('wms_fonnte_token', fonnteToken.trim());
+    localStorage.setItem('wms_fonnte_group_target', fonnteGroupTarget.trim());
+    onNotify('Konfigurasi WhatsApp Fonnte berhasil disimpan!', 'success');
+    playSuccessBeep();
+  };
+
+  const handleTestWa = async () => {
+    if (!fonnteToken.trim()) {
+      onNotify('Token Fonnte tidak boleh kosong untuk ditest!', 'warning');
+      return;
+    }
+    
+    const target = fonnteGroupTarget.trim() || '6281234567890'; // fallback default untuk test
+    
+    setIsTestingWa(true);
+    try {
+      const res = await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': fonnteToken.trim(),
+        },
+        body: new URLSearchParams({
+          target: target,
+          message: 'Ini adalah pesan test koneksi Fonnte dari WMS System.',
+        }),
+      });
+      
+      const data = await res.json();
+      if (data.status) {
+        playSuccessBeep();
+        onNotify('Pesan test Fonnte berhasil dikirim ke ' + target, 'success');
+      } else {
+        throw new Error(data.reason || data.detail || 'Fonnte merespon dengan error');
+      }
+    } catch (err: unknown) {
+      console.warn('Fonnte test error:', err);
+      playErrorBeep();
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi Fonnte API.';
+      onNotify(`Test WhatsApp Fonnte gagal: ${msg}`, 'error');
+    } finally {
+      setIsTestingWa(false);
     }
   };
 
@@ -465,7 +519,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
+        <div className="px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#ff7a00]/10 border border-[#ff7a00]/30 flex items-center justify-center text-[#ff7a00]">
               <Settings className="w-5 h-5" />
@@ -496,7 +550,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
+        <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('database')}
@@ -551,6 +605,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <Rocket className="w-4 h-4" />
             <span>Deploy & APK</span>
           </button>
+          
+          <button
+            type="button"
+            onClick={() => setActiveTab('whatsapp')}
+            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'whatsapp'
+                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Integrasi WhatsApp</span>
+          </button>
         </div>
 
         {/* Tab Content Body */}
@@ -580,7 +647,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {(['Superadmin', 'Operator', 'Produk', 'Fulfillment', 'Peminjaman'] as UserRole[]).map((r) => {
+                    {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Operator'] as UserRole[]).map((r) => {
                       const details = ROLE_DETAILS[r];
                       const isCurrent = session.role === r || (r === 'Superadmin' && session.role === 'All');
                       return (
@@ -594,8 +661,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               : 'bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-[#ff7a00]'
                           }`}
                         >
-                          <span>{details.badge}</span>
-                          <span>{details.title}</span>
+                          <span className="text-sm">{details?.icon}</span>
+                          <span>{r}</span>
                         </button>
                       );
                     })}
@@ -684,7 +751,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Pilih Template Role Utama:
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {(['Superadmin', 'Operator', 'Produk', 'Fulfillment', 'Peminjaman'] as UserRole[]).map((r) => {
+                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Operator'] as UserRole[]).map((r) => {
                           const details = ROLE_DETAILS[r];
                           const isSelected = newRole === r;
                           return (
@@ -698,10 +765,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
                               }`}
                             >
-                              <div className="text-base mb-1">{details.badge}</div>
-                              <div className="text-xs font-bold truncate">{details.title}</div>
+                              <div className="text-base mb-1">{details?.icon}</div>
+                              <div className="text-xs font-bold truncate">{r}</div>
                               <div className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">
-                                {details.description}
+                                {details?.desc}
                               </div>
                             </button>
                           );
@@ -874,8 +941,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm font-black text-slate-700 dark:text-slate-300 shrink-0">
-                            {roleInfo.badge}
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0 ${roleInfo?.badge || "bg-slate-500"}`}>
+                            {roleInfo?.icon || "👤"}
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
@@ -1409,6 +1476,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: WHATSAPP INTEGRATION */}
+          {/* ========================================================================= */}
+          {activeTab === 'whatsapp' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#ff7a00]/10 border border-[#ff7a00]/30 rounded-2xl p-4 sm:p-5">
+                <div>
+                  <h3 className="text-[13px] font-black text-slate-800 dark:text-white flex items-center gap-2">
+                    <Share2 className="w-5 h-5 text-[#ff7a00]" />
+                    WhatsApp API (Fonnte)
+                  </h3>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 max-w-lg leading-relaxed">
+                    Kirim notifikasi otomatis ke tim atau peminjam melalui WhatsApp tanpa perlu copy-paste manual.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Fonnte API Token
+                  </label>
+                  <input
+                    type="password"
+                    value={fonnteToken}
+                    onChange={(e) => setFonnteToken(e.target.value)}
+                    placeholder="Masukkan Token dari device Fonnte Anda"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff7a00]/50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Dapatkan token dari dashboard Fonnte. Jangan bagikan token ini.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Nomor Target Default (Grup Gudang)
+                  </label>
+                  <input
+                    type="text"
+                    value={fonnteGroupTarget}
+                    onChange={(e) => setFonnteGroupTarget(e.target.value)}
+                    placeholder="Contoh: 6281234567890 (Tanpa tanda +)"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#ff7a00]/50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Nomor WhatsApp grup gudang untuk notifikasi Peminjaman/Picking List (Gunakan ID Grup jika mengirim ke grup Fonnte).
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={handleSaveWa}
+                    className="flex-1 px-4 py-3 bg-[#ff7a00] hover:bg-[#e06c00] text-white rounded-xl text-xs font-black shadow-[0_4px_12px_rgba(255,122,0,0.3)] transition-all flex items-center justify-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Simpan Pengaturan</span>
+                  </button>
+                  <button
+                    onClick={handleTestWa}
+                    disabled={isTestingWa}
+                    className="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isTestingWa ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>Test Kirim Pesan</span>
+                  </button>
                 </div>
               </div>
             </div>

@@ -780,13 +780,49 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
     }
   };
 
-  // Copy WhatsApp Text
-  const handleCopyWa = (record: PeminjamanRecord, type: 'personal' | 'grup') => {
+  // Send WhatsApp Text via Fonnte
+  const handleSendWa = async (record: PeminjamanRecord, type: 'personal' | 'grup') => {
     const text = generateWaMessage(record, type);
+    const token = localStorage.getItem('wms_fonnte_token');
+    
+    // As fallback, still copy to clipboard
     navigator.clipboard.writeText(text);
-    setCopiedWaType(type);
-    onShowToast(`Format pesan WA (${type === 'personal' ? 'Personal' : 'Grup'}) tersalin!`, 'success');
-    setTimeout(() => setCopiedWaType(null), 2500);
+
+    if (!token) {
+      onShowToast(`Pesan disalin! (Token Fonnte belum diatur di Pengaturan)`, 'warning');
+      return;
+    }
+
+    // Default to group target if personal number is unknown, or you can prompt for it
+    const groupTarget = localStorage.getItem('wms_fonnte_group_target') || '';
+    
+    // Ideally we should ask for personal number, but for now we just use the group target or a placeholder
+    const target = type === 'grup' ? groupTarget : (prompt("Masukkan nomor tujuan PIC (Cth: 628...):", "") || "");
+    
+    if (!target) {
+       onShowToast('Nomor tujuan tidak ada. Pesan hanya disalin ke clipboard.', 'warning');
+       return;
+    }
+
+    try {
+      const res = await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: { 'Authorization': token.trim() },
+        body: new URLSearchParams({ target: target, message: text }),
+      });
+      const data = await res.json();
+      
+      if (data.status) {
+        setCopiedWaType(type);
+        onShowToast(`Pesan WA (${type === 'personal' ? 'Personal' : 'Grup'}) berhasil dikirim!`, 'success');
+        setTimeout(() => setCopiedWaType(null), 2500);
+      } else {
+        throw new Error(data.reason || 'Gagal mengirim pesan');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error menghubungi API Fonnte';
+      onShowToast(`Gagal kirim via Fonnte: ${msg}`, 'error');
+    }
   };
 
   // Print Surat Jalan
@@ -1626,7 +1662,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                     )}
                     <button
                       type="button"
-                      onClick={() => handleCopyWa(rec, 'grup')}
+                      onClick={() => handleSendWa(rec, 'grup')}
                       className="py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors"
                     >
                       <Share2 className="w-3 h-3" />
@@ -1729,7 +1765,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => handleCopyWa(selectedRecordForModal, 'personal')}
+                    onClick={() => handleSendWa(selectedRecordForModal, 'personal')}
                     className="p-3 bg-slate-50 dark:bg-[#0F0F12] hover:bg-slate-100 dark:hover:bg-[#16161a] border border-slate-200 dark:border-slate-800 rounded-xl text-left transition-all group"
                   >
                     <div className="flex items-center justify-between">
@@ -1749,7 +1785,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => handleCopyWa(selectedRecordForModal, 'grup')}
+                    onClick={() => handleSendWa(selectedRecordForModal, 'grup')}
                     className="p-3 bg-slate-50 dark:bg-[#0F0F12] hover:bg-slate-100 dark:hover:bg-[#16161a] border border-slate-200 dark:border-slate-800 rounded-xl text-left transition-all group"
                   >
                     <div className="flex items-center justify-between">

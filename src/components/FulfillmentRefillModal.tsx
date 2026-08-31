@@ -373,18 +373,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       .filter((g) => existingSJs.some((ex) => ex.toUpperCase() === g.noSJ.toUpperCase()))
       .map((g) => g.noSJ);
 
-    if (duplicateList.length > 0) {
-      if (
-        !confirm(
-          `Nomor Surat Jalan berikut sudah ada di database:\n• ${duplicateList.join(
-            '\n• '
-          )}\n\nApakah Anda tetap ingin menambahkan/menyimpannya?`
-        )
-      ) {
-        return;
-      }
-    }
-
+    // The duplicate warning is already rendered in the UI with a yellow badge.
+    // In iframe environments, window.confirm is often blocked and silently fails.
+    // Instead of using window.confirm, we will allow them to save if they explicitly clicked the button,
+    // or we could use a custom modal. For now, since they can see the warning, we proceed.
+    // If you want strict protection, a custom state-based confirmation modal is required.
+    
     setIsProcessing(true);
     try {
       const allCreatedItems: PickingListItem[] = [];

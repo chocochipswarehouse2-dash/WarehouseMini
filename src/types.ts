@@ -12,10 +12,11 @@ export type ActivePage =
 
 export type UserRole =
   | 'Superadmin'
-  | 'All'
-  | 'Operator'
-  | 'Produk'
-  | 'Fulfillment'
+  | 'Scanner Barcode'
+  | 'Inventory'
+  | 'Stock Opname'
+  | 'Mutasi'
+  | 'Tugas Picking'
   | 'Peminjaman'
   | 'Custom'
   | string;
@@ -29,7 +30,11 @@ export type UserPermissionKey =
   | 'can_export_data'
   | 'can_sync_dealpos'
   | 'can_manage_users'
-  | 'can_manage_settings';
+  | 'can_manage_settings'
+  | 'can_edit_data'
+  | 'can_delete_data'
+  | 'can_view_mutasi'
+  | 'can_import_export_data';
 
 export interface UserPermissions {
   can_scan: boolean;
@@ -41,6 +46,10 @@ export interface UserPermissions {
   can_sync_dealpos: boolean;
   can_manage_users: boolean;
   can_manage_settings: boolean;
+  can_edit_data: boolean;
+  can_delete_data: boolean;
+  can_view_mutasi: boolean;
+  can_import_export_data: boolean;
 }
 
 export interface WmsUser {

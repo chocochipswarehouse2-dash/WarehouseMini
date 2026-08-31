@@ -291,8 +291,10 @@ export const SUPABASE_DATABASE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS public.wms_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT UNIQUE NOT NULL,
+  name TEXT,
   password TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'Operator', -- 'All', 'Produk', 'Fulfillment', 'Peminjaman', 'Operator'
+  permissions JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );

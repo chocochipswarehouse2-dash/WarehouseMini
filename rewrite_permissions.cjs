@@ -1,4 +1,5 @@
-import { UserPermissions, UserRole, UserSession, WmsUser } from '../types';
+const fs = require('fs');
+const content = `import { UserPermissions, UserRole, UserSession, WmsUser } from '../types';
 
 export type UserPermissionKey = keyof UserPermissions;
 
@@ -219,20 +220,5 @@ export const fillMissingPermissions = (
   }
   return newPerms;
 };
-
-export const ROLE_DETAILS: Record<string, { desc: string, icon: string, badge: string }> = {
-  Superadmin: { desc: 'Akses penuh ke semua fitur dan pengaturan', icon: '👑', badge: 'bg-rose-500' },
-  'Scanner Barcode': { desc: 'Hanya bisa melakukan scan barcode mutasi (IN/OUT/SO)', icon: '📱', badge: 'bg-emerald-500' },
-  Inventory: { desc: 'Melihat stok dan lokasi rak realtime', icon: '📦', badge: 'bg-blue-500' },
-  'Stock Opname': { desc: 'Melihat dan menyetujui Stock Opname', icon: '📋', badge: 'bg-violet-500' },
-  Mutasi: { desc: 'Melihat riwayat mutasi barang', icon: '🔄', badge: 'bg-amber-500' },
-  'Tugas Picking': { desc: 'Akses fitur Tugas Picking pesanan', icon: '🛒', badge: 'bg-orange-500' },
-  Peminjaman: { desc: 'Akses fitur Peminjaman / SPS', icon: '🤝', badge: 'bg-cyan-500' },
-  Operator: { desc: 'Akses default operasional', icon: '⚙️', badge: 'bg-slate-500' },
-  All: { desc: 'Akses penuh (Legacy)', icon: '⭐', badge: 'bg-indigo-500' },
-  Custom: { desc: 'Role dengan permission custom', icon: '🔧', badge: 'bg-gray-500' },
-};
-
-export const isSuperadmin = (session: UserSession | null): boolean => {
-  return session?.role === 'Superadmin' || session?.role === 'All';
-};
+`;
+fs.writeFileSync('src/services/permissions.ts', content, 'utf8');

@@ -1,4 +1,6 @@
-import { UserPermissions, UserRole, UserSession, WmsUser } from '../types';
+const fs = require('fs');
+
+const content = `import { UserPermissions, UserRole, UserSession, WmsUser } from '../types';
 
 export type UserPermissionKey = keyof UserPermissions;
 
@@ -171,13 +173,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
     can_import_export_data: false,
   },
-  'Operator': {
-    can_scan: true, can_picking: true, can_peminjaman: false,
-    can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
-    can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
-    can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
-  }
 };
 
 export const hasPermission = (session: UserSession | null, key: UserPermissionKey): boolean => {
@@ -186,7 +181,7 @@ export const hasPermission = (session: UserSession | null, key: UserPermissionKe
   if (session.permissions && typeof session.permissions[key] === 'boolean') {
     return session.permissions[key] as boolean;
   }
-  const defaultPerms = ROLE_DEFAULT_PERMISSIONS[session.role] || ROLE_DEFAULT_PERMISSIONS['Operator'];
+  const defaultPerms = ROLE_DEFAULT_PERMISSIONS[session.role] || ROLE_DEFAULT_PERMISSIONS['Scanner Barcode'];
   return defaultPerms[key];
 };
 
@@ -210,7 +205,7 @@ export const fillMissingPermissions = (
   perms: Partial<UserPermissions>,
   role: string
 ): Partial<UserPermissions> => {
-  const defaults = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS['Operator'];
+  const defaults = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS['Scanner Barcode'];
   const newPerms = { ...defaults };
   for (const [k, v] of Object.entries(perms)) {
     if (typeof v === 'boolean') {
@@ -219,20 +214,6 @@ export const fillMissingPermissions = (
   }
   return newPerms;
 };
+`;
 
-export const ROLE_DETAILS: Record<string, { desc: string, icon: string, badge: string }> = {
-  Superadmin: { desc: 'Akses penuh ke semua fitur dan pengaturan', icon: '👑', badge: 'bg-rose-500' },
-  'Scanner Barcode': { desc: 'Hanya bisa melakukan scan barcode mutasi (IN/OUT/SO)', icon: '📱', badge: 'bg-emerald-500' },
-  Inventory: { desc: 'Melihat stok dan lokasi rak realtime', icon: '📦', badge: 'bg-blue-500' },
-  'Stock Opname': { desc: 'Melihat dan menyetujui Stock Opname', icon: '📋', badge: 'bg-violet-500' },
-  Mutasi: { desc: 'Melihat riwayat mutasi barang', icon: '🔄', badge: 'bg-amber-500' },
-  'Tugas Picking': { desc: 'Akses fitur Tugas Picking pesanan', icon: '🛒', badge: 'bg-orange-500' },
-  Peminjaman: { desc: 'Akses fitur Peminjaman / SPS', icon: '🤝', badge: 'bg-cyan-500' },
-  Operator: { desc: 'Akses default operasional', icon: '⚙️', badge: 'bg-slate-500' },
-  All: { desc: 'Akses penuh (Legacy)', icon: '⭐', badge: 'bg-indigo-500' },
-  Custom: { desc: 'Role dengan permission custom', icon: '🔧', badge: 'bg-gray-500' },
-};
-
-export const isSuperadmin = (session: UserSession | null): boolean => {
-  return session?.role === 'Superadmin' || session?.role === 'All';
-};
+fs.writeFileSync('src/services/permissions.ts', content, 'utf8');
