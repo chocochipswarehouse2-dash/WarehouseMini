@@ -6,9 +6,10 @@ import { CameraDevice } from '../types';
 interface CameraScannerProps {
   onScan: (decodedText: string) => void;
   onRequestWakeLock: () => void;
+  id?: string;
 }
 
-export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestWakeLock }) => {
+export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestWakeLock, id = 'reader-canvas' }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
@@ -22,8 +23,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
   const camerasLoadedRef = useRef(false);
 
   // Load cameras lazily — only enumerate when user initiates scan
-  const loadCamerasIfNeeded = async () => {
-    if (camerasLoadedRef.current) return;
+  const loadCamerasIfNeeded = async (): Promise<boolean> => {
+    if (camerasLoadedRef.current) return true;
     try {
       const devices = await Html5Qrcode.getCameras();
       if (devices && devices.length > 0) {
@@ -41,7 +42,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
         );
         setSelectedCameraId(backCam ? backCam.id : deviceList[0].id);
         camerasLoadedRef.current = true;
+        return true;
       }
+      return false;
     } catch (err: unknown) {
       console.warn('Gagal membaca list kamera:', err);
       // Check if this is a permission denial
@@ -49,6 +52,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
       if (msg.includes('NotAllowed') || msg.includes('Permission') || msg.includes('denied')) {
         setPermissionDenied(true);
       }
+      return false;
     }
   };
 
@@ -63,7 +67,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
     setIsInitializing(true);
     onRequestWakeLock();
 
-    await loadCamerasIfNeeded();
+    const success = await loadCamerasIfNeeded();
+    if (!success) {
+      setIsInitializing(false);
+      return;
+    }
 
     try {
       if (scannerRef.current) {
@@ -78,7 +86,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
         await new Promise(resolve => setTimeout(resolve, 300));
       }
 
-      const html5QrCode = new Html5Qrcode('reader-canvas');
+      const html5QrCode = new Html5Qrcode(id);
       scannerRef.current = html5QrCode;
 
       const targetCamId = cameraIdToUse || selectedCameraId;
@@ -119,7 +127,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
                   try { if (scannerRef.current.isScanning) await scannerRef.current.stop(); scannerRef.current.clear(); } catch {}
                   await new Promise(resolve => setTimeout(resolve, 500));
                   
-                  const html5QrCode = new Html5Qrcode('reader-canvas');
+                  const html5QrCode = new Html5Qrcode(id);
                   scannerRef.current = html5QrCode;
                   await html5QrCode.start(
                     { facingMode: 'environment' },
@@ -251,7 +259,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
           )}
 
           {/* HTML5 QR Canvas container */}
-          <div id="reader-canvas" className="w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full [&>video]:!max-h-[30vh] sm:[&>video]:!max-h-[250px]"></div>
+          <div id={id} className="w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full [&>video]:!max-h-[30vh] sm:[&>video]:!max-h-[250px]"></div>
 
           {/* Scanning frame overlay with laser effect when active */}
           {isScanning && (

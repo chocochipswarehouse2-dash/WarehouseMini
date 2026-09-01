@@ -1790,6 +1790,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
             {/* MODE 3: KAMERA HP SCANNER (REUSING CAMERASCANNER COMPONENT) */}
             {inputMode === 'kamera' && (
               <CameraScanner
+                id="reader-canvas-picking"
                 onScan={(decodedText) => handleBarcodeScanned(decodedText)}
                 onRequestWakeLock={() => {
                   try {
