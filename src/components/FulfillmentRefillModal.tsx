@@ -20,7 +20,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { ProductItem, PickingListItem } from '../types';
-import { createPickingSuratJalanSupabase } from '../services/supabase';
+import { createPickingSuratJalanSupabase, isWarehouseLocation } from '../services/supabase';
 
 interface ParsedSJItem {
   nama: string;
@@ -165,7 +165,13 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             const cleanSku = sku.toUpperCase();
             const matchedProduct = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
             if (matchedProduct && matchedProduct.lokasi) {
-              lokasi = matchedProduct.lokasi;
+              const parts = matchedProduct.lokasi
+                .split(/[,/;\n|]+/)
+                .map((s) => s.trim().toUpperCase())
+                .filter((loc) => loc && isWarehouseLocation(loc));
+              if (parts.length > 0) {
+                lokasi = parts.join(', ');
+              }
             }
           }
 
@@ -416,7 +422,15 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       if (found) {
         next[index].nama_produk = found.p || found.n || '';
         next[index].size = found.s || '-';
-        next[index].lokasi = found.lokasi || '-';
+        if (found.lokasi) {
+          const parts = found.lokasi
+            .split(/[,/;\n|]+/)
+            .map((s) => s.trim().toUpperCase())
+            .filter((loc) => loc && isWarehouseLocation(loc));
+          next[index].lokasi = parts.length > 0 ? parts.join(', ') : '-';
+        } else {
+          next[index].lokasi = '-';
+        }
       }
     }
     setManualRows(next);
