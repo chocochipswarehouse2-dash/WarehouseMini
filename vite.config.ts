@@ -17,6 +17,7 @@ export default defineConfig(() => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           importScripts: ['pwa-extras.js'],
+          navigateFallback: '/WarehouseMini/index.html',
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
@@ -70,13 +71,13 @@ export default defineConfig(() => {
               short_name: 'Scanner',
               description: 'Quick access to Warehouse Scanner',
               tag: 'scanner-widget',
-              template_url: '/WarehouseMini/',
+              template_url: '/WarehouseMini/widget-template.json',
               ms_ac_template: '/WarehouseMini/widget-template.json',
               data: '/WarehouseMini/widget-data.json',
               type: 'application/json',
               icons: [
                 {
-                  src: 'icon-192.png',
+                  src: '/WarehouseMini/icon-192.png',
                   sizes: '192x192',
                   type: 'image/png'
                 }
