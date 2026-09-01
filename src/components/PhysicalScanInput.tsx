@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Barcode, Zap, CornerDownLeft } from 'lucide-react';
 import { ProductItem } from '../types';
+import { partialSearchMatch } from '../utils/sortUtils';
 
 interface PhysicalScanInputProps {
   onScan: (sku: string) => void;
@@ -38,10 +39,9 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
     // Check if exact match to prevent redundant popup
     if (products.some(p => p.k.toUpperCase() === value.trim().toUpperCase())) return null;
 
-    const lower = value.trim().toLowerCase();
     const suggestions = products
-      .filter((p) => p.k.toLowerCase().includes(lower) || p.p.toLowerCase().includes(lower))
-      .slice(0, 20);
+      .filter((p) => partialSearchMatch(value, p.k, p.p, p.s, p.category, p.lokasi))
+      .slice(0, 25);
 
     if (suggestions.length === 0) return null;
 

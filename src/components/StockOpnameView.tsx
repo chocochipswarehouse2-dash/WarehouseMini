@@ -27,6 +27,7 @@ import {
   getAreaFromLokasi,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
+import { partialSearchMatch } from '../utils/sortUtils';
 
 interface StockOpnameViewProps {
   session?: UserSession | null;
@@ -104,16 +105,19 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = ({
       if (diffFilter === 'MINUS' && selisih >= 0) return false;
       if (diffFilter === 'ZERO' && selisih !== 0) return false;
 
-      // Search
+      // Search (Multi-keyword partial matching across all fields)
       if (deferredSearch.trim()) {
-        const q = deferredSearch.toLowerCase().trim();
-        const matchSku = (item.sku || '').toLowerCase().includes(q);
-        const matchName = (item.nama_produk || '').toLowerCase().includes(q);
-        const matchLoc = (item.lokasi || '').toLowerCase().includes(q);
-        const matchInv = (item.invoice || '').toLowerCase().includes(q);
-        const matchOp = (item.operator || '').toLowerCase().includes(q);
-        const matchSesi = (item.sesi_id || '').toLowerCase().includes(q);
-        return matchSku || matchName || matchLoc || matchInv || matchOp || matchSesi;
+        return partialSearchMatch(
+          deferredSearch,
+          item.sku,
+          item.nama_produk,
+          item.size,
+          item.lokasi,
+          item.invoice,
+          item.operator,
+          item.sesi_id,
+          item.status
+        );
       }
 
       return true;

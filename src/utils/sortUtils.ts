@@ -43,6 +43,26 @@ function getTerms(query: string): string[] {
 }
 
 /**
+ * Partial multi-keyword search (identical to Inventory search):
+ * Splits query by whitespace, checks if every keyword exists within any of the provided target fields.
+ */
+export function partialSearchMatch(
+  query: string,
+  ...targets: (string | number | boolean | null | undefined)[]
+): boolean {
+  if (!query || !query.trim()) return true;
+  const keywords = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (keywords.length === 0) return true;
+
+  const combinedText = targets
+    .map((t) => (t !== null && t !== undefined ? String(t) : ''))
+    .join(' ')
+    .toLowerCase();
+
+  return keywords.every((kw) => combinedText.includes(kw));
+}
+
+/**
  * Fuzzy search that splits a search query by spaces and checks if ALL terms exist
  * within the target string.
  */

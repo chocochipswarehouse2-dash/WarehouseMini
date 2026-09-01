@@ -39,7 +39,7 @@ import {
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
-import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch } from '../utils/sortUtils';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch } from '../utils/sortUtils';
 
 interface PeminjamanViewProps {
   session: UserSession | null;
@@ -80,6 +80,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
   // Channel stock state - Loaded directly from Supabase realtime
   const [selectedChannel, setSelectedChannel] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('STUDIO');
   const [searchStock, setSearchStock] = useState<string>('');
+  const [searchHistory, setSearchHistory] = useState<string>('');
   const [channelStocks, setChannelStocks] = useState<ChannelStockItem[]>([]);
   const [loadingStock, setLoadingStock] = useState<boolean>(false);
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
@@ -732,13 +733,31 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
         if ((it.studioQty <= 0) && (it.shpQty <= 0) && (it.ttkQty <= 0) && ((it.totalQty || 0) <= 0)) return false;
       }
 
-      // Search query filter
+      // Search query filter (Multi-keyword partial matching)
       if (!deferredSearchStock.trim()) return true;
-      return fuzzySearchMultiple(deferredSearchStock, [it.sku, it.produk, it.size, it.locStr]);
+      return partialSearchMatch(deferredSearchStock, it.sku, it.produk, it.size, it.locStr);
     });
     
     return sortAlphabeticalAndSize<ChannelStockItem>(filtered, (i) => i.produk || i.sku || '', (i) => i.size || '');
   }, [channelStocks, selectedChannel, deferredSearchStock]);
+
+  // Filter history records
+  const deferredSearchHistory = useDeferredValue(searchHistory);
+  const filteredHistory = useMemo(() => {
+    if (!deferredSearchHistory.trim()) return records;
+    return records.filter((rec) => {
+      const itemTexts = rec.items.map((it) => `${it.produk} ${it.sku} ${it.size} ${it.lokasi}`);
+      return partialSearchMatch(
+        deferredSearchHistory,
+        rec.noPeminjaman,
+        rec.namaPeminjam,
+        rec.keperluan,
+        rec.tglPinjam,
+        rec.status,
+        ...itemTexts
+      );
+    });
+  }, [records, deferredSearchHistory]);
 
   // Calculate totals
   const totalStockItems = filteredStocks.length;
@@ -1582,23 +1601,49 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
         {/* FULL WIDTH: RIWAYAT PENGAJUAN (Visible in 'riwayat' tab) */}
         {activeTab === 'riwayat' && (
           <div className="col-span-12 bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3 gap-3">
               <div>
                 <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
-                  RIWAYAT PENGAJUAN PEMINJAMAN SEMENTARA
+                  RIWAYAT PENGAJUAN PEMINJAMAN SEMENTARA ({filteredHistory.length})
                 </span>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Daftar transaksi peminjaman barang, cetak surat jalan, dan kirim notifikasi WhatsApp.
                 </p>
               </div>
+
+              {/* Partial multi-keyword Search for Riwayat */}
+              <div className="relative w-full sm:w-72">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchHistory}
+                  onChange={(e) => setSearchHistory(e.target.value)}
+                  placeholder="🔍 Cari Invoice / PIC / Produk / SKU..."
+                  className="w-full pl-8 pr-8 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {searchHistory && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchHistory('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {records.map((rec) => (
-                <div
-                  key={rec.id}
-                  className="bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-sm"
-                >
+            {filteredHistory.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs italic bg-slate-50 dark:bg-[#0F0F12] rounded-xl border border-slate-200 dark:border-slate-800">
+                Tidak ada data riwayat peminjaman yang cocok dengan pencarian &quot;{searchHistory}&quot;
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredHistory.map((rec) => (
+                  <div
+                    key={rec.id}
+                    className="bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-sm"
+                  >
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs font-extrabold text-emerald-500">
                       {rec.noPeminjaman}
@@ -1670,9 +1715,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
+    </div>
 
       {/* MODAL PREVIEW SURAT JALAN & WHATSAPP FONNTE */}
       {selectedRecordForModal && (

@@ -74,7 +74,7 @@ import {
   playSaveSuccessChime,
   vibrateDevice,
 } from '../services/audio';
-import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch } from '../utils/sortUtils';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch } from '../utils/sortUtils';
 
 
 interface PickingTasksViewProps {
@@ -486,13 +486,11 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
     return sjGroups.filter((g) => {
     let matchSearch = true;
     if (deferredSearch.trim()) {
-      // Create an array of strings to search through: no_sj, tujuan, and all item SKUs and names
-      const searchTargets = [
-        g.no_sj,
-        g.tujuan,
-        ...g.items.flatMap(it => [it.sku, it.nama_produk])
-      ];
-      matchSearch = fuzzySearchMultiple(deferredSearch, searchTargets);
+      matchSearch =
+        partialSearchMatch(deferredSearch, g.no_sj, g.tujuan, g.status, g.picker_name, g.catatan) ||
+        g.items.some((it) =>
+          partialSearchMatch(deferredSearch, it.sku, it.nama_produk, it.size, it.lokasi, it.catatan)
+        );
     }
 
     if (!matchSearch) return false;
@@ -1775,19 +1773,16 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                       {isSearchDropdownOpen && searchQuery.trim().length > 0 && (
                         <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl max-h-48 overflow-y-auto">
                           {(() => {
-                            const q = searchQuery.toLowerCase();
                             // 1. Search in current active SJ items
-                            const sjMatches = activeItems.filter(
-                              (it) => it.sku.toLowerCase().includes(q) || it.nama_produk.toLowerCase().includes(q)
+                            const sjMatches = activeItems.filter((it) =>
+                              partialSearchMatch(searchQuery, it.sku, it.nama_produk, it.size, it.lokasi)
                             );
                             // 2. Search in global catalog
                             const catMatches = productCatalog
-                              .filter(
-                                (p) =>
-                                  (p.k && p.k.toLowerCase().includes(q)) ||
-                                  (p.p && p.p.toLowerCase().includes(q))
+                              .filter((p) =>
+                                partialSearchMatch(searchQuery, p.k, p.p, p.s, p.lokasi, p.category)
                               )
-                              .slice(0, 8);
+                              .slice(0, 12);
 
                             if (sjMatches.length === 0 && catMatches.length === 0) {
                               return (

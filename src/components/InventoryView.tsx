@@ -42,6 +42,7 @@ import {
   supabaseFetch,
 } from '../services/supabase';
 import { hasPermission } from '../services/permissions';
+import { partialSearchMatch } from '../utils/sortUtils';
 
 // ========================================================
 // DEFINISI KONSTANTA KOLOM AREA SESUAI SPESIFIKASI WMS
@@ -1646,12 +1647,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     list = list.filter((p) => p.kat.code === kpiMapTab);
                   }
                   if (kpiModalSearch.trim()) {
-                    const q = kpiModalSearch.toLowerCase().trim();
-                    list = list.filter(
-                      (p) =>
-                        p.produk.toLowerCase().includes(q) ||
-                        p.sku.toLowerCase().includes(q) ||
-                        p.kat.label.toLowerCase().includes(q)
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.kat.label, p.locStr)
                     );
                   }
 
@@ -1788,9 +1785,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   else if (kpiBlokFTab === 'TIKTOK') list = list.filter((p) => p.ttkQty > 0);
 
                   if (kpiModalSearch.trim()) {
-                    const q = kpiModalSearch.toLowerCase().trim();
-                    list = list.filter(
-                      (p) => p.produk.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
                     );
                   }
 
@@ -1908,9 +1904,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   else if (kpiPerbaikanTab === 'DEFECT') list = list.filter((p) => p.defectQty > 0);
 
                   if (kpiModalSearch.trim()) {
-                    const q = kpiModalSearch.toLowerCase().trim();
-                    list = list.filter(
-                      (p) => p.produk.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
                     );
                   }
 

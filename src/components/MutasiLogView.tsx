@@ -33,6 +33,7 @@ import {
   getAreaFromLokasi,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
+import { partialSearchMatch } from '../utils/sortUtils';
 
 interface MutasiLogViewProps {
   session?: UserSession | null;
@@ -141,16 +142,20 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = ({
         if (!itemArea.includes(areaFilter.toUpperCase())) return false;
       }
 
-      // Search Query
+      // Search Query (Multi-keyword partial matching across all fields)
       if (deferredSearch.trim()) {
-        const q = deferredSearch.toLowerCase().trim();
-        const matchSku = (log.sku || '').toLowerCase().includes(q);
-        const matchName = (log.nama_produk || '').toLowerCase().includes(q);
-        const matchInv = (log.invoice || '').toLowerCase().includes(q);
-        const matchLoc = (log.lokasi || '').toLowerCase().includes(q);
-        const matchOp = (log.operator || '').toLowerCase().includes(q);
-        const matchKet = (log.keterangan || '').toLowerCase().includes(q);
-        return matchSku || matchName || matchInv || matchLoc || matchOp || matchKet;
+        return partialSearchMatch(
+          deferredSearch,
+          log.sku,
+          log.nama_produk,
+          log.size,
+          log.invoice,
+          log.lokasi,
+          log.operator,
+          log.keterangan,
+          log.area,
+          log.type
+        );
       }
 
       return true;
