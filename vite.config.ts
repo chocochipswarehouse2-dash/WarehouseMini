@@ -5,8 +5,11 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const isGithubPages = process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_PAGES === 'true';
+  const base = process.env.VITE_BASE || (isGithubPages ? '/WarehouseMini/' : './');
+
   return {
-    base: '/',
+    base,
     plugins: [
       react(),
       tailwindcss(),
@@ -17,7 +20,7 @@ export default defineConfig(() => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           importScripts: ['pwa-extras.js'],
-          navigateFallback: '/index.html',
+          navigateFallback: 'index.html',
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
@@ -36,7 +39,7 @@ export default defineConfig(() => {
           ]
         },
         manifest: {
-          id: '/',
+          id: 'warehouse-mini',
           name: 'Warehouse Mini',
           short_name: 'Warehouse Mini',
           description: 'Aplikasi Scanner Barcode & WMS Warehouse Management System dengan sinkronisasi Supabase real-time',
@@ -45,8 +48,8 @@ export default defineConfig(() => {
           display: 'standalone',
           display_override: ['tabbed', 'window-controls-overlay', 'standalone', 'minimal-ui'],
           orientation: 'portrait',
-          scope: '/',
-          start_url: '/',
+          scope: './',
+          start_url: './',
           lang: 'id',
           dir: 'ltr',
           categories: ['business', 'productivity', 'utilities'],
@@ -55,12 +58,12 @@ export default defineConfig(() => {
           related_applications: [
             {
               platform: 'webapp',
-              url: 'https://chocochipswarehouse2-dash.github.io/manifest.json'
+              url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
             }
           ],
           scope_extensions: [{ origin: 'https://chocochipswarehouse2-dash.github.io' }],
           note_taking: {
-            new_note_url: '/'
+            new_note_url: './'
           },
           edge_side_panel: {
             preferred_width: 400
@@ -71,13 +74,13 @@ export default defineConfig(() => {
               short_name: 'Scanner',
               description: 'Quick access to Warehouse Scanner',
               tag: 'scanner-widget',
-              template_url: '/widget-template.json',
-              ms_ac_template: '/widget-template.json',
-              data: '/widget-data.json',
+              template_url: 'widget-template.json',
+              ms_ac_template: 'widget-template.json',
+              data: 'widget-data.json',
               type: 'application/json',
               icons: [
                 {
-                  src: '/icon-192.png',
+                  src: 'icon-192.png',
                   sizes: '192x192',
                   type: 'image/png'
                 }
@@ -86,14 +89,14 @@ export default defineConfig(() => {
           ],
           file_handlers: [
             {
-              action: '/',
+              action: './',
               accept: {
                 'text/csv': ['.csv']
               }
             }
           ],
           share_target: {
-            action: '/',
+            action: './',
             method: 'GET',
             enctype: 'application/x-www-form-urlencoded',
             params: {
@@ -108,7 +111,7 @@ export default defineConfig(() => {
           protocol_handlers: [
             {
               protocol: 'web+wms',
-              url: '/?query=%s'
+              url: './?query=%s'
             }
           ],
           icons: [
@@ -158,7 +161,7 @@ export default defineConfig(() => {
               name: 'Scan Barcode',
               short_name: 'Scan',
               description: 'Buka pemindai',
-              url: '/',
+              url: './',
               icons: [{ src: 'icon-192.png', sizes: '192x192' }]
             }
           ]
