@@ -1650,7 +1650,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                       <FileText className="w-3 h-3 text-emerald-400" />
                       <span>Detail</span>
                     </button>
-                    {['Superadmin', 'Fulfillment', 'Admin'].includes(session?.role || '') && (
                     <button
                       type="button"
                       onClick={() => handlePrintSJ(rec)}
@@ -1659,7 +1658,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
                       <Printer className="w-3 h-3" />
                       <span>Cetak SJ</span>
                     </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => handleSendWa(rec, 'grup')}

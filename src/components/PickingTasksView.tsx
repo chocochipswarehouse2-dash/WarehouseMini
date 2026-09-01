@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   AlertTriangle,
   FileText,
+  Printer,
   Truck,
   Plus,
   RefreshCw,
@@ -564,6 +565,112 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
         setIsBulkActionRunning(false);
       }
     });
+  };
+
+  const handlePrintSPS = (group: PickingSuratJalanGroup) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      onNotify('Popup terblokir, izinkan popup browser untuk cetak PDF', 'warning');
+      return;
+    }
+
+    const itemsRows = group.items
+      .map(
+        (it, idx) => `
+      <tr>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.nama_produk}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_req}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1;">${it.lokasi}</td>
+      </tr>
+    `
+      )
+      .join('');
+
+    const qrText = encodeURIComponent(`#OUT "Peminjaman Invoice ${group.no_sj}"`);
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${qrText}`;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Surat Peminjaman Sementara - ${group.no_sj}</title>
+        <style>
+          @page { size: A4; margin: 15mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1e293b; padding: 20px; }
+          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #10b981; padding-bottom: 12px; margin-bottom: 16px; }
+          .logo-title { font-size: 20px; font-weight: 800; color: #0f172a; }
+          .logo-sub { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+          .info-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+          .info-table td { padding: 4px 0; vertical-align: top; }
+          .label { width: 160px; color: #64748b; font-weight: 600; }
+          .items-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
+          .items-table th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 8px 6px; text-align: left; text-transform: uppercase; font-size: 11px; }
+          .footer-sign { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center; margin-top: 40px; font-size: 12px; }
+          .sign-box { height: 65px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="logo-title">CHOCOCHIPS WMS</div>
+            <div class="logo-sub">Surat Peminjaman Sementara (SPS)</div>
+          </div>
+          <div style="text-align:right;">
+            <img src="${qrUrl}" width="80" height="80" alt="QR Code" style="display:block; margin-left:auto;" />
+          </div>
+        </div>
+
+        <table class="info-table">
+          <tr><td class="label">No Peminjaman</td><td><b>${group.no_sj}</b></td></tr>
+          <tr><td class="label">Tujuan / PIC</td><td><b>${group.tujuan}</b></td></tr>
+          <tr><td class="label">Tanggal Cetak</td><td>${new Date().toLocaleString('id-ID')}</td></tr>
+          <tr><td class="label">Status Dokumen</td><td><b style="color:#059669;">${group.status}</b></td></tr>
+        </table>
+
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th style="width:35px; text-align:center;">No</th>
+              <th>Nama Produk</th>
+              <th style="width:55px; text-align:center;">Size</th>
+              <th style="width:110px;">SKU</th>
+              <th style="width:45px; text-align:center;">Qty</th>
+              <th style="width:110px;">Lokasi</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+          </tbody>
+        </table>
+
+        <div class="footer-sign">
+          <div>
+            <div>Disiapkan Oleh,</div>
+            <div class="sign-box"></div>
+            <div>( _________________ )</div>
+            <div style="color:#64748b; font-size:10px; margin-top:4px;">Picker</div>
+          </div>
+          <div>
+            <div>Diperiksa Oleh,</div>
+            <div class="sign-box"></div>
+            <div>( _________________ )</div>
+            <div style="color:#64748b; font-size:10px; margin-top:4px;">Checker</div>
+          </div>
+          <div>
+            <div>Diterima Oleh,</div>
+            <div class="sign-box"></div>
+            <div>( _________________ )</div>
+            <div style="color:#64748b; font-size:10px; margin-top:4px;">Peminjam / Ekspedisi</div>
+          </div>
+        </div>
+        <script>window.onload = () => window.print();</script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const handleDeleteSingleSJ = async (no_sj: string) => {
@@ -2607,6 +2714,15 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                    )}
+                    {group.no_sj.startsWith('SPS') && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePrintSPS(group); }}
+                        className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded-xl text-[10px] font-extrabold uppercase transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                        title="Cetak SJ Peminjaman"
+                      >
+                        <Printer className="w-4 h-4" /> Cetak SJ
+                      </button>
                     )}
                     <button
                       onClick={() => handleSelectSJ(group)}
