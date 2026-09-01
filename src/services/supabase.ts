@@ -2343,7 +2343,7 @@ export async function completePickingSuratJalanSupabase(
       const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
       const condition = item.id && !item.id.startsWith('pick_')
         ? `id=eq.${item.id}`
-        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(item.sku)}`;
 
       // Try updating with standard columns
       try {
@@ -2485,7 +2485,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
             const encodedSj = encodeURIComponent(no_sj);
             const encodedSku = encodeURIComponent(rows[0].sku);
             if (encodedSj) {
-            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}&sku=eq.${encodedSku}`).catch(()=>{});
+            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}&sku=ilike.${encodedSku}`).catch(()=>{});
             }
           }
         }).catch(()=>{});
