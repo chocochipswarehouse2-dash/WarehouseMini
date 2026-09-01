@@ -2056,7 +2056,7 @@ export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<bo
       'peminjaman',
       'PATCH',
       { status: 'Dikembalikan', tanggal_kembali: new Date().toISOString().slice(0, 10) },
-      `no_peminjaman=eq.${encodeURIComponent(noPeminjaman)}`
+      `no_peminjaman=ilike.${encodeURIComponent(noPeminjaman)}`
     );
     return true;
   } catch (err) {
@@ -2068,7 +2068,7 @@ export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<bo
 
 function extractPickingItemFromRow(row: any): PickingListItem | null {
   if (!row) return null;
-  const no_sj = String(row.no_sj || row.number_delivery || row.no_delivery || row.invoice || row.nomor_sj || row.sj || '').trim().toUpperCase();
+  const no_sj = String(row.no_sj || row.number_delivery || row.no_delivery || row.invoice || row.nomor_sj || row.sj || '').trim();
   const sku = String(row.sku || row.code || row.barcode || '').trim().toUpperCase();
   if (!no_sj || !sku) return null;
 
@@ -2341,9 +2341,9 @@ export async function completePickingSuratJalanSupabase(
   try {
     for (const item of items) {
       const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
-      const queryParam = isUuid
+      const condition = item.id && !item.id.startsWith('pick_')
         ? `id=eq.${item.id}`
-        : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
       // Try updating with standard columns
       try {
@@ -2355,7 +2355,7 @@ export async function completePickingSuratJalanSupabase(
         if (catatan) {
           payload.catatan = catatan;
         }
-        await supabaseFetch('picking_list', 'PATCH', payload, queryParam);
+        await supabaseFetch('picking_list', 'PATCH', payload, condition);
       } catch (patchErr: any) {
         // If failed due to unknown 'catatan' column, retry without catatan
         try {
@@ -2364,7 +2364,7 @@ export async function completePickingSuratJalanSupabase(
             status: 'SELESAI',
             picker_name: pickerName,
           };
-          await supabaseFetch('picking_list', 'PATCH', minimalPayload, queryParam);
+          await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
         } catch (innerErr) {
           console.warn(`Supabase patch failed for item ${item.sku}:`, innerErr);
         }
@@ -2484,7 +2484,9 @@ export async function updatePickingSuratJalanDetailsSupabase(
           if (rows && rows[0]) {
             const encodedSj = encodeURIComponent(no_sj);
             const encodedSku = encodeURIComponent(rows[0].sku);
-            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedSj}&sku=eq.${encodedSku}`).catch(()=>{});
+            if (encodedSj) {
+            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}&sku=eq.${encodedSku}`).catch(()=>{});
+            }
           }
         }).catch(()=>{});
       }
@@ -2548,8 +2550,8 @@ export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Pr
     // Delete one by one to avoid PostgREST 'in' syntax issues with special chars
     for (const sj of no_sjs) {
       const encodedSj = encodeURIComponent(sj);
-      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=eq.${encodedSj}`);
-      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedSj}`).catch(() => {});
+      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encodedSj}`);
+      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}`).catch(() => {});
     }
     // Clean up local caches
     try {
@@ -2589,7 +2591,7 @@ export async function completePickingSuratJalanBatchSupabase(no_sjs: string[], p
       await supabaseFetch('picking_list', 'PATCH', { 
         status: 'SELESAI',
         picker_name: pickerName || 'Admin'
-      }, `no_sj=eq.${encodedSj}`);
+      }, `no_sj=ilike.${encodedSj}`);
     }
     // Update local caches
     try {

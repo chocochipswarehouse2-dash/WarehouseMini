@@ -74,7 +74,7 @@ import {
   vibrateDevice,
 } from '../services/audio';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch } from '../utils/sortUtils';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+
 
 interface PickingTasksViewProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
