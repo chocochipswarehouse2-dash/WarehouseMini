@@ -36,7 +36,7 @@ export function showPushNotification(title: string, options?: { body?: string; i
         navigator.serviceWorker.ready.then((registration) => {
           registration.showNotification(title, {
             body: options?.body || 'Aktivitas WMS Scanner baru',
-            icon: options?.icon || '/manifest.json',
+            icon: options?.icon || '/WarehouseMini/icon-192.png',
             tag: options?.tag || 'wms-notification',
             vibrate: [200, 100, 200]
           } as NotificationOptions);

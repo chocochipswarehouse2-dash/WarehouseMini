@@ -16,7 +16,23 @@ export default defineConfig(() => {
         manifestFilename: 'manifest.json',
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-          importScripts: ['pwa-extras.js']
+          importScripts: ['pwa-extras.js'],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'supabase-api-cache',
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            }
+          ]
         },
         manifest: {
           id: '/WarehouseMini/',
@@ -99,13 +115,25 @@ export default defineConfig(() => {
               src: 'icon-192.png',
               sizes: '192x192',
               type: 'image/png',
-              purpose: 'any maskable'
+              purpose: 'any'
+            },
+            {
+              src: 'icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'maskable'
             },
             {
               src: 'icon-512.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'any maskable'
+              purpose: 'any'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
             }
           ],
           screenshots: [

@@ -1397,9 +1397,15 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
               <button
                 onClick={() => {
                   if (activeStats.regularPicked > 0) {
-                    if (confirm('Progress picking belum diselesaikan. Kembali ke daftar Surat Jalan?')) {
-                      setActiveSJ(null);
-                    }
+                    setConfirmDialog({
+                      isOpen: true,
+                      title: 'Kembali ke Daftar?',
+                      message: 'Progress picking belum diselesaikan. Kembali ke daftar Surat Jalan?',
+                      onConfirm: () => {
+                        setActiveSJ(null);
+                        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                      }
+                    });
                   } else {
                     setActiveSJ(null);
                   }

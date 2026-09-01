@@ -14,37 +14,45 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanTimeRef = useRef<number>(0);
   const lastScanCodeRef = useRef<string>('');
+  const camerasLoadedRef = useRef(false);
+
+  // Load cameras lazily — only enumerate when user initiates scan
+  const loadCamerasIfNeeded = async () => {
+    if (camerasLoadedRef.current) return;
+    try {
+      const devices = await Html5Qrcode.getCameras();
+      if (devices && devices.length > 0) {
+        const deviceList: CameraDevice[] = devices.map((d) => ({
+          id: d.id,
+          label: d.label || `Kamera ${d.id.slice(0, 5)}`,
+        }));
+        setCameras(deviceList);
+        const backCam = deviceList.find(
+          (c) =>
+            c.label.toLowerCase().includes('back') ||
+            c.label.toLowerCase().includes('rear') ||
+            c.label.toLowerCase().includes('environment') ||
+            c.label.toLowerCase().includes('0')
+        );
+        setSelectedCameraId(backCam ? backCam.id : deviceList[0].id);
+        camerasLoadedRef.current = true;
+      }
+    } catch (err: unknown) {
+      console.warn('Gagal membaca list kamera:', err);
+      // Check if this is a permission denial
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('NotAllowed') || msg.includes('Permission') || msg.includes('denied')) {
+        setPermissionDenied(true);
+      }
+    }
+  };
 
   useEffect(() => {
-    // Check available camera devices
-    Html5Qrcode.getCameras()
-      .then((devices) => {
-        if (devices && devices.length > 0) {
-          const deviceList: CameraDevice[] = devices.map((d) => ({
-            id: d.id,
-            label: d.label || `Kamera ${d.id.slice(0, 5)}`,
-          }));
-          setCameras(deviceList);
-          // Try to select rear camera by default
-          const backCam = deviceList.find(
-            (c) =>
-              c.label.toLowerCase().includes('back') ||
-              c.label.toLowerCase().includes('rear') ||
-              c.label.toLowerCase().includes('environment') ||
-              c.label.toLowerCase().includes('0')
-          );
-          setSelectedCameraId(backCam ? backCam.id : deviceList[0].id);
-        }
-      })
-      .catch((err) => {
-        console.warn('Gagal membaca list kamera:', err);
-      });
-
     return () => {
       stopCamera();
     };
@@ -54,6 +62,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
     setError(null);
     setIsInitializing(true);
     onRequestWakeLock();
+
+    await loadCamerasIfNeeded();
 
     try {
       if (scannerRef.current) {
@@ -196,33 +206,47 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
               id="cameraStartOverlay"
               className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-black/85 backdrop-blur-sm text-center"
             >
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-3">
-                <Camera className="w-7 h-7 text-emerald-400" />
-              </div>
-              <h4 className="text-sm font-bold text-white mb-1">Kamera Barcode & QR Scanner</h4>
-              <p className="text-xs text-slate-400 max-w-xs mb-4">
-                Gunakan kamera HP Android Anda untuk memindai barcode produk & tag lokasi otomatis.
-              </p>
+              {permissionDenied ? (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-3">
+                    <Camera className="w-7 h-7 text-rose-400" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white mb-1">Izin Kamera Ditolak</h4>
+                  <p className="text-xs text-slate-400 max-w-xs mb-4">
+                    Mohon izinkan akses kamera di pengaturan browser/situs Anda untuk menggunakan fitur scanner.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-3">
+                    <Camera className="w-7 h-7 text-emerald-400" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white mb-1">Kamera Barcode & QR Scanner</h4>
+                  <p className="text-xs text-slate-400 max-w-xs mb-4">
+                    Gunakan kamera HP Android Anda untuk memindai barcode produk & tag lokasi otomatis.
+                  </p>
 
-              <button
-                type="button"
-                id="btnStartCamera"
-                onClick={() => startCamera()}
-                disabled={isInitializing}
-                className="bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 active:scale-95 text-black font-extrabold px-6 py-3 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.35)] flex items-center gap-2 text-xs tracking-wider transition-all uppercase"
-              >
-                {isInitializing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-black" />
-                    <span>MENYIAPKAN LENSA...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 fill-black text-black" />
-                    <span>MULAI SCANNER KAMERA</span>
-                  </>
-                )}
-              </button>
+                  <button
+                    type="button"
+                    id="btnStartCamera"
+                    onClick={() => startCamera()}
+                    disabled={isInitializing}
+                    className="bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 active:scale-95 text-black font-extrabold px-6 py-3 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.35)] flex items-center gap-2 text-xs tracking-wider transition-all uppercase"
+                  >
+                    {isInitializing ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                        <span>MENYIAPKAN LENSA...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 fill-black text-black" />
+                        <span>MULAI SCANNER KAMERA</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           )}
 

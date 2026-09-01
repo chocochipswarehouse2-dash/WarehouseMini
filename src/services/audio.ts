@@ -1,12 +1,16 @@
 // Web Audio API Synthesizer and Android Haptic Feedback
 let audioCtx: AudioContext | null = null;
+let audioCtxInitialized = false;
 
 function getAudioContext(): AudioContext | null {
   try {
-    if (!audioCtx) {
+    if (!audioCtxInitialized) {
+      // Only create AudioContext when called from a user gesture (click/tap/scan)
+      // Chrome mobile / TWA blocks AudioContext creation without user gesture
       const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtxClass) {
         audioCtx = new AudioCtxClass();
+        audioCtxInitialized = true;
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') {

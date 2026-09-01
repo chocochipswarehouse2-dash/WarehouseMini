@@ -37,9 +37,18 @@ export async function releaseScreenWakeLock(): Promise<void> {
 
 // Auto re-acquire wake lock when tab visibility changes back to visible
 if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible' && isWakeLockRequested && !wakeLockSentinel) {
+  const reacquireWakeLock = async () => {
+    if (isWakeLockRequested && !wakeLockSentinel) {
       await requestScreenWakeLock();
     }
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      reacquireWakeLock();
+    }
   });
+
+  // In PWA standalone/TWA, visibilitychange may not fire on task switch
+  window.addEventListener('focus', reacquireWakeLock);
 }

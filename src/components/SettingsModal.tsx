@@ -150,6 +150,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Copied helper
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Custom confirm dialog (replaces window.confirm for TWA/PWA Builder)
+  const [settingsConfirmDialog, setSettingsConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
   const loadUsersFromSupabase = async () => {
     setIsLoadingUsers(true);
     try {
@@ -479,14 +487,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onNotify('User admin master tidak dapat dihapus!', 'warning');
       return;
     }
-    if (!confirm(`Hapus pengguna "${target.name || target.username}" (${target.role})?`)) {
-      return;
-    }
-    const updated = userList.filter((_, i) => i !== idx);
-    setUserList(updated);
-    saveLocalUsersList(updated);
-    deleteWmsUserFromSupabase(target.username);
-    onNotify(`User "${target.username}" berhasil dihapus.`, 'info');
+    setSettingsConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Pengguna',
+      message: `Hapus pengguna "${target.name || target.username}" (${target.role})?`,
+      onConfirm: () => {
+        const updated = userList.filter((_, i) => i !== idx);
+        setUserList(updated);
+        saveLocalUsersList(updated);
+        deleteWmsUserFromSupabase(target.username);
+        onNotify(`User "${target.username}" berhasil dihapus.`, 'info');
+        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleSwitchActiveRole = (targetRole: UserRole) => {
@@ -504,6 +517,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
+    <>
     <div
       id="settingsModalOverlay"
       onClick={(e) => {
@@ -1569,5 +1583,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
       </div>
     </div>
+
+    {/* Custom Confirm Dialog for Settings */}
+    {settingsConfirmDialog.isOpen && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
+          <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{settingsConfirmDialog.title}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{settingsConfirmDialog.message}</p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+            >
+              Batal
+            </button>
+            <button
+              onClick={settingsConfirmDialog.onConfirm}
+              className="px-4 py-2 text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-sm shadow-rose-500/20 transition-all active:scale-95"
+            >
+              Ya, Lanjutkan
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };

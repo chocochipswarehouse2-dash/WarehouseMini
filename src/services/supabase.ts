@@ -2143,6 +2143,11 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
       for (const p of peminjamans) {
         const no_sj = String(p.no_peminjaman || '');
         const sku = String(p.sku || '').toUpperCase();
+        const pStatus = String(p.status || '').toUpperCase();
+        
+        // Skip items that are already returned to avoid re-adding them to picking list
+        if (pStatus === 'DIKEMBALIKAN') continue;
+
         if (no_sj && sku && !itemsMap.has(`${no_sj}__${sku}`)) {
           const newItem = {
             no_sj: no_sj,
@@ -2477,7 +2482,9 @@ export async function updatePickingSuratJalanDetailsSupabase(
         // we only have ID for picking_list, so we must fetch the SKU first to delete from peminjaman
         supabaseFetch<any[]>('picking_list', 'GET', null, `id=eq.${id}`).then((rows) => {
           if (rows && rows[0]) {
-            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${no_sj}&sku=eq.${rows[0].sku}`).catch(()=>{});
+            const encodedSj = encodeURIComponent(no_sj);
+            const encodedSku = encodeURIComponent(rows[0].sku);
+            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedSj}&sku=eq.${encodedSku}`).catch(()=>{});
           }
         }).catch(()=>{});
       }

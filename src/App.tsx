@@ -116,6 +116,18 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
 
+  // Custom confirm dialog (replaces window.confirm which is blocked in TWA/PWA Builder)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
+  const showConfirmDialog = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({ isOpen: true, title, message, onConfirm });
+  };
+
   const toggleSidebarCollapse = () => {
     setIsSidebarCollapsed((prev) => {
       const next = !prev;
@@ -422,10 +434,15 @@ export default function App() {
 
   const handleClearAll = () => {
     if (!scannedData.length) return;
-    if (confirm('Hapus semua daftar hasil scan saat ini?')) {
-      setScannedData([]);
-      showToast('Daftar scan dikosongkan.', 'info');
-    }
+    showConfirmDialog(
+      'Hapus Daftar Scan',
+      'Hapus semua daftar hasil scan saat ini?',
+      () => {
+        setScannedData([]);
+        showToast('Daftar scan dikosongkan.', 'info');
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    );
   };
 
   const handleSelectQuickCategory = (cat: CategoryType) => {
@@ -773,6 +790,30 @@ export default function App() {
         isRealtimeConnected={isRealtimeConnected}
         onNotify={showToast}
       />
+
+      {/* Custom Confirm Dialog (replaces window.confirm for PWA Builder / TWA compat) */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{confirmDialog.title}</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-sm shadow-rose-500/20 transition-all active:scale-95"
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
