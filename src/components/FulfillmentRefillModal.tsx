@@ -78,29 +78,6 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Helper: Auto-allocate location for SKU
-  const autoAllocateLocation = (sku: string): string => {
-    const cleanSku = (sku || '').trim().toUpperCase();
-    if (!cleanSku) return '-';
-    const found = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
-    if (found) {
-      if (found.lokasi && found.lokasi.trim()) {
-        const parts = found.lokasi.split(/[,/;\n|]+/).map((s) => s.trim()).filter(Boolean);
-        if (parts.length > 0) return parts[0];
-      }
-      if (Array.isArray(found.locList) && found.locList.length > 0) {
-        const first = found.locList[0];
-        if (typeof first === 'string') {
-          const p = first.split(':')[0].trim();
-          if (p) return p;
-        } else if (typeof first === 'object' && first?.lokasi) {
-          return first.lokasi;
-        }
-      }
-    }
-    return '-';
-  };
-
   // Helper: Parse CSV Line
   const parseRefillCsvLine = (text: string): string[] => {
     const result: string[] = [];
@@ -183,8 +160,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               namaFinal = variant;
             }
           }
-
-          const lokasi = autoAllocateLocation(sku);
+          const lokasi = '-';
 
           if (!groupsMap[noSJ]) {
             groupsMap[noSJ] = {
@@ -433,7 +409,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       if (found) {
         next[index].nama_produk = found.p;
         next[index].size = found.s || '-';
-        next[index].lokasi = autoAllocateLocation(cleanSku);
+        next[index].lokasi = '-';
       }
     }
     setManualRows(next);
@@ -461,7 +437,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         sku: r.sku.trim().toUpperCase(),
         nama: r.nama_produk.trim() || r.sku,
         size: r.size || '-',
-        lokasi: r.lokasi || autoAllocateLocation(r.sku),
+        lokasi: r.lokasi || '-',
         qty: Number(r.qty) || 1,
       })),
       totalQty: validRows.reduce((a, b) => a + (Number(b.qty) || 1), 0),
