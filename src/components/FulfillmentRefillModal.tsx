@@ -160,7 +160,14 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               namaFinal = variant;
             }
           }
-          const lokasi = '-';
+          let lokasi = '-';
+          if (productCatalog && productCatalog.length > 0) {
+            const cleanSku = sku.toUpperCase();
+            const matchedProduct = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
+            if (matchedProduct && matchedProduct.lokasi) {
+              lokasi = matchedProduct.lokasi;
+            }
+          }
 
           if (!groupsMap[noSJ]) {
             groupsMap[noSJ] = {
@@ -407,9 +414,9 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       const cleanSku = String(value).trim().toUpperCase();
       const found = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
       if (found) {
-        next[index].nama_produk = found.p;
+        next[index].nama_produk = found.p || found.n || '';
         next[index].size = found.s || '-';
-        next[index].lokasi = '-';
+        next[index].lokasi = found.lokasi || '-';
       }
     }
     setManualRows(next);
