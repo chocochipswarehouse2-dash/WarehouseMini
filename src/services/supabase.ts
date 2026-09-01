@@ -1586,7 +1586,19 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): 
               productsMap.set(key, item);
             } else {
               // Enrich existing item if new record has location or size or fuller name
-              if (!existing.lokasi && item.lokasi) existing.lokasi = item.lokasi;
+              if (item.lokasi) {
+                if (!existing.lokasi) {
+                  existing.lokasi = item.lokasi;
+                } else {
+                  // Combine locations if not already present
+                  const existingLocs = existing.lokasi.split(/[,/;\n|]+/).map(s => s.trim().toUpperCase());
+                  const newLocs = item.lokasi.split(/[,/;\n|]+/).map(s => s.trim().toUpperCase());
+                  const toAdd = newLocs.filter(l => l && !existingLocs.includes(l));
+                  if (toAdd.length > 0) {
+                    existing.lokasi = `${existing.lokasi}, ${toAdd.join(', ')}`;
+                  }
+                }
+              }
               if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
               if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
             }
