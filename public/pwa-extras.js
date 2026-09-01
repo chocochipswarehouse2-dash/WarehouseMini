@@ -15,8 +15,8 @@ self.addEventListener('push', (event) => {
   const title = 'Warehouse Mini';
   const options = {
     body: event.data ? event.data.text() : 'Update baru tersedia!',
-    icon: '/WarehouseMini/icon-192.png',
-    badge: '/WarehouseMini/icon-192.png'
+    icon: '/icon-192.png',
+    badge: '/icon-192.png'
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -28,11 +28,11 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url.includes('/WarehouseMini/') && 'focus' in client) {
+        if (client.url.includes('/') && 'focus' in client) {
           return client.focus();
         }
       }
-      return clients.openWindow('/WarehouseMini/');
+      return clients.openWindow('/');
     })
   );
 });
