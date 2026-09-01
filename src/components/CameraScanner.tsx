@@ -16,6 +16,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan, onRequestW
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanTimeRef = useRef<number>(0);

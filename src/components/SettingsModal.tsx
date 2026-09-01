@@ -48,7 +48,7 @@ import {
   Sparkles,
   Code2,
   FileCode,
-  CheckCheck, Share2, Loader2,
+  CheckCheck, Share2, Loader2, UploadCloud,
 } from 'lucide-react';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
@@ -89,6 +89,7 @@ interface SettingsModalProps {
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
+  onOpenUpdateDatabase?: () => void;
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
@@ -105,6 +106,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
+  onOpenUpdateDatabase,
   onNotify,
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
@@ -1124,6 +1126,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Master Database CSV Update Box (Superadmin Only) */}
+              {userIsSuperadmin && onOpenUpdateDatabase && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-rose-600 text-white font-black shrink-0">
+                      <Database className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black text-slate-800 dark:text-white">
+                          Update Database Master (2 File CSV)
+                        </h4>
+                        <span className="text-[9px] px-1.5 py-0.2 bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-extrabold rounded">
+                          SUPERADMIN
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Import data produk & inventori cabang store ke Supabase (Otomatis hapus database lama & ganti baru).
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenUpdateDatabase();
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Buka Update Database</span>
+                  </button>
+                </div>
+              )}
 
               <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800">
                 <button

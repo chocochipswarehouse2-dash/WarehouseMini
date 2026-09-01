@@ -31,6 +31,7 @@ import { StockOpnameView } from './components/StockOpnameView';
 import { MutasiLogView } from './components/MutasiLogView';
 import { InventoryView } from './components/InventoryView';
 import { SettingsModal } from './components/SettingsModal';
+import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 
 
 import {
@@ -108,6 +109,7 @@ export default function App() {
 
   // Modals & Drawers & Sidebar
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isUpdateDatabaseOpen, setIsUpdateDatabaseOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -637,6 +639,7 @@ export default function App() {
         isRealtimeConnected={isRealtimeConnected}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenApkModal={() => setIsApkModalOpen(true)}
+        onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onLogout={handleLogout}
         totalScannedCount={scannedData.length}
       />
@@ -788,7 +791,19 @@ export default function App() {
         notificationPermission={notificationPermission}
         onRequestNotification={handleRequestNotification}
         isRealtimeConnected={isRealtimeConnected}
+        onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onNotify={showToast}
+      />
+
+      {/* Update Database Modal (Superadmin Only: 2 CSV Import to Supabase) */}
+      <UpdateDatabaseModal
+        isOpen={isUpdateDatabaseOpen}
+        onClose={() => setIsUpdateDatabaseOpen(false)}
+        session={session}
+        onNotify={showToast}
+        onSuccess={() => {
+          loadProducts();
+        }}
       />
 
       {/* Custom Confirm Dialog (replaces window.confirm for PWA Builder / TWA compat) */}

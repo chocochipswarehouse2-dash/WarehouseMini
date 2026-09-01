@@ -423,27 +423,36 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         if (!row || typeof row !== 'object') return null;
 
         const f = (row.f || {}) as Record<string, number>;
-        const d = (row.d || {}) as Record<string, number>;
-        const b = (row.b || {}) as Record<string, number>;
+        const dpRaw = (row.dealpos_channels || {}) as any;
+        const d = (row.d || dpRaw.d || dpRaw || {}) as Record<string, number>;
+        const b = (row.b || dpRaw.b || dpRaw.cabang || dpRaw || {}) as Record<string, number>;
 
         const mapFisik = Number(f['MAP'] || f['Gudang Utama'] || f['Warehouse'] || 0);
-        const mapDp = Number(d['MAP'] || d['Gudang Utama'] || d['Marketplace'] || (row as any).q || 0);
+        const mapDp = Number(d['MAP'] || d['Gudang Utama'] || d['Marketplace'] || dpRaw.MAP || dpRaw['Gudang Utama'] || dpRaw.Marketplace || (row as any).stokMap || (row as any).q || 0);
 
         const liveFisik = Number(f['LIVE'] || f['Barang Live'] || f['Sample Live'] || 0);
-        const liveDp = Number(d['LIVE'] || d['Barang Live'] || d['Sample Live'] || 0);
+        const liveDp = Number(d['LIVE'] || d['Barang Live'] || d['Sample Live'] || dpRaw.LIVE || dpRaw['Barang Live'] || dpRaw['Sample Live'] || 0);
 
         const studioFisik = Number(f['STUDIO'] || f['Sample Studio'] || 0);
-        const studioDp = Number(d['STUDIO'] || d['Sample Studio'] || 0);
+        const studioDp = Number(d['STUDIO'] || d['Sample Studio'] || dpRaw.STUDIO || dpRaw['Sample Studio'] || (row as any).stokStudio || 0);
 
         const permakFisik = Number(f['PERMAK'] || f['Permak / Cuci'] || f['Permak'] || 0);
-        const permakDp = Number(d['PERMAK'] || d['Permak / Cuci'] || d['Permak'] || 0);
+        const permakDp = Number(d['PERMAK'] || d['Permak / Cuci'] || d['Permak'] || dpRaw.PERMAK || dpRaw['Permak / Cuci'] || dpRaw.Permak || 0);
 
         const defectFisik = Number(f['DEFECT'] || f['Barang Cacat'] || f['Cacat'] || 0);
-        const defectDp = Number(d['DEFECT'] || d['Barang Cacat'] || d['Diskon Defect'] || d['Cacat'] || 0);
+        const defectDp = Number(d['DEFECT'] || d['Barang Cacat'] || d['Diskon Defect'] || d['Cacat'] || dpRaw.DEFECT || dpRaw['Barang Cacat'] || dpRaw['Diskon Defect'] || dpRaw.Cacat || 0);
 
         const singleVals: { [key: string]: number } = {};
         [...OFFLINE_COLS, ...STORE_COLS, ...ONLINE_COLS].forEach((code) => {
-          singleVals[code] = Number(b[code] || d[code] || f[code] || 0);
+          singleVals[code] = Number(
+            b[code] ||
+            d[code] ||
+            f[code] ||
+            dpRaw[code] ||
+            dpRaw.cabang?.[code] ||
+            dpRaw.b?.[code] ||
+            0
+          );
         });
 
         const locList = Array.isArray(row.l) ? row.l : Array.isArray((row as any).locList) ? (row as any).locList : [];

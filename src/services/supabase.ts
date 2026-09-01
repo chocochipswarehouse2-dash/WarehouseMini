@@ -1445,21 +1445,86 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
   let stokShp: number | undefined = undefined;
   let stokTtk: number | undefined = undefined;
   let komparasi: ProductItem['komparasi'] = undefined;
+  const d: Record<string, number> = {};
+  const b: Record<string, number> = {};
 
   if (row.dealpos_channels && typeof row.dealpos_channels === 'object') {
     const dp = row.dealpos_channels;
-    if (typeof dp.MAP === 'number' || typeof dp.TOTAL === 'number' || typeof dp.GUDANG === 'number') {
-      stokMap = Number(dp.MAP ?? dp.TOTAL ?? dp.GUDANG) || 0;
+
+    // 1. DealPOS 5-Komparasi (MAP, LIVE, STUDIO, PERMAK, DEFECT)
+    const mapVal = Number(dp.MAP ?? dp['Gudang Utama'] ?? dp.Marketplace ?? dp.GUDANG ?? dp.TOTAL ?? 0) || 0;
+    const liveVal = Number(dp.LIVE ?? dp['Barang Live'] ?? dp['Sample Live'] ?? 0) || 0;
+    const studioVal = Number(dp.STUDIO ?? dp['Sample Studio'] ?? 0) || 0;
+    const permakVal = Number(dp.PERMAK ?? dp['Permak / Cuci'] ?? dp.Permak ?? 0) || 0;
+    const defectVal = Number(dp.DEFECT ?? dp['Barang Cacat'] ?? dp['Diskon Defect'] ?? dp.Cacat ?? 0) || 0;
+
+    d['MAP'] = mapVal;
+    d['Gudang Utama'] = mapVal;
+    d['LIVE'] = liveVal;
+    d['Barang Live'] = liveVal;
+    d['STUDIO'] = studioVal;
+    d['Sample Studio'] = studioVal;
+    d['PERMAK'] = permakVal;
+    d['Permak / Cuci'] = permakVal;
+    d['DEFECT'] = defectVal;
+    d['Barang Cacat'] = defectVal;
+
+    stokMap = mapVal;
+    stokStudio = studioVal;
+
+    // 2. Offline singles (WH, QC, GA, LOG)
+    b['WH'] = Number(dp.WH ?? dp.Warehouse ?? 0) || 0;
+    b['QC'] = Number(dp.QC ?? dp['Gudang QC'] ?? 0) || 0;
+    b['GA'] = Number(dp.GA ?? dp['Gudang Awal'] ?? 0) || 0;
+    b['LOG'] = Number(dp.LOG ?? dp.Logistik ?? 0) || 0;
+
+    // 3. Online singles (WEB, SHP, TPD, TTK, LZD, WOO)
+    b['WEB'] = Number(dp.WEB ?? dp.Website ?? dp.cabang?.WEB ?? 0) || 0;
+    b['SHP'] = Number(dp.SHP ?? dp.Shopee ?? dp.cabang?.SHP ?? 0) || 0;
+    b['TPD'] = Number(dp.TPD ?? dp.Tokopedia ?? dp.cabang?.TPD ?? 0) || 0;
+    b['TTK'] = Number(dp.TTK ?? dp.TikTok ?? dp.cabang?.TTK ?? 0) || 0;
+    b['LZD'] = Number(dp.LZD ?? dp.Lazada ?? dp.cabang?.LZD ?? 0) || 0;
+    b['WOO'] = Number(dp.WOO ?? dp.WooCommerce ?? dp.cabang?.WOO ?? 0) || 0;
+
+    stokShp = b['SHP'];
+    stokTtk = b['TTK'];
+
+    // 4. Store Outlets (LMP, MKG, BTS, CPJ, CWS, LWS, DPM, PHB, PMS, NSJ, PIM, SPM, GAIA, GST, LVL, SMS, PVJ, TP, etc.)
+    const STORE_CODES = ['LMP', 'MKG', 'BTS', 'CPJ', 'CWS', 'LWS', 'DPM', 'PHB', 'PMS', 'NSJ', 'PIM', 'SPM', 'GAIA', 'GST', 'LVL', 'SMS', 'PVJ', 'TP'];
+    STORE_CODES.forEach((code) => {
+      const q = Number(dp[code] ?? dp.cabang?.[code] ?? dp.b?.[code] ?? 0) || 0;
+      b[code] = q;
+    });
+
+    // Also copy all keys from dp.cabang if available
+    if (dp.cabang && typeof dp.cabang === 'object') {
+      Object.keys(dp.cabang).forEach((k) => {
+        b[k] = Number(dp.cabang[k]) || 0;
+      });
     }
-    if (typeof dp.STUDIO === 'number') stokStudio = Number(dp.STUDIO) || 0;
-    if (typeof dp.SHOPEE === 'number' || typeof dp.SHP === 'number') stokShp = Number(dp.SHOPEE ?? dp.SHP) || 0;
-    if (typeof dp.TIKTOK === 'number' || typeof dp.TTK === 'number') stokTtk = Number(dp.TIKTOK ?? dp.TTK) || 0;
+
+    komparasi = {
+      MAP: { fisik: 0, dp: mapVal },
+      LIVE: { fisik: 0, dp: liveVal },
+      STUDIO: { fisik: 0, dp: studioVal },
+      PERMAK: { fisik: 0, dp: permakVal },
+      DEFECT: { fisik: 0, dp: defectVal },
+    };
+  }
+
+  // Also check existing d and b from row if present
+  if (row.d && typeof row.d === 'object') {
+    Object.assign(d, row.d);
+  }
+  if (row.b && typeof row.b === 'object') {
+    Object.assign(b, row.b);
   }
 
   if (stokMap === undefined) {
     const rawDp = row.sisa_stok ?? row.stok_dealpos ?? row.dealpos_stock ?? row.stock_dealpos ?? row.stok_sistem ?? row.dealpos_stok ?? row.stok_map ?? row.qty;
     if (rawDp !== undefined && rawDp !== null && rawDp !== '') {
       stokMap = Number(rawDp);
+      if (!d['MAP']) d['MAP'] = stokMap;
     }
   }
 
@@ -1479,7 +1544,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
 
   if (row.komparasi && typeof row.komparasi === 'object') {
     komparasi = row.komparasi;
-  } else if (stokMap !== undefined) {
+  } else if (stokMap !== undefined && !komparasi) {
     komparasi = {
       MAP: { fisik: 0, dp: stokMap },
       STUDIO: stokStudio !== undefined ? { fisik: 0, dp: stokStudio } : undefined,
@@ -1488,8 +1553,11 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
 
   return {
     k: sku.toUpperCase(),
+    sku: sku.toUpperCase(),
     p: nama,
+    nama_produk: nama,
     s: size,
+    size: size,
     category,
     lokasi,
     price,
@@ -1498,6 +1566,12 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     stokShp,
     stokTtk,
     komparasi,
+    d,
+    b,
+    f: (row.f && typeof row.f === 'object') ? row.f : {},
+    l: Array.isArray(row.l) ? row.l : [],
+    dealpos_channels: row.dealpos_channels,
+    q: stokMap ?? Number(row.q || 0),
   };
 }
 
@@ -2624,3 +2698,139 @@ export async function completePickingSuratJalanBatchSupabase(no_sjs: string[], p
     return false;
   }
 }
+
+/**
+ * =========================================================================
+ * UPDATE DATABASE MASTER PRODUK (CSV IMPORT -> DELETE ALL OLD -> INSERT ALL NEW)
+ * =========================================================================
+ */
+
+export interface MasterProdukRecord {
+  sku: string;
+  nama_produk: string;
+  kategori?: string;
+  size?: string;
+  price?: number;
+  dealpos_channels?: Record<string, any>;
+}
+
+/**
+ * Fetch total count of master_produk rows in Supabase
+ */
+export async function fetchMasterProdukCount(): Promise<{ count: number; error?: string }> {
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  try {
+    const res = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku`, {
+      method: 'GET',
+      headers: {
+        apikey: supaKey,
+        Authorization: `Bearer ${supaKey}`,
+        Prefer: 'count=exact',
+        Range: '0-0',
+      },
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || `HTTP ${res.status}`);
+    }
+    let count = 0;
+    const range = res.headers.get('Content-Range');
+    if (range) {
+      const total = range.split('/')[1];
+      if (total && total !== '*') count = parseInt(total, 10) || 0;
+    }
+    return { count };
+  } catch (err: any) {
+    return { count: 0, error: err.message || 'Gagal memuat status database' };
+  }
+}
+
+/**
+ * Delete ALL old rows from master_produk table before writing newly imported CSV data
+ */
+export async function deleteEntireMasterProduk(): Promise<{ success: boolean; error?: string }> {
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  try {
+    const res = await fetch(`${supaUrl}/rest/v1/master_produk?sku=not.is.null`, {
+      method: 'DELETE',
+      headers: {
+        apikey: supaKey,
+        Authorization: `Bearer ${supaKey}`,
+      },
+    });
+    if (!res.ok && res.status !== 204 && res.status !== 200) {
+      // Fallback filter
+      const fallbackRes = await fetch(`${supaUrl}/rest/v1/master_produk?sku=neq.__DUMMY_NONE_FILTER__`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supaKey,
+          Authorization: `Bearer ${supaKey}`,
+        },
+      });
+      if (!fallbackRes.ok && fallbackRes.status !== 204 && fallbackRes.status !== 200) {
+        const errText = await fallbackRes.text();
+        throw new Error(errText || `Gagal menghapus database lama (HTTP ${fallbackRes.status})`);
+      }
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Gagal menghapus database lama' };
+  }
+}
+
+/**
+ * Import a full batch of Master Produk items into Supabase with chunked upsert & live progress reporting
+ */
+export async function importMasterProdukBatch(
+  records: MasterProdukRecord[],
+  onProgress?: (uploaded: number, total: number, pct: number) => void
+): Promise<{ success: boolean; totalUploaded: number; error?: string }> {
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  const total = records.length;
+  if (total === 0) return { success: true, totalUploaded: 0 };
+
+  const CHUNK_SIZE = 1000;
+  let uploaded = 0;
+
+  for (let i = 0; i < total; i += CHUNK_SIZE) {
+    const chunk = records.slice(i, i + CHUNK_SIZE).map((r) => ({
+      sku: r.sku,
+      nama_produk: r.nama_produk,
+      kategori: r.kategori || '',
+      size: r.size || '',
+      price: typeof r.price === 'number' ? r.price : 0,
+      dealpos_channels: r.dealpos_channels || {},
+    }));
+    const res = await fetch(`${supaUrl}/rest/v1/master_produk?on_conflict=sku`, {
+      method: 'POST',
+      headers: {
+        apikey: supaKey,
+        Authorization: `Bearer ${supaKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(chunk),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Gagal upload chunk (${i} - ${i + chunk.length}): ${errText}`);
+    }
+
+    uploaded += chunk.length;
+    const pct = Math.round((uploaded / total) * 100);
+    if (onProgress) {
+      onProgress(uploaded, total, pct);
+    }
+  }
+
+  // Clear local product caches so new dataset is freshly reloaded
+  try {
+    localStorage.removeItem('wms_product_cache');
+    localStorage.removeItem('wms_cache_inventory_v38');
+    localStorage.removeItem('wms_inventory_stock_cache');
+  } catch {}
+
+  return { success: true, totalUploaded: uploaded };
+}
+

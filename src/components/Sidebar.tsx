@@ -21,6 +21,7 @@ import {
   ArrowRightLeft,
   Boxes,
   Lock,
+  Database,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, ROLE_DETAILS } from '../services/permissions';
@@ -40,6 +41,7 @@ interface SidebarProps {
   isRealtimeConnected: boolean;
   onOpenSettings: () => void;
   onOpenApkModal: () => void;
+  onOpenUpdateDatabase?: () => void;
   onLogout: () => void;
   totalScannedCount: number;
 }
@@ -59,6 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isRealtimeConnected,
   onOpenSettings,
   onOpenApkModal,
+  onOpenUpdateDatabase,
   onLogout,
   totalScannedCount,
 }) => {
@@ -285,6 +288,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
       </button>
+
+      {/* Update Database (Superadmin only) */}
+      {userIsAdmin && onOpenUpdateDatabase && (
+        <button
+          type="button"
+          onClick={() => {
+            onOpenUpdateDatabase();
+            onCloseMobile();
+          }}
+          title="Update Database Master Produk (Import 2 CSV ke Supabase)"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer ${
+            collapsed ? 'justify-center px-2' : ''
+          }`}
+        >
+          <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 shrink-0">
+            <Database className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+          </div>
+          {!collapsed && (
+            <div className="flex-1 text-left truncate flex items-center justify-between">
+              <span className="truncate font-extrabold">Update Database</span>
+              <span className="text-[9px] px-1.5 py-0.2 bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200 rounded font-black">
+                SUPERADMIN
+              </span>
+            </div>
+          )}
+        </button>
+      )}
 
       {/* Dark Mode Switcher */}
       <button
