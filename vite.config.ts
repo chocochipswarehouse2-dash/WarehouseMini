@@ -42,7 +42,7 @@ export default defineConfig(() => {
           theme_color: '#b7550e',
           background_color: '#0f172a',
           display: 'standalone',
-          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+          display_override: ['tabbed', 'window-controls-overlay', 'standalone', 'minimal-ui'],
           orientation: 'portrait',
           scope: '/WarehouseMini/',
           start_url: '/WarehouseMini/',
@@ -57,7 +57,7 @@ export default defineConfig(() => {
               url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
             }
           ],
-          scope_extensions: [{ origin: '*.github.io' }],
+          scope_extensions: [{ origin: 'https://chocochipswarehouse2-dash.github.io' }],
           note_taking: {
             new_note_url: '/WarehouseMini/'
           },
@@ -71,8 +71,8 @@ export default defineConfig(() => {
               description: 'Quick access to Warehouse Scanner',
               tag: 'scanner-widget',
               template_url: '/WarehouseMini/',
-              ms_ac_template: '/WarehouseMini/',
-              data: '/WarehouseMini/',
+              ms_ac_template: '/WarehouseMini/widget-template.json',
+              data: '/WarehouseMini/widget-data.json',
               type: 'application/json',
               icons: [
                 {
