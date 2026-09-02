@@ -697,7 +697,8 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       return;
     }
 
-    const itemsRows = group.items
+    const pickedItems = group.items.filter((it) => it.qty_picked > 0);
+    const itemsRows = pickedItems
       .map(
         (it, idx) => `
       <tr>
@@ -705,29 +706,22 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.nama_produk}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.qty_req}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_picked}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1;">${it.lokasi_picked || it.lokasi}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; color: ${it.qty_picked === it.qty_req ? '#10b981' : (it.qty_picked > it.qty_req ? '#f59e0b' : '#ef4444')}; font-weight: bold; text-align: center;">
-          ${it.qty_picked === it.qty_req ? 'PAS' : (it.qty_picked > it.qty_req ? 'LEBIH' : 'KURANG')}
-        </td>
       </tr>
     `
       )
       .join('');
 
-    const unexpectedRows = (group.unexpected_items || [])
+    const pickedUnexpectedItems = (group.unexpected_items || []).filter((it) => it.qty_picked > 0);
+    const unexpectedRows = pickedUnexpectedItems
       .map(
         (it, idx) => `
-      <tr style="background-color: #fee2e2;">
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; color: #dc2626;">${group.items.length + idx + 1}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #dc2626;">${it.nama_produk}</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; color: #dc2626;">${it.size || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace; color: #dc2626;">${it.sku}</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; color: #dc2626;">0</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #dc2626;">${it.qty_picked}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; color: #dc2626;">${it.lokasi_picked || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; text-align: center; color: #dc2626;">SALAH AMBIL</td>
+      <tr>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${pickedItems.length + idx + 1}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.nama_produk}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_picked}</td>
       </tr>
     `
       )
@@ -759,8 +753,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       <body>
         <div class="header">
           <div>
-            <div class="logo-title">CHOCOCHIPS WMS</div>
-            <div class="logo-sub">Laporan Hasil Picking Surat Jalan</div>
+            <div class="logo-title">Chocochips</div>
           </div>
           <div style="text-align:right;">
             <img src="${qrUrl}" width="80" height="80" alt="QR Code" style="display:block; margin-left:auto;" />
@@ -782,10 +775,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
               <th>Nama Produk</th>
               <th style="width:55px; text-align:center;">Size</th>
               <th style="width:110px;">SKU</th>
-              <th style="width:45px; text-align:center;">Req</th>
-              <th style="width:45px; text-align:center;">Pick</th>
-              <th style="width:110px;">Lokasi Ambil</th>
-              <th style="width:80px; text-align:center;">Status</th>
+              <th style="width:55px; text-align:center;">Qty</th>
             </tr>
           </thead>
           <tbody>
