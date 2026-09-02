@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import confetti from 'canvas-confetti';
+import { Scan, FileText } from 'lucide-react';
 import {
   CategoryType,
   ProductItem,
@@ -774,18 +775,28 @@ export default function App() {
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
           {activePage === 'scanner' && (
             <div className="block">
-              <div className="flex items-center gap-2 mb-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg w-fit mx-auto sm:mx-0">
+              <div className="grid grid-cols-2 bg-slate-100 dark:bg-black/50 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] sm:text-xs font-bold w-full sm:w-auto gap-1 mb-4">
                 <button 
                   onClick={() => setScannerActiveTab('scan')} 
-                  className={`px-4 py-2 rounded-md text-sm font-semibold transition-all flex-1 sm:flex-none ${scannerActiveTab === 'scan' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  className={`w-full py-2 sm:py-1.5 rounded-lg transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+                    scannerActiveTab === 'scan'
+                      ? 'bg-[#ff7a00] text-white font-extrabold shadow-[0_0_10px_rgba(255,122,0,0.3)]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
                 >
-                  Scan Barang
+                  <Scan className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="text-center">Scan Barang</span>
                 </button>
                 <button 
                   onClick={() => setScannerActiveTab('recap')} 
-                  className={`px-4 py-2 rounded-md text-sm font-semibold transition-all flex-1 sm:flex-none ${scannerActiveTab === 'recap' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  className={`w-full py-2 sm:py-1.5 rounded-lg transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+                    scannerActiveTab === 'recap'
+                      ? 'bg-[#ff7a00] text-white font-extrabold shadow-[0_0_10px_rgba(255,122,0,0.3)]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
                 >
-                  Rekap Scan
+                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="text-center">Rekap Scan</span>
                 </button>
               </div>
 
