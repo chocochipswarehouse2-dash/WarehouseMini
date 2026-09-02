@@ -733,14 +733,14 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       )
       .join('');
 
-    const qrText = encodeURIComponent(\`#SJ "\${group.no_sj}"\`);
-    const qrUrl = \`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=\${qrText}\`;
+    const qrText = encodeURIComponent(`#SJ "${group.no_sj}"`);
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${qrText}`;
 
-    printWindow.document.write(\`
+    printWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Hasil Picking - \${group.no_sj}</title>
+        <title>Hasil Picking - ${group.no_sj}</title>
         <style>
           @page { size: A4; margin: 15mm; }
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1e293b; padding: 20px; }
@@ -763,16 +763,16 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
             <div class="logo-sub">Laporan Hasil Picking Surat Jalan</div>
           </div>
           <div style="text-align:right;">
-            <img src="\${qrUrl}" width="80" height="80" alt="QR Code" style="display:block; margin-left:auto;" />
+            <img src="${qrUrl}" width="80" height="80" alt="QR Code" style="display:block; margin-left:auto;" />
           </div>
         </div>
 
         <table class="info-table">
-          <tr><td class="label">No Surat Jalan</td><td><b>\${group.no_sj}</b></td></tr>
-          <tr><td class="label">Tujuan / PIC</td><td><b>\${group.tujuan}</b></td></tr>
-          <tr><td class="label">Picker</td><td><b>\${group.picker_name || '-'}</b></td></tr>
-          <tr><td class="label">Tanggal Cetak</td><td>\${new Date().toLocaleString('id-ID')}</td></tr>
-          <tr><td class="label">Catatan Rekap</td><td>\${group.catatan || '-'}</td></tr>
+          <tr><td class="label">No Surat Jalan</td><td><b>${group.no_sj}</b></td></tr>
+          <tr><td class="label">Tujuan / PIC</td><td><b>${group.tujuan}</b></td></tr>
+          <tr><td class="label">Picker</td><td><b>${group.picker_name || '-'}</b></td></tr>
+          <tr><td class="label">Tanggal Cetak</td><td>${new Date().toLocaleString('id-ID')}</td></tr>
+          <tr><td class="label">Catatan Rekap</td><td>${group.catatan || '-'}</td></tr>
         </table>
 
         <table class="items-table">
@@ -789,8 +789,8 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
             </tr>
           </thead>
           <tbody>
-            \${itemsRows}
-            \${unexpectedRows}
+            ${itemsRows}
+            ${unexpectedRows}
           </tbody>
         </table>
 
@@ -798,7 +798,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
           <div>
             <div>Disiapkan / Dipicking Oleh,</div>
             <div class="sign-box"></div>
-            <div>( <b>\${group.picker_name || '_________________'}</b> )</div>
+            <div>( <b>${group.picker_name || '_________________'}</b> )</div>
             <div style="color:#64748b; font-size:10px; margin-top:4px;">Picker</div>
           </div>
           <div>
@@ -811,7 +811,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
         <script>window.onload = () => window.print();</script>
       </body>
       </html>
-    \`);
+    `);
     printWindow.document.close();
   };
 
