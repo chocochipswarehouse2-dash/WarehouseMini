@@ -593,6 +593,22 @@ export default function App() {
         } else if (cType === 'SO') {
           if (!soFisik[cLokasi]) soFisik[cLokasi] = {};
           soFisik[cLokasi][line] = (soFisik[cLokasi][line] || 0) + 1;
+
+          // Add to log_produk for SO scan as well
+          const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
+          logsToInsert.push({
+            type: 'SO',
+            invoice: invoiceBase,
+            sku: line,
+            nama_produk: item.productName || (pData ? pData.p : line),
+            size: item.size || (pData ? pData.s : ''),
+            area: getAreaFromLokasi(cLokasi),
+            lokasi: cLokasi,
+            qty: 1,
+            operator: operatorName,
+            keterangan: ketText || 'Stock Opname Scan',
+            created_at: waktuPesan.toISOString(),
+          });
         }
       }
 
