@@ -703,10 +703,16 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
         let nama = it.nama_produk || '';
         let size = it.size;
         if (!size) {
-          const match = nama.match(/\(([^)]+)\)\s*$/);
+          let match = nama.match(/\(([^)]+)\)\s*$/);
           if (match) {
             size = match[1];
             nama = nama.replace(/\s*\(([^)]+)\)\s*$/, '');
+          } else {
+            match = nama.match(/\s+-\s+([^-]+)$/);
+            if (match) {
+              size = match[1].trim();
+              nama = nama.replace(/\s+-\s+([^-]+)$/, '');
+            }
           }
         }
         return `
@@ -727,10 +733,16 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
         let nama = it.nama_produk || '';
         let size = it.size;
         if (!size) {
-          const match = nama.match(/\(([^)]+)\)\s*$/);
+          let match = nama.match(/\(([^)]+)\)\s*$/);
           if (match) {
             size = match[1];
             nama = nama.replace(/\s*\(([^)]+)\)\s*$/, '');
+          } else {
+            match = nama.match(/\s+-\s+([^-]+)$/);
+            if (match) {
+              size = match[1].trim();
+              nama = nama.replace(/\s+-\s+([^-]+)$/, '');
+            }
           }
         }
         return `
