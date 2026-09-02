@@ -775,7 +775,7 @@ export default function App() {
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
           {activePage === 'scanner' && (
             <div className="block">
-              <div className="grid grid-cols-2 bg-slate-100 dark:bg-black/50 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] sm:text-xs font-bold w-full sm:w-auto gap-1 mb-4">
+              <div className="grid grid-cols-2 bg-slate-100 dark:bg-black/50 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] sm:text-xs font-bold w-full sm:max-w-sm gap-1 mb-4 lg:hidden">
                 <button 
                   onClick={() => setScannerActiveTab('scan')} 
                   className={`w-full py-2 sm:py-1.5 rounded-lg transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
@@ -800,8 +800,8 @@ export default function App() {
                 </button>
               </div>
 
-              {scannerActiveTab === 'scan' ? (
-                <div className="space-y-2">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                <div className={`lg:col-span-5 xl:col-span-5 space-y-2 ${scannerActiveTab === 'recap' ? 'hidden lg:block' : 'block'}`}>
                   {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
                   <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
                     <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
@@ -841,9 +841,11 @@ export default function App() {
                     isSaving={isSaving}
                   />
                 </div>
-              ) : (
-                <ScannerTabRecap />
-              )}
+
+                <div className={`lg:col-span-7 xl:col-span-7 ${scannerActiveTab === 'scan' ? 'hidden lg:block' : 'block'}`}>
+                  <ScannerTabRecap />
+                </div>
+              </div>
             </div>
           )}
 
