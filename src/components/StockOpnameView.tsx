@@ -29,6 +29,7 @@ import {
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
+import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 
 interface StockOpnameViewProps {
   session?: UserSession | null;
@@ -185,6 +186,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmModal(null);
         setIsActionLoading(true);
+        showGlobalLoading('Memproses Approve...');
         try {
           const res = await approveStockOpnameQueueItems(itemsToApprove, currentOperator);
           if (res.success) {
@@ -199,6 +201,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           await loadSoData();
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -218,6 +221,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmModal(null);
         setIsActionLoading(true);
+        showGlobalLoading('Memproses Reject...');
         try {
           const res = await rejectStockOpnameQueueItems(itemsToReject, currentOperator);
           if (res.success) {
@@ -232,6 +236,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           await loadSoData();
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -251,6 +256,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmModal(null);
         setIsActionLoading(true);
+        showGlobalLoading('Menghapus data...');
 
         // Optimistic UI update
         setSoQueue((prev) => prev.filter((it) => !it.id || !targetIds.includes(it.id)));
@@ -270,6 +276,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           await loadSoData();
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -279,6 +286,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const handleSingleApprove = async (item: StockOpnameQueueItem) => {
     if (!canApproveSo) return;
     setIsActionLoading(true);
+    showGlobalLoading('Memproses Approve...');
     try {
       const res = await approveStockOpnameQueueItems([item], currentOperator);
       if (res.success) {
@@ -291,12 +299,14 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       if (onNotify) onNotify(e.message, 'error');
     } finally {
       setIsActionLoading(false);
+      hideGlobalLoading();
     }
   };
 
   const handleSingleReject = async (item: StockOpnameQueueItem) => {
     if (!canApproveSo) return;
     setIsActionLoading(true);
+    showGlobalLoading('Memproses Reject...');
     try {
       const res = await rejectStockOpnameQueueItems([item], currentOperator);
       if (res.success) {
@@ -309,6 +319,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       if (onNotify) onNotify(e.message, 'error');
     } finally {
       setIsActionLoading(false);
+      hideGlobalLoading();
     }
   };
 
@@ -321,6 +332,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmModal(null);
         setIsActionLoading(true);
+        showGlobalLoading('Menghapus...');
 
         // Optimistic UI update
         setSoQueue((prev) => prev.filter((it) => it.id !== id));
@@ -340,6 +352,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           await loadSoData();
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });

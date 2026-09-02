@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
   Upload,
   FileText,
@@ -104,6 +105,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     if (!files || files.length === 0) return;
 
     setIsProcessing(true);
+    showGlobalLoading('Memproses...');
     const groupsMap: Record<string, ParsedSJGroup> = {};
 
     try {
@@ -261,6 +263,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       onNotify(`Gagal membaca file CSV: ${err.message}`, 'error');
     } finally {
       setIsProcessing(false);
+      hideGlobalLoading();
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -410,6 +413,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     // If you want strict protection, a custom state-based confirmation modal is required.
     
     setIsProcessing(true);
+    showGlobalLoading('Memproses...');
     try {
       const allCreatedItems: PickingListItem[] = [];
       for (const group of groupsToSave) {
@@ -440,6 +444,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       onNotify(`Gagal menyimpan ke database: ${err.message}`, 'error');
     } finally {
       setIsProcessing(false);
+      hideGlobalLoading();
     }
   };
 

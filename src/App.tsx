@@ -20,6 +20,7 @@ import { LoginModal } from './components/LoginModal';
 import { ScanMethodSelector } from './components/ScanMethodSelector';
 import { PhysicalScanInput } from './components/PhysicalScanInput';
 import { CameraScanner } from './components/CameraScanner';
+import { ScannerTabRecap } from './components/ScannerTabRecap';
 import { QuickTagToolbar } from './components/QuickTagToolbar';
 import { ScannedItemsList } from './components/ScannedItemsList';
 import { BottomSaveBar } from './components/BottomSaveBar';
@@ -117,6 +118,7 @@ export default function App() {
   }, [activePage]);
 
   // Scan states
+  const [scannerActiveTab, setScannerActiveTab] = useState<'scan' | 'recap'>('scan');
   const [scanMode, setScanMode] = useState<ScanMode>('fisik');
   const [scannedData, setScannedData] = useState<ScannedItem[]>([]);
   const [currentCategory, setCurrentCategory] = useState<CategoryType>('SO');
@@ -756,46 +758,65 @@ export default function App() {
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
           {activePage === 'scanner' && (
             <div className="block">
-              <div className="space-y-2">
-                {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
-                <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
-                  <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
-                    <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
-
-                    {(scanMode === 'fisik' || scanMode === 'manual') && (
-                      <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                    )}
-
-                    {scanMode === 'kamera' && (
-                      <CameraScanner
-                        onScan={handleScannedItem}
-                        onRequestWakeLock={requestScreenWakeLock}
-                      />
-                    )}
-
-                    <QuickTagToolbar
-                      currentCategory={currentCategory}
-                      currentLocation={currentLocation}
-                      onSelectCategory={handleSelectQuickCategory}
-                      onSelectLocation={handleSelectQuickLocation}
-                    />
-                  </div>
-                </div>
-
-                <ScannedItemsList
-                  items={scannedData}
-                  onRemoveItem={handleRemoveItem}
-                  onClearAll={handleClearAll}
-                />
-                
-                <BottomSaveBar
-                  items={scannedData}
-                  keterangan={keterangan}
-                  onChangeKeterangan={setKeterangan}
-                  onSave={handleSaveData}
-                  isSaving={isSaving}
-                />
+              <div className="flex items-center gap-2 mb-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg w-fit mx-auto sm:mx-0">
+                <button 
+                  onClick={() => setScannerActiveTab('scan')} 
+                  className={`px-4 py-2 rounded-md text-sm font-semibold transition-all flex-1 sm:flex-none ${scannerActiveTab === 'scan' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                  Scan Barang
+                </button>
+                <button 
+                  onClick={() => setScannerActiveTab('recap')} 
+                  className={`px-4 py-2 rounded-md text-sm font-semibold transition-all flex-1 sm:flex-none ${scannerActiveTab === 'recap' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                  Rekap Scan
+                </button>
               </div>
+
+              {scannerActiveTab === 'scan' ? (
+                <div className="space-y-2">
+                  {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
+                  <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
+                    <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
+                      <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+
+                      {(scanMode === 'fisik' || scanMode === 'manual') && (
+                        <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                      )}
+
+                      {scanMode === 'kamera' && (
+                        <CameraScanner
+                          onScan={handleScannedItem}
+                          onRequestWakeLock={requestScreenWakeLock}
+                        />
+                      )}
+
+                      <QuickTagToolbar
+                        currentCategory={currentCategory}
+                        currentLocation={currentLocation}
+                        onSelectCategory={handleSelectQuickCategory}
+                        onSelectLocation={handleSelectQuickLocation}
+                      />
+                    </div>
+                  </div>
+
+                  <ScannedItemsList
+                    items={scannedData}
+                    onRemoveItem={handleRemoveItem}
+                    onClearAll={handleClearAll}
+                  />
+                  
+                  <BottomSaveBar
+                    items={scannedData}
+                    keterangan={keterangan}
+                    onChangeKeterangan={setKeterangan}
+                    onSave={handleSaveData}
+                    isSaving={isSaving}
+                  />
+                </div>
+              ) : (
+                <ScannerTabRecap />
+              )}
             </div>
           )}
 

@@ -36,8 +36,12 @@ import {
   deleteLogProdukBatch,
   deleteLogProdukByDateRange,
   getAreaFromLokasi,
+  supabaseFetch,
+  updateLogProdukRow,
+  deleteLogProdukItem,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
+import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
 
@@ -229,7 +233,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       console.error('Error fetching invoice for edit:', err);
       if (onNotify) onNotify('Gagal memuat detail invoice.', 'error');
     } finally {
-      setIsEditLoading(false);
+      setIsActionLoading(false);
+      hideGlobalLoading();
     }
   };
 
@@ -268,6 +273,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     if (!editInvoiceItems.length || !editingInvoice) return;
 
     setIsSavingEdit(true);
+    showGlobalLoading('Menyimpan Perubahan...');
     try {
       const res = await updateLogProdukInvoiceBatch(editInvoiceItems);
       if (res.success) {
@@ -282,6 +288,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       if (onNotify) onNotify(`Terjadi kesalahan: ${err.message}`, 'error');
     } finally {
       setIsSavingEdit(false);
+      hideGlobalLoading();
     }
   };
 
@@ -295,6 +302,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmModal(null);
         setIsActionLoading(true);
+        showGlobalLoading('Menghapus log...');
 
         // Optimistic UI updates
         setLogs((prev) => prev.filter((it) => it.id !== id));
@@ -316,6 +324,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           await loadLogs();
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -332,6 +341,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         setConfirmModal(null);
         setEditingInvoice(null);
         setIsActionLoading(true);
+        showGlobalLoading('Menghapus invoice...');
 
         // Optimistic update
         setLogs((prev) => prev.filter((it) => it.invoice !== invoice));
@@ -350,6 +360,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           await loadLogs();
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -367,6 +378,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmModal(null);
         setIsActionLoading(true);
+        showGlobalLoading('Menghapus batch...');
 
         const idsArray = Array.from(selectedIds);
         try {

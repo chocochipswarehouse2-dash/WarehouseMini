@@ -953,26 +953,24 @@ export async function approveStockOpnameQueueItems(
         );
       }
 
-      // 2. If there is a selisih, automatically create IN or OUT in log_produk with keterangan Adjusment SO
+      // 2. Create ADJ_IN or ADJ_OUT in log_produk with keterangan Adjustment SO
       const diff = Number(item.selisih) || 0;
-      if (diff !== 0) {
-        const adjType = diff > 0 ? 'IN' : 'OUT';
-        const loc = item.lokasi || 'Warehouse';
-        const ketReason = item.alasan ? ` - ${item.alasan}` : ` (Sesi: ${item.sesi_id || '-'})`;
-        logsToInsert.push({
-          type: adjType,
-          invoice: item.invoice || `ADJ-SO-${Date.now()}`,
-          sku: item.sku,
-          nama_produk: item.nama_produk || item.sku,
-          size: item.size || '-',
-          area: item.area || getAreaFromLokasi(loc),
-          lokasi: loc,
-          qty: Math.abs(diff),
-          operator: `${approvedBy || 'Admin'} (Adjustment SO)`,
-          keterangan: `Adjusment SO${ketReason}`.trim(),
-          created_at: nowIso,
-        });
-      }
+      const adjType = diff >= 0 ? 'ADJ_IN' : 'ADJ_OUT';
+      const loc = item.lokasi || 'Warehouse';
+      const ketReason = item.alasan ? ` - ${item.alasan}` : ` (Sesi: ${item.sesi_id || '-'})`;
+      logsToInsert.push({
+        type: adjType,
+        invoice: item.invoice || `ADJ-SO-${Date.now()}`,
+        sku: item.sku,
+        nama_produk: item.nama_produk || item.sku,
+        size: item.size || '-',
+        area: item.area || getAreaFromLokasi(loc),
+        lokasi: loc,
+        qty: Math.abs(diff),
+        operator: `${approvedBy || 'Admin'} (Adjustment SO)`,
+        keterangan: `Adjustment SO${ketReason}`.trim(),
+        created_at: nowIso,
+      });
     }
 
     // 3. Insert adjustment logs directly to log_produk

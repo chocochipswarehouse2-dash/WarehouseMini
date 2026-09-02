@@ -50,6 +50,7 @@ import {
 import { CameraScanner } from './CameraScanner';
 import { FulfillmentRefillModal } from './FulfillmentRefillModal';
 import { PhysicalScanInput } from './PhysicalScanInput';
+import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
   PickingListItem,
   PickingSuratJalanGroup,
@@ -549,6 +550,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsBulkActionRunning(true);
+        showGlobalLoading('Memproses...');
         const success = await deletePickingSuratJalanBatchSupabase(selectedSJs);
         if (success) {
           onNotify(`${selectedSJs.length} Surat Jalan berhasil dihapus`, 'success');
@@ -558,6 +560,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
           onNotify('Gagal menghapus beberapa Surat Jalan', 'error');
         }
         setIsBulkActionRunning(false);
+        hideGlobalLoading();
       }
     });
   };
@@ -571,6 +574,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       onConfirm: async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         setIsBulkActionRunning(true);
+        showGlobalLoading('Memproses...');
         const success = await completePickingSuratJalanBatchSupabase(selectedSJs, currentUser);
         if (success) {
           onNotify(`${selectedSJs.length} Surat Jalan berhasil diselesaikan`, 'success');
@@ -580,6 +584,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
           onNotify('Gagal menyelesaikan beberapa Surat Jalan', 'error');
         }
         setIsBulkActionRunning(false);
+        hideGlobalLoading();
       }
     });
   };
@@ -1347,6 +1352,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       return;
     }
     setIsSavingSjEdit(true);
+    showGlobalLoading('Menyimpan...');
 
     try {
       // 1. Sync changes to Supabase FIRST
@@ -1382,6 +1388,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       onNotify(`Gagal memperbarui Surat Jalan: ${err.message}`, 'error');
     } finally {
       setIsSavingSjEdit(false);
+      hideGlobalLoading();
     }
   };
 
@@ -1419,6 +1426,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   const handleProcessBatchInput = () => {
     if (!batchInputText.trim() || !activeSJ) return;
     setIsProcessingBatch(true);
+    showGlobalLoading('Memproses Batch...');
 
     const lines = batchInputText
       .split('\n')
@@ -1427,6 +1435,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
 
     if (lines.length === 0) {
       setIsProcessingBatch(false);
+      hideGlobalLoading();
       return;
     }
 
@@ -1458,6 +1467,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     }
 
     setIsProcessingBatch(false);
+      hideGlobalLoading();
     setBatchInputText('');
     playSuccessBeep();
     onNotify(
@@ -1504,6 +1514,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   const handleConfirmCompleteSJ = async () => {
     if (!activeSJ) return;
     setIsSubmittingRekap(true);
+    showGlobalLoading('Menyimpan Rekap...');
 
     try {
       const success = await completePickingSuratJalanSupabase(
@@ -1546,6 +1557,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       onNotify(`Error: ${e.message || 'Gagal menyimpan'}`, 'error');
     } finally {
       setIsSubmittingRekap(false);
+      hideGlobalLoading();
     }
   };
 
@@ -1634,6 +1646,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     }
 
     setIsCreatingSj(true);
+    showGlobalLoading('Membuat SJ...');
     try {
       const ok = await createPickingSuratJalanSupabase(newSjNumber, newSjTujuan, validRows);
       if (ok) {
@@ -1650,6 +1663,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       onNotify(`Error: ${err.message}`, 'error');
     } finally {
       setIsCreatingSj(false);
+      hideGlobalLoading();
     }
   };
 
