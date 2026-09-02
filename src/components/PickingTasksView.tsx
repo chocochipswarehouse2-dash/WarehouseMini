@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { CameraScanner } from './CameraScanner';
 import { FulfillmentRefillModal } from './FulfillmentRefillModal';
+import { PhysicalScanInput } from './PhysicalScanInput';
 import {
   PickingListItem,
   PickingSuratJalanGroup,
@@ -66,6 +67,7 @@ import {
   fetchStockForSkus,
   isWarehouseLocation,
   getAreaFromLokasi,
+  getSupabaseClient,
 } from '../services/supabase';
 import {
   playSuccessBeep,
@@ -83,7 +85,7 @@ interface PickingTasksViewProps {
   productCatalog?: ProductItem[];
 }
 
-export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
+export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   onNotify,
   currentUser,
   productCatalog = [],
@@ -208,6 +210,36 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       console.warn('Gagal memulihkan sesi picking lokal:', e);
     }
     loadPickingList();
+
+    // Supabase Realtime for picking list updates
+    const supaClient = getSupabaseClient();
+    let channel: any = null;
+    let debounceTimer: any = null;
+
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadPickingList();
+      }, 400);
+    };
+
+    try {
+      channel = supaClient
+        .channel('picking-realtime-feed')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'picking_list' }, () => {
+          triggerDebouncedSync();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('Picking realtime subscription error:', err);
+    }
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (channel) {
+        supaClient.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Save active picking session to localStorage to persist across refreshes / offline
@@ -1644,105 +1676,39 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
 
             {/* MODE 1: FISIK GUN (IDENTICAL TO PAGE SCANNER'S PHYSICALSCANINPUT) */}
             {inputMode === 'fisik' && (
-              <div
-                id="containerPickingPhysical"
-                className="bg-white dark:bg-[#09090B] px-4 py-3.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
-              >
-                <div className="max-w-lg mx-auto flex flex-col gap-2">
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
-                      <Barcode className="h-5 w-5 text-emerald-500" />
-                    </div>
-                    <input
-                      ref={scanInputRef}
-                      id="inputPickingPhysicalSku"
-                      type="text"
-                      list="pickingProductDatalist"
-                      value={scanInput}
-                      onChange={(e) => setScanInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const code = scanInput.trim();
-                          if (code) {
-                            handleBarcodeScanned(code);
-                            setScanInput('');
-                          }
-                        }
-                      }}
-                      placeholder={
-                        activeLocation
-                          ? `[Rak: ${activeLocation}] Tembak Barcode / Tulis SKU atau #LOK...`
-                          : 'Tembak Barcode / Tulis SKU atau #LOK...'
-                      }
-                      className="w-full bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-mono font-bold text-base rounded-xl focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 block pl-11 pr-12 py-3 outline-none uppercase transition-all placeholder-slate-400 dark:placeholder-slate-600"
-                      autoComplete="off"
-                      autoFocus
-                    />
-                    <datalist id="pickingProductDatalist">
-                      {activeItems.map((it) => (
-                        <option key={it.sku} value={it.sku}>
-                          {it.nama_produk} (Req: {it.qty_req}, Rak: {it.lokasi})
-                        </option>
-                      ))}
-                      {productCatalog.map((p) => (
-                        <option key={p.k} value={p.k}>
-                          {p.p} {p.s ? `(Size: ${p.s})` : ''}
-                        </option>
-                      ))}
-                    </datalist>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const code = scanInput.trim();
-                        if (code) {
-                          handleBarcodeScanned(code);
-                          setScanInput('');
-                          scanInputRef.current?.focus();
-                        }
-                      }}
-                      title="Scan Enter"
-                      className="absolute inset-y-1.5 right-1.5 px-3 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-bold rounded-lg flex items-center justify-center transition-colors shadow-[0_0_8px_rgba(16,185,129,0.3)] cursor-pointer"
-                    >
-                      <CornerDownLeft className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between px-1 flex-wrap gap-1">
-                    <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                      <span>Scanner Aktif — Siap tembak barcode</span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {activeLocation ? (
-                        <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold">
-                          <span>📍 Rak: {activeLocation}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveLocation('');
-                              onNotify('Lokasi rak dikosongkan. Silakan tembak #LOK baru.', 'info');
-                            }}
-                            className="text-slate-400 hover:text-rose-500 text-[10px] ml-0.5 cursor-pointer font-sans"
-                            title="Ganti Rak"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
-                          Tembak #LOK untuk set rak
-                        </span>
-                      )}
-                      <span className="text-[10px] font-semibold tracking-wider uppercase text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-full">
-                        Auto-Enter
+              <PhysicalScanInput 
+                onScan={handleBarcodeScanned}
+                products={productCatalog}
+                placeholder={
+                  activeLocation
+                    ? `[Rak: ${activeLocation}] Tembak Barcode / Tulis SKU atau #LOK...`
+                    : 'Tembak Barcode / Tulis SKU atau #LOK...'
+                }
+                footerContent={
+                  <>
+                    {activeLocation ? (
+                      <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold">
+                        <span>📍 Rak: {activeLocation}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveLocation('');
+                            onNotify('Lokasi rak dikosongkan. Silakan tembak #LOK baru.', 'info');
+                          }}
+                          className="text-slate-400 hover:text-rose-500 text-[10px] ml-0.5 cursor-pointer font-sans"
+                          title="Ganti Rak"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                        Tembak #LOK untuk set rak
                       </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                    )}
+                  </>
+                }
+              />
             )}
 
             {/* MODE 2: MANUAL SEARCH & AUTOCOMPLETE INPUT */}
@@ -3376,4 +3342,4 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = ({
       />
     </div>
   );
-};
+});

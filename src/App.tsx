@@ -264,22 +264,59 @@ export default function App() {
     }
   }, [session, loadProducts]);
 
-  // Set up Supabase Real-time listener for log_produk & stock_opname_queue
+  // Set up Supabase Real-time listener for log_produk, master_produk, & other warehouse activity
   useEffect(() => {
     if (!session) return;
 
+    let debounceCatalogTimer: any = null;
     try {
       const supabase = getSupabaseClient();
       const channel = supabase
         .channel('wms-realtime-activity')
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'log_produk' },
+          { event: '*', schema: 'public', table: 'log_produk' },
           (payload) => {
-            const newLog = payload.new as { type?: string; sku?: string; lokasi?: string };
-            showPushNotification('📦 Log Mutasi Baru', {
-              body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
-            });
+            if (payload.eventType === 'INSERT' && payload.new) {
+              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string };
+              showPushNotification('📦 Log Mutasi Baru', {
+                body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
+              });
+            }
+            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
+            debounceCatalogTimer = setTimeout(() => {
+              loadProducts();
+            }, 300);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'master_produk' },
+          () => {
+            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
+            debounceCatalogTimer = setTimeout(() => {
+              loadProducts();
+            }, 300);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'stock_opname_queue' },
+          () => {
+            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
+            debounceCatalogTimer = setTimeout(() => {
+              loadProducts();
+            }, 300);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'peminjaman' },
+          () => {
+            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
+            debounceCatalogTimer = setTimeout(() => {
+              loadProducts();
+            }, 300);
           }
         )
         .subscribe((status) => {
@@ -287,12 +324,13 @@ export default function App() {
         });
 
       return () => {
+        if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
         supabase.removeChannel(channel);
       };
     } catch (err) {
       console.warn('Supabase realtime subscription error:', err);
     }
-  }, [session]);
+  }, [session, loadProducts]);
 
   // Handle Login directly authenticated with Supabase
   const handleLogin = async (user: string, pass: string) => {

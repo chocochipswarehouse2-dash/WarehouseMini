@@ -104,7 +104,7 @@ let globalInventoryStockCache: StockRealtimeItem[] | null = null;
 let globalInventoryLastFetch = 0;
 const CACHE_STALE_TTL = 3 * 60 * 1000; // 3 minutes
 
-export const InventoryView: React.FC<InventoryViewProps> = ({
+export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   session,
   currentLocations = [],
   productCatalog = [],
@@ -202,11 +202,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   // ========================================================
   // 1. DATA FETCHING & REALTIME AGGREGATION FROM SUPABASE (STALE-WHILE-REVALIDATE)
   // ========================================================
-  const loadStockData = async (isManualRefresh = false) => {
-    // If cache is fresh and not a manual refresh, do not make an expensive network fetch
+  const loadStockData = async (isManualRefresh = false, forceNetwork = false) => {
+    // If cache is fresh and not a manual/realtime refresh, use memory cache
     const now = Date.now();
     const isCacheFresh = globalInventoryStockCache && globalInventoryStockCache.length > 0 && now - globalInventoryLastFetch < CACHE_STALE_TTL;
-    if (!isManualRefresh && isCacheFresh) {
+    if (!isManualRefresh && !forceNetwork && isCacheFresh) {
       return;
     }
 
@@ -224,7 +224,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
     try {
       // 1. Fetch physical stock rows from Supabase view_stok_realtime (Direct GAS Method)
-      const realtimeData = await fetchSupabaseStokFisikDirect();
+      const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh || forceNetwork);
       if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
         globalInventoryStockCache = realtimeData;
         globalInventoryLastFetch = Date.now();
@@ -269,17 +269,29 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   useEffect(() => {
     loadStockData();
 
-    // Supabase Realtime Subscription
+    // Supabase Realtime Subscription with debounced updates
     const supaClient = getSupabaseClient();
     let channel: any = null;
+    let debounceTimer: any = null;
+
+    const triggerDebouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadStockData(false, true);
+      }, 300);
+    };
+
     try {
       channel = supaClient
         .channel('inventory-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'stok_lokasi' }, () => {
-          loadStockData();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_produk' }, () => {
+          triggerDebouncedReload();
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_mutasi' }, () => {
-          loadStockData();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'master_produk' }, () => {
+          triggerDebouncedReload();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'view_stok_realtime' }, () => {
+          triggerDebouncedReload();
         })
         .subscribe((status: string) => {
           setIsRealtimeActive(status === 'SUBSCRIBED');
@@ -289,6 +301,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       if (channel) {
         supaClient.removeChannel(channel);
       }
@@ -2010,4 +2023,4 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       )}
     </div>
   );
-};
+});

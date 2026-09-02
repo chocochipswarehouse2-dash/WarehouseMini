@@ -976,33 +976,45 @@ export async function deleteStockOpnameQueueItems(
 
 /**
  * Direct Supabase Realtime Stock Fetcher (matches GAS script fetchSupabaseStokFisikDirect)
+ * Highly optimized with larger chunk sizes and fast fallback.
  */
-export async function fetchSupabaseStokFisikDirect(): Promise<StockRealtimeItem[]> {
+let memoryStokFisikCache: StockRealtimeItem[] | null = null;
+let memoryStokFisikLastFetch = 0;
+
+export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
+  // SWR: return in-memory cache if fresh within 3 seconds and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 3000) {
+    return memoryStokFisikCache;
+  }
+
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
   const allRows: StockRealtimeItem[] = [];
-  let from = 0;
-  const chunkSize = 1000;
+  const pageSize = 1000;
+  let offset = 0;
+  const maxRows = 100000;
 
   try {
-    while (true) {
-      const to = from + chunkSize - 1;
+    while (offset < maxRows) {
       const res = await fetch(
-        `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc`,
+        `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc&limit=${pageSize}&offset=${offset}`,
         {
           headers: {
             apikey: supaKey,
             Authorization: 'Bearer ' + supaKey,
-            'Range-Unit': 'items',
-            Range: `${from}-${to}`,
+            'Content-Type': 'application/json',
           },
         }
       );
-      if (!res.ok && res.status !== 206) break;
+      if (!res.ok) break;
       const data = await res.json();
       if (!Array.isArray(data) || data.length === 0) break;
       allRows.push(...data);
-      if (data.length < chunkSize) break;
-      from += chunkSize;
+      if (data.length < pageSize) break;
+      offset += data.length;
+    }
+    if (allRows.length > 0) {
+      memoryStokFisikCache = allRows;
+      memoryStokFisikLastFetch = Date.now();
     }
   } catch (err) {
     console.warn('fetchSupabaseStokFisikDirect warning:', err);
@@ -1576,18 +1588,29 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
 }
 
 /**
- * Fetch master products from Supabase across all potential product tables with chunked pagination to load 100% of all products
- * (master_produk, produk, products, master_barang, barang, view_stok_realtime, log_produk, picking_list, etc.)
+ * Fast in-memory cache for master products
  */
-export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): Promise<ProductItem[]> {
+let memoryProductCache: ProductItem[] | null = null;
+let memoryProductLastFetch = 0;
+
+/**
+ * Fetch master products from Supabase across all potential product tables with parallel loading & memory cache
+ * (master_produk, view_stok_realtime, log_produk, etc.)
+ */
+export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, forceRefresh = false): Promise<ProductItem[]> {
+  // 1. SWR In-Memory cache check
+  if (!forceRefresh && memoryProductCache && memoryProductCache.length > 0 && Date.now() - memoryProductLastFetch < 5000) {
+    return memoryProductCache;
+  }
+
   const productsMap = new Map<string, ProductItem>();
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
 
-  // 1. Load from localStorage cache first (wms_cache_inventory_v38 and wms_product_cache)
+  // 2. Load from localStorage cache first for instant 0ms fallback
   try {
-    const rawInvCache = localStorage.getItem('wms_cache_inventory_v38');
-    if (rawInvCache) {
-      const parsed = JSON.parse(rawInvCache);
+    const rawProdCache = localStorage.getItem('wms_product_cache');
+    if (rawProdCache) {
+      const parsed = JSON.parse(rawProdCache);
       if (Array.isArray(parsed)) {
         for (const r of parsed) {
           const item = extractProductFromRow(r);
@@ -1597,9 +1620,9 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): 
         }
       }
     }
-    const rawProdCache = localStorage.getItem('wms_product_cache');
-    if (rawProdCache) {
-      const parsed = JSON.parse(rawProdCache);
+    const rawInvCache = localStorage.getItem('wms_cache_inventory_v38');
+    if (rawInvCache) {
+      const parsed = JSON.parse(rawInvCache);
       if (Array.isArray(parsed)) {
         for (const r of parsed) {
           const item = extractProductFromRow(r);
@@ -1615,39 +1638,23 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): 
     console.warn('Error reading product local cache:', err);
   }
 
-  // 2. Multi-table queries with full range pagination (1000 items per chunk)
-  const candidateTables = [
-    'master_produk',
-    'produk',
-    'products',
-    'master_barang',
-    'barang',
-    'view_stok_realtime',
-    'stock_realtime',
-    'stok_realtime',
-    'stok_produk',
-    'log_produk',
-    'picking_list',
-    'penerimaan_produksi',
-  ];
+  // 3. Fast Parallel Fetch: fetch master_produk and view_stok_realtime concurrently
+  const primaryTables = ['master_produk', 'view_stok_realtime'];
+  const pageSize = 1000;
 
-  const chunkSize = 1000;
-
-  for (const table of candidateTables) {
-    let from = 0;
+  const fetchTableData = async (table: string) => {
+    let offset = 0;
     try {
-      while (from < maxRowsPerTable) {
-        const to = from + chunkSize - 1;
-        const res = await fetch(`${supaUrl}/rest/v1/${table}?select=*`, {
+      while (offset < maxRowsPerTable) {
+        const res = await fetch(`${supaUrl}/rest/v1/${table}?select=*&limit=${pageSize}&offset=${offset}`, {
           headers: {
             apikey: supaKey,
             Authorization: 'Bearer ' + supaKey,
-            'Range-Unit': 'items',
-            Range: `${from}-${to}`,
+            'Content-Type': 'application/json',
           },
         });
 
-        if (!res.ok && res.status !== 206) break;
+        if (!res.ok) break;
         const rows = await res.json();
         if (!Array.isArray(rows) || rows.length === 0) break;
 
@@ -1664,10 +1671,9 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): 
                 if (!existing.lokasi || existing.lokasi === '-') {
                   existing.lokasi = item.lokasi;
                 } else {
-                  // Combine locations if not already present
-                  const existingLocs = existing.lokasi.split(/[,/;\n|]+/).map(s => s.trim().toUpperCase());
-                  const newLocs = item.lokasi.split(/[,/;\n|]+/).map(s => s.trim().toUpperCase());
-                  const toAdd = newLocs.filter(l => l && l !== '-' && !existingLocs.includes(l));
+                  const existingLocs = existing.lokasi.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase());
+                  const newLocs = item.lokasi.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase());
+                  const toAdd = newLocs.filter((l) => l && l !== '-' && !existingLocs.includes(l));
                   if (toAdd.length > 0) {
                     existing.lokasi = `${existing.lokasi}, ${toAdd.join(', ')}`;
                   }
@@ -1675,22 +1681,35 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000): 
               }
               if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
               if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
+              if (item.stokMap !== undefined && existing.stokMap === undefined) existing.stokMap = item.stokMap;
             }
           }
         }
 
-        if (rows.length < chunkSize) break;
-        from += chunkSize;
+        if (rows.length < pageSize) break;
+        offset += rows.length;
       }
-    } catch (err) {
-      // Table doesn't exist or error, continue to next table
+    } catch {
+      // Ignore if table not present
     }
+  };
+
+  await Promise.allSettled(primaryTables.map((t) => fetchTableData(t)));
+
+  // If still empty (e.g. initial setup), fallback to picking_list / log_produk
+  if (productsMap.size === 0) {
+    const fallbackTables = ['log_produk', 'picking_list'];
+    await Promise.allSettled(fallbackTables.map((t) => fetchTableData(t)));
   }
 
   const result = Array.from(productsMap.values()).filter((it) => !isDummyProduct(it));
-  try {
-    localStorage.setItem('wms_product_cache', JSON.stringify(result));
-  } catch {}
+  if (result.length > 0) {
+    memoryProductCache = result;
+    memoryProductLastFetch = Date.now();
+    try {
+      localStorage.setItem('wms_product_cache', JSON.stringify(result));
+    } catch {}
+  }
   return result;
 }
 

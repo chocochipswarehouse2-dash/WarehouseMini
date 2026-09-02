@@ -25,6 +25,7 @@ import {
   rejectStockOpnameQueueItems,
   deleteStockOpnameQueueItems,
   getAreaFromLokasi,
+  getSupabaseClient,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
@@ -36,7 +37,7 @@ interface StockOpnameViewProps {
   onRefreshCatalog?: () => Promise<void> | void;
 }
 
-export const StockOpnameView: React.FC<StockOpnameViewProps> = ({
+export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   session,
   productCatalog = [],
   onNotify,
@@ -87,6 +88,36 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = ({
 
   useEffect(() => {
     loadSoData();
+
+    // Supabase Realtime for Stock Opname Queue
+    const supaClient = getSupabaseClient();
+    let channel: any = null;
+    let debounceTimer: any = null;
+
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadSoData();
+      }, 400);
+    };
+
+    try {
+      channel = supaClient
+        .channel('so-realtime-feed')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_opname_queue' }, () => {
+          triggerDebouncedSync();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('SO queue realtime subscription error:', err);
+    }
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (channel) {
+        supaClient.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Filtered SO queue
@@ -871,4 +902,4 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = ({
       )}
     </div>
   );
-};
+});

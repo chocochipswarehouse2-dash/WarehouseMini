@@ -6,9 +6,11 @@ import { partialSearchMatch } from '../utils/sortUtils';
 interface PhysicalScanInputProps {
   onScan: (sku: string) => void;
   products: ProductItem[];
+  placeholder?: string;
+  footerContent?: React.ReactNode;
 }
 
-export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, products }) => {
+export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, products, placeholder, footerContent }) => {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(true);
@@ -71,9 +73,9 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
   return (
     <div
       id="containerPhysical"
-      className="bg-white dark:bg-[#09090B] px-4 py-4 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+      className="bg-white dark:bg-[#09090B] px-3 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
     >
-      <div className="max-w-lg mx-auto flex flex-col gap-2">
+      <div className="max-w-lg mx-auto flex flex-col gap-1.5">
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
             <Barcode className="h-5 w-5 text-emerald-500" />
@@ -87,8 +89,8 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Tembak Barcode / Tulis SKU..."
-            className="w-full bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-mono font-bold text-base rounded-xl focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 block pl-11 pr-12 py-3 outline-none uppercase transition-all placeholder-slate-400 dark:placeholder-slate-600"
+            placeholder={placeholder || "Tembak Barcode / Tulis SKU..."}
+            className="w-full bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-mono font-bold text-base rounded-xl focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 block pl-11 pr-12 py-2.5 outline-none uppercase transition-all placeholder-slate-400 dark:placeholder-slate-600"
             autoComplete="off"
             autoFocus
           />
@@ -103,30 +105,18 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
               }
             }}
             title="Scan Enter"
-            className="absolute inset-y-1.5 right-1.5 px-3 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-bold rounded-lg flex items-center justify-center transition-colors shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+            className="absolute inset-y-1 right-1 px-3 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-bold rounded-lg flex items-center justify-center transition-colors shadow-[0_0_8px_rgba(16,185,129,0.3)]"
           >
             <CornerDownLeft className="w-4 h-4" />
           </button>
           {renderSuggestions()}
         </div>
 
-        <div className="flex items-center justify-between px-1">
-          <div
-            id="helperTextManual"
-            className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5"
-          >
-            <Zap className={`w-3.5 h-3.5 ${isFocused ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
-            <span>
-              {isFocused
-                ? 'Scanner Aktif — Siap ketik / scan barcode'
-                : 'Klik kolom input untuk mengetik atau scan'}
-            </span>
+        {footerContent && (
+          <div className="flex items-center justify-end px-1">
+            {footerContent}
           </div>
-
-          <span className="text-[10px] font-semibold tracking-wider uppercase text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-full">
-            Auto-Enter
-          </span>
-        </div>
+        )}
       </div>
     </div>
   );

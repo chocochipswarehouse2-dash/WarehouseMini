@@ -31,6 +31,7 @@ import {
   deleteLogProdukItem,
   deleteLogProdukInvoice,
   getAreaFromLokasi,
+  getSupabaseClient,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
@@ -54,7 +55,7 @@ interface EditableLogItem {
   keterangan: string;
 }
 
-export const MutasiLogView: React.FC<MutasiLogViewProps> = ({
+export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   session,
   productCatalog = [],
   onNotify,
@@ -123,6 +124,36 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = ({
 
   useEffect(() => {
     loadLogs();
+
+    // Supabase Realtime for mutation logs
+    const supaClient = getSupabaseClient();
+    let channel: any = null;
+    let debounceTimer: any = null;
+
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadLogs();
+      }, 400);
+    };
+
+    try {
+      channel = supaClient
+        .channel('mutasi-realtime-feed')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_produk' }, () => {
+          triggerDebouncedSync();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('Mutasi log realtime subscription error:', err);
+    }
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (channel) {
+        supaClient.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Filtered logs
@@ -946,4 +977,4 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = ({
       )}
     </div>
   );
-};
+});

@@ -33,6 +33,7 @@ import {
   returnPeminjamanSupabase,
   fetchRealtimeChannelStocksSupabase,
   fetchAllStockRealtime,
+  getSupabaseClient,
 } from '../services/supabase';
 import {
   getLocalPeminjamanRecords,
@@ -48,7 +49,7 @@ interface PeminjamanViewProps {
   onRefreshCatalog: () => void;
 }
 
-export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
+export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   session,
   productCatalog,
   onShowToast,
@@ -170,20 +171,61 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
   const [selectedRecordForModal, setSelectedRecordForModal] = useState<PeminjamanRecord | null>(null);
   const [copiedWaType, setCopiedWaType] = useState<'personal' | 'grup' | null>(null);
 
-  // Load SPS records and real-time stocks from Supabase on mount
+  // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
   useEffect(() => {
+    let isMounted = true;
     const initData = async () => {
       try {
         const data = await fetchPeminjamanFromSupabase();
-        if (data && data.length > 0) {
+        if (isMounted && data && data.length > 0) {
           setRecords(data);
         }
       } catch (err) {
         console.warn('Error loading SPS records from Supabase:', err);
       }
-      await loadChannelStocks();
+      if (isMounted) {
+        await loadChannelStocks();
+      }
     };
     initData();
+
+    // Supabase Realtime Subscription for live SPS updates & stock mutasi
+    const supaClient = getSupabaseClient();
+    let channel: any = null;
+    let debounceTimer: any = null;
+
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (!isMounted) return;
+        fetchPeminjamanFromSupabase().then((d) => {
+          if (isMounted && d && d.length > 0) setRecords(d);
+        });
+        loadChannelStocks();
+      }, 400);
+    };
+
+    try {
+      channel = supaClient
+        .channel('peminjaman-realtime-feed')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'peminjaman' }, () => {
+          triggerDebouncedSync();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_produk' }, () => {
+          triggerDebouncedSync();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('Peminjaman realtime subscription error:', err);
+    }
+
+    return () => {
+      isMounted = false;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (channel) {
+        supaClient.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Synchronize when catalog updates if channelStocks is still empty
@@ -1873,4 +1915,4 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = ({
       )}
     </div>
   );
-};
+});
