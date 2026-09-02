@@ -25,14 +25,16 @@ import { ScannedItemsList } from './components/ScannedItemsList';
 import { BottomSaveBar } from './components/BottomSaveBar';
 import { ApkInstallModal } from './components/ApkInstallModal';
 import { ToastContainer } from './components/Toast';
-import { PeminjamanView } from './components/PeminjamanView';
-import { PickingTasksView } from './components/PickingTasksView';
-import { StockOpnameView } from './components/StockOpnameView';
-import { MutasiLogView } from './components/MutasiLogView';
-import { InventoryView } from './components/InventoryView';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
+import { globalRealtimeStore } from './services/store';
 
+// Lazy load large components
+const PeminjamanView = React.lazy(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
+const PickingTasksView = React.lazy(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
+const StockOpnameView = React.lazy(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
+const MutasiLogView = React.lazy(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
+const InventoryView = React.lazy(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
 
 import {
   fetchStockForLocations,
@@ -65,6 +67,17 @@ export default function App() {
     const username = localStorage.getItem('wms_session_username');
     const role = localStorage.getItem('wms_user_role');
     const endpointUrl = localStorage.getItem('wms_endpoint_url');
+    const sessionExpiry = localStorage.getItem('wms_session_expiry');
+
+    // Cek expiry session (7 hari)
+    if (sessionExpiry && Date.now() > parseInt(sessionExpiry, 10)) {
+      localStorage.removeItem('wms_session_token');
+      localStorage.removeItem('wms_session_username');
+      localStorage.removeItem('wms_user_role');
+      localStorage.removeItem('wms_endpoint_url');
+      localStorage.removeItem('wms_session_expiry');
+      return null;
+    }
     
     if (token && username && role) {
       return { token, username, role: role as any, endpointUrl: endpointUrl || '' };
@@ -283,6 +296,7 @@ export default function App() {
                 body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
               });
             }
+            globalRealtimeStore.notify('log_produk', payload);
             if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
             debounceCatalogTimer = setTimeout(() => {
               loadProducts();
@@ -292,7 +306,8 @@ export default function App() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'master_produk' },
-          () => {
+          (payload) => {
+            globalRealtimeStore.notify('master_produk', payload);
             if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
             debounceCatalogTimer = setTimeout(() => {
               loadProducts();
@@ -302,7 +317,8 @@ export default function App() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'stock_opname_queue' },
-          () => {
+          (payload) => {
+            globalRealtimeStore.notify('stock_opname_queue', payload);
             if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
             debounceCatalogTimer = setTimeout(() => {
               loadProducts();
@@ -312,11 +328,26 @@ export default function App() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'peminjaman' },
-          () => {
+          (payload) => {
+            globalRealtimeStore.notify('peminjaman', payload);
             if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
             debounceCatalogTimer = setTimeout(() => {
               loadProducts();
             }, 300);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'picking_list' },
+          (payload) => {
+            globalRealtimeStore.notify('picking_list', payload);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'view_stok_realtime' },
+          (payload) => {
+            globalRealtimeStore.notify('view_stok_realtime', payload);
           }
         )
         .subscribe((status) => {
@@ -332,7 +363,6 @@ export default function App() {
     }
   }, [session, loadProducts]);
 
-  // Handle Login directly authenticated with Supabase
   const handleLogin = async (user: string, pass: string) => {
     const res = await verifySupabaseLogin(user, pass);
     if (res.success && res.token) {
@@ -347,6 +377,10 @@ export default function App() {
       localStorage.setItem('wms_session_username', res.user || user);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
       localStorage.setItem('wms_endpoint_url', '');
+      
+      // Set session expiry to 7 days from now
+      const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      localStorage.setItem('wms_session_expiry', expiry.toString());
 
       showToast(`Selamat datang, ${res.user || user} (${res.role || 'Operator'})!`, 'success');
       playSuccessBeep();
@@ -362,6 +396,8 @@ export default function App() {
     localStorage.removeItem('wms_session_token');
     localStorage.removeItem('wms_session_username');
     localStorage.removeItem('wms_user_role');
+    localStorage.removeItem('wms_endpoint_url');
+    localStorage.removeItem('wms_session_expiry');
     setSession(null);
     setScannedData([]);
     releaseScreenWakeLock();
@@ -705,103 +741,97 @@ export default function App() {
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
-          <div className={activePage === 'scanner' ? 'block' : 'hidden'}>
-            <div className="space-y-2">
-              {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
-              <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
-                <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
-                  <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+          {activePage === 'scanner' && (
+            <div className="block">
+              <div className="space-y-2">
+                {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
+                <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
+                  <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
+                    <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
 
-                  {(scanMode === 'fisik' || scanMode === 'manual') && (
-                    <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                  )}
+                    {(scanMode === 'fisik' || scanMode === 'manual') && (
+                      <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                    )}
 
-                  {scanMode === 'kamera' && (
-                    <CameraScanner
-                      onScan={handleScannedItem}
-                      onRequestWakeLock={requestScreenWakeLock}
+                    {scanMode === 'kamera' && (
+                      <CameraScanner
+                        onScan={handleScannedItem}
+                        onRequestWakeLock={requestScreenWakeLock}
+                      />
+                    )}
+
+                    <QuickTagToolbar
+                      currentCategory={currentCategory}
+                      currentLocation={currentLocation}
+                      onSelectCategory={handleSelectQuickCategory}
+                      onSelectLocation={handleSelectQuickLocation}
                     />
-                  )}
-
-                  <QuickTagToolbar
-                    currentCategory={currentCategory}
-                    currentLocation={currentLocation}
-                    onSelectCategory={handleSelectQuickCategory}
-                    onSelectLocation={handleSelectQuickLocation}
-                  />
+                  </div>
                 </div>
+
+                <ScannedItemsList
+                  items={scannedData}
+                  onRemoveItem={handleRemoveItem}
+                  onClearAll={handleClearAll}
+                />
+                
+                <BottomSaveBar
+                  items={scannedData}
+                  keterangan={keterangan}
+                  onChangeKeterangan={setKeterangan}
+                  onSave={handleSaveData}
+                  isSaving={isSaving}
+                />
               </div>
-
-              <ScannedItemsList
-                items={scannedData}
-                onRemoveItem={handleRemoveItem}
-                onClearAll={handleClearAll}
-              />
-              
-              <BottomSaveBar
-                items={scannedData}
-                keterangan={keterangan}
-                onChangeKeterangan={setKeterangan}
-                onSave={handleSaveData}
-                isSaving={isSaving}
-              />
-            </div>
-          </div>
-
-          {visitedPages.has('inventory') && (
-            <div className={activePage === 'inventory' ? 'block' : 'hidden'}>
-              <InventoryView
-                session={session}
-                currentLocations={activeLocations}
-                productCatalog={productDatabase}
-                onNotify={showToast}
-                onRefreshCatalog={loadProducts}
-              />
             </div>
           )}
 
-          {visitedPages.has('stock_opname') && (
-            <div className={activePage === 'stock_opname' ? 'block' : 'hidden'}>
-              <StockOpnameView
-                session={session}
-                productCatalog={productDatabase}
-                onNotify={showToast}
-                onRefreshCatalog={loadProducts}
-              />
-            </div>
-          )}
+          <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
+            {activePage === 'inventory' && (
+                <InventoryView
+                  session={session}
+                  currentLocations={activeLocations}
+                  productCatalog={productDatabase}
+                  onNotify={showToast}
+                  onRefreshCatalog={loadProducts}
+                />
+            )}
 
-          {visitedPages.has('mutasi_log') && (
-            <div className={activePage === 'mutasi_log' ? 'block' : 'hidden'}>
-              <MutasiLogView
-                session={session}
-                productCatalog={productDatabase}
-                onNotify={showToast}
-                onRefreshCatalog={loadProducts}
-              />
-            </div>
-          )}
+            {activePage === 'stock_opname' && (
+                <StockOpnameView
+                  session={session}
+                  productCatalog={productDatabase}
+                  onNotify={showToast}
+                  onRefreshCatalog={loadProducts}
+                />
+            )}
 
-          {visitedPages.has('peminjaman') && (
-            <div className={activePage === 'peminjaman' ? 'block' : 'hidden'}>
-              <PeminjamanView
-                session={session}
-                productCatalog={productDatabase}
-                onShowToast={showToast}
-                onRefreshCatalog={loadProducts}
-              />
-            </div>
-          )}
+            {activePage === 'mutasi_log' && (
+                <MutasiLogView
+                  session={session}
+                  productCatalog={productDatabase}
+                  onNotify={showToast}
+                  onRefreshCatalog={loadProducts}
+                />
+            )}
 
-          {visitedPages.has('picking_tasks') && (
-            <div className={activePage === 'picking_tasks' ? 'block' : 'hidden'}>
-              <PickingTasksView
-                onNotify={showToast}
-                currentUser={session?.username || 'Operator'}
-                productCatalog={productDatabase}
-              />
-            </div>
-          )}
+            {activePage === 'peminjaman' && (
+                <PeminjamanView
+                  session={session}
+                  productCatalog={productDatabase}
+                  onShowToast={showToast}
+                  onRefreshCatalog={loadProducts}
+                />
+            )}
+
+            {activePage === 'picking_tasks' && (
+                <PickingTasksView
+                  onNotify={showToast}
+                  currentUser={session?.username || 'Operator'}
+                  productCatalog={productDatabase}
+                />
+            )}
+          </React.Suspense>
         </main>
       </div>
 

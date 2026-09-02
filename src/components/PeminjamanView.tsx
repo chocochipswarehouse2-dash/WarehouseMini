@@ -27,14 +27,14 @@ import {
 } from 'lucide-react';
 import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem } from '../types';
 import {
-  supabaseFetch,
   fetchPeminjamanFromSupabase,
-  savePeminjamanToSupabase,
-  returnPeminjamanSupabase,
-  fetchRealtimeChannelStocksSupabase,
-  fetchAllStockRealtime,
+  insertPeminjamanBulk,
+  updatePeminjamanBulk,
+  deletePeminjamanFromSupabase,
   getSupabaseClient,
+  fetchRealtimeChannelStocksSupabase,
 } from '../services/supabase';
+import { globalRealtimeStore } from '../services/store';
 import {
   getLocalPeminjamanRecords,
   saveLocalPeminjamanRecords,
@@ -174,24 +174,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
   useEffect(() => {
     let isMounted = true;
-    const initData = async () => {
-      try {
-        const data = await fetchPeminjamanFromSupabase();
-        if (isMounted && data && data.length > 0) {
-          setRecords(data);
-        }
-      } catch (err) {
-        console.warn('Error loading SPS records from Supabase:', err);
-      }
-      if (isMounted) {
-        await loadChannelStocks();
-      }
-    };
-    initData();
+    
+    // Initial fetch
+    fetchPeminjamanFromSupabase().then((d) => {
+      if (isMounted && d && d.length > 0) setRecords(d);
+    });
+    loadChannelStocks();
 
-    // Supabase Realtime Subscription for live SPS updates & stock mutasi
-    const supaClient = getSupabaseClient();
-    let channel: any = null;
+    // Supabase Realtime via global store
     let debounceTimer: any = null;
 
     const triggerDebouncedSync = () => {
@@ -205,26 +195,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       }, 400);
     };
 
-    try {
-      channel = supaClient
-        .channel('peminjaman-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'peminjaman' }, () => {
-          triggerDebouncedSync();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_produk' }, () => {
-          triggerDebouncedSync();
-        })
-        .subscribe();
-    } catch (err) {
-      console.warn('Peminjaman realtime subscription error:', err);
-    }
+    const unsubPeminjaman = globalRealtimeStore.subscribe('peminjaman', triggerDebouncedSync);
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedSync);
 
     return () => {
       isMounted = false;
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        supaClient.removeChannel(channel);
-      }
+      unsubPeminjaman();
+      unsubLog();
     };
   }, []);
 

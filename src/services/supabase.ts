@@ -666,22 +666,39 @@ export async function fetchAllLogs(maxRows = 50000): Promise<LogProdukItem[]> {
 
   try {
     while (offset < maxRows) {
-      const currentLimit = Math.min(pageSize, maxRows - offset);
-      const chunk = await supabaseFetch<LogProdukItem[]>(
-        'log_produk',
-        'GET',
-        null,
-        `select=*&order=created_at.desc&limit=${currentLimit}&offset=${offset}`
-      );
-      if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+      const batchPromises = [];
+      const batchSize = 5; // 5 parallel requests
+      for (let i = 0; i < batchSize && offset < maxRows; i++) {
+        const currentLimit = Math.min(pageSize, maxRows - offset);
+        batchPromises.push(
+          supabaseFetch<LogProdukItem[]>(
+            'log_produk',
+            'GET',
+            null,
+            `select=*&order=created_at.desc&limit=${currentLimit}&offset=${offset}`
+          )
+        );
+        offset += currentLimit;
+      }
+      
+      const results = await Promise.all(batchPromises);
+      let breakLoop = false;
+      
+      for (const chunk of results) {
+        if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+          breakLoop = true;
+          break;
+        }
+        allLogs.push(...chunk);
+        if (chunk.length < pageSize) {
+          breakLoop = true;
+          break;
+        }
+      }
+      
+      if (breakLoop) {
         break;
       }
-      allLogs.push(...chunk);
-      if (chunk.length < currentLimit) {
-        // Reached end of table records
-        break;
-      }
-      offset += chunk.length;
     }
     return allLogs;
   } catch (err) {
@@ -995,22 +1012,42 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
 
   try {
     while (offset < maxRows) {
-      const res = await fetch(
-        `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc&limit=${pageSize}&offset=${offset}`,
-        {
-          headers: {
-            apikey: supaKey,
-            Authorization: 'Bearer ' + supaKey,
-            'Content-Type': 'application/json',
-          },
+      const batchPromises = [];
+      const batchSize = 5; // 5 parallel requests
+      for (let i = 0; i < batchSize && offset < maxRows; i++) {
+        const currentLimit = Math.min(pageSize, maxRows - offset);
+        const promise = fetch(
+          `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`,
+          {
+            headers: {
+              apikey: supaKey,
+              Authorization: 'Bearer ' + supaKey,
+              'Content-Type': 'application/json',
+            },
+          }
+        ).then(res => res.ok ? res.json() : Promise.resolve([]));
+        batchPromises.push(promise);
+        offset += currentLimit;
+      }
+      
+      const results = await Promise.all(batchPromises);
+      let breakLoop = false;
+      
+      for (const data of results) {
+        if (!Array.isArray(data) || data.length === 0) {
+          breakLoop = true;
+          break;
         }
-      );
-      if (!res.ok) break;
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) break;
-      allRows.push(...data);
-      if (data.length < pageSize) break;
-      offset += data.length;
+        allRows.push(...data);
+        if (data.length < pageSize) {
+          breakLoop = true;
+          break;
+        }
+      }
+      
+      if (breakLoop) {
+        break;
+      }
     }
     if (allRows.length > 0) {
       memoryStokFisikCache = allRows;
@@ -1186,6 +1223,22 @@ export async function verifySupabaseLogin(
     }
   }
 
+  // Hash password for comparison (SHA-256)
+  let hashedPass = '';
+  if (cleanPass) {
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(cleanPass);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      hashedPass = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (err) {
+      console.warn('Crypto API error:', err);
+      // Fallback for environments where crypto is not available
+      hashedPass = cleanPass; 
+    }
+  }
+
   // 1. Direct check in Supabase wms_users table (Database = Frontend Source of Truth)
   try {
     const data = await supabaseFetch<WmsUser[]>(
@@ -1197,8 +1250,10 @@ export async function verifySupabaseLogin(
 
     if (data && data.length > 0) {
       const u = data[0];
+      
       // If user has a password in DB and password was provided, verify
-      if (u.password && cleanPass && u.password !== cleanPass) {
+      // Allow cleanPass to match for temporary backward compatibility if not hashed
+      if (u.password && cleanPass && u.password !== hashedPass && u.password !== cleanPass) {
         return {
           success: false,
           token: '',
@@ -1220,72 +1275,15 @@ export async function verifySupabaseLogin(
       };
     }
   } catch (err) {
-    console.warn('Supabase wms_users query error, checking preset accounts:', err);
+    console.warn('Supabase wms_users query error:', err);
   }
-
-  // 2. Preset / Predefined Master Accounts fallback & auto-sync to Supabase
-  const presetUsers: Record<string, { pass: string; role: UserRole; name?: string }> = {
-    admin: { pass: 'admin123', role: 'Superadmin', name: 'Super Admin Utama' },
-    superadmin: { pass: 'admin123', role: 'Superadmin', name: 'Super Admin Utama' },
-    chocochips: { pass: 'admin123', role: 'Superadmin', name: 'Chocochips Admin' },
-    'chocochips.warehouse2@gmail.com': { pass: 'admin123', role: 'Superadmin', name: 'Warehouse 2 Lead' },
-    operator: { pass: '123456', role: 'Operator', name: 'Operator Gudang' },
-    gudang1: { pass: 'gudang123', role: 'Operator', name: 'Staff Gudang 1' },
-    produk_team: { pass: 'produk123', role: 'Produk', name: 'Tim Produk & Stok' },
-    fulfillment_team: { pass: 'fulfillment123', role: 'Fulfillment', name: 'Tim Fulfillment' },
-    peminjaman_team: { pass: 'peminjaman123', role: 'Peminjaman', name: 'Tim Peminjaman SPS' },
-  };
-
-  const matched = presetUsers[cleanUser];
-  if (matched) {
-    if (cleanPass && matched.pass && cleanPass !== matched.pass) {
-      return {
-        success: false,
-        token: '',
-        user: username,
-        role: matched.role,
-        message: 'Password salah untuk akun preset ini.',
-      };
-    }
-
-    // Auto-upsert preset account into Supabase so it is permanently in Supabase table
-    saveWmsUserToSupabase({
-      username: cleanUser,
-      name: matched.name || cleanUser,
-      role: matched.role,
-      password: matched.pass,
-    }).catch(() => {});
-
-    const token = `sb_preset_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    return {
-      success: true,
-      token,
-      user: username,
-      name: matched.name || username,
-      role: matched.role,
-      message: 'Login berhasil via akun preset terdaftar',
-    };
-  }
-
-  // 3. Dynamic User auto-provision (Superadmin for admin keywords, Operator otherwise)
-  const token = `sb_user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  const role: UserRole = cleanUser.includes('admin') ? 'Superadmin' : 'Operator';
-  
-  // Save new dynamically created user to Supabase
-  saveWmsUserToSupabase({
-    username: cleanUser,
-    name: username,
-    role,
-    password: cleanPass || '123456',
-  }).catch(() => {});
 
   return {
-    success: true,
-    token,
+    success: false,
+    token: '',
     user: username,
-    name: username,
-    role,
-    message: `Login berhasil sebagai ${role}`,
+    role: 'Operator',
+    message: 'Akun tidak ditemukan atau password salah',
   };
 }
 
@@ -1298,7 +1296,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
       'wms_users',
       'GET',
       null,
-      'select=*&order=created_at.asc'
+      'select=username,name,role,permissions,created_at,updated_at&order=created_at.asc'
     );
     if (data && Array.isArray(data) && data.length > 0) {
       try {
@@ -1337,11 +1335,26 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
  */
 export async function saveWmsUserToSupabase(user: WmsUser): Promise<boolean> {
   const cleanU = user.username.trim().toLowerCase();
+  
+  let processedPassword = user.password || '123456';
+  // If the password is not already a SHA-256 hash (64 hex characters) and crypto is available
+  if (processedPassword.length !== 64 && typeof crypto !== 'undefined' && crypto.subtle) {
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(processedPassword);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      processedPassword = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+      console.warn('Error hashing password:', e);
+    }
+  }
+
   const payload = {
     username: cleanU,
     name: user.name || user.username,
     role: user.role || 'Operator',
-    password: user.password || '123456',
+    password: processedPassword,
     permissions: user.permissions || {},
     updated_at: new Date().toISOString(),
   };
@@ -2202,87 +2215,59 @@ function extractPickingItemFromRow(row: any): PickingListItem | null {
 export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]> {
   const itemsMap = new Map<string, PickingListItem>();
 
-  // 1. (REMOVED) Do not rely on local cache for the main source of truth
-  // to avoid ghost items reappearing after deletion.
-  // We will always fetch fresh data from Supabase.
+  // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
+  const [pickingRes, peminjamanRes] = await Promise.allSettled([
+    supabaseFetch<any[]>('picking_list', 'GET', null, 'select=*&order=created_at.desc&limit=2000'),
+    supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100')
+  ]);
 
-  // 2. Fetch from Supabase candidate tables
-  const candidateTables = ['picking_list', 'refill', 'tugas_picking', 'transfer_order'];
-  let anySuccess = false;
-  let lastError = null;
-
-  for (const table of candidateTables) {
-    try {
-      const rows = await supabaseFetch<any[]>(
-        table,
-        'GET',
-        null,
-        'select=*&order=created_at.desc&limit=2000'
-      );
-      anySuccess = true; // Request succeeded, even if 0 rows
-      if (rows && Array.isArray(rows) && rows.length > 0) {
-        for (const r of rows) {
-          const item = extractPickingItemFromRow(r);
-          if (item) {
-            itemsMap.set(`${item.no_sj}__${item.sku}`, item);
-          }
-        }
-        break; // Successfully got from primary table
-      }
-    } catch (e) {
-      lastError = e;
-      // Continue to next table
-    }
-  }
-
-  // If no table succeeded at all (e.g. network down), throw to trigger offline cache
-  if (!anySuccess && lastError) {
-    throw lastError;
-  }
-
-  // 3. Auto-sync from Peminjaman (for legacy Google Sheets UI submissions)
-  try {
-    const peminjamans = await supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100');
-    if (peminjamans && Array.isArray(peminjamans)) {
-      const toInsert: any[] = [];
-      for (const p of peminjamans) {
-        const no_sj = String(p.no_peminjaman || '');
-        const sku = String(p.sku || '').toUpperCase();
-        const pStatus = String(p.status || '').toUpperCase();
-        
-        // Skip items that are already returned to avoid re-adding them to picking list
-        if (pStatus === 'DIKEMBALIKAN') continue;
-
-        if (no_sj && sku && !itemsMap.has(`${no_sj}__${sku}`)) {
-          const newItem = {
-            no_sj: no_sj,
-            tanggal: p.tanggal_pinjam || '',
-            tujuan: `SPS: ${p.pic || ''} - ${p.keperluan || ''}`,
-            sku: sku,
-            nama_produk: p.nama_produk || sku,
-            qty_req: Number(p.qty) || 1,
-            qty_picked: 0,
-            lokasi: p.lokasi || 'BLOK F',
-            status: 'PENDING',
-            picker_name: '',
-            created_at: p.created_at || new Date().toISOString()
-          };
-          toInsert.push(newItem);
-          const extracted = extractPickingItemFromRow(newItem);
-          if (extracted) {
-             itemsMap.set(`${no_sj}__${sku}`, extracted);
-          }
-        }
-      }
-      if (toInsert.length > 0) {
-        // Fire-and-forget background insert to sync Supabase picking_list
-        supabaseFetch('picking_list', 'POST', toInsert).catch(console.warn);
+  if (pickingRes.status === 'fulfilled' && pickingRes.value && Array.isArray(pickingRes.value)) {
+    for (const r of pickingRes.value) {
+      const item = extractPickingItemFromRow(r);
+      if (item) {
+        itemsMap.set(`${item.no_sj}__${item.sku}`, item);
       }
     }
-  } catch (err) {
-    console.warn('Auto-sync peminjaman to picking_list failed:', err);
+  } else if (pickingRes.status === 'rejected') {
+    throw pickingRes.reason;
   }
 
+  // Auto-sync from Peminjaman (for legacy Google Sheets UI submissions)
+  if (peminjamanRes.status === 'fulfilled' && peminjamanRes.value && Array.isArray(peminjamanRes.value)) {
+    const toInsert: any[] = [];
+    for (const p of peminjamanRes.value) {
+      const no_sj = String(p.no_peminjaman || '');
+      const sku = String(p.sku || '').toUpperCase();
+      const pStatus = String(p.status || '').toUpperCase();
+      
+      // Skip items that are already returned to avoid re-adding them to picking list
+      if (pStatus === 'DIKEMBALIKAN') continue;
+
+      if (no_sj && sku && !itemsMap.has(`${no_sj}__${sku}`)) {
+        const newItem = {
+          no_sj: no_sj,
+          tanggal: p.tanggal_pinjam || '',
+          tujuan: `SPS: ${p.pic || ''} - ${p.keperluan || ''}`,
+          sku: sku,
+          nama_produk: p.nama_produk || sku,
+          qty_req: Number(p.qty) || 1,
+          qty_picked: 0,
+          lokasi: p.lokasi || 'BLOK F',
+          status: 'PENDING',
+          picker_name: '',
+          created_at: p.created_at || new Date().toISOString()
+        };
+        toInsert.push(newItem);
+        const extracted = extractPickingItemFromRow(newItem);
+        if (extracted) {
+           itemsMap.set(`${no_sj}__${sku}`, extracted);
+        }
+      }
+    }
+    if (toInsert.length > 0) {
+      // Fire-and-forget background insert to sync Supabase picking_list
+      supabaseFetch('picking_list', 'POST', toInsert).catch(console.warn);
+    }
   const result = Array.from(itemsMap.values());
   // Sort newest first
   result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));

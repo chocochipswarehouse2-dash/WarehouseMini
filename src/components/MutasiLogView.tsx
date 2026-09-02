@@ -23,16 +23,19 @@ import {
   FileSpreadsheet,
   Package,
 } from 'lucide-react';
-import { LogProdukItem, ProductItem, UserSession } from '../types';
+import { ProductItem, UserSession, LogProdukItem } from '../types';
 import {
+  fetchRecentLogs,
   fetchAllLogs,
+  undoMutasiLog,
+  getSupabaseClient,
   fetchLogsByInvoice,
   updateLogProdukInvoiceBatch,
   deleteLogProdukItem,
   deleteLogProdukInvoice,
   getAreaFromLokasi,
-  getSupabaseClient,
 } from '../services/supabase';
+import { globalRealtimeStore } from '../services/store';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
 
@@ -125,9 +128,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   useEffect(() => {
     loadLogs();
 
-    // Supabase Realtime for mutation logs
-    const supaClient = getSupabaseClient();
-    let channel: any = null;
+    // Supabase Realtime via global store
     let debounceTimer: any = null;
 
     const triggerDebouncedSync = () => {
@@ -137,22 +138,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       }, 400);
     };
 
-    try {
-      channel = supaClient
-        .channel('mutasi-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_produk' }, () => {
-          triggerDebouncedSync();
-        })
-        .subscribe();
-    } catch (err) {
-      console.warn('Mutasi log realtime subscription error:', err);
-    }
+    const unsub = globalRealtimeStore.subscribe('log_produk', triggerDebouncedSync);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        supaClient.removeChannel(channel);
-      }
+      unsub();
     };
   }, []);
 

@@ -20,7 +20,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { ProductItem, PickingListItem } from '../types';
-import { createPickingSuratJalanSupabase, isWarehouseLocation } from '../services/supabase';
+import { createPickingSuratJalanSupabase, isWarehouseLocation, fetchStockForSkus } from '../services/supabase';
 
 interface ParsedSJItem {
   nama: string;
@@ -212,6 +212,47 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       if (parsedList.length === 0) {
         onNotify('Tidak ditemukan data baris Surat Jalan yang valid pada file CSV.', 'error');
       } else {
+        // Fetch real-time stock to fill in any missing locations
+        const allSkusToFetch = Array.from(new Set(parsedList.flatMap(g => g.items.map(it => it.sku))));
+        if (allSkusToFetch.length > 0) {
+          try {
+            const realtimeStocks = await fetchStockForSkus(allSkusToFetch);
+            
+            // Map SKUs to their primary warehouse location
+            const skuLocMap = new Map<string, string>();
+            realtimeStocks.forEach(stk => {
+              const sku = stk.sku.toUpperCase();
+              const loc = (stk.lokasi || '').trim().toUpperCase();
+              // Keep the first warehouse location encountered or aggregate them
+              if (loc && isWarehouseLocation(loc, stk.area)) {
+                if (!skuLocMap.has(sku)) {
+                  skuLocMap.set(sku, loc);
+                } else {
+                  // If we want to append other locations as well
+                  const existing = skuLocMap.get(sku)!;
+                  if (!existing.includes(loc)) {
+                    skuLocMap.set(sku, `${existing}, ${loc}`);
+                  }
+                }
+              }
+            });
+
+            // Update parsed list with real locations
+            parsedList.forEach(g => {
+              g.items.forEach(it => {
+                if (it.lokasi === '-' || !it.lokasi) {
+                  const fetchedLoc = skuLocMap.get(it.sku);
+                  if (fetchedLoc) {
+                    it.lokasi = fetchedLoc;
+                  }
+                }
+              });
+            });
+          } catch (fetchErr) {
+            console.warn('Failed to fetch real-time stock for locations:', fetchErr);
+          }
+        }
+
         setParsedGroups(parsedList);
         setExpandedGroupId(parsedList[0].id);
         onNotify(`Berhasil memproses ${parsedList.length} Surat Jalan dari file CSV!`, 'success');

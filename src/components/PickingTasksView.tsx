@@ -69,6 +69,7 @@ import {
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
+import { globalRealtimeStore } from '../services/store';
 import {
   playSuccessBeep,
   playErrorBeep,
@@ -211,9 +212,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     }
     loadPickingList();
 
-    // Supabase Realtime for picking list updates
-    const supaClient = getSupabaseClient();
-    let channel: any = null;
+    // Supabase Realtime via global store
     let debounceTimer: any = null;
 
     const triggerDebouncedSync = () => {
@@ -223,22 +222,11 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       }, 400);
     };
 
-    try {
-      channel = supaClient
-        .channel('picking-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'picking_list' }, () => {
-          triggerDebouncedSync();
-        })
-        .subscribe();
-    } catch (err) {
-      console.warn('Picking realtime subscription error:', err);
-    }
+    const unsub = globalRealtimeStore.subscribe('picking_list', triggerDebouncedSync);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        supaClient.removeChannel(channel);
-      }
+      unsub();
     };
   }, []);
 
@@ -344,8 +332,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
             }
           } else if (itemLoc && typeof itemLoc === 'object' && itemLoc.lokasi) {
             const loc = itemLoc.lokasi.trim().toUpperCase();
-            const q = Number(itemLoc.qty) || 0;
-            if (loc && isWarehouseLocation(loc) && (q > 0 || map.size === 0)) {
+            if (loc && isWarehouseLocation(loc)) {
               const existing = map.get(loc);
               map.set(loc, {
                 lokasi: loc,
@@ -363,17 +350,17 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     const realtimeList = realtimeSkuStocks[cleanSku] || [];
     realtimeList.forEach((stk) => {
       const loc = (stk.lokasi || '').trim().toUpperCase();
-      const sisaStok = Number(stk.sisa_stok) || 0;
       if (loc && isWarehouseLocation(loc, stk.area)) {
         const existing = map.get(loc);
         if (existing) {
           if (stk.sisa_stok !== undefined) existing.qty = stk.sisa_stok;
-        } else if (sisaStok > 0) {
+        } else {
           map.set(loc, {
             lokasi: loc,
             qty: stk.sisa_stok,
             isPrimary: map.size === 0,
             source: 'REALTIME_STOCK',
+            area: stk.area
           });
         }
       }
@@ -2009,7 +1996,15 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
           {activeItems.map((item, index) => {
             const isCompleted = item.qty_picked === item.qty_req;
             const isOver = item.qty_picked > item.qty_req;
-            const isCurrentShelf = activeLocation && (item.lokasi || '').toUpperCase() === activeLocation.toUpperCase();
+
+            const productLocs = getProductLocations(item.sku, item.lokasi);
+            const primaryLoc = productLocs.find((l) => l.isPrimary) || productLocs[0];
+            const allWarehouseLocs = productLocs.filter(l => isWarehouseLocation(l.lokasi));
+            const displayLokasi = allWarehouseLocs.length > 0 ? allWarehouseLocs.map(l => l.lokasi).join(', ') : (item.lokasi || 'A-01');
+
+            const isCurrentShelf = activeLocation && (
+              allWarehouseLocs.some(l => l.lokasi.toUpperCase() === activeLocation.toUpperCase())
+            );
 
             let cardBorder = 'border-slate-200 dark:border-slate-800';
             let statusBadge = (
@@ -2041,16 +2036,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
               );
             }
 
-            const productLocs = getProductLocations(item.sku, item.lokasi);
-            const primaryLoc = productLocs.find((l) => l.isPrimary) || productLocs[0];
-            // Filter strictly other warehouse locations with positive stock
-            const otherLocs = productLocs.filter(
-              (l) =>
-                isWarehouseLocation(l.lokasi) &&
-                (l.qty === undefined || l.qty > 0) &&
-                l.lokasi.toUpperCase() !== (item.lokasi || primaryLoc?.lokasi || '').toUpperCase()
-            );
-            const isWarehouse = isWarehouseLocation(item.lokasi || primaryLoc?.lokasi || '');
+            const isWarehouse = isWarehouseLocation(primaryLoc?.lokasi || item.lokasi || '');
 
             return (
               <div
@@ -2065,22 +2051,22 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
                     {/* BIG LOKASI RAK BADGE */}
                     <button
                       type="button"
-                      onClick={() => handleBarcodeScanned(`#LOK ${item.lokasi}`)}
-                      className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 ${
+                      onClick={() => handleBarcodeScanned(`#LOK ${primaryLoc?.lokasi || item.lokasi}`)}
+                      className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 max-w-[65%] sm:max-w-none ${
                         isCurrentShelf
                           ? 'bg-[#ff7a00] text-white shadow-md ring-2 ring-[#ff7a00]/50'
                           : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100'
                       }`}
                       title="Klik untuk jadikan rak aktif ini"
                     >
-                      <MapPin className="w-4 h-4 text-inherit" />
-                      <span>{item.lokasi || 'A-01'}</span>
+                      <MapPin className="w-4 h-4 text-inherit shrink-0" />
+                      <span className="truncate">{displayLokasi}</span>
                       {isWarehouse ? (
-                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 uppercase tracking-wider font-sans">
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 uppercase tracking-wider font-sans shrink-0">
                           Warehouse
                         </span>
                       ) : (
-                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 uppercase tracking-wider font-sans">
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 uppercase tracking-wider font-sans shrink-0">
                           Non-WH
                         </span>
                       )}
@@ -2111,43 +2097,6 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
                     {item.nama_produk}
                   </h3>
 
-                  {/* INFORMASI LOKASI PRODUK YANG LAIN (JIKA ADA LOKASI DI WAREHOUSE DENGAN STOK TERSEDIA) */}
-                  {otherLocs.length > 0 && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 space-y-1.5">
-                      <div className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <Compass className="w-3.5 h-3.5 text-[#ff7a00]" />
-                        <span>Tersedia di {otherLocs.length} Lokasi Rak Warehouse Lain:</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 pt-0.5">
-                        {otherLocs.map((locInfo, lIdx) => {
-                          const isThisCurrent = activeLocation && activeLocation.toUpperCase() === locInfo.lokasi.toUpperCase();
-                          return (
-                            <button
-                              key={lIdx}
-                              type="button"
-                              onClick={() => handleSelectAlternativeLocation(item, locInfo.lokasi)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-                                isThisCurrent
-                                  ? 'bg-[#ff7a00] text-white shadow-sm ring-2 ring-[#ff7a00]/40'
-                                  : 'bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:border-[#ff7a00]'
-                              }`}
-                              title={`Klik untuk alihkan scanner ke Rak ${locInfo.lokasi}`}
-                            >
-                              <span>📍 {locInfo.lokasi}</span>
-                              <span className="text-[9px] px-1 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded font-sans uppercase font-black">
-                                WH
-                              </span>
-                              {locInfo.qty !== undefined && (
-                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                  ({locInfo.qty} pcs)
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {item.lokasi_picked && item.lokasi_picked !== item.lokasi && (
                     <div className="text-xs text-amber-700 dark:text-amber-300 font-bold mt-1 bg-amber-50 dark:bg-amber-950/40 p-2 rounded-lg border border-amber-300 dark:border-amber-800">

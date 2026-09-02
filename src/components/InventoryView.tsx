@@ -41,6 +41,7 @@ import {
   getSupabaseClient,
   supabaseFetch,
 } from '../services/supabase';
+import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
 
@@ -269,9 +270,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   useEffect(() => {
     loadStockData();
 
-    // Supabase Realtime Subscription with debounced updates
-    const supaClient = getSupabaseClient();
-    let channel: any = null;
+    // Supabase Realtime Subscription via global store
     let debounceTimer: any = null;
 
     const triggerDebouncedReload = () => {
@@ -281,30 +280,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       }, 300);
     };
 
-    try {
-      channel = supaClient
-        .channel('inventory-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'log_produk' }, () => {
-          triggerDebouncedReload();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'master_produk' }, () => {
-          triggerDebouncedReload();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'view_stok_realtime' }, () => {
-          triggerDebouncedReload();
-        })
-        .subscribe((status: string) => {
-          setIsRealtimeActive(status === 'SUBSCRIBED');
-        });
-    } catch (err) {
-      console.warn('Realtime subscription error:', err);
-    }
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedReload);
+    const unsubMaster = globalRealtimeStore.subscribe('master_produk', triggerDebouncedReload);
+    const unsubStok = globalRealtimeStore.subscribe('view_stok_realtime', triggerDebouncedReload);
+
+    setIsRealtimeActive(true);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        supaClient.removeChannel(channel);
-      }
+      unsubLog();
+      unsubMaster();
+      unsubStok();
     };
   }, []);
 
