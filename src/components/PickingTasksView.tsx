@@ -699,32 +699,50 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
 
     const pickedItems = group.items.filter((it) => it.qty_picked > 0);
     const itemsRows = pickedItems
-      .map(
-        (it, idx) => `
+      .map((it, idx) => {
+        let nama = it.nama_produk || '';
+        let size = it.size;
+        if (!size) {
+          const match = nama.match(/\(([^)]+)\)\s*$/);
+          if (match) {
+            size = match[1];
+            nama = nama.replace(/\s*\(([^)]+)\)\s*$/, '');
+          }
+        }
+        return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.nama_produk}</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${nama}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${size || '-'}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_picked}</td>
       </tr>
-    `
-      )
+    `;
+      })
       .join('');
 
     const pickedUnexpectedItems = (group.unexpected_items || []).filter((it) => it.qty_picked > 0);
     const unexpectedRows = pickedUnexpectedItems
-      .map(
-        (it, idx) => `
+      .map((it, idx) => {
+        let nama = it.nama_produk || '';
+        let size = it.size;
+        if (!size) {
+          const match = nama.match(/\(([^)]+)\)\s*$/);
+          if (match) {
+            size = match[1];
+            nama = nama.replace(/\s*\(([^)]+)\)\s*$/, '');
+          }
+        }
+        return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${pickedItems.length + idx + 1}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.nama_produk}</td>
-        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${nama}</td>
+        <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${size || '-'}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_picked}</td>
       </tr>
-    `
-      )
+    `;
+      })
       .join('');
 
     const qrText = encodeURIComponent(`#SJ "${group.no_sj}"`);
