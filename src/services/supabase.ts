@@ -841,6 +841,61 @@ export async function deleteLogProdukInvoice(
 }
 
 /**
+ * Delete multiple log_produk records by an array of IDs
+ */
+export async function deleteLogProdukBatch(
+  ids: (string | number)[]
+): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!ids || ids.length === 0) return { success: true, count: 0 };
+  
+  try {
+    // Supabase REST API limits URI length, chunk the IDs
+    const chunkSize = 50;
+    let deletedCount = 0;
+    
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const inClause = chunk.map(id => encodeURIComponent(String(id))).join(',');
+      await supabaseFetch('log_produk', 'DELETE', null, `id=in.(${inClause})`);
+      deletedCount += chunk.length;
+    }
+    
+    return { success: true, count: deletedCount };
+  } catch (err: any) {
+    console.error('Error in bulk delete log_produk:', err);
+    return { success: false, count: 0, error: err.message || 'Gagal menghapus log terpilih' };
+  }
+}
+
+/**
+ * Delete log_produk records within a specific date range
+ */
+export async function deleteLogProdukByDateRange(
+  startDate: string, // ISO format or YYYY-MM-DD
+  endDate: string // ISO format or YYYY-MM-DD
+): Promise<{ success: boolean; error?: string }> {
+  if (!startDate || !endDate) return { success: false, error: 'Rentang tanggal tidak valid' };
+  
+  try {
+    // Append time if only date is provided to ensure full day coverage
+    const startObj = new Date(startDate);
+    const endObj = new Date(endDate);
+    endObj.setHours(23, 59, 59, 999);
+    
+    await supabaseFetch(
+      'log_produk', 
+      'DELETE', 
+      null, 
+      `created_at=gte.${encodeURIComponent(startObj.toISOString())}&created_at=lte.${encodeURIComponent(endObj.toISOString())}`
+    );
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error deleting log_produk by date range:', err);
+    return { success: false, error: err.message || 'Gagal menghapus log berdasarkan tanggal' };
+  }
+}
+
+/**
  * Fetch stock opname queue items directly from Supabase with status filter
  */
 export async function fetchStockOpnameQueue(
@@ -2268,6 +2323,8 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
       // Fire-and-forget background insert to sync Supabase picking_list
       supabaseFetch('picking_list', 'POST', toInsert).catch(console.warn);
     }
+  }
+
   const result = Array.from(itemsMap.values());
   // Sort newest first
   result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));

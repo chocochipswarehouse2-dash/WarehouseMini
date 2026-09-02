@@ -33,6 +33,8 @@ import {
   updateLogProdukInvoiceBatch,
   deleteLogProdukItem,
   deleteLogProdukInvoice,
+  deleteLogProdukBatch,
+  deleteLogProdukByDateRange,
   getAreaFromLokasi,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
@@ -75,6 +77,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT'>('ALL');
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
   const [displayLimit, setDisplayLimit] = useState(150);
+
+  // Bulk Delete State
+  const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+  const [isBulkMenuOpen, setIsBulkMenuOpen] = useState(false);
+  const [dateFilterModal, setDateFilterModal] = useState<{ isOpen: boolean; start: string; end: string }>({ isOpen: false, start: '', end: '' });
 
   // Edit Invoice Modal State
   const [editingInvoice, setEditingInvoice] = useState<string | null>(null);
@@ -348,6 +355,131 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     });
   };
 
+  // Batch Delete Selected
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    
+    setConfirmModal({
+      title: 'Hapus Log Terpilih',
+      message: `PERINGATAN: Hapus ${selectedIds.size} baris mutasi secara permanen dari database Supabase? Tindakan ini akan mempengaruhi perhitungan sisa stok dan TIDAK DAPAT DIBATALKAN.`,
+      confirmLabel: `Hapus ${selectedIds.size} Item`,
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsActionLoading(true);
+
+        const idsArray = Array.from(selectedIds);
+        try {
+          const res = await deleteLogProdukBatch(idsArray);
+          if (res.success) {
+            if (onNotify) onNotify(`${res.count} item mutasi berhasil dihapus.`, 'success');
+            setSelectedIds(new Set());
+            await loadLogs();
+          } else {
+            if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
+            await loadLogs();
+          }
+        } catch (err: any) {
+          if (onNotify) onNotify(`Error: ${err.message}`, 'error');
+          await loadLogs();
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
+  };
+
+  // Delete All Filtered
+  const handleDeleteFiltered = () => {
+    if (filteredLogs.length === 0) return;
+    
+    setConfirmModal({
+      title: 'Hapus Semua Hasil Filter',
+      message: `PERINGATAN: Anda akan menghapus ${filteredLogs.length} baris mutasi secara permanen sesuai filter pencarian yang aktif saat ini. Yakin lanjutkan?`,
+      confirmLabel: 'Hapus Semua Filtered',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsActionLoading(true);
+        setIsBulkMenuOpen(false);
+
+        const idsArray = filteredLogs.map(l => l.id).filter(id => id != null) as (string | number)[];
+        
+        try {
+          const res = await deleteLogProdukBatch(idsArray);
+          if (res.success) {
+            if (onNotify) onNotify(`${res.count} item mutasi hasil filter berhasil dihapus.`, 'success');
+            setSelectedIds(new Set());
+            await loadLogs();
+          } else {
+            if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
+            await loadLogs();
+          }
+        } catch (err: any) {
+          if (onNotify) onNotify(`Error: ${err.message}`, 'error');
+          await loadLogs();
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
+  };
+
+  // Delete By Date Range
+  const handleDeleteByDateRange = () => {
+    if (!dateFilterModal.start || !dateFilterModal.end) {
+      if (onNotify) onNotify('Silakan pilih rentang tanggal (Mulai & Selesai).', 'warning');
+      return;
+    }
+    
+    setConfirmModal({
+      title: 'Hapus Log Berdasarkan Tanggal',
+      message: `PERINGATAN: Hapus seluruh mutasi log dari tanggal ${dateFilterModal.start} hingga ${dateFilterModal.end}? Tindakan ini TIDAK DAPAT DIBATALKAN.`,
+      confirmLabel: 'Hapus Rentang Tanggal',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsActionLoading(true);
+        setDateFilterModal(prev => ({ ...prev, isOpen: false }));
+
+        try {
+          const res = await deleteLogProdukByDateRange(dateFilterModal.start, dateFilterModal.end);
+          if (res.success) {
+            if (onNotify) onNotify(`Mutasi log rentang tanggal ${dateFilterModal.start} - ${dateFilterModal.end} berhasil dihapus.`, 'success');
+            setSelectedIds(new Set());
+            await loadLogs();
+          } else {
+            if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
+            await loadLogs();
+          }
+        } catch (err: any) {
+          if (onNotify) onNotify(`Error: ${err.message}`, 'error');
+          await loadLogs();
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
+  };
+
+  // Toggle row selection
+  const toggleSelection = (id: string | number) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredLogs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredLogs.map(l => l.id!).filter(id => id != null)));
+    }
+  };
+
   // Export CSV
   const handleExportCSV = () => {
     if (!filteredLogs.length) {
@@ -427,6 +559,41 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 <Download className="w-3.5 h-3.5" />
                 <span>Ekspor CSV</span>
               </button>
+            )}
+            
+            {userIsAdmin && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkMenuOpen(!isBulkMenuOpen)}
+                  className="px-3.5 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Bulk Delete</span>
+                </button>
+
+                {isBulkMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 py-1 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={handleDeleteFiltered}
+                      className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                    >
+                      Hapus Hasil Filter ({filteredLogs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDateFilterModal({ isOpen: true, start: '', end: '' });
+                        setIsBulkMenuOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                    >
+                      Hapus Rentang Tanggal...
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -529,6 +696,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="py-3 px-4 w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        className="rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700"
+                        checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
                     <th className="py-3 px-4">Tipe & Waktu</th>
                     <th className="py-3 px-4">Invoice</th>
                     <th className="py-3 px-4">SKU & Produk</th>
@@ -542,12 +717,21 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                   {filteredLogs.slice(0, displayLimit).map((item) => {
                     const isTypeIn = item.type === 'IN' || item.type === 'ADJ_IN';
                     const isAdj = item.type.startsWith('ADJ_');
+                    const isSelected = selectedIds.has(item.id!);
 
                     return (
                       <tr
                         key={item.id || `${item.invoice}_${item.sku}_${Math.random()}`}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
+                        className={`transition-colors group ${isSelected ? 'bg-rose-50 dark:bg-rose-900/20' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}`}
                       >
+                        <td className="py-3 px-4 text-center">
+                          <input 
+                            type="checkbox" 
+                            className="rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
+                            checked={isSelected}
+                            onChange={() => toggleSelection(item.id!)}
+                          />
+                        </td>
                         {/* Type & Time */}
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
@@ -898,6 +1082,84 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Action Bar for Selected Items */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl px-4 py-3 flex items-center gap-4">
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              <span className="text-[#ff7a00]">{selectedIds.size}</span> log terpilih
+            </div>
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700"></div>
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Hapus Terpilih</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Date Filter Modal for Bulk Delete */}
+      {dateFilterModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-[#121216] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-rose-500" />
+                Hapus via Rentang Tanggal
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDateFilterModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Tanggal Mulai (Start Date)</label>
+                <input
+                  type="date"
+                  value={dateFilterModal.start}
+                  onChange={(e) => setDateFilterModal(prev => ({ ...prev, start: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#ff7a00]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Tanggal Selesai (End Date)</label>
+                <input
+                  type="date"
+                  value={dateFilterModal.end}
+                  onChange={(e) => setDateFilterModal(prev => ({ ...prev, end: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#ff7a00]"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={handleDeleteByDateRange}
+                disabled={!dateFilterModal.start || !dateFilterModal.end}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition-colors disabled:opacity-50 cursor-pointer w-full"
+              >
+                Hapus Data pada Rentang Ini
+              </button>
             </div>
           </div>
         </div>
