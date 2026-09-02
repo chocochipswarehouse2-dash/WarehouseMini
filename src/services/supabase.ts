@@ -256,7 +256,11 @@ export async function supabaseFetch<T = unknown>(
   };
 
   if (method === 'POST' || method === 'PATCH') {
-    headers['Prefer'] = 'return=representation';
+    if (queryParams && queryParams.includes('on_conflict')) {
+      headers['Prefer'] = 'return=representation,resolution=merge-duplicates';
+    } else {
+      headers['Prefer'] = 'return=representation';
+    }
   }
 
   const response = await fetch(endpoint, {
@@ -1750,6 +1754,21 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
               if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
               if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
               if (item.stokMap !== undefined && existing.stokMap === undefined) existing.stokMap = item.stokMap;
+              if (item.stokStudio !== undefined && existing.stokStudio === undefined) existing.stokStudio = item.stokStudio;
+              if (item.stokShp !== undefined && existing.stokShp === undefined) existing.stokShp = item.stokShp;
+              if (item.stokTtk !== undefined && existing.stokTtk === undefined) existing.stokTtk = item.stokTtk;
+              if (p.dealpos_channels && (!existing.dealpos_channels || Object.keys(existing.dealpos_channels).length === 0)) {
+                existing.dealpos_channels = p.dealpos_channels;
+              }
+              if (p.d && Object.keys(p.d).length > 0 && Object.keys(existing.d || {}).length === 0) {
+                existing.d = p.d;
+              }
+              if (p.b && Object.keys(p.b).length > 0 && Object.keys(existing.b || {}).length === 0) {
+                existing.b = p.b;
+              }
+              if (p.komparasi && !existing.komparasi) {
+                existing.komparasi = p.komparasi;
+              }
             }
           }
         }

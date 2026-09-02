@@ -129,6 +129,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_manage_settings: true, can_edit_data: true, can_delete_data: true,
     can_import_export_data: true,
   },
+  'All': {
+    can_scan: true, can_picking: true, can_peminjaman: true,
+    can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
+    can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
+    can_manage_settings: true, can_edit_data: true, can_delete_data: true,
+    can_import_export_data: true,
+  },
   'Scanner Barcode': {
     can_scan: true, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
@@ -182,7 +189,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
 
 export const hasPermission = (session: UserSession | null, key: UserPermissionKey): boolean => {
   if (!session) return false;
-  if (session.role === 'Superadmin') return true;
+  if (session.role === 'Superadmin' || session.role === 'All') return true;
   if (session.permissions && typeof session.permissions[key] === 'boolean') {
     return session.permissions[key] as boolean;
   }

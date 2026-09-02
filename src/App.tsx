@@ -68,6 +68,7 @@ export default function App() {
     const role = localStorage.getItem('wms_user_role');
     const endpointUrl = localStorage.getItem('wms_endpoint_url');
     const sessionExpiry = localStorage.getItem('wms_session_expiry');
+    const permissionsStr = localStorage.getItem('wms_user_permissions');
 
     // Cek expiry session (7 hari)
     if (sessionExpiry && Date.now() > parseInt(sessionExpiry, 10)) {
@@ -76,11 +77,16 @@ export default function App() {
       localStorage.removeItem('wms_user_role');
       localStorage.removeItem('wms_endpoint_url');
       localStorage.removeItem('wms_session_expiry');
+      localStorage.removeItem('wms_user_permissions');
       return null;
     }
     
     if (token && username && role) {
-      return { token, username, role: role as any, endpointUrl: endpointUrl || '' };
+      let permissions = undefined;
+      try {
+        if (permissionsStr) permissions = JSON.parse(permissionsStr);
+      } catch (e) {}
+      return { token, username, role: role as any, permissions, endpointUrl: endpointUrl || '' };
     }
     return null;
   });
@@ -370,6 +376,7 @@ export default function App() {
         token: res.token,
         username: res.user || user,
         role: res.role || 'Operator',
+        permissions: res.permissions,
         endpointUrl: '',
       };
       setSession(newSession);
@@ -377,6 +384,11 @@ export default function App() {
       localStorage.setItem('wms_session_username', res.user || user);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
       localStorage.setItem('wms_endpoint_url', '');
+      if (res.permissions) {
+        localStorage.setItem('wms_user_permissions', JSON.stringify(res.permissions));
+      } else {
+        localStorage.removeItem('wms_user_permissions');
+      }
       
       // Set session expiry to 7 days from now
       const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
@@ -398,6 +410,7 @@ export default function App() {
     localStorage.removeItem('wms_user_role');
     localStorage.removeItem('wms_endpoint_url');
     localStorage.removeItem('wms_session_expiry');
+    localStorage.removeItem('wms_user_permissions');
     setSession(null);
     setScannedData([]);
     releaseScreenWakeLock();
@@ -852,6 +865,11 @@ export default function App() {
           localStorage.setItem('wms_session_username', updated.username);
           localStorage.setItem('wms_user_role', updated.role);
           localStorage.setItem('wms_endpoint_url', updated.endpointUrl);
+          if (updated.permissions) {
+            localStorage.setItem('wms_user_permissions', JSON.stringify(updated.permissions));
+          } else {
+            localStorage.removeItem('wms_user_permissions');
+          }
         }}
         onRefreshCatalog={loadProducts}
         darkMode={darkMode}
