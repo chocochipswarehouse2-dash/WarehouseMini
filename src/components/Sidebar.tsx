@@ -12,6 +12,9 @@ import {
   Bell,
   BellRing,
   User,
+  Clock,
+  Calendar,
+  Zap,
   X,
   ChevronLeft,
   ChevronRight,
@@ -124,6 +127,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ].filter((item) => item.access);
 
+  const canApproveHr = userIsAdmin || hasPermission(session, 'can_approve_hr');
+
+  const hrNavItems = [
+    {
+      id: 'presensi' as ActivePage,
+      label: 'Presensi & Shift Saya',
+      shortLabel: 'Presensi',
+      icon: Clock,
+      description: 'Absen masuk/pulang & shift',
+      access: true,
+    },
+    {
+      id: 'roster_shift' as ActivePage,
+      label: 'Jadwal Roster Tim',
+      shortLabel: 'Roster',
+      icon: Calendar,
+      description: 'Jadwal shift seluruh tim',
+      access: true,
+    },
+    {
+      id: 'lembur_cuti' as ActivePage,
+      label: 'Lembur & Cuti',
+      shortLabel: 'Lembur',
+      icon: Zap,
+      description: 'Form lembur, ijin & cuti',
+      access: true,
+    },
+    {
+      id: 'hr_approval' as ActivePage,
+      label: 'Approval HR',
+      shortLabel: 'Approval',
+      icon: ShieldCheck,
+      description: 'Validasi lembur & cuti tim',
+      access: canApproveHr,
+      badge: 'ADMIN',
+    },
+  ].filter((item) => item.access);
+
   const handleNavClick = (page: ActivePage) => {
     onSelectPage(page);
     onCloseMobile();
@@ -131,64 +172,128 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Common navigation item renderer
   const renderNavList = (collapsed: boolean) => (
-    <div className="space-y-1.5 px-2">
-      <div
-        className={`px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${
-          collapsed ? 'hidden' : 'block'
-        }`}
-      >
-        Menu Navigasi
-      </div>
+    <div className="space-y-4 px-2">
+      {/* SECTION 1: INVENTORY OPERASIONAL */}
+      {navItems.length > 0 && (
+        <div className="space-y-1.5">
+          <div
+            className={`px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${
+              collapsed ? 'hidden' : 'block'
+            }`}
+          >
+            Operasional Inventory
+          </div>
 
-      {navItems.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-slate-400 italic text-center">
-          Tidak ada menu aktif untuk role ini
-        </div>
-      ) : (
-        navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activePage === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleNavClick(item.id)}
-              title={collapsed ? `${item.label} - ${item.description}` : undefined}
-              className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
-                isActive
-                  ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/25 font-extrabold'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
-              } ${collapsed ? 'justify-center px-2' : ''}`}
-            >
-              <div
-                className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activePage === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleNavClick(item.id)}
+                title={collapsed ? `${item.label} - ${item.description}` : undefined}
+                className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
                   isActive
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-[#ff7a00] group-hover:bg-[#ff7a00]/10'
-                }`}
+                    ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/25 font-extrabold'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
+                } ${collapsed ? 'justify-center px-2' : ''}`}
               >
-                <Icon className="w-4 h-4" />
-              </div>
-
-              {!collapsed && (
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs truncate leading-snug">{item.label}</div>
-                  <div
-                    className={`text-[10px] font-normal truncate ${
-                      isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
-                    }`}
-                  >
-                    {item.description}
-                  </div>
+                <div
+                  className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                    isActive
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-[#ff7a00] group-hover:bg-[#ff7a00]/10'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
                 </div>
-              )}
 
-              {isActive && !collapsed && (
-                <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-xs" />
-              )}
-            </button>
-          );
-        })
+                {!collapsed && (
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs truncate leading-snug">{item.label}</div>
+                    <div
+                      className={`text-[10px] font-normal truncate ${
+                        isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      {item.description}
+                    </div>
+                  </div>
+                )}
+
+                {isActive && !collapsed && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-xs" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* SECTION 2: KARYAWAN & PRESENSI */}
+      {hrNavItems.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <div
+            className={`px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${
+              collapsed ? 'hidden' : 'block'
+            }`}
+          >
+            Karyawan & Presensi
+          </div>
+
+          {hrNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activePage === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleNavClick(item.id)}
+                title={collapsed ? `${item.label} - ${item.description}` : undefined}
+                className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
+                  isActive
+                    ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/25 font-extrabold'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
+                } ${collapsed ? 'justify-center px-2' : ''}`}
+              >
+                <div
+                  className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                    isActive
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-[#ff7a00] group-hover:bg-[#ff7a00]/10'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                </div>
+
+                {!collapsed && (
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs truncate leading-snug">{item.label}</span>
+                      {item.badge && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-[10px] font-normal truncate ${
+                        isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      {item.description}
+                    </div>
+                  </div>
+                )}
+
+                {isActive && !collapsed && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-xs" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

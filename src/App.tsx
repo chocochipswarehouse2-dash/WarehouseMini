@@ -42,6 +42,10 @@ const PickingTasksView = React.lazy(() => import('./components/PickingTasksView'
 const StockOpnameView = React.lazy(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
 const MutasiLogView = React.lazy(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
 const InventoryView = React.lazy(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
+const PresensiView = React.lazy(() => import('./components/hr/PresensiView').then(m => ({ default: m.PresensiView })));
+const RosterShiftView = React.lazy(() => import('./components/hr/RosterShiftView').then(m => ({ default: m.RosterShiftView })));
+const LemburCutiView = React.lazy(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
+const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
 
 import {
   fetchStockForLocations,
@@ -93,7 +97,8 @@ export default function App() {
       try {
         if (permissionsStr) permissions = JSON.parse(permissionsStr);
       } catch (e) {}
-      return { token, username, role: role as any, permissions, endpointUrl: endpointUrl || '' };
+      const nik = localStorage.getItem('wms_user_nik') || undefined;
+      return { token, username, role: role as any, permissions, nik, endpointUrl: endpointUrl || '' };
     }
     return null;
   });
@@ -404,6 +409,7 @@ export default function App() {
         username: res.user || user,
         role: res.role || 'Operator',
         permissions: res.permissions,
+        nik: res.nik,
         endpointUrl: '',
       };
       setSession(newSession);
@@ -411,6 +417,11 @@ export default function App() {
       localStorage.setItem('wms_session_username', res.user || user);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
       localStorage.setItem('wms_endpoint_url', '');
+      if (res.nik) {
+        localStorage.setItem('wms_user_nik', res.nik);
+      } else {
+        localStorage.removeItem('wms_user_nik');
+      }
       if (res.permissions) {
         localStorage.setItem('wms_user_permissions', JSON.stringify(res.permissions));
       } else {
@@ -438,6 +449,7 @@ export default function App() {
     localStorage.removeItem('wms_endpoint_url');
     localStorage.removeItem('wms_session_expiry');
     localStorage.removeItem('wms_user_permissions');
+    localStorage.removeItem('wms_user_nik');
     setSession(null);
     setScannedData([]);
     releaseScreenWakeLock();
@@ -887,6 +899,34 @@ export default function App() {
                   onNotify={showToast}
                   currentUser={session?.username || 'Operator'}
                   productCatalog={productDatabase}
+                />
+            )}
+
+            {activePage === 'presensi' && (
+                <PresensiView
+                  session={session}
+                  onShowToast={showToast}
+                />
+            )}
+
+            {activePage === 'roster_shift' && (
+                <RosterShiftView
+                  session={session}
+                  onShowToast={showToast}
+                />
+            )}
+
+            {activePage === 'lembur_cuti' && (
+                <LemburCutiView
+                  session={session}
+                  onShowToast={showToast}
+                />
+            )}
+
+            {activePage === 'hr_approval' && (
+                <HrApprovalView
+                  session={session}
+                  onShowToast={showToast}
                 />
             )}
           </React.Suspense>

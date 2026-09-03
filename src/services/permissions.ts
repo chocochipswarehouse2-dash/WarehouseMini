@@ -119,6 +119,20 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
     ],
   },
+  {
+    id: 'hr_employee',
+    title: 'Karyawan & Absensi',
+    badge: '👥',
+    description: 'Hak akses presensi, jadwal roster, lembur dan cuti',
+    permissions: [
+      {
+        key: 'can_approve_hr',
+        label: 'Persetujuan Lembur & Cuti (Approval Admin)',
+        description: 'Menyetujui atau menolak pengajuan lembur dan izin/cuti karyawan',
+        isSuperadminOnly: false,
+      },
+    ],
+  },
 ];
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
@@ -127,63 +141,63 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
     can_manage_settings: true, can_edit_data: true, can_delete_data: true,
-    can_import_export_data: true,
+    can_import_export_data: true, can_approve_hr: true,
   },
   'All': {
     can_scan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
     can_manage_settings: true, can_edit_data: true, can_delete_data: true,
-    can_import_export_data: true,
+    can_import_export_data: true, can_approve_hr: true,
   },
   'Scanner Barcode': {
     can_scan: true, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   },
   'Inventory': {
     can_scan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: true, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   },
   'Stock Opname': {
     can_scan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: true,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   },
   'Mutasi': {
     can_scan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: true, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   },
   'Tugas Picking': {
     can_scan: false, can_picking: true, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   },
   'Peminjaman': {
     can_scan: false, can_picking: false, can_peminjaman: true,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   },
   'Operator': {
     can_scan: true, can_picking: true, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
-    can_import_export_data: false,
+    can_import_export_data: false, can_approve_hr: false,
   }
 };
 

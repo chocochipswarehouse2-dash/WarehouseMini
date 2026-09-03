@@ -17,6 +17,10 @@ import {
   PanelLeft,
   ClipboardList,
   ArrowRightLeft,
+  Clock,
+  Calendar,
+  Zap,
+  ShieldCheck,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 
@@ -69,6 +73,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Tugas Picking', subtitle: 'Ambil Barang Surat Jalan', icon: Package };
       case 'peminjaman':
         return { title: 'Peminjaman (SPS)', subtitle: 'Log Pinjam Live & Studio', icon: FileText };
+      case 'presensi':
+        return { title: 'Presensi & Shift Saya', subtitle: 'Live Clock & Presensi Harian', icon: Clock };
+      case 'roster_shift':
+        return { title: 'Jadwal Roster Shift', subtitle: 'Jadwal Kerja Tim Gudang', icon: Calendar };
+      case 'lembur_cuti':
+        return { title: 'Lembur & Ijin/Cuti', subtitle: 'Pengajuan & Riwayat Mandiri', icon: Zap };
+      case 'hr_approval':
+        return { title: 'Persetujuan HR (Admin)', subtitle: 'Approval Lembur & Cuti Karyawan', icon: ShieldCheck };
       default:
         return { title: 'WMS Chocochips', subtitle: 'Warehouse System', icon: ScanBarcode };
     }

@@ -15,6 +15,12 @@ import {
   PeminjamanRecord,
   UserRole,
   UserPermissions,
+  KaryawanRecord,
+  MasterShiftRecord,
+  RosterShiftRecord,
+  PresensiRecord,
+  LemburRecord,
+  PerijinanCutiRecord,
 } from '../types';
 
 export const DEFAULT_SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
@@ -1285,6 +1291,7 @@ export async function verifySupabaseLogin(
   name?: string;
   role: UserRole;
   permissions?: Partial<UserPermissions>;
+  nik?: string;
   message?: string;
 }> {
   const cleanUser = username.trim().toLowerCase();
@@ -1330,13 +1337,13 @@ export async function verifySupabaseLogin(
     }
   }
 
-  // 1. Direct check in Supabase wms_users table (Database = Frontend Source of Truth)
+  // 1. Direct check in Supabase wms_users table (supports Username or NIK)
   try {
     const data = await supabaseFetch<WmsUser[]>(
       'wms_users',
       'GET',
       null,
-      `username=ilike.${encodeURIComponent(cleanUser)}&limit=1`
+      `or=(username.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
     );
 
     if (data && data.length > 0) {
@@ -1354,6 +1361,10 @@ export async function verifySupabaseLogin(
         };
       }
 
+      if (typeof window !== 'undefined' && u.nik) {
+        localStorage.setItem('wms_user_nik', u.nik);
+      }
+
       const token = `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       return {
         success: true,
@@ -1362,6 +1373,7 @@ export async function verifySupabaseLogin(
         name: u.name || u.username,
         role: u.role || 'Operator',
         permissions: u.permissions || {},
+        nik: u.nik,
         message: 'Login berhasil (terverifikasi dari Supabase wms_users)',
       };
     }
@@ -2992,5 +3004,236 @@ export async function importMasterProdukBatch(
   } catch {}
 
   return { success: true, totalUploaded: uploaded };
+}
+
+// ============================================================================
+// HR & EMPLOYEE MANAGEMENT SERVICES (DARI WarehouseEmpl)
+// ============================================================================
+
+/**
+ * Fetch presensi record today for a given NIK
+ */
+export async function fetchPresensiToday(nik: string, dateStr: string): Promise<PresensiRecord | null> {
+  if (!nik || !dateStr) return null;
+  try {
+    const data = await supabaseFetch<PresensiRecord[]>(
+      'presensi',
+      'GET',
+      null,
+      `nik=eq.${encodeURIComponent(nik)}&tanggal=eq.${encodeURIComponent(dateStr)}&limit=1`
+    );
+    return data && data.length > 0 ? data[0] : null;
+  } catch (err) {
+    console.warn('fetchPresensiToday error:', err);
+    return null;
+  }
+}
+
+/**
+ * Submit or update presensi record
+ */
+export async function submitPresensiRecord(record: Partial<PresensiRecord>): Promise<PresensiRecord | null> {
+  const sb = getSupabaseClient();
+  const sanitized = { ...record };
+  if (sanitized.jam_masuk) {
+    sanitized.jam_masuk = sanitized.jam_masuk.replace(/\./g, ':');
+  }
+  if (sanitized.jam_pulang) {
+    sanitized.jam_pulang = sanitized.jam_pulang.replace(/\./g, ':');
+  }
+
+  const { data, error } = await sb
+    .from('presensi')
+    .upsert(sanitized, { onConflict: 'nik,tanggal' })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+/**
+ * Fetch roster shifts for a date range (and optionally a specific NIK)
+ */
+export async function fetchRosterShiftList(
+  nik?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<RosterShiftRecord[]> {
+  try {
+    let query = 'select=*&order=tanggal.asc';
+    if (nik) {
+      query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    if (startDate) {
+      query += `&tanggal=gte.${encodeURIComponent(startDate)}`;
+    }
+    if (endDate) {
+      query += `&tanggal=lte.${encodeURIComponent(endDate)}`;
+    }
+    const data = await supabaseFetch<RosterShiftRecord[]>('roster_shift', 'GET', null, query);
+    return data || [];
+  } catch (err) {
+    console.warn('fetchRosterShiftList error:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch master shifts (Shift 1, Shift 2, etc.)
+ */
+export async function fetchMasterShiftList(): Promise<MasterShiftRecord[]> {
+  try {
+    const data = await supabaseFetch<MasterShiftRecord[]>('master_shift', 'GET', null, 'order=id.asc');
+    return data || [];
+  } catch (err) {
+    console.warn('fetchMasterShiftList error:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch lembur records (optionally filtered by NIK)
+ */
+export async function fetchLemburRecords(nik?: string): Promise<LemburRecord[]> {
+  try {
+    let query = 'select=*&order=tanggal.desc,created_at.desc';
+    if (nik) {
+      query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    const data = await supabaseFetch<LemburRecord[]>('lembur', 'GET', null, query);
+    return data || [];
+  } catch (err) {
+    console.warn('fetchLemburRecords error:', err);
+    return [];
+  }
+}
+
+/**
+ * Submit new lembur request
+ */
+export async function submitLemburRecord(record: Partial<LemburRecord>): Promise<LemburRecord> {
+  const sb = getSupabaseClient();
+  const id = record.id || `LMB-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const payload = { ...record, id };
+  if (payload.jam_mulai) {
+    payload.jam_mulai = payload.jam_mulai.replace(/\./g, ':');
+  }
+  if (payload.jam_selesai) {
+    payload.jam_selesai = payload.jam_selesai.replace(/\./g, ':');
+  }
+
+  const { data, error } = await sb
+    .from('lembur')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+/**
+ * Update lembur status (Admin approval)
+ */
+export async function updateLemburStatus(
+  id: string,
+  status: 'Disetujui' | 'Ditolak',
+  approvedBy: string,
+  catatan?: string
+): Promise<void> {
+  const sb = getSupabaseClient();
+  const { error } = await sb
+    .from('lembur')
+    .update({
+      status,
+      approved_by: approvedBy,
+      approved_at: new Date().toISOString(),
+      catatan: catatan || '',
+    })
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Fetch cuti records (optionally filtered by NIK)
+ */
+export async function fetchCutiRecords(nik?: string): Promise<PerijinanCutiRecord[]> {
+  try {
+    let query = 'select=*&order=tgl_mulai.desc,created_at.desc';
+    if (nik) {
+      query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    const data = await supabaseFetch<PerijinanCutiRecord[]>('perijinan_cuti', 'GET', null, query);
+    return data || [];
+  } catch (err) {
+    console.warn('fetchCutiRecords error:', err);
+    return [];
+  }
+}
+
+/**
+ * Submit new cuti / ijin request
+ */
+export async function submitCutiRecord(record: Partial<PerijinanCutiRecord>): Promise<PerijinanCutiRecord> {
+  const sb = getSupabaseClient();
+  const id = record.id || `CTI-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const payload = { ...record, id };
+
+  const { data, error } = await sb
+    .from('perijinan_cuti')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+/**
+ * Update cuti status (Admin approval)
+ */
+export async function updateCutiStatus(
+  id: string,
+  status: 'Disetujui' | 'Ditolak',
+  approvedBy: string,
+  catatan?: string
+): Promise<void> {
+  const sb = getSupabaseClient();
+  const { error } = await sb
+    .from('perijinan_cuti')
+    .update({
+      status,
+      approved_by: approvedBy,
+      approved_at: new Date().toISOString(),
+      catatan: catatan || '',
+    })
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Fetch all karyawan directory
+ */
+export async function fetchKaryawanDirectory(): Promise<KaryawanRecord[]> {
+  try {
+    const data = await supabaseFetch<KaryawanRecord[]>('karyawan', 'GET', null, 'order=nik.asc');
+    return data || [];
+  } catch (err) {
+    console.warn('fetchKaryawanDirectory error:', err);
+    return [];
+  }
 }
 

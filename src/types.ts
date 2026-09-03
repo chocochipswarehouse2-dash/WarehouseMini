@@ -8,7 +8,11 @@ export type ActivePage =
   | 'peminjaman'
   | 'stock_opname'
   | 'mutasi_log'
-  | 'inventory';
+  | 'inventory'
+  | 'presensi'
+  | 'roster_shift'
+  | 'lembur_cuti'
+  | 'hr_approval';
 
 export type UserRole =
   | 'Superadmin'
@@ -34,7 +38,8 @@ export type UserPermissionKey =
   | 'can_edit_data'
   | 'can_delete_data'
   | 'can_view_mutasi'
-  | 'can_import_export_data';
+  | 'can_import_export_data'
+  | 'can_approve_hr';
 
 export interface UserPermissions {
   can_scan: boolean;
@@ -50,6 +55,7 @@ export interface UserPermissions {
   can_delete_data: boolean;
   can_view_mutasi: boolean;
   can_import_export_data: boolean;
+  can_approve_hr?: boolean;
 }
 
 export interface WmsUser {
@@ -60,6 +66,7 @@ export interface WmsUser {
   password?: string;
   permissions?: Partial<UserPermissions>;
   created_at?: string;
+  nik?: string;
 }
 
 export interface UserSession {
@@ -71,6 +78,102 @@ export interface UserSession {
   endpointUrl: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  nik?: string;
+  divisi?: string;
+}
+
+export interface KaryawanRecord {
+  nik: string;
+  nama: string;
+  divisi: string;
+  username: string;
+  password?: string;
+  role: string;
+  gaji_pokok?: number;
+  tunjangan?: number;
+  rate_lembur?: number;
+  saldo_kasbon?: number;
+  email?: string;
+  no_hp?: string;
+  tgl_lahir?: string;
+  tgl_bergabung?: string;
+  alamat?: string;
+  hobi?: string;
+  kontak_darurat?: string;
+  foto?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MasterShiftRecord {
+  id?: number;
+  nama_shift: string;
+  jam_masuk: string;
+  jam_pulang: string;
+  toleransi: number;
+  status: string;
+  created_at?: string;
+}
+
+export interface RosterShiftRecord {
+  id?: number;
+  nik: string;
+  tanggal: string;
+  shift: string;
+  jam_masuk?: string;
+  jam_pulang?: string;
+  keterangan?: string;
+  created_at?: string;
+  nama?: string;
+}
+
+export interface PresensiRecord {
+  id?: number;
+  nik: string;
+  tanggal: string;
+  shift: string;
+  status: string;
+  jam_masuk?: string | null;
+  jam_pulang?: string | null;
+  catatan?: string | null;
+  created_at?: string;
+  nama?: string;
+}
+
+export interface LemburRecord {
+  id: string;
+  nik: string;
+  nama: string;
+  divisi?: string;
+  tanggal: string;
+  deskripsi: string;
+  jam_mulai: string;
+  jam_selesai: string;
+  durasi_jam: number;
+  rate_lembur: number;
+  total_lembur: number;
+  status: 'Diajukan' | 'Disetujui' | 'Ditolak';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  catatan?: string | null;
+  created_at?: string;
+}
+
+export interface PerijinanCutiRecord {
+  id: string;
+  nik: string;
+  nama: string;
+  divisi?: string;
+  jenis: string;
+  tgl_mulai: string;
+  tgl_selesai: string;
+  jumlah_hari: number;
+  alasan: string;
+  status: 'Diajukan' | 'Disetujui' | 'Ditolak';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  catatan?: string | null;
+  created_at?: string;
 }
 
 export interface LocalUserRecord {
