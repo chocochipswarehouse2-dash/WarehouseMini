@@ -300,16 +300,35 @@ export default function App() {
           { event: '*', schema: 'public', table: 'log_produk' },
           (payload) => {
             if (payload.eventType === 'INSERT' && payload.new) {
-              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string };
+              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number };
               showPushNotification('📦 Log Mutasi Baru', {
                 body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
               });
+
+              // Local State Mutation to save egress: update locally instead of fetching the whole database
+              if (newLog.sku && newLog.lokasi && newLog.qty) {
+                setProductDatabase(prev => {
+                  const skuUpper = newLog.sku!.toUpperCase();
+                  const locUpper = newLog.lokasi!.toUpperCase();
+                  return prev.map(p => {
+                    if (p.k.toUpperCase() === skuUpper) {
+                      const updated = { ...p, stokMap: { ...(p.stokMap || {}) } };
+                      const qty = Number(newLog.qty) || 0;
+                      const currentLocStok = updated.stokMap[locUpper] || 0;
+                      
+                      if (newLog.type === 'IN' || newLog.type === 'ADJ_IN') {
+                        updated.stokMap[locUpper] = currentLocStok + qty;
+                      } else if (newLog.type === 'OUT' || newLog.type === 'ADJ_OUT') {
+                        updated.stokMap[locUpper] = Math.max(0, currentLocStok - qty);
+                      }
+                      return updated;
+                    }
+                    return p;
+                  });
+                });
+              }
             }
             globalRealtimeStore.notify('log_produk', payload);
-            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
-            debounceCatalogTimer = setTimeout(() => {
-              loadProducts();
-            }, 300);
           }
         )
         .on(
@@ -328,10 +347,7 @@ export default function App() {
           { event: '*', schema: 'public', table: 'stock_opname_queue' },
           (payload) => {
             globalRealtimeStore.notify('stock_opname_queue', payload);
-            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
-            debounceCatalogTimer = setTimeout(() => {
-              loadProducts();
-            }, 300);
+            // Removed loadProducts() to save egress
           }
         )
         .on(
@@ -339,10 +355,7 @@ export default function App() {
           { event: '*', schema: 'public', table: 'peminjaman' },
           (payload) => {
             globalRealtimeStore.notify('peminjaman', payload);
-            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
-            debounceCatalogTimer = setTimeout(() => {
-              loadProducts();
-            }, 300);
+            // Removed loadProducts() to save egress
           }
         )
         .on(
