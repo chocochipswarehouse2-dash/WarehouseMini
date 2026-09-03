@@ -44,8 +44,6 @@ import {
 import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { localDb } from '../services/localDb';
 
 // ========================================================
 // DEFINISI KONSTANTA KOLOM AREA SESUAI SPESIFIKASI WMS
@@ -114,10 +112,28 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   onNotify,
   onRefreshCatalog,
 }) => {
-  // Dexie Live Query replaces manual fetch and caching for stockList
-  const stockList = useLiveQuery(() => localDb.stokRealtime.toArray(), []) || [];
-  
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Master state initialized immediately from cache for 0ms page switch
+  const [stockList, setStockList] = useState<StockRealtimeItem[]>(() => {
+    if (globalInventoryStockCache && globalInventoryStockCache.length > 0) {
+      return globalInventoryStockCache;
+    }
+    try {
+      const saved = localStorage.getItem('wms_inventory_stock_cache');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          globalInventoryStockCache = parsed;
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    // Only show full loading if there is zero cached data
+    return !globalInventoryStockCache || globalInventoryStockCache.length === 0;
+  });
   const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isSyncingCatalog, setIsSyncingCatalog] = useState<boolean>(false);
@@ -188,27 +204,94 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // 1. DATA FETCHING & REALTIME AGGREGATION FROM SUPABASE (STALE-WHILE-REVALIDATE)
   // ========================================================
   const loadStockData = async (isManualRefresh = false, forceNetwork = false) => {
-    // Rely on Dexie and SyncEngine. Trigger manual refresh if requested.
-    if (isManualRefresh) {
+    // If cache is fresh and not a manual/realtime refresh, use memory cache
+    const now = Date.now();
+    const isCacheFresh = globalInventoryStockCache && globalInventoryStockCache.length > 0 && now - globalInventoryLastFetch < CACHE_STALE_TTL;
+    if (!isManualRefresh && !forceNetwork && isCacheFresh) {
+      return;
+    }
+
+    const hasCachedData = (globalInventoryStockCache && globalInventoryStockCache.length > 0) || stockList.length > 0;
+    if (!hasCachedData) {
+      setIsLoading(true);
+    } else {
       setIsSyncingBackground(true);
-      if (onNotify) {
-        onNotify('Menyinkronkan data inventori terbaru...', 'info');
+    }
+    setFetchError(null);
+
+    if (isManualRefresh && onNotify) {
+      onNotify('Menyinkronkan data inventori terbaru dari Supabase & Katalog...', 'info');
+    }
+
+    try {
+      // 1. Fetch physical stock rows from Supabase view_stok_realtime (Direct GAS Method)
+      const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh || forceNetwork);
+      if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
+        globalInventoryStockCache = realtimeData;
+        globalInventoryLastFetch = Date.now();
+        setStockList(realtimeData);
+
+        // Store snapshot to local storage
+        try {
+          localStorage.setItem('wms_inventory_stock_cache', JSON.stringify(realtimeData.slice(0, 10000)));
+        } catch (storageErr) {
+          console.warn('Local storage quota full or error:', storageErr);
+        }
       }
-      try {
+
+      if (isManualRefresh) {
         if (onRefreshCatalog) await onRefreshCatalog();
         if (onNotify) {
-          onNotify(`Inventori berhasil disinkronkan!`, 'success');
+          onNotify(`Inventori berhasil disinkronkan (${realtimeData.length} baris lokasi)!`, 'success');
         }
-      } catch (err: any) {
-         setFetchError(err.message || 'Gagal sinkron');
-      } finally {
-         setIsSyncingBackground(false);
       }
+    } catch (e: any) {
+      console.error('Error loading inventory stock:', e);
+      // Fallback if direct fetch failed and no cached data exists
+      if (!hasCachedData) {
+        try {
+          const fallbackData = await fetchAllStockRealtime(30000);
+          if (fallbackData && fallbackData.length > 0) {
+            globalInventoryStockCache = fallbackData;
+            globalInventoryLastFetch = Date.now();
+            setStockList(fallbackData);
+          }
+        } catch (err: any) {
+          setFetchError(err.message || 'Gagal memuat data stok realtime');
+          if (onNotify) onNotify('Gagal memuat data stok realtime.', 'error');
+        }
+      }
+    } finally {
+      setIsLoading(false);
+      setIsSyncingBackground(false);
     }
   };
 
   useEffect(() => {
-    // Component mounted, Dexie Live Query handles reactivity.
+    loadStockData();
+
+    // Supabase Realtime Subscription via global store
+    let debounceTimer: any = null;
+
+    const triggerDebouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadStockData(false, true);
+      }, 300);
+    };
+
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedReload);
+    const unsubMaster = globalRealtimeStore.subscribe('master_produk', triggerDebouncedReload);
+    const unsubStok = globalRealtimeStore.subscribe('view_stok_realtime', triggerDebouncedReload);
+
+    setIsRealtimeActive(true);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubLog();
+      unsubMaster();
+      unsubStok();
+    };
   }, []);
 
   // Helper string formatter for locations

@@ -43,8 +43,6 @@ import {
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch } from '../utils/sortUtils';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { localDb } from '../services/localDb';
 
 interface PeminjamanViewProps {
   session: UserSession | null;
@@ -140,6 +138,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     try {
       onRefreshCatalog();
       await loadChannelStocks(true);
+      const data = await fetchPeminjamanFromSupabase();
+      if (data && data.length > 0) {
+        setRecords(data);
+      }
       onShowToast('Data SPS & Stok Peminjaman berhasil diperbarui!', 'success');
     } catch (e) {
       console.warn('Refresh error:', e);
@@ -158,8 +160,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     return () => clearTimeout(timer);
   }, [searchStock]);
 
-  // Dexie Live Query replaces manual fetch and realtime subscription for Peminjaman
-  const records = useLiveQuery(() => localDb.peminjaman.toArray(), []) || [];
+  // Loan Records history from Supabase with instant local cache
+  const [records, setRecords] = useState<PeminjamanRecord[]>(() => {
+    try {
+      const cached = localStorage.getItem('wms_peminjaman_cache');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return getLocalPeminjamanRecords();
+  });
 
   // Modal State for Surat Jalan (PDF / Print / WhatsApp)
   const [selectedRecordForModal, setSelectedRecordForModal] = useState<PeminjamanRecord | null>(null);
@@ -169,11 +177,34 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   useEffect(() => {
     let isMounted = true;
     
-    // Initial fetch of channel stocks (not synced to Dexie yet)
+    // Initial fetch
+    fetchPeminjamanFromSupabase().then((d) => {
+      if (isMounted && d && d.length > 0) setRecords(d);
+    });
     loadChannelStocks();
+
+    // Supabase Realtime via global store
+    let debounceTimer: any = null;
+
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (!isMounted) return;
+        fetchPeminjamanFromSupabase().then((d) => {
+          if (isMounted && d && d.length > 0) setRecords(d);
+        });
+        loadChannelStocks();
+      }, 400);
+    };
+
+    const unsubPeminjaman = globalRealtimeStore.subscribe('peminjaman', triggerDebouncedSync);
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedSync);
 
     return () => {
       isMounted = false;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubPeminjaman();
+      unsubLog();
     };
   }, []);
 
@@ -623,12 +654,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         console.warn('Gagal menambahkan ke picking_list Supabase', err);
       }
 
-      // Update state & cache optimistically
+      // Update state & cache
+      const updated = [newRecord, ...records.filter((r) => r.noPeminjaman !== noSps)];
+      setRecords(updated);
+      saveLocalPeminjamanRecords(updated);
       try {
-        await localDb.peminjaman.put(newRecord as any);
-      } catch (err) {
-        console.warn('Gagal optimistik update', err);
-      }
+        localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+      } catch {}
 
       // Open Surat Jalan preview modal for the newly created record
       setSelectedRecordForModal(newRecord);
@@ -950,12 +982,19 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const target = records.find((r) => r.id === recordId || r.noPeminjaman === recordId);
     const nextStatus = target?.status === 'Dipinjam' ? 'Dikembalikan' : 'Dipinjam';
 
-    if (target) {
-      // Optimistic update
-      try {
-        await localDb.peminjaman.put({ ...target, status: nextStatus as 'Dipinjam' | 'Dikembalikan' } as any);
-      } catch (e) {}
+    const updated = records.map((r) => {
+      if (r.id === recordId || r.noPeminjaman === recordId) {
+        return { ...r, status: nextStatus as 'Dipinjam' | 'Dikembalikan' };
+      }
+      return r;
+    });
+    setRecords(updated);
+    saveLocalPeminjamanRecords(updated);
+    try {
+      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+    } catch {}
 
+    if (target) {
       if (nextStatus === 'Dikembalikan') {
         await returnPeminjamanSupabase(target.noPeminjaman);
       } else {

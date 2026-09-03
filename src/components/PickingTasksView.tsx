@@ -71,8 +71,6 @@ import {
   getSupabaseClient,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { localDb } from '../services/localDb';
 import {
   playSuccessBeep,
   playErrorBeep,
@@ -94,9 +92,8 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   currentUser,
   productCatalog = [],
 }) => {
-  // Dexie Live Query replaces manual fetch and realtime subscription for picking list
-  const rawItems = useLiveQuery(() => localDb.pickingList.toArray(), []) || [];
-  
+  // State: All raw items from Supabase
+  const [rawItems, setRawItems] = useState<PickingListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
@@ -216,7 +213,22 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     }
     loadPickingList();
 
-    // Dexie automatically handles reactivity for rawItems
+    // Supabase Realtime via global store
+    let debounceTimer: any = null;
+
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadPickingList();
+      }, 400);
+    };
+
+    const unsub = globalRealtimeStore.subscribe('picking_list', triggerDebouncedSync);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsub();
+    };
   }, []);
 
   // Save active picking session to localStorage to persist across refreshes / offline
@@ -246,11 +258,24 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   }, [activeSJ, isRekapModalOpen, inputMode]);
 
   const loadPickingList = async () => {
-    // Left as a manual trigger for offline to online sync if needed
     setLoading(true);
     try {
-      // It's mostly synced by Dexie's SmartSync globally, but just in case we have custom manual sync:
-      // We don't fetch directly anymore, we rely on Dexie.
+      const data = await fetchPickingListFromSupabase();
+      setRawItems(data || []);
+      localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(data || []));
+    } catch (e) {
+      console.warn('Gagal memuat picking list, menggunakan cache offline:', e);
+      try {
+        const cached = JSON.parse(localStorage.getItem('wms_raw_picking_list_cache') || '[]');
+        if (cached && cached.length > 0) {
+          setRawItems(cached);
+          onNotify('Mode Offline: Menampilkan daftar Picking terakhir', 'warning');
+        } else {
+          onNotify('Gagal memuat picking list dari Database (Offline)', 'error');
+        }
+      } catch (err) {
+        onNotify('Gagal memuat picking list dari Database (Offline)', 'error');
+      }
     } finally {
       setLoading(false);
     }
