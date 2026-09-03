@@ -59,7 +59,10 @@ import {
   requestNotificationPermission,
   showPushNotification,
 } from './services/pushNotification';
-import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
+import { runSmartSync, handleRealtimeEvent, runManualFullSync } from './services/syncEngine';
+import { requestScreenWakeLock, releaseScreenWakeLock } from './services/wakeLock';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { localDb } from './services/localDb';
 
 export default function App() {
   // Session & Auth (Multi-Role User Session)
@@ -124,7 +127,42 @@ export default function App() {
   const [currentCategory, setCurrentCategory] = useState<CategoryType>('SO');
   const [currentLocation, setCurrentLocation] = useState<string>('');
   const [keterangan, setKeterangan] = useState<string>('');
-  const [productDatabase, setProductDatabase] = useState<ProductItem[]>([]);
+  
+  // Dexie Live Query to replace manual state
+  const productDatabase = useLiveQuery(
+    async () => {
+      const prods = await localDb.products.toArray();
+      const stoks = await localDb.stokRealtime.toArray();
+      
+      const mergedMap = new Map<string, ProductItem>();
+      
+      prods.forEach(p => {
+        mergedMap.set(p.k.toUpperCase(), { ...p, stokMap: {} });
+      });
+
+      stoks.forEach(stok => {
+        const sku = stok.sku.toUpperCase();
+        if (mergedMap.has(sku)) {
+          const item = mergedMap.get(sku)!;
+          if (!item.stokMap) item.stokMap = {};
+          item.stokMap[stok.lokasi.toUpperCase()] = stok.sisa_stok;
+        } else {
+           mergedMap.set(sku, {
+             k: sku,
+             sku: sku,
+             p: stok.nama_produk || sku,
+             category: 'Unknown',
+             lokasi: stok.lokasi,
+             stokMap: { [stok.lokasi.toUpperCase()]: stok.sisa_stok }
+           });
+        }
+      });
+      return Array.from(mergedMap.values());
+    },
+    [],
+    [] // Default empty array before load
+  ) || [];
+
   const [hasScannedSku, setHasScannedSku] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
@@ -192,89 +230,25 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Load product database on session ready (100% directly from Supabase with instant local cache)
+  // Load product database on session ready (Now delegates to Dexie sync)
   const loadProducts = useCallback(
     async () => {
-      const mergedMap = new Map<string, ProductItem>();
-
-      // 1. Load local cache immediately for 0ms instant UI availability (filter out any old dummy data)
       try {
-        const cache: ProductItem[] = JSON.parse(localStorage.getItem('wms_product_cache') || '[]');
-        if (Array.isArray(cache) && cache.length > 0) {
-          const cleanCache = cache.filter((it) => it && (it.k || (it as any).sku) && !isDummyProduct(it));
-          cleanCache.forEach((it) => {
-            const sku = String(it.k || (it as any).sku || '').trim().toUpperCase();
-            if (sku) mergedMap.set(sku, { ...it, k: sku });
-          });
-        }
-
-        const invCache = JSON.parse(localStorage.getItem('wms_cache_inventory_v38') || '[]');
-        if (Array.isArray(invCache) && invCache.length > 0) {
-          invCache.forEach((it: any) => {
-            const sku = String(it.k || it.sku || '').trim().toUpperCase();
-            if (sku && !mergedMap.has(sku)) {
-              mergedMap.set(sku, {
-                k: sku,
-                sku: sku,
-                p: it.p || it.produk || it.nama_produk || sku,
-                s: it.s || it.size || '-',
-                f: it.f || {},
-                d: it.d || {},
-                b: it.b || {},
-                l: it.l || [],
-              });
-            }
-          });
-        }
-
-        if (mergedMap.size > 0) {
-          setProductDatabase(Array.from(mergedMap.values()));
-        }
-      } catch {}
-
-      // 2. Fetch fresh master products from Supabase (master_produk, view_stok_realtime, log_produk)
-      try {
-        const supabaseProducts = await fetchMasterProductsFromSupabase();
-        if (supabaseProducts && supabaseProducts.length > 0) {
-          supabaseProducts.forEach((it) => {
-            if (it && it.k && !isDummyProduct(it)) {
-              mergedMap.set(it.k.toUpperCase(), it);
-            }
-          });
-        }
+        await runSmartSync();
       } catch (err) {
-        console.warn('Supabase product sync error:', err);
+        console.warn('Dexie sync error:', err);
       }
-
-      const finalList = Array.from(mergedMap.values()).filter((it) => !isDummyProduct(it));
-      setProductDatabase(finalList);
-      try {
-        localStorage.setItem('wms_product_cache', JSON.stringify(finalList));
-      } catch {}
     },
     []
   );
 
-  const handleAddDiscoveredProducts = useCallback((newItems: ProductItem[]) => {
-    setProductDatabase((prev) => {
-      const map = new Map<string, ProductItem>();
-      prev.forEach((it) => {
-        if (it && it.k && !isDummyProduct(it)) map.set(it.k.toUpperCase(), it);
-      });
-      let hasNew = false;
-      newItems.forEach((it) => {
-        if (it && it.k && !isDummyProduct(it) && !map.has(it.k.toUpperCase())) {
-          map.set(it.k.toUpperCase(), it);
-          hasNew = true;
-        }
-      });
-      if (!hasNew) return prev;
-      const merged = Array.from(map.values()).filter((it) => !isDummyProduct(it));
-      try {
-        localStorage.setItem('wms_product_cache', JSON.stringify(merged));
-      } catch {}
-      return merged;
-    });
+  const handleAddDiscoveredProducts = useCallback(async (newItems: ProductItem[]) => {
+    // Add discovered dummy products directly to Dexie if needed
+    for (const item of newItems) {
+      if (item && item.k && !isDummyProduct(item)) {
+        await localDb.products.put({ ...item, k: item.k.toUpperCase() });
+      }
+    }
   }, []);
 
   // Load product database on mount & session ready
@@ -282,6 +256,7 @@ export default function App() {
     loadProducts();
     if (session) {
       requestScreenWakeLock();
+      runSmartSync().catch(err => console.warn('Smart Sync failed on load:', err));
     }
   }, [session, loadProducts]);
 
@@ -298,34 +273,14 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'log_produk' },
           (payload) => {
+            handleRealtimeEvent('log_produk', payload);
             if (payload.eventType === 'INSERT' && payload.new) {
               const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number };
               showPushNotification('📦 Log Mutasi Baru', {
                 body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
               });
 
-              // Local State Mutation to save egress: update locally instead of fetching the whole database
-              if (newLog.sku && newLog.lokasi && newLog.qty) {
-                setProductDatabase(prev => {
-                  const skuUpper = newLog.sku!.toUpperCase();
-                  const locUpper = newLog.lokasi!.toUpperCase();
-                  return prev.map(p => {
-                    if (p.k.toUpperCase() === skuUpper) {
-                      const updated = { ...p, stokMap: { ...(p.stokMap || {}) } };
-                      const qty = Number(newLog.qty) || 0;
-                      const currentLocStok = updated.stokMap[locUpper] || 0;
-                      
-                      if (newLog.type === 'IN' || newLog.type === 'ADJ_IN') {
-                        updated.stokMap[locUpper] = currentLocStok + qty;
-                      } else if (newLog.type === 'OUT' || newLog.type === 'ADJ_OUT') {
-                        updated.stokMap[locUpper] = Math.max(0, currentLocStok - qty);
-                      }
-                      return updated;
-                    }
-                    return p;
-                  });
-                });
-              }
+              // Local State Mutation to save egress: Dexie sync engine already handles this!
             }
             globalRealtimeStore.notify('log_produk', payload);
           }
@@ -334,6 +289,7 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'master_produk' },
           (payload) => {
+            handleRealtimeEvent('master_produk', payload);
             globalRealtimeStore.notify('master_produk', payload);
             if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
             debounceCatalogTimer = setTimeout(() => {
@@ -353,6 +309,7 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'peminjaman' },
           (payload) => {
+            handleRealtimeEvent('peminjaman', payload);
             globalRealtimeStore.notify('peminjaman', payload);
             // Removed loadProducts() to save egress
           }
@@ -361,6 +318,7 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'picking_list' },
           (payload) => {
+            handleRealtimeEvent('picking_list', payload);
             globalRealtimeStore.notify('picking_list', payload);
           }
         )
@@ -368,6 +326,7 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'view_stok_realtime' },
           (payload) => {
+            handleRealtimeEvent('view_stok_realtime', payload);
             globalRealtimeStore.notify('view_stok_realtime', payload);
           }
         )

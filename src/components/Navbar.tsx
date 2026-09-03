@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Moon,
   Sun,
@@ -17,8 +17,10 @@ import {
   PanelLeft,
   ClipboardList,
   ArrowRightLeft,
+  RefreshCw,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
+import { runManualFullSync } from '../services/syncEngine';
 
 interface NavbarProps {
   session: UserSession | null;
@@ -55,6 +57,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   totalScannedCount,
 }) => {
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setSyncProgress(0);
+    try {
+      await runManualFullSync((progress) => setSyncProgress(progress));
+    } catch (err) {
+      console.error('Manual Sync Failed', err);
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncProgress(0), 1000);
+    }
+  };
+
   const getPageInfo = () => {
     switch (activePage) {
       case 'scanner':
@@ -148,6 +167,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right side: Quick Action Buttons & User Summary */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Manual Sync Button */}
+        <button
+          onClick={handleManualSync}
+          disabled={isSyncing}
+          title="Manual Sync Database"
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 hover:text-[#ff7a00] hover:bg-slate-200 dark:hover:bg-slate-800 transition-all text-xs font-bold cursor-pointer shadow-xs ${isSyncing ? 'opacity-70' : ''}`}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-[#ff7a00]' : ''}`} />
+          <span>{isSyncing ? `${syncProgress}%` : 'Sync'}</span>
+        </button>
+
         {/* APK / PWA Install Button */}
         <button
           id="btnOpenApkModal"

@@ -30,6 +30,8 @@ import {
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { localDb } from '../services/localDb';
 
 interface StockOpnameViewProps {
   session?: UserSession | null;
@@ -44,7 +46,9 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   onNotify,
   onRefreshCatalog,
 }) => {
-  const [soQueue, setSoQueue] = useState<StockOpnameQueueItem[]>([]);
+  // Dexie Live Query replaces manual fetch and realtime subscription for SO Queue
+  const soQueue = useLiveQuery(() => localDb.soQueue.toArray(), []) || [];
+  
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -71,54 +75,20 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const currentOperator = session?.username || 'Operator';
 
   const loadSoData = async () => {
-    setIsLoading(true);
-    setFetchError(null);
-    try {
-      const data = await fetchStockOpnameQueue('ALL', 15000);
-      const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
-      setSoQueue(unique);
-      setSelectedSoIds([]);
-    } catch (e: any) {
-      console.error('Error loading SO data:', e);
-      setFetchError(e.message || 'Gagal memuat antrean Stock Opname');
-      if (onNotify) onNotify('Gagal memuat data Stock Opname.', 'error');
-    } finally {
-      setIsLoading(false);
+    // If user clicks refresh, we can trigger a manual sync or just let Dexie handle it
+    if (onRefreshCatalog) {
+       setIsLoading(true);
+       try {
+         await onRefreshCatalog();
+       } finally {
+         setIsLoading(false);
+       }
     }
   };
 
   useEffect(() => {
-    loadSoData();
-
-    // Supabase Realtime for Stock Opname Queue
-    const supaClient = getSupabaseClient();
-    let channel: any = null;
-    let debounceTimer: any = null;
-
-    const triggerDebouncedSync = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadSoData();
-      }, 400);
-    };
-
-    try {
-      channel = supaClient
-        .channel('so-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_opname_queue' }, () => {
-          triggerDebouncedSync();
-        })
-        .subscribe();
-    } catch (err) {
-      console.warn('SO queue realtime subscription error:', err);
-    }
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        supaClient.removeChannel(channel);
-      }
-    };
+    // Component mounted, Dexie Live Query handles reactivity.
+    // Realtime changes are pushed via App.tsx to localDb.
   }, []);
 
   // Filtered SO queue
@@ -259,7 +229,9 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
         showGlobalLoading('Menghapus data...');
 
         // Optimistic UI update
-        setSoQueue((prev) => prev.filter((it) => !it.id || !targetIds.includes(it.id)));
+        try {
+          await localDb.soQueue.bulkDelete(targetIds);
+        } catch (e) {}
         setSelectedSoIds([]);
 
         try {
@@ -335,7 +307,9 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
         showGlobalLoading('Menghapus...');
 
         // Optimistic UI update
-        setSoQueue((prev) => prev.filter((it) => it.id !== id));
+        try {
+          await localDb.soQueue.delete(id);
+        } catch (e) {}
         setSelectedSoIds((prev) => prev.filter((item) => item !== id));
 
         try {

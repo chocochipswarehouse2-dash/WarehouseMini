@@ -93,7 +93,7 @@ export interface ProductItem {
   category?: string;
   lokasi?: string;
   price?: number;
-  stokMap?: number;
+  stokMap?: Record<string, number>;
   stokStudio?: number;
   stokShp?: number;
   stokTtk?: number;

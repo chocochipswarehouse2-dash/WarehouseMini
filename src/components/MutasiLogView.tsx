@@ -41,6 +41,8 @@ import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch } from '../utils/sortUtils';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { localDb } from '../services/localDb';
 
 interface MutasiLogViewProps {
   session?: UserSession | null;
@@ -67,7 +69,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   onNotify,
   onRefreshCatalog,
 }) => {
-  const [logs, setLogs] = useState<LogProdukItem[]>([]);
+  // Dexie Live Query replaces manual fetch and realtime subscription for logs
+  const logs = useLiveQuery(
+    () => localDb.logProduk.orderBy('created_at').reverse().limit(5000).toArray(),
+    []
+  ) || [];
+  
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -113,45 +120,22 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     return map;
   }, [productCatalog]);
 
-  // Load all logs from Supabase
+  // Remove legacy loadLogs since Dexie handles it automatically
   const loadLogs = async () => {
-    setIsLoading(true);
-    setFetchError(null);
-    try {
-      const data = await fetchAllLogs(15000);
-      // Deduplicate by ID
-      const unique = Array.from(
-        new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
-      );
-      setLogs(unique);
-    } catch (e: any) {
-      console.error('Error loading logs:', e);
-      setFetchError(e.message || 'Gagal memuat log mutasi dari Supabase');
-      if (onNotify) onNotify('Gagal memuat mutasi log.', 'error');
-    } finally {
-      setIsLoading(false);
+    // If user clicks refresh, we can trigger a manual sync of logs
+    if (onRefreshCatalog) {
+       setIsLoading(true);
+       try {
+         await onRefreshCatalog();
+       } finally {
+         setIsLoading(false);
+       }
     }
   };
 
   useEffect(() => {
-    loadLogs();
-
-    // Supabase Realtime via global store
-    let debounceTimer: any = null;
-
-    const triggerDebouncedSync = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadLogs();
-      }, 400);
-    };
-
-    const unsub = globalRealtimeStore.subscribe('log_produk', triggerDebouncedSync);
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      unsub();
-    };
+    // Component mounted. Data is automatically served from Dexie.
+    // No need for realtime subscription here because App.tsx handles realtime -> Dexie sync.
   }, []);
 
   // Filtered logs
