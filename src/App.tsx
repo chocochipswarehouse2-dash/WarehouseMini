@@ -29,6 +29,12 @@ import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 import { globalRealtimeStore } from './services/store';
+import {
+  getAllProductsFromLocalDb,
+  saveProductsToLocalDb,
+  upsertProductInLocalDb,
+  bulkUpsertProductsInLocalDb,
+} from './services/localDb';
 
 // Lazy load large components
 const PeminjamanView = React.lazy(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
@@ -194,63 +200,46 @@ export default function App() {
 
   // Load product database on session ready (100% directly from Supabase with instant local cache)
   const loadProducts = useCallback(
-    async () => {
-      const mergedMap = new Map<string, ProductItem>();
-
-      // 1. Load local cache immediately for 0ms instant UI availability (filter out any old dummy data)
-      try {
-        const cache: ProductItem[] = JSON.parse(localStorage.getItem('wms_product_cache') || '[]');
-        if (Array.isArray(cache) && cache.length > 0) {
-          const cleanCache = cache.filter((it) => it && (it.k || (it as any).sku) && !isDummyProduct(it));
-          cleanCache.forEach((it) => {
-            const sku = String(it.k || (it as any).sku || '').trim().toUpperCase();
-            if (sku) mergedMap.set(sku, { ...it, k: sku });
-          });
-        }
-
-        const invCache = JSON.parse(localStorage.getItem('wms_cache_inventory_v38') || '[]');
-        if (Array.isArray(invCache) && invCache.length > 0) {
-          invCache.forEach((it: any) => {
-            const sku = String(it.k || it.sku || '').trim().toUpperCase();
-            if (sku && !mergedMap.has(sku)) {
-              mergedMap.set(sku, {
-                k: sku,
-                sku: sku,
-                p: it.p || it.produk || it.nama_produk || sku,
-                s: it.s || it.size || '-',
-                f: it.f || {},
-                d: it.d || {},
-                b: it.b || {},
-                l: it.l || [],
-              });
+    async (forceRefresh = false) => {
+      // 1. Instant 0ms load from Native Local Database (IndexedDB)
+      if (!forceRefresh) {
+        try {
+          const localProducts = await getAllProductsFromLocalDb();
+          if (localProducts && localProducts.length > 0) {
+            const clean = localProducts.filter((it) => !isDummyProduct(it));
+            if (clean.length > 0) {
+              setProductDatabase(clean);
+              return; // Already loaded full database from local storage, 0 network egress!
             }
-          });
+          }
+        } catch (err) {
+          console.warn('Local indexedDB initial read error:', err);
         }
 
-        if (mergedMap.size > 0) {
-          setProductDatabase(Array.from(mergedMap.values()));
-        }
-      } catch {}
+        // Fallback check legacy localStorage if localDb was empty
+        try {
+          const cache: ProductItem[] = JSON.parse(localStorage.getItem('wms_product_cache') || '[]');
+          if (Array.isArray(cache) && cache.length > 0) {
+            const cleanCache = cache.filter((it) => it && (it.k || (it as any).sku) && !isDummyProduct(it));
+            if (cleanCache.length > 0) {
+              setProductDatabase(cleanCache);
+              saveProductsToLocalDb(cleanCache, 'merge').catch(() => {});
+            }
+          }
+        } catch {}
+      }
 
-      // 2. Fetch fresh master products from Supabase (master_produk, view_stok_realtime, log_produk)
+      // 2. Fetch fresh master products from Supabase (if local DB is empty or forceRefresh requested)
       try {
-        const supabaseProducts = await fetchMasterProductsFromSupabase();
+        const supabaseProducts = await fetchMasterProductsFromSupabase(50000, forceRefresh);
         if (supabaseProducts && supabaseProducts.length > 0) {
-          supabaseProducts.forEach((it) => {
-            if (it && it.k && !isDummyProduct(it)) {
-              mergedMap.set(it.k.toUpperCase(), it);
-            }
-          });
+          const finalList = supabaseProducts.filter((it) => !isDummyProduct(it));
+          setProductDatabase(finalList);
+          await saveProductsToLocalDb(finalList, 'replace');
         }
       } catch (err) {
         console.warn('Supabase product sync error:', err);
       }
-
-      const finalList = Array.from(mergedMap.values()).filter((it) => !isDummyProduct(it));
-      setProductDatabase(finalList);
-      try {
-        localStorage.setItem('wms_product_cache', JSON.stringify(finalList));
-      } catch {}
     },
     []
   );
@@ -262,18 +251,19 @@ export default function App() {
         if (it && it.k && !isDummyProduct(it)) map.set(it.k.toUpperCase(), it);
       });
       let hasNew = false;
+      const validNew: ProductItem[] = [];
       newItems.forEach((it) => {
         if (it && it.k && !isDummyProduct(it) && !map.has(it.k.toUpperCase())) {
           map.set(it.k.toUpperCase(), it);
+          validNew.push(it);
           hasNew = true;
         }
       });
       if (!hasNew) return prev;
-      const merged = Array.from(map.values()).filter((it) => !isDummyProduct(it));
-      try {
-        localStorage.setItem('wms_product_cache', JSON.stringify(merged));
-      } catch {}
-      return merged;
+      if (validNew.length > 0) {
+        bulkUpsertProductsInLocalDb(validNew).catch(() => {});
+      }
+      return Array.from(map.values()).filter((it) => !isDummyProduct(it));
     });
   }, []);
 
@@ -320,6 +310,7 @@ export default function App() {
                       } else if (newLog.type === 'OUT' || newLog.type === 'ADJ_OUT') {
                         updated.stokMap[locUpper] = Math.max(0, currentLocStok - qty);
                       }
+                      upsertProductInLocalDb(updated).catch(() => {});
                       return updated;
                     }
                     return p;
@@ -335,10 +326,31 @@ export default function App() {
           { event: '*', schema: 'public', table: 'master_produk' },
           (payload) => {
             globalRealtimeStore.notify('master_produk', payload);
-            if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
-            debounceCatalogTimer = setTimeout(() => {
-              loadProducts();
-            }, 300);
+            if (payload.new) {
+              const raw = payload.new as any;
+              const sku = String(raw.sku || raw.k || '').toUpperCase().trim();
+              if (sku) {
+                const item: ProductItem = {
+                  k: sku,
+                  sku: sku,
+                  p: raw.nama_produk || raw.nama || raw.p || sku,
+                  s: raw.size || raw.s || 'ALL',
+                  lokasi: raw.lokasi || 'Warehouse',
+                  category: raw.kategori || raw.category || 'IN',
+                  price: Number(raw.harga || raw.price) || 0,
+                };
+                upsertProductInLocalDb(item).catch(() => {});
+                setProductDatabase(prev => {
+                  const idx = prev.findIndex(p => p.k.toUpperCase() === sku);
+                  if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = { ...next[idx], ...item };
+                    return next;
+                  }
+                  return [...prev, item];
+                });
+              }
+            }
           }
         )
         .on(
@@ -921,7 +933,7 @@ export default function App() {
         session={session}
         onNotify={showToast}
         onSuccess={() => {
-          loadProducts();
+          loadProducts(true);
         }}
       />
 

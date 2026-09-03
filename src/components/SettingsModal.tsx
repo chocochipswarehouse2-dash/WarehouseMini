@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { clearLocalDb } from '../services/localDb';
 import {
   X,
   Settings,
@@ -1408,13 +1409,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
+                    await clearLocalDb();
                     localStorage.removeItem('wms_product_cache');
-                    onNotify('Cache katalog produk lokal berhasil dibersihkan.', 'info');
+                    localStorage.removeItem('wms_cache_inventory_v38');
+                    localStorage.removeItem('wms_inventory_stock_cache');
+                    onNotify('Database & cache katalog lokal berhasil dibersihkan.', 'info');
                   }}
                   className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
                 >
-                  Bersihkan Cache
+                  Bersihkan Cache & Reset DB Lokal
                 </button>
               </div>
             </div>

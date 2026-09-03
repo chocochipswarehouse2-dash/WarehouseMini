@@ -33,6 +33,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { StockRealtimeItem, ProductItem, UserSession } from '../types';
+import { saveInventoryStocksToLocalDb, getAllInventoryStocksFromLocalDb } from '../services/localDb';
 import {
   fetchAllStockRealtime,
   fetchSupabaseStokFisikDirect,
@@ -94,7 +95,7 @@ export interface InventoryViewProps {
   currentLocations?: string[];
   productCatalog?: ProductItem[];
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
-  onRefreshCatalog?: () => Promise<void> | void;
+  onRefreshCatalog?: (forceRefresh?: boolean) => Promise<void> | void;
 }
 
 // Modal types for KPI Drill-Down
@@ -166,6 +167,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const deferredSearch = useDeferredValue(searchQuery);
   const [sortOption, setSortOption] = useState<InventorySortOption>('NAME_ASC');
+  const [onlyWithStock, setOnlyWithStock] = useState<boolean>(false);
   const [displayLimit, setDisplayLimit] = useState<number>(60);
   const RENDER_STEP = 60;
 
@@ -211,7 +213,19 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       return;
     }
 
-    const hasCachedData = (globalInventoryStockCache && globalInventoryStockCache.length > 0) || stockList.length > 0;
+    let hasCachedData = (globalInventoryStockCache && globalInventoryStockCache.length > 0) || stockList.length > 0;
+    if (!hasCachedData) {
+      try {
+        const localStocks = await getAllInventoryStocksFromLocalDb();
+        if (localStocks && localStocks.length > 0) {
+          globalInventoryStockCache = localStocks;
+          globalInventoryLastFetch = Date.now();
+          setStockList(localStocks);
+          hasCachedData = true;
+        }
+      } catch {}
+    }
+
     if (!hasCachedData) {
       setIsLoading(true);
     } else {
@@ -231,16 +245,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         globalInventoryLastFetch = Date.now();
         setStockList(realtimeData);
 
-        // Store snapshot to local storage
+        // Store snapshot to local IndexedDB (zero truncation limit)
+        saveInventoryStocksToLocalDb(realtimeData).catch(() => {});
         try {
-          localStorage.setItem('wms_inventory_stock_cache', JSON.stringify(realtimeData.slice(0, 10000)));
+          localStorage.setItem('wms_inventory_stock_cache', JSON.stringify(realtimeData.slice(0, 1000)));
         } catch (storageErr) {
           console.warn('Local storage quota full or error:', storageErr);
         }
       }
 
       if (isManualRefresh) {
-        if (onRefreshCatalog) await onRefreshCatalog();
+        if (onRefreshCatalog) await onRefreshCatalog(true);
         if (onNotify) {
           onNotify(`Inventori berhasil disinkronkan (${realtimeData.length} baris lokasi)!`, 'success');
         }
@@ -347,24 +362,37 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
       const a = area.toUpperCase();
       const l = lokasi.toUpperCase();
-      let kat = 'Lainnya';
+      let kat = 'Gudang Utama';
 
-      if (a === 'WAREHOUSE') {
+      if (a === 'WAREHOUSE' || a.includes('GUDANG') || a.includes('MAP') || a.includes('AKSESORIS') || l.startsWith('BELT')) {
         kat = 'Gudang Utama';
-      } else if (a === 'BLOK F' && (l === 'SHOPEE' || l === 'TIKTOK' || l === 'TT' || l === 'LIVE')) {
+      } else if (
+        (a === 'BLOK F' || a.includes('BLOK')) &&
+        (l === 'SHOPEE' || l === 'TIKTOK' || l === 'TT' || l === 'LIVE' || l.includes('SHP') || l.includes('TTK'))
+      ) {
         kat = 'Barang Live';
-      } else if (a === 'BLOK F' && (l === 'STUDIO' || l === 'SAMPLE')) {
+      } else if (
+        a === 'STUDIO' ||
+        a.includes('STUDIO') ||
+        ((a === 'BLOK F' || a.includes('BLOK')) && (l === 'STUDIO' || l === 'SAMPLE'))
+      ) {
         kat = 'Sample Studio';
       } else if (
-        (a === 'PERBAIKAN' || a.indexOf('PERMAK') > -1) &&
-        (l.indexOf('PMK') === 0 || l.indexOf('CC') === 0 || l.indexOf('PERMAK') > -1 || l.indexOf('CUCI') > -1)
+        (a === 'PERBAIKAN' || a.includes('PERMAK') || a.includes('CUCI')) &&
+        (l.startsWith('PMK') || l.startsWith('CC') || l.includes('PERMAK') || l.includes('CUCI'))
       ) {
         kat = 'Permak / Cuci';
       } else if (
-        (a === 'PERBAIKAN' || a.indexOf('DEFECT') > -1) &&
-        (l.indexOf('DF') === 0 || l.indexOf('DEFECT') > -1 || l.indexOf('CACAT') > -1)
+        (a === 'PERBAIKAN' || a.includes('DEFECT') || a.includes('CACAT')) &&
+        (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT'))
       ) {
         kat = 'Barang Cacat';
+      } else if (a.includes('PERBAIKAN') || a.includes('DEFECT') || a.includes('PERMAK')) {
+        if (l.startsWith('PMK') || l.startsWith('CC') || l.includes('CUCI') || l.includes('PERMAK')) {
+          kat = 'Permak / Cuci';
+        } else {
+          kat = 'Barang Cacat';
+        }
       } else if (a === 'DEALPOS OFFLINE' && l === 'WH') {
         kat = 'WH';
       } else if (a === 'DEALPOS OFFLINE' && l === 'QC') {
@@ -373,6 +401,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         kat = 'Barang Cacat';
       } else if (a === 'DEALPOS OFFLINE' && l === 'GA') {
         kat = 'GA';
+      } else {
+        kat = 'Gudang Utama';
       }
 
       skuStockMap[sku].f[kat] = (skuStockMap[sku].f[kat] || 0) + qty;
@@ -519,6 +549,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       });
     }
 
+    // Filter only items with physical/channel stock
+    if (onlyWithStock) {
+      list = list.filter(
+        (item) =>
+          item.totalFisikGudang > 0 ||
+          item.totalStore > 0 ||
+          item.totalOnline > 0 ||
+          item.totalOffline > 0
+      );
+    }
+
     // Sort list
     const sorted = [...list];
     sorted.sort((a, b) => {
@@ -559,27 +600,39 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     });
 
     return sorted;
-  }, [normalizedInventory, deferredSearch, sortOption]);
+  }, [normalizedInventory, deferredSearch, sortOption, onlyWithStock]);
+
+  const itemsWithStockCount = useMemo(() => {
+    return normalizedInventory.filter(
+      (item) =>
+        item.totalFisikGudang > 0 ||
+        item.totalStore > 0 ||
+        item.totalOnline > 0 ||
+        item.totalOffline > 0
+    ).length;
+  }, [normalizedInventory]);
 
   // ========================================================
   // 4. KPI STATS RECALCULATION (IDENTIK GAS updateKpiCards)
   // ========================================================
   const kpiStats = useMemo(() => {
-    // Saat ada pencarian aktif, hitung KPI dari hasil filter (seperti di script GAS: updateKpiCards(DISPLAY_DATA))
-    const targetList = deferredSearch.trim() ? filteredInventory : normalizedInventory;
+    // Saat ada pencarian atau filter stok aktif, hitung KPI dari hasil filter
+    const targetList = deferredSearch.trim() || onlyWithStock ? filteredInventory : normalizedInventory;
     const totalSku = targetList.length;
     let totalMap = 0;
     let totalBlokF = 0;
     let totalPerbaikan = 0;
+    let totalRealFisik = 0;
 
     targetList.forEach((it) => {
       totalMap += it.komparasi.MAP.fisik || 0;
       totalBlokF += (it.komparasi.STUDIO.fisik || 0) + (it.komparasi.LIVE.fisik || 0);
       totalPerbaikan += (it.komparasi.PERMAK.fisik || 0) + (it.komparasi.DEFECT.fisik || 0);
+      totalRealFisik += it.totalFisikGudang || 0;
     });
 
-    return { totalSku, totalMap, totalBlokF, totalPerbaikan };
-  }, [normalizedInventory, filteredInventory, deferredSearch]);
+    return { totalSku, totalMap, totalBlokF, totalPerbaikan, totalRealFisik };
+  }, [normalizedInventory, filteredInventory, deferredSearch, onlyWithStock]);
 
   // Category detection helper
   const detectKategori = (produkName: string) => {
@@ -681,7 +734,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const showStore = isAreaActive('STORE');
     const showOnline = isAreaActive('ONLINE');
 
-    const headers: string[] = ['PRODUK', 'SIZE', 'CODE', 'LOKASI_RAK'];
+    const headers: string[] = ['PRODUK', 'SIZE', 'CODE', 'STOK_REAL_FISIK', 'SELISIH_MAP', 'LOKASI_RAK'];
     if (showGudang) {
       KOMPARASI_5.forEach((k) => {
         headers.push(`${k}_FISIK`, `${k}_DP`);
@@ -692,10 +745,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     if (showOnline) ONLINE_COLS.forEach((c) => headers.push(c));
 
     const rows = filteredInventory.map((item) => {
+      const diff = item.totalFisikGudang - (item.komparasi.MAP.dp || 0);
       const row: (string | number)[] = [
         `"${(item.produk || '').replace(/"/g, '""')}"`,
         `"${(item.size || '-').replace(/"/g, '""')}"`,
         `"${(item.sku || '').replace(/"/g, '""')}"`,
+        item.totalFisikGudang,
+        diff,
         `"${(item.locStr || '-').replace(/"/g, '""')}"`,
       ];
 
@@ -766,7 +822,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const showStore = isAreaActive('STORE');
     const showOnline = isAreaActive('ONLINE');
 
-    let totalWidth = 260 + 55 + 130;
+    let totalWidth = 260 + 55 + 130 + 90 + 75;
     if (showGudang) totalWidth += 5 * 88;
     if (showOffline) totalWidth += OFFLINE_COLS.length * 44;
     if (showStore) totalWidth += STORE_COLS.length * 44;
@@ -809,6 +865,50 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   {sortOption === 'SKU_ASC' ? (
                     <ArrowUp className="w-3 h-3 text-amber-500" />
                   ) : sortOption === 'SKU_DESC' ? (
+                    <ArrowDown className="w-3 h-3 text-amber-500" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </th>
+
+              {/* STOK REAL (TOTAL FISIK GUDANG) */}
+              <th
+                rowSpan={2}
+                className="p-2.5 w-[90px] min-w-[90px] text-center border-r border-slate-200 dark:border-slate-800 align-middle bg-amber-500/10 dark:bg-amber-500/20"
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggleColumnSort('STOCK')}
+                  className="w-full flex items-center justify-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-black text-[10.5px] text-amber-800 dark:text-amber-300 uppercase tracking-tight"
+                  title="Klik untuk mengurutkan berdasarkan Total Stok Real Fisik Gudang"
+                >
+                  <span>STOK REAL</span>
+                  {sortOption === 'STOCK_ASC' ? (
+                    <ArrowUp className="w-3 h-3 text-amber-500" />
+                  ) : sortOption === 'STOCK_DESC' ? (
+                    <ArrowDown className="w-3 h-3 text-amber-500" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </th>
+
+              {/* SELISIH REAL VS MAP DP */}
+              <th
+                rowSpan={2}
+                className="p-2 w-[75px] min-w-[75px] text-center border-r border-slate-200 dark:border-slate-800 align-middle"
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggleColumnSort('DIFF')}
+                  className="w-full flex items-center justify-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-black text-[10px] text-slate-700 dark:text-slate-300 uppercase tracking-tight"
+                  title="Klik untuk mengurutkan berdasarkan Selisih (Total Stok Real Fisik vs DP MAP)"
+                >
+                  <span>SELISIH</span>
+                  {sortOption === 'DIFF_ASC' ? (
+                    <ArrowUp className="w-3 h-3 text-amber-500" />
+                  ) : sortOption === 'DIFF_DESC' ? (
                     <ArrowDown className="w-3 h-3 text-amber-500" />
                   ) : (
                     <ArrowUpDown className="w-3 h-3 opacity-40" />
@@ -933,6 +1033,47 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                     </span>
                   </td>
 
+                  {/* Total Stok Real Fisik Gudang */}
+                  <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 bg-amber-500/5 dark:bg-amber-500/10">
+                    {item.totalFisikGudang > 0 ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-black font-mono bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                        {item.totalFisikGudang.toLocaleString('id-ID')}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 dark:text-slate-600 text-[10px]">0</span>
+                    )}
+                  </td>
+
+                  {/* Selisih: Total Fisik vs MAP DealPOS */}
+                  <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
+                    {(() => {
+                      const mapDp = item.komparasi.MAP.dp || 0;
+                      const diff = item.totalFisikGudang - mapDp;
+                      if (item.totalFisikGudang === 0 && mapDp === 0) {
+                        return <span className="text-slate-300 dark:text-slate-600 text-[10px]">0</span>;
+                      }
+                      if (diff === 0) {
+                        return (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" title="Stok Fisik Sesuai dengan Sistem DealPOS">
+                            ✓ 0
+                          </span>
+                        );
+                      }
+                      if (diff > 0) {
+                        return (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" title={`Stok Fisik Lebih Banyak (+${diff})`}>
+                            +{diff}
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black text-rose-600 dark:text-rose-400 bg-rose-500/10" title={`Stok Fisik Kurang (${diff})`}>
+                          {diff}
+                        </span>
+                      );
+                    })()}
+                  </td>
+
                   {/* 5 Komparasi: MAP, LIVE, STUDIO, PERMAK, DEFECT */}
                   {showGudang &&
                     KOMPARASI_5.map((k) => {
@@ -1024,7 +1165,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               key={`${item.sku}_${idx}`}
               className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 shadow-xs hover:border-amber-500/40 transition-all space-y-3"
             >
-              {/* Card Header: Product name & size */}
+              {/* Card Header: Product name, size & Stok Real */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
@@ -1042,9 +1183,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   </div>
                 </div>
 
-                <span className="px-2 py-0.5 rounded font-mono text-xs font-black bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                  {displaySize}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <div className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase">STOK REAL</div>
+                    <div className="px-2 py-0.5 rounded-full font-mono text-xs font-black bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                      {item.totalFisikGudang} <span className="text-[10px] font-normal">pcs</span>
+                    </div>
+                  </div>
+                  <span className="px-2 py-1 rounded font-mono text-xs font-black bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    {displaySize}
+                  </span>
+                </div>
               </div>
 
               {/* 5-Komparasi Mini Boxes (Gudang Utama) */}
@@ -1205,22 +1354,24 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           </div>
         </div>
 
-        {/* KPI 2: STOK FISIK MAP */}
+        {/* KPI 2: TOTAL STOK REAL (MAP + KANAL FISIK) */}
         <div
           onClick={() => setKpiModal('MAP')}
           className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 sm:p-4.5 shadow-xs hover:border-emerald-500/40 hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden group"
-          title="Klik untuk melihat klasifikasi stok MAP (A/B/C/D/BELT/Z)"
+          title="Klik untuk melihat rincian stok MAP & kanal fisik"
         >
           <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-500" />
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                STOK FISIK MAP
+                TOTAL STOK REAL
               </span>
               <div className="text-lg sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                {kpiStats.totalMap.toLocaleString('id-ID')} <span className="text-xs font-normal">pcs</span>
+                {kpiStats.totalRealFisik.toLocaleString('id-ID')} <span className="text-xs font-normal">pcs</span>
               </div>
-              <span className="text-[10px] text-slate-400 block truncate">Gudang Utama Warehouse</span>
+              <span className="text-[10px] text-slate-400 block truncate">
+                MAP: {kpiStats.totalMap.toLocaleString('id-ID')} pcs · Klik rincian
+              </span>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">
               🏢
@@ -1304,6 +1455,25 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
           {/* Right Action Bar */}
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* ADA STOK FILTER TOGGLE */}
+            <button
+              type="button"
+              id="btnFilterOnlyWithStock"
+              onClick={() => setOnlyWithStock(!onlyWithStock)}
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                onlyWithStock
+                  ? 'bg-amber-500 text-black border-amber-500 shadow-xs'
+                  : 'bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+              }`}
+              title={onlyWithStock ? 'Menampilkan HANYA produk yang memiliki stok. Klik untuk menampilkan semua katalog.' : 'Klik untuk memfilter hanya produk yang memiliki stok'}
+            >
+              <span>📦</span>
+              <span className="hidden sm:inline">ADA STOK</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${onlyWithStock ? 'bg-black/20 text-black font-black' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                {itemsWithStockCount.toLocaleString('id-ID')}
+              </span>
+            </button>
+
             {/* MULTISELECT FILTER AREA DROPDOWN */}
             <div className="relative" ref={areaDropdownRef}>
               <button
@@ -1451,10 +1621,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         </div>
 
         {/* Info bar: Total filtered vs total */}
-        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1">
-          <div>
-            Menampilkan <b className="text-slate-800 dark:text-slate-200">{Math.min(displayLimit, filteredInventory.length)}</b> dari{' '}
-            <b className="text-amber-500">{filteredInventory.length}</b> Produk
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-mono pt-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div>
+              Menampilkan <b className="text-slate-800 dark:text-slate-200">{Math.min(displayLimit, filteredInventory.length)}</b> dari{' '}
+              <b className="text-amber-500">{filteredInventory.length}</b> Produk
+            </div>
+            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md font-sans">
+              💾 100% Tersimpan di DB Lokal ({productCatalog.length.toLocaleString('id-ID')} SKU)
+            </span>
           </div>
           <div className="hidden sm:flex items-center gap-3">
             <span>
@@ -1499,15 +1674,35 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       )}
 
       {/* Pagination Load More */}
-      {filteredInventory.length > displayLimit && (
-        <div className="text-center pt-2">
-          <button
-            type="button"
-            onClick={() => setDisplayLimit((prev) => prev + RENDER_STEP)}
-            className="px-6 py-2.5 text-xs font-extrabold bg-white dark:bg-[#161F30] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-xl transition-all shadow-xs cursor-pointer"
-          >
-            ⬇️ TAMPILKAN LEBIH BANYAK (SISA {filteredInventory.length - displayLimit} PRODUK)
-          </button>
+      {filteredInventory.length > 60 && (
+        <div className="flex flex-wrap items-center justify-center gap-2.5 pt-3 pb-1">
+          {filteredInventory.length > displayLimit && (
+            <>
+              <button
+                type="button"
+                onClick={() => setDisplayLimit((prev) => prev + RENDER_STEP)}
+                className="px-5 py-2 text-xs font-extrabold bg-white dark:bg-[#161F30] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                ⬇️ Tampilkan +{RENDER_STEP} Produk (Sisa {filteredInventory.length - displayLimit})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayLimit(filteredInventory.length)}
+                className="px-5 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                ⚡ Tampilkan Semua ({filteredInventory.length.toLocaleString('id-ID')} Produk)
+              </button>
+            </>
+          )}
+          {displayLimit > 60 && (
+            <button
+              type="button"
+              onClick={() => setDisplayLimit(60)}
+              className="px-4 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800/80 rounded-xl transition-all cursor-pointer"
+            >
+              Tampilkan 60 Saja (Mode Ringan)
+            </button>
+          )}
         </div>
       )}
 

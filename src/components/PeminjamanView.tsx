@@ -89,8 +89,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const [activeComboIndex, setActiveComboIndex] = useState<number>(-1);
   const [inputSearchTerm, setInputSearchTerm] = useState<{ [id: string]: string }>({});
-  const [extraSearchedProducts, setExtraSearchedProducts] = useState<ProductItem[]>([]);
-
+  
   // Load real channel stocks from Supabase
   const loadChannelStocks = async (showToast = false, keyword?: string) => {
     setLoadingStock(true);
@@ -274,7 +273,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     });
 
     // 2. Merge with productCatalog (from master_produk / catalog)
-    const combinedCatalog = [...productCatalog, ...extraSearchedProducts];
+    const combinedCatalog = productCatalog;
     combinedCatalog.forEach((p) => {
       const skuUpper = (p.k || '').toUpperCase().trim();
       if (!skuUpper) return;
@@ -321,41 +320,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       return a.produk.localeCompare(b.produk);
     });
     return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: nameMap };
-  }, [productCatalog, channelStocks, extraSearchedProducts]);
-
-  // Debounced search on Supabase master_produk when typing
-  const searchSupabaseMaster = async (query: string) => {
-    if (!query || query.trim().length < 2) return;
-    try {
-      const qClean = encodeURIComponent(query.trim());
-      const res = await supabaseFetch<any[]>(
-        'master_produk',
-        'GET',
-        undefined,
-        `or=(sku.ilike.*${qClean}*,nama_produk.ilike.*${qClean}*)&select=sku,nama_produk,size&limit=25`
-      );
-      if (res && Array.isArray(res) && res.length > 0) {
-        const newItems: ProductItem[] = res.map((r: any) => ({
-          k: String(r.sku || ''),
-          p: String(r.nama_produk || r.sku || ''),
-          s: String(r.size || 'ALL'),
-          lokasi: 'Warehouse',
-          stokMap: 0,
-          stokStudio: 0,
-          stokShp: 0,
-          stokTtk: 0,
-        }));
-        setExtraSearchedProducts((prev) => {
-          const map = new Map<string, ProductItem>();
-          prev.forEach((p) => map.set((p.k || '').toUpperCase(), p));
-          newItems.forEach((n) => map.set((n.k || '').toUpperCase(), n));
-          return Array.from(map.values());
-        });
-      }
-    } catch (e) {
-      console.warn('Supabase master search error:', e);
-    }
-  };
+  }, [productCatalog, channelStocks]);
 
   // Fast Product Input Change Handler (Handles Datalist chip click / barcode scan / typing)
   const handleProductInputChange = (itemId: string, rawVal: string) => {
@@ -363,13 +328,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const trimmed = rawVal.trim();
     const upper = trimmed.toUpperCase();
 
-    // Trigger debounced Supabase lookup if 2+ characters
-    if (trimmed.length >= 2) {
-      const timer = setTimeout(() => {
-        searchSupabaseMaster(trimmed);
-      }, 250);
-      // Cleanup timer via input state if needed
-    }
+    
 
     // 1. Direct O(1) matching against SKU map
     if (skuLookupMap.has(upper)) {

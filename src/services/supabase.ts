@@ -1,5 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
+  getAllProductsFromLocalDb,
+  saveProductsToLocalDb,
+  clearLocalDb,
+} from './localDb';
+import {
   LogProdukItem,
   StockOpnameQueueItem,
   StockRealtimeItem,
@@ -66,13 +71,14 @@ let currentConfig = {
 };
 
 export function getStoredSupabaseConfig() {
-  let url = localStorage.getItem('wms_supabase_url') || DEFAULT_SUPABASE_URL;
+  const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  let url = (isBrowser ? localStorage.getItem('wms_supabase_url') : null) || DEFAULT_SUPABASE_URL;
   try {
     url = new URL(url).origin;
   } catch (e) {
     // Ignore invalid URLs here, let client throw
   }
-  const key = localStorage.getItem('wms_supabase_key') || DEFAULT_SUPABASE_ANON_KEY;
+  const key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || DEFAULT_SUPABASE_ANON_KEY;
   return { url, key };
 }
 
@@ -84,8 +90,10 @@ export function saveSupabaseConfig(url: string, key: string) {
     }
   } catch (e) {}
   
-  localStorage.setItem('wms_supabase_url', cleanUrl);
-  localStorage.setItem('wms_supabase_key', key.trim());
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    localStorage.setItem('wms_supabase_url', cleanUrl);
+    localStorage.setItem('wms_supabase_key', key.trim());
+  }
   currentConfig = { url: cleanUrl, key: key.trim() };
   supabaseInstance = null; // reset client
 }
@@ -1687,6 +1695,20 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     return memoryProductCache;
   }
 
+  // 2. SWR Local Database (IndexedDB) check: 0ms instant offline load, 0 network egress
+  if (!forceRefresh) {
+    try {
+      const localDbProducts = await getAllProductsFromLocalDb();
+      if (localDbProducts && localDbProducts.length > 0) {
+        memoryProductCache = localDbProducts;
+        memoryProductLastFetch = Date.now();
+        return localDbProducts;
+      }
+    } catch (err) {
+      console.warn('Error reading from local indexedDB:', err);
+    }
+  }
+
   const productsMap = new Map<string, ProductItem>();
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
 
@@ -1734,8 +1756,9 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
         const batchSize = 5; // 5 parallel requests
         for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
           const currentLimit = Math.min(pageSize, maxRowsPerTable - offset);
+          const orderParam = table === 'view_stok_realtime' ? 'order=sku.asc,lokasi.asc' : 'order=sku.asc';
           batchPromises.push(
-            fetch(`${supaUrl}/rest/v1/${table}?select=*&limit=${currentLimit}&offset=${offset}`, {
+            fetch(`${supaUrl}/rest/v1/${table}?select=*&${orderParam}&limit=${currentLimit}&offset=${offset}`, {
               headers: {
                 apikey: supaKey,
                 Authorization: 'Bearer ' + supaKey,
@@ -1822,7 +1845,12 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     memoryProductCache = result;
     memoryProductLastFetch = Date.now();
     try {
-      localStorage.setItem('wms_product_cache', JSON.stringify(result));
+      await saveProductsToLocalDb(result, 'replace');
+    } catch (err) {
+      console.warn('Error saving products to localDb:', err);
+    }
+    try {
+      localStorage.setItem('wms_product_cache', JSON.stringify(result.slice(0, 500)));
     } catch {}
   }
   return result;
@@ -2945,6 +2973,7 @@ export async function importMasterProdukBatch(
 
   // Clear local product caches so new dataset is freshly reloaded
   try {
+    await clearLocalDb();
     localStorage.removeItem('wms_product_cache');
     localStorage.removeItem('wms_cache_inventory_v38');
     localStorage.removeItem('wms_inventory_stock_cache');
