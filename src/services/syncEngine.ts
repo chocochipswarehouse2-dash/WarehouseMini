@@ -2,6 +2,38 @@ import { localDb } from './localDb';
 import { supabaseFetch, getSupabaseClient } from './supabase';
 
 /**
+ * Helper to fetch all pages of a table up to a maximum limit, handling PostgREST default limit (1000)
+ */
+async function fetchAllWithPagination(tableName: string, baseQuery: string): Promise<any[]> {
+  const allData: any[] = [];
+  const limit = 1000;
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const data = await supabaseFetch<any[]>(
+      tableName,
+      'GET',
+      null,
+      `${baseQuery}&limit=${limit}&offset=${offset}`
+    );
+
+    if (data && Array.isArray(data) && data.length > 0) {
+      allData.push(...data);
+      if (data.length < limit) {
+        hasMore = false; // Last page
+      } else {
+        offset += limit;
+      }
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allData;
+}
+
+/**
  * Perform a Full Sync (downloading all data) for a specific table.
  * Used for initial login or manual forceful sync.
  */
@@ -12,14 +44,8 @@ async function fullSyncTable(
 ) {
   try {
     console.log(`Starting Full Sync for ${tableName}...`);
-    // Fetch all data (handling pagination if needed, but for simplicity assuming supabaseFetch handles or we use limit)
-    // Note: To prevent egress explosion, limit can be set, or we fetch all if this is the first time.
-    const data = await supabaseFetch<any[]>(
-      tableName,
-      'GET',
-      null,
-      `select=*&limit=50000` // Fetch up to 50k rows
-    );
+    // Fetch all data handling pagination explicitly since server caps at 1000
+    const data = await fetchAllWithPagination(tableName, 'select=*');
 
     if (data && Array.isArray(data)) {
       const itemsToStore = transformFn ? transformFn(data) : data;
@@ -53,10 +79,8 @@ async function deltaSyncTable(
 ) {
   try {
     console.log(`Starting Delta Sync for ${tableName} since ${lastSyncTime}...`);
-    const data = await supabaseFetch<any[]>(
-      tableName,
-      'GET',
-      null,
+    const data = await fetchAllWithPagination(
+      tableName, 
       `select=*&${timestampCol}=gt.${lastSyncTime}&order=${timestampCol}.asc`
     );
 
