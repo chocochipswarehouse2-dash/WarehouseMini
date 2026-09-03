@@ -29,11 +29,12 @@ import {
 import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem } from '../types';
 import {
   fetchPeminjamanFromSupabase,
-  insertPeminjamanBulk,
-  updatePeminjamanBulk,
+  savePeminjamanToSupabase,
   deletePeminjamanFromSupabase,
+  returnPeminjamanSupabase,
   getSupabaseClient,
   fetchRealtimeChannelStocksSupabase,
+  supabaseFetch,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import {

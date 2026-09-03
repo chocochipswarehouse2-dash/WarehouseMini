@@ -29,7 +29,7 @@ export function ScannerTabRecap() {
     try {
       const [mutasiLogs, soQueue] = await Promise.all([
         fetchRecentLogs(1000), // Get last 1000 mutasi logs
-        fetchStockOpnameQueue(1000) // Get last 1000 SO items
+        fetchStockOpnameQueue('ALL', 1000) // Get last 1000 SO items
       ]);
 
       const groupMap = new Map<string, RecapInvoiceGroup>();

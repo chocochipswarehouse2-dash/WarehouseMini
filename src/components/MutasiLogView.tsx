@@ -27,7 +27,6 @@ import { ProductItem, UserSession, LogProdukItem } from '../types';
 import {
   fetchRecentLogs,
   fetchAllLogs,
-  undoMutasiLog,
   getSupabaseClient,
   fetchLogsByInvoice,
   updateLogProdukInvoiceBatch,
@@ -37,8 +36,6 @@ import {
   deleteLogProdukByDateRange,
   getAreaFromLokasi,
   supabaseFetch,
-  updateLogProdukRow,
-  deleteLogProdukItem,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
@@ -380,7 +377,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         setIsActionLoading(true);
         showGlobalLoading('Menghapus batch...');
 
-        const idsArray = Array.from(selectedIds);
+        const idsArray = Array.from(selectedIds) as (string | number)[];
         try {
           const res = await deleteLogProdukBatch(idsArray);
           if (res.success) {

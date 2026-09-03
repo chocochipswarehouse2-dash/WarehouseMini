@@ -1145,36 +1145,50 @@ export async function fetchAllStockRealtime(maxRows = 50000): Promise<StockRealt
       let hasData = false;
 
       while (offset < maxRows) {
-        const currentLimit = Math.min(pageSize, maxRows - offset);
-        const chunk = await supabaseFetch<StockRealtimeItem[]>(
-          tableName,
-          'GET',
-          null,
-          `sisa_stok=neq.0&select=*&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`
-        );
-        if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
-          break;
+        const batchPromises = [];
+        const batchSize = 5;
+        for (let i = 0; i < batchSize && offset < maxRows; i++) {
+          const currentLimit = Math.min(pageSize, maxRows - offset);
+          batchPromises.push(
+            supabaseFetch<StockRealtimeItem[]>(
+              tableName,
+              'GET',
+              null,
+              `sisa_stok=neq.0&select=*&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`
+            ).catch(() => []) // Catch individual failures
+          );
+          offset += currentLimit;
         }
-        hasData = true;
-        for (const item of chunk) {
-          const sku = (item.sku || '').trim().toUpperCase();
-          const lokasi = (item.lokasi || 'Warehouse').trim();
-          if (!sku) continue;
-          const key = `${sku}__${lokasi.toUpperCase()}`;
-          dedupMap.set(key, {
-            sku: item.sku,
-            nama_produk: item.nama_produk || item.sku,
-            size: item.size || '-',
-            lokasi: item.lokasi || lokasi,
-            area: item.area || getAreaFromLokasi(lokasi),
-            sisa_stok: Number(item.sisa_stok) || 0,
-            updated_at: item.updated_at,
-          });
+
+        const results = await Promise.all(batchPromises);
+        let breakLoop = false;
+
+        for (const chunk of results) {
+          if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+            breakLoop = true;
+            break;
+          }
+          hasData = true;
+          for (const item of chunk) {
+            const sku = (item.sku || '').trim().toUpperCase();
+            const lokasi = (item.lokasi || 'Warehouse').trim();
+            if (!sku) continue;
+            const key = `${sku}__${lokasi.toUpperCase()}`;
+            dedupMap.set(key, {
+              sku: item.sku,
+              nama_produk: item.nama_produk || item.sku,
+              size: item.size || '-',
+              lokasi: item.lokasi || lokasi,
+              area: item.area || getAreaFromLokasi(lokasi),
+              sisa_stok: Number(item.sisa_stok) || 0,
+              updated_at: item.updated_at,
+            });
+          }
+          if (chunk.length < pageSize) {
+            breakLoop = true;
+          }
         }
-        if (chunk.length < currentLimit) {
-          break;
-        }
-        offset += chunk.length;
+        if (breakLoop) break;
       }
 
       if (hasData && dedupMap.size > 0) {
@@ -1716,63 +1730,79 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     let offset = 0;
     try {
       while (offset < maxRowsPerTable) {
-        const res = await fetch(`${supaUrl}/rest/v1/${table}?select=*&limit=${pageSize}&offset=${offset}`, {
-          headers: {
-            apikey: supaKey,
-            Authorization: 'Bearer ' + supaKey,
-            'Content-Type': 'application/json',
-          },
-        });
+        const batchPromises = [];
+        const batchSize = 5; // 5 parallel requests
+        for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
+          const currentLimit = Math.min(pageSize, maxRowsPerTable - offset);
+          batchPromises.push(
+            fetch(`${supaUrl}/rest/v1/${table}?select=*&limit=${currentLimit}&offset=${offset}`, {
+              headers: {
+                apikey: supaKey,
+                Authorization: 'Bearer ' + supaKey,
+                'Content-Type': 'application/json',
+              },
+            }).then(r => r.ok ? r.json() : null)
+          );
+          offset += currentLimit;
+        }
 
-        if (!res.ok) break;
-        const rows = await res.json();
-        if (!Array.isArray(rows) || rows.length === 0) break;
+        const results = await Promise.all(batchPromises);
+        let breakLoop = false;
 
-        for (const r of rows) {
-          const item = extractProductFromRow(r);
-          if (item && item.k && !isDummyProduct(item)) {
-            const key = item.k.toUpperCase();
-            const existing = productsMap.get(key);
-            if (!existing) {
-              productsMap.set(key, item);
-            } else {
-              // Enrich existing item if new record has location or size or fuller name
-              if (item.lokasi && item.lokasi !== '-') {
-                if (!existing.lokasi || existing.lokasi === '-') {
-                  existing.lokasi = item.lokasi;
-                } else {
-                  const existingLocs = existing.lokasi.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase());
-                  const newLocs = item.lokasi.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase());
-                  const toAdd = newLocs.filter((l) => l && l !== '-' && !existingLocs.includes(l));
-                  if (toAdd.length > 0) {
-                    existing.lokasi = `${existing.lokasi}, ${toAdd.join(', ')}`;
+        for (const rows of results) {
+          if (!rows || !Array.isArray(rows) || rows.length === 0) {
+            breakLoop = true;
+            break;
+          }
+
+          for (const r of rows) {
+            const item = extractProductFromRow(r);
+            if (item && item.k && !isDummyProduct(item)) {
+              const key = item.k.toUpperCase();
+              const existing = productsMap.get(key);
+              if (!existing) {
+                productsMap.set(key, item);
+              } else {
+                // Enrich existing item if new record has location or size or fuller name
+                if (item.lokasi && item.lokasi !== '-') {
+                  if (!existing.lokasi || existing.lokasi === '-') {
+                    existing.lokasi = item.lokasi;
+                  } else {
+                    const existingLocs = existing.lokasi.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase());
+                    const newLocs = item.lokasi.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase());
+                    const toAdd = newLocs.filter((l) => l && l !== '-' && !existingLocs.includes(l));
+                    if (toAdd.length > 0) {
+                      existing.lokasi = `${existing.lokasi}, ${toAdd.join(', ')}`;
+                    }
                   }
                 }
-              }
-              if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
-              if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
-              if (item.stokMap !== undefined && existing.stokMap === undefined) existing.stokMap = item.stokMap;
-              if (item.stokStudio !== undefined && existing.stokStudio === undefined) existing.stokStudio = item.stokStudio;
-              if (item.stokShp !== undefined && existing.stokShp === undefined) existing.stokShp = item.stokShp;
-              if (item.stokTtk !== undefined && existing.stokTtk === undefined) existing.stokTtk = item.stokTtk;
-              if (p.dealpos_channels && (!existing.dealpos_channels || Object.keys(existing.dealpos_channels).length === 0)) {
-                existing.dealpos_channels = p.dealpos_channels;
-              }
-              if (p.d && Object.keys(p.d).length > 0 && Object.keys(existing.d || {}).length === 0) {
-                existing.d = p.d;
-              }
-              if (p.b && Object.keys(p.b).length > 0 && Object.keys(existing.b || {}).length === 0) {
-                existing.b = p.b;
-              }
-              if (p.komparasi && !existing.komparasi) {
-                existing.komparasi = p.komparasi;
+                if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
+                if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
+                if (item.stokMap !== undefined && existing.stokMap === undefined) existing.stokMap = item.stokMap;
+                if (item.stokStudio !== undefined && existing.stokStudio === undefined) existing.stokStudio = item.stokStudio;
+                if (item.stokShp !== undefined && existing.stokShp === undefined) existing.stokShp = item.stokShp;
+                if (item.stokTtk !== undefined && existing.stokTtk === undefined) existing.stokTtk = item.stokTtk;
+                if (item.dealpos_channels && (!existing.dealpos_channels || Object.keys(existing.dealpos_channels).length === 0)) {
+                  existing.dealpos_channels = item.dealpos_channels;
+                }
+                if (item.d && Object.keys(item.d).length > 0 && Object.keys(existing.d || {}).length === 0) {
+                  existing.d = item.d;
+                }
+                if (item.b && Object.keys(item.b).length > 0 && Object.keys(existing.b || {}).length === 0) {
+                  existing.b = item.b;
+                }
+                if (item.komparasi && !existing.komparasi) {
+                  existing.komparasi = item.komparasi;
+                }
               }
             }
           }
+          if (rows.length < pageSize) {
+            breakLoop = true;
+          }
         }
-
-        if (rows.length < pageSize) break;
-        offset += rows.length;
+        
+        if (breakLoop) break;
       }
     } catch {
       // Ignore if table not present
@@ -2156,6 +2186,17 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
  * PEMINJAMAN SEMENTARA (SPS) SUPABASE SERVICES
  * =========================================================================
  */
+export async function deletePeminjamanFromSupabase(noPeminjaman: string): Promise<boolean> {
+  if (!noPeminjaman) return false;
+  try {
+    await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodeURIComponent(noPeminjaman)}`);
+    return true;
+  } catch (err) {
+    console.error('Error deleting peminjaman:', err);
+    return false;
+  }
+}
+
 export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]> {
   try {
     const data = await supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc');
