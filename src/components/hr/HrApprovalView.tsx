@@ -9,6 +9,8 @@ import {
   ShieldCheck,
   User,
   Calendar,
+  Search,
+  CheckCheck,
 } from 'lucide-react';
 import { UserSession, LemburRecord, PerijinanCutiRecord } from '../../types';
 import {
@@ -26,7 +28,9 @@ interface HrApprovalViewProps {
 
 export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowToast }) => {
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeSection, setActiveSection] = useState<'lembur' | 'cuti'>('lembur');
+  const [activeSection, setActiveSection] = useState<'lembur' | 'cuti' | 'riwayat_lembur'>('lembur');
+  const [searchHistory, setSearchHistory] = useState<string>('');
+  const [filterMonth, setFilterMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
 
   const [lemburList, setLemburList] = useState<LemburRecord[]>([]);
   const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
@@ -169,7 +173,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
       </div>
 
       {/* QUICK SUMMARY CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <button
           type="button"
           onClick={() => setActiveSection('lembur')}
@@ -222,6 +226,30 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
           {pendingCuti.length > 0 && (
             <span className="w-3 h-3 rounded-full bg-teal-500 animate-pulse"></span>
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection('riwayat_lembur')}
+          className={`p-5 rounded-3xl border transition-all text-left flex items-center justify-between cursor-pointer ${
+            activeSection === 'riwayat_lembur'
+              ? 'border-[#ff7a00] bg-[#ff7a00]/10 ring-2 ring-[#ff7a00]/30 shadow-md'
+              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#131d31] hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+              <CheckCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                Riwayat Lembur (ACC)
+              </div>
+              <div className="text-2xl font-black text-slate-900 dark:text-white">
+                {lemburList.filter((l) => l.status === 'Disetujui').length} Disetujui
+              </div>
+            </div>
+          </div>
         </button>
       </div>
 
@@ -358,6 +386,150 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* SECTION: RIWAYAT LEMBUR (DISETUJUI / DITOLAK) */}
+      {activeSection === 'riwayat_lembur' && (
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCheck className="w-4 h-4 text-emerald-500" />
+              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                Riwayat Lembur Karyawan (ACC / Selesai)
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#ff7a00]"
+              />
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchHistory}
+                  onChange={(e) => setSearchHistory(e.target.value)}
+                  placeholder="Cari nama/NIK..."
+                  className="pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium text-xs focus:outline-none focus:ring-2 focus:ring-[#ff7a00]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Metrics for selected month */}
+          {(() => {
+            const list = lemburList.filter((l) => {
+              if (l.status === 'Diajukan') return false;
+              if (filterMonth && !l.tanggal.startsWith(filterMonth)) return false;
+              if (searchHistory.trim()) {
+                const q = searchHistory.toLowerCase();
+                const matchNama = (l.nama || '').toLowerCase().includes(q);
+                const matchNik = (l.nik || '').toLowerCase().includes(q);
+                if (!matchNama && !matchNik) return false;
+              }
+              return true;
+            });
+
+            const accList = list.filter((l) => l.status === 'Disetujui');
+            const totalJam = accList.reduce((acc, curr) => acc + (Number(curr.durasi_jam) || 0), 0);
+            const totalUang = accList.reduce((acc, curr) => acc + (Number(curr.total_lembur) || 0), 0);
+
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                    <div className="text-slate-500 dark:text-slate-400 font-bold">Total Lembur Disetujui</div>
+                    <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {accList.length} Transaksi
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-[#ff7a00]/10 border border-[#ff7a00]/20 text-xs">
+                    <div className="text-slate-500 dark:text-slate-400 font-bold">Total Jam Lembur (ACC)</div>
+                    <div className="text-xl font-black text-[#ff7a00] mt-0.5">
+                      {totalJam} Jam
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs">
+                    <div className="text-slate-500 dark:text-slate-400 font-bold">Estimasi Total Upah Lembur</div>
+                    <div className="text-xl font-black text-blue-600 dark:text-blue-400 mt-0.5">
+                      Rp {totalUang.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase tracking-wider text-[11px]">
+                        <th className="py-3 px-3">Tanggal</th>
+                        <th className="py-3 px-3">Karyawan</th>
+                        <th className="py-3 px-3 text-center">Waktu</th>
+                        <th className="py-3 px-3 text-center">Durasi</th>
+                        <th className="py-3 px-3">Keterangan</th>
+                        <th className="py-3 px-3 text-center">Status</th>
+                        <th className="py-3 px-3">Disetujui Oleh</th>
+                        <th className="py-3 px-3 text-right">Total Upah</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {list.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-400">
+                            Tidak ada riwayat lembur pada bulan ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        list.map((l) => (
+                          <tr
+                            key={l.id}
+                            className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+                          >
+                            <td className="py-3 px-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                              {l.tanggal}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-extrabold text-slate-900 dark:text-white">{l.nama}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">NIK: {l.nik}</div>
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              {l.jam_mulai} - {l.jam_selesai}
+                            </td>
+                            <td className="py-3 px-3 text-center font-black text-[#ff7a00]">
+                              {l.durasi_jam} Jam
+                            </td>
+                            <td className="py-3 px-3 text-slate-600 dark:text-slate-300 max-w-xs truncate">
+                              {l.deskripsi || '-'}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span
+                                className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                                  l.status === 'Disetujui'
+                                    ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                    : 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
+                                }`}
+                              >
+                                {l.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-500 dark:text-slate-400 text-[11px]">
+                              {l.approved_by || '-'}
+                            </td>
+                            <td className="py-3 px-3 text-right font-bold text-slate-800 dark:text-slate-200 font-mono">
+                              Rp {(l.total_lembur || 0).toLocaleString('id-ID')}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

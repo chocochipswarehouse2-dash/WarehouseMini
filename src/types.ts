@@ -12,7 +12,8 @@ export type ActivePage =
   | 'presensi'
   | 'roster_shift'
   | 'lembur_cuti'
-  | 'hr_approval';
+  | 'hr_approval'
+  | 'hr_rekap';
 
 export type UserRole =
   | 'Superadmin'

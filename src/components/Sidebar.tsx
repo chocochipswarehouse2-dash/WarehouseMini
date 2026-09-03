@@ -25,6 +25,7 @@ import {
   Boxes,
   Lock,
   Database,
+  BarChart3,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, ROLE_DETAILS } from '../services/permissions';
@@ -162,6 +163,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Validasi lembur & cuti tim',
       access: canApproveHr,
       badge: 'ADMIN',
+    },
+    {
+      id: 'hr_rekap' as ActivePage,
+      label: 'Rekap & Laporan HR',
+      shortLabel: 'Rekap HR',
+      icon: BarChart3,
+      description: 'Rekap lembur, cuti & absensi',
+      access: canApproveHr,
+      badge: 'REKAP',
     },
   ].filter((item) => item.access);
 

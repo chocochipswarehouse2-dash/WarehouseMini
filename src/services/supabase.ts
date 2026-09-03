@@ -3237,3 +3237,24 @@ export async function fetchKaryawanDirectory(): Promise<KaryawanRecord[]> {
   }
 }
 
+/**
+ * Fetch all presensi records for a date range (and optional NIK)
+ */
+export async function fetchPresensiRange(
+  startDate: string,
+  endDate: string,
+  nik?: string
+): Promise<PresensiRecord[]> {
+  try {
+    let query = `select=*&tanggal=gte.${encodeURIComponent(startDate)}&tanggal=lte.${encodeURIComponent(endDate)}&order=tanggal.desc`;
+    if (nik && nik !== 'ALL') {
+      query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    const data = await supabaseFetch<PresensiRecord[]>('presensi', 'GET', null, query);
+    return data || [];
+  } catch (err) {
+    console.warn('fetchPresensiRange error:', err);
+    return [];
+  }
+}
+

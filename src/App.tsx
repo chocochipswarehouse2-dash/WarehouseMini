@@ -46,6 +46,7 @@ const PresensiView = React.lazy(() => import('./components/hr/PresensiView').the
 const RosterShiftView = React.lazy(() => import('./components/hr/RosterShiftView').then(m => ({ default: m.RosterShiftView })));
 const LemburCutiView = React.lazy(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
 const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
+const HrRekapView = React.lazy(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 
 import {
   fetchStockForLocations,
@@ -925,6 +926,13 @@ export default function App() {
 
             {activePage === 'hr_approval' && (
                 <HrApprovalView
+                  session={session}
+                  onShowToast={showToast}
+                />
+            )}
+
+            {activePage === 'hr_rekap' && (
+                <HrRekapView
                   session={session}
                   onShowToast={showToast}
                 />
