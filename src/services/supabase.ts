@@ -17,8 +17,8 @@ import {
   UserPermissions,
 } from '../types';
 
-export const DEFAULT_SUPABASE_URL = 'https://filgijcfhgqlirzhvwho.supabase.co';
-export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_L4FEkugwRKqcwFzLXfpZag_aByUy5mD';
+export const DEFAULT_SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_XFvjJipUzyi0EuM_tDTTsg_ll7TJ7rA';
 
 // Empty baseline seed - no dummy items
 export const DEFAULT_SEED_PRODUCTS: ProductItem[] = [];
@@ -78,7 +78,19 @@ export function getStoredSupabaseConfig() {
   } catch (e) {
     // Ignore invalid URLs here, let client throw
   }
-  const key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || DEFAULT_SUPABASE_ANON_KEY;
+  let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || DEFAULT_SUPABASE_ANON_KEY;
+
+  // Auto-migrate legacy project ref to the new default in browser localStorage
+  if (url && (url.includes('filgijcfhgqlirzhvwho') || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated')))) {
+    url = DEFAULT_SUPABASE_URL;
+    key = DEFAULT_SUPABASE_ANON_KEY;
+    if (isBrowser) {
+      localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
+      localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
+      localStorage.setItem('wms_supabase_v2_migrated', 'true');
+    }
+  }
+
   return { url, key };
 }
 
