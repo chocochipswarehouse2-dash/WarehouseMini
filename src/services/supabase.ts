@@ -522,28 +522,36 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
   const cleanLocs = locations.map((l) => l.trim()).filter(Boolean);
   if (!cleanLocs.length) return [];
 
-  // 1. Try querying stok_realtime or view_stok_realtime
+  // 1. Try querying view_stok_realtime with automatic pagination
   try {
     const lokParam = cleanLocs.map((l) => `"${l}"`).join(',');
-    let data: StockRealtimeItem[] | null = null;
-    try {
-      data = await supabaseFetch<StockRealtimeItem[]>(
-        'stok_realtime',
-        'GET',
-        null,
-        `lokasi=in.(${lokParam})&order=sku.asc,lokasi.asc`
-      );
-    } catch {
-      data = await supabaseFetch<StockRealtimeItem[]>(
-        'view_stok_realtime',
-        'GET',
-        null,
-        `lokasi=in.(${lokParam})&order=sku.asc,lokasi.asc`
-      );
+    const encodedLokParam = encodeURIComponent(lokParam);
+    const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+    const allFetched: StockRealtimeItem[] = [];
+    const pageSize = 1000;
+    let offset = 0;
+    const maxRows = 50000;
+
+    while (offset < maxRows) {
+      const endpoint = `${supaUrl}/rest/v1/view_stok_realtime?select=sku,lokasi,nama_produk,size,sisa_stok,area&lokasi=in.(${encodedLokParam})&order=sku.asc,lokasi.asc&limit=${pageSize}&offset=${offset}`;
+      const res = await fetch(endpoint, {
+        headers: {
+          apikey: supaKey,
+          Authorization: `Bearer ${supaKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!res.ok) break;
+      const chunk = (await res.json()) as StockRealtimeItem[];
+      if (!Array.isArray(chunk) || chunk.length === 0) break;
+      allFetched.push(...chunk);
+      if (chunk.length < pageSize) break;
+      offset += pageSize;
     }
-    if (data && Array.isArray(data) && data.length > 0) {
+
+    if (allFetched.length > 0) {
       const map = new Map<string, StockRealtimeItem>();
-      for (const it of data) {
+      for (const it of allFetched) {
         const key = `${(it.sku || '').trim().toUpperCase()}__${(it.lokasi || '').trim().toUpperCase()}`;
         if (!map.has(key)) {
           map.set(key, {
@@ -1112,6 +1120,77 @@ export async function deleteStockOpnameQueueItems(
   } catch (err: any) {
     console.error('Error deleting SO Queue items:', err);
     return { success: false, count: 0, error: err.message || 'Gagal menghapus item' };
+  }
+}
+
+/**
+ * Resync Stock Opname Queue items against live view_stok_realtime.
+ * Recalculates qty_sistem and selisih for pending items so that any truncation errors or stale data are rectified.
+ */
+export async function resyncStockOpnameQueueItems(
+  ids?: string[]
+): Promise<{ success: boolean; updatedCount: number; matchingCount: number; error?: string }> {
+  try {
+    let queryFilter = 'status=eq.PENDING&select=*&limit=5000';
+    if (ids && ids.length > 0) {
+      const inClause = ids.map((id) => `"${id}"`).join(',');
+      queryFilter += `&id=in.(${encodeURIComponent(inClause)})`;
+    }
+
+    const pendingItems = await supabaseFetch<StockOpnameQueueItem[]>(
+      'stock_opname_queue',
+      'GET',
+      null,
+      queryFilter
+    );
+
+    if (!pendingItems || !pendingItems.length) {
+      return { success: true, updatedCount: 0, matchingCount: 0 };
+    }
+
+    // Collect all distinct locations in pending items
+    const distinctLocations = Array.from(new Set(pendingItems.map((it) => it.lokasi).filter(Boolean)));
+    const liveStock = await fetchStockForLocations(distinctLocations);
+
+    const stockMap = new Map<string, number>();
+    for (const s of liveStock) {
+      const key = `${(s.sku || '').trim().toUpperCase()}__${(s.lokasi || '').trim().toUpperCase()}`;
+      stockMap.set(key, Number(s.sisa_stok) || 0);
+    }
+
+    let updatedCount = 0;
+    let matchingCount = 0;
+
+    for (const item of pendingItems) {
+      if (!item.id) continue;
+      const key = `${(item.sku || '').trim().toUpperCase()}__${(item.lokasi || '').trim().toUpperCase()}`;
+      const actualSys = stockMap.has(key) ? stockMap.get(key)! : 0;
+      const actualFisik = Number(item.qty_fisik) || 0;
+      const newSelisih = actualFisik - actualSys;
+
+      if (newSelisih === 0) {
+        matchingCount++;
+      }
+
+      if (Number(item.qty_sistem) !== actualSys || Number(item.selisih) !== newSelisih) {
+        await supabaseFetch(
+          'stock_opname_queue',
+          'PATCH',
+          {
+            qty_sistem: actualSys,
+            selisih: newSelisih,
+            alasan: newSelisih === 0 ? 'Opname Sesuai (Fisik = Sistem)' : item.alasan,
+          },
+          `id=eq.${item.id}`
+        );
+        updatedCount++;
+      }
+    }
+
+    return { success: true, updatedCount, matchingCount };
+  } catch (err: any) {
+    console.error('Error resyncing SO queue items:', err);
+    return { success: false, updatedCount: 0, matchingCount: 0, error: err.message };
   }
 }
 

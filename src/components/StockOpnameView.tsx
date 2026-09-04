@@ -24,6 +24,7 @@ import {
   approveStockOpnameQueueItems,
   rejectStockOpnameQueueItems,
   deleteStockOpnameQueueItems,
+  resyncStockOpnameQueueItems,
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
@@ -358,6 +359,31 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     });
   };
 
+  // Sinkronkan ulang stok sistem secara realtime dari Supabase view_stok_realtime
+  const handleResyncStock = async () => {
+    setIsActionLoading(true);
+    showGlobalLoading('Menyinkronkan stok sistem dengan Supabase...');
+    try {
+      const res = await resyncStockOpnameQueueItems(selectedSoIds.length > 0 ? selectedSoIds : undefined);
+      if (res.success) {
+        if (onNotify) {
+          onNotify(
+            `Sinkronisasi berhasil! ${res.updatedCount} item diperbarui. ${res.matchingCount} item sesuai (selisih 0).`,
+            'success'
+          );
+        }
+        await loadSoData();
+      } else {
+        if (onNotify) onNotify(`Gagal sinkronisasi: ${res.error}`, 'error');
+      }
+    } catch (e: any) {
+      if (onNotify) onNotify(e.message || 'Gagal sinkronisasi stok', 'error');
+    } finally {
+      setIsActionLoading(false);
+      hideGlobalLoading();
+    }
+  };
+
   // Export CSV
   const handleExportCSV = () => {
     if (!filteredQueue.length) {
@@ -453,6 +479,18 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span>Refresh Antrean</span>
+            </button>
+
+            <button
+              id="btnResyncSoStock"
+              type="button"
+              disabled={isLoading || isActionLoading}
+              onClick={handleResyncStock}
+              className="px-3.5 py-2 text-xs font-bold bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+              title="Sinkronkan ulang stok sistem di antrean SO dengan database Supabase secara realtime"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading ? 'animate-spin' : ''}`} />
+              <span>Sinkron Stok Sistem</span>
             </button>
 
             {canExportData && (
