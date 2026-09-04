@@ -50,6 +50,7 @@ import {
 import { CameraScanner } from './CameraScanner';
 import { FulfillmentRefillModal } from './FulfillmentRefillModal';
 import { PhysicalScanInput } from './PhysicalScanInput';
+import { ErrorBoundary } from './ErrorBoundary';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
   PickingListItem,
@@ -87,7 +88,7 @@ interface PickingTasksViewProps {
   productCatalog?: ProductItem[];
 }
 
-export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
+const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   onNotify,
   currentUser,
   productCatalog = [],
@@ -207,8 +208,8 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
         const parsed = JSON.parse(savedSession);
         if (parsed && parsed.activeSJ) {
           setActiveSJ(parsed.activeSJ);
-          setActiveItems(parsed.activeItems || []);
-          setUnexpectedItems(parsed.unexpectedItems || []);
+          setActiveItems(Array.isArray(parsed.activeItems) ? parsed.activeItems : []);
+          setUnexpectedItems(Array.isArray(parsed.unexpectedItems) ? parsed.unexpectedItems : []);
           setActiveLocation(parsed.activeLocation || '');
           setRekapCatatan(parsed.rekapCatatan || '');
           onNotify('Sesi Picking offline yang belum selesai berhasil dipulihkan', 'info');
@@ -290,13 +291,14 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   // Helper: Extract all locations for a given item / SKU (strictly warehouse area locations)
   const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
     const map = new Map<string, ProductLocationInfo>();
-    const cleanSku = (sku || '').trim().toUpperCase();
+    const cleanSku = String(sku || '').trim().toUpperCase();
 
     // 1. Primary from item.lokasi in Surat Jalan (if warehouse location)
-    if (itemLokasi && itemLokasi.trim()) {
-      const parts = itemLokasi
+    const strItemLokasi = String(itemLokasi || '').trim();
+    if (strItemLokasi) {
+      const parts = strItemLokasi
         .split(/[,/;\n|]+/)
-        .map((s) => s.trim().toUpperCase())
+        .map((s) => String(s || '').trim().toUpperCase())
         .filter((loc) => loc && isWarehouseLocation(loc));
       parts.forEach((loc, idx) => {
         map.set(loc, {
@@ -308,76 +310,80 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     }
 
     // 2. From productCatalog (only valid warehouse locations)
-    const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
-    if (catMatch) {
-      if (catMatch.lokasi) {
-        const parts = catMatch.lokasi
-          .split(/[,/;\n|]+/)
-          .map((s) => s.trim().toUpperCase())
-          .filter((loc) => loc && isWarehouseLocation(loc));
-        parts.forEach((loc, idx) => {
-          if (!map.has(loc)) {
-            map.set(loc, {
-              lokasi: loc,
-              isPrimary: map.size === 0 && idx === 0,
-              source: 'CATALOG',
-            });
-          }
-        });
-      }
-
-      if (Array.isArray(catMatch.locList)) {
-        catMatch.locList.forEach((itemLoc, idx) => {
-          if (typeof itemLoc === 'string') {
-            const loc = itemLoc.trim().toUpperCase();
-            if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
+    if (cleanSku) {
+      const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+      if (catMatch) {
+        if (catMatch.lokasi) {
+          const parts = String(catMatch.lokasi)
+            .split(/[,/;\n|]+/)
+            .map((s) => String(s || '').trim().toUpperCase())
+            .filter((loc) => loc && isWarehouseLocation(loc));
+          parts.forEach((loc, idx) => {
+            if (!map.has(loc)) {
               map.set(loc, {
                 lokasi: loc,
                 isPrimary: map.size === 0 && idx === 0,
                 source: 'CATALOG',
               });
             }
-          } else if (itemLoc && typeof itemLoc === 'object' && itemLoc.lokasi) {
-            const loc = itemLoc.lokasi.trim().toUpperCase();
-            if (loc && isWarehouseLocation(loc)) {
-              const existing = map.get(loc);
-              map.set(loc, {
-                lokasi: loc,
-                qty: itemLoc.qty !== undefined ? itemLoc.qty : existing?.qty,
-                isPrimary: existing?.isPrimary ?? (map.size === 0 && idx === 0),
-                source: 'CATALOG',
-              });
+          });
+        }
+
+        if (Array.isArray(catMatch.locList)) {
+          catMatch.locList.forEach((itemLoc, idx) => {
+            if (typeof itemLoc === 'string') {
+              const loc = String(itemLoc || '').trim().toUpperCase();
+              if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
+                map.set(loc, {
+                  lokasi: loc,
+                  isPrimary: map.size === 0 && idx === 0,
+                  source: 'CATALOG',
+                });
+              }
+            } else if (itemLoc && typeof itemLoc === 'object' && itemLoc.lokasi) {
+              const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
+              if (loc && isWarehouseLocation(loc)) {
+                const existing = map.get(loc);
+                map.set(loc, {
+                  lokasi: loc,
+                  qty: itemLoc.qty !== undefined ? itemLoc.qty : existing?.qty,
+                  isPrimary: existing?.isPrimary ?? (map.size === 0 && idx === 0),
+                  source: 'CATALOG',
+                });
+              }
             }
-          }
-        });
+          });
+        }
       }
     }
 
     // 3. From Realtime Supabase Stock (strictly only warehouse area and locations with available stock)
-    const realtimeList = realtimeSkuStocks[cleanSku] || [];
-    realtimeList.forEach((stk) => {
-      const loc = (stk.lokasi || '').trim().toUpperCase();
-      if (loc && isWarehouseLocation(loc, stk.area)) {
-        const existing = map.get(loc);
-        if (existing) {
-          if (stk.sisa_stok !== undefined) existing.qty = stk.sisa_stok;
-        } else {
-          map.set(loc, {
-            lokasi: loc,
-            qty: stk.sisa_stok,
-            isPrimary: map.size === 0,
-            source: 'REALTIME_STOCK',
-            area: stk.area
-          });
+    if (cleanSku) {
+      const realtimeList = realtimeSkuStocks[cleanSku] || [];
+      realtimeList.forEach((stk) => {
+        const loc = String(stk.lokasi || '').trim().toUpperCase();
+        if (loc && isWarehouseLocation(loc, stk.area)) {
+          const existing = map.get(loc);
+          if (existing) {
+            if (stk.sisa_stok !== undefined) existing.qty = stk.sisa_stok;
+          } else {
+            map.set(loc, {
+              lokasi: loc,
+              qty: stk.sisa_stok,
+              isPrimary: map.size === 0,
+              source: 'REALTIME_STOCK',
+              area: stk.area
+            });
+          }
         }
-      }
-    });
+      });
+    }
 
     if (map.size === 0) {
       map.set('A-01', { lokasi: 'A-01', isPrimary: true, source: 'SJ' });
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => isWarehouseLocation(l.lokasi));
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi));
 
     // Sort to prioritize primary location, then descending stock qty
     allLocs.sort((a, b) => {
@@ -876,30 +882,45 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   };
 
   const handleSelectSJ = (sj: PickingSuratJalanGroup) => {
+    if (!sj) return;
     if (sj.status === 'SELESAI') {
       setViewCompletedSJ(sj);
       return;
     }
 
     // Set active workspace
-    const itemsClone = sj.items.map((it) => {
-      const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === it.sku?.toUpperCase());
-      const effectiveSize = (it.size && it.size !== '-') 
-        ? it.size 
-        : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(it.sku));
-      const effectiveName = formatProductNameWithSize(it.nama_produk, effectiveSize);
-      return {
-        ...it,
-        size: effectiveSize,
-        nama_produk: effectiveName,
-        status: 'SEDANG PICKING' as const,
-        picker_name: it.picker_name || currentUser,
-      };
-    });
+    const safeItems = Array.isArray(sj.items) ? sj.items : [];
+    const itemsClone = safeItems
+      .filter((it) => it && it.sku)
+      .map((it) => {
+        const cleanSku = String(it.sku || '').trim().toUpperCase();
+        const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+        const effectiveSize = (it.size && it.size !== '-') 
+          ? it.size 
+          : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
+        const effectiveName = formatProductNameWithSize(it.nama_produk || cleanSku, effectiveSize);
+        return {
+          ...it,
+          sku: cleanSku,
+          size: effectiveSize,
+          nama_produk: effectiveName,
+          lokasi: it.lokasi || catMatch?.lokasi || 'A-01',
+          qty_req: Math.max(1, Number(it.qty_req) || 1),
+          qty_picked: Math.max(0, Number(it.qty_picked) || 0),
+          status: (it.status === 'SELESAI' ? 'SELESAI' : 'SEDANG PICKING') as const,
+          picker_name: it.picker_name || currentUser,
+        };
+      });
 
-    setActiveSJ(sj);
+    const safeUnexpected = Array.isArray(sj.unexpected_items) ? [...sj.unexpected_items] : [];
+
+    setActiveSJ({
+      ...sj,
+      items: itemsClone,
+      unexpected_items: safeUnexpected,
+    });
     setActiveItems(itemsClone);
-    setUnexpectedItems([...sj.unexpected_items]);
+    setUnexpectedItems(safeUnexpected);
     setRekapCatatan(sj.catatan || '');
     setActiveLocation('');
     setRecentScans([]);
@@ -909,7 +930,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Action: Petugas Klik Tombol Pilih/Alihkan ke Lokasi Alternatif
   const handleSelectAlternativeLocation = (item: PickingListItem, targetLoc: string) => {
-    const locClean = targetLoc.trim().toUpperCase();
+    const locClean = String(targetLoc || '').trim().toUpperCase();
     setActiveLocation(locClean);
     playCategoryBeep();
     vibrateDevice(50);
@@ -923,11 +944,13 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   const uniqueLocations = React.useMemo(() => {
     if (!activeSJ) return [];
     const locMap = new Map<string, { count: number; pending: number; isAlternative?: boolean }>();
-    activeItems.forEach((it) => {
+    (activeItems || []).forEach((it) => {
+      if (!it || !it.sku) return;
       const allLocs = getProductLocations(it.sku, it.lokasi);
-      const pendingQty = Math.max(0, it.qty_req - it.qty_picked);
+      const pendingQty = Math.max(0, (Number(it.qty_req) || 0) - (Number(it.qty_picked) || 0));
       allLocs.forEach((l) => {
-        const loc = l.lokasi.trim().toUpperCase();
+        if (!l || !l.lokasi) return;
+        const loc = String(l.lokasi).trim().toUpperCase();
         if (!loc) return;
         if (!locMap.has(loc)) {
           locMap.set(loc, { count: 0, pending: 0, isAlternative: !l.isPrimary });
@@ -1335,16 +1358,25 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       onNotify('Silakan ketik atau pilih SKU produk terlebih dahulu', 'warning');
       return;
     }
+    const cleanSku = newSjSkuInput.trim().toUpperCase();
     const catProd = productCatalog.find(
-      (p) => p.k.toUpperCase() === newSjSkuInput.trim().toUpperCase()
+      (p) => p.k && p.k.toUpperCase() === cleanSku
     );
+    const targetNoSj = editingSJGroup?.no_sj || activeSJ?.no_sj || '';
+    const cleanSize = (newSjSkuSize.trim() && newSjSkuSize.trim() !== '-')
+      ? newSjSkuSize.trim()
+      : (catProd?.s && catProd.s !== '-' ? catProd.s : extractSizeFromSku(cleanSku));
+    const cleanNama = newSjSkuNama.trim() || catProd?.p || `Produk ${cleanSku}`;
+    const formattedNama = formatProductNameWithSize(cleanNama, cleanSize);
+
     const newRow: PickingListItem = {
-      no_sj: activeSJ?.no_sj || '',
-      tanggal: activeSJ?.tanggal || new Date().toISOString().slice(0, 10),
-      tujuan: editSjTujuan || 'Marketplace',
-      sku: newSjSkuInput.trim().toUpperCase(),
-      nama_produk: newSjSkuNama.trim() || catProd?.p || `Produk ${newSjSkuInput}`,
-      size: newSjSkuSize.trim() || catProd?.s || '-',
+      id: `pick_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      no_sj: targetNoSj,
+      tanggal: editingSJGroup?.tanggal || activeSJ?.tanggal || new Date().toISOString().slice(0, 10),
+      tujuan: editSjTujuan || editingSJGroup?.tujuan || 'Marketplace',
+      sku: cleanSku,
+      nama_produk: formattedNama,
+      size: cleanSize || '-',
       lokasi: newSjSkuLoc.trim() || catProd?.lokasi || 'A-01',
       qty_req: Math.max(1, Number(newSjSkuQty) || 1),
       qty_picked: 0,
@@ -1378,30 +1410,74 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       return;
     }
     setIsSavingSjEdit(true);
-    showGlobalLoading('Menyimpan...');
+    showGlobalLoading('Menyimpan perubahan Surat Jalan...');
 
     try {
-      // 1. Sync changes to Supabase FIRST
-      const newItemsToAdd = editSjRows.filter((r) => !r.id);
-      const existingItems = editSjRows.filter((r) => !!r.id);
+      const targetNoSj = editingSJGroup.no_sj.trim().toUpperCase();
+
+      // Clean & sanitize all editSjRows
+      const sanitizedRows: PickingListItem[] = editSjRows
+        .filter((r) => r && r.sku && r.sku.trim())
+        .map((r, idx) => {
+          const cleanSku = String(r.sku || '').trim().toUpperCase();
+          const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+          const effectiveSize = (r.size && r.size !== '-') 
+            ? r.size 
+            : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
+          const effectiveName = formatProductNameWithSize(r.nama_produk || cleanSku, effectiveSize);
+          return {
+            ...r,
+            id: r.id || `pick_new_${Date.now()}_${idx}`,
+            no_sj: targetNoSj,
+            tujuan: editSjTujuan.trim(),
+            sku: cleanSku,
+            nama_produk: effectiveName,
+            size: effectiveSize || '-',
+            lokasi: r.lokasi || catMatch?.lokasi || 'A-01',
+            qty_req: Math.max(1, Number(r.qty_req) || 1),
+            qty_picked: Math.max(0, Number(r.qty_picked) || 0),
+            status: r.status || 'PENDING',
+          };
+        });
+
+      if (sanitizedRows.length === 0) {
+        onNotify('Surat Jalan harus memiliki minimal 1 item SKU yang valid', 'error');
+        return;
+      }
+
+      // 1. Sync changes to Supabase
+      const newItemsToAdd = sanitizedRows.filter((r) => !r.id || String(r.id).startsWith('pick_new_'));
+      const existingItems = sanitizedRows.filter((r) => r.id && !String(r.id).startsWith('pick_new_'));
       await updatePickingSuratJalanDetailsSupabase(
-        editingSJGroup.no_sj,
+        targetNoSj,
         editSjTujuan,
         existingItems,
         newItemsToAdd,
         deletedSjItemIds
       );
 
-      // 2. Update active SJ locally if it's the one currently open in workspace
-      if (activeSJ?.no_sj === editingSJGroup.no_sj) {
-        setActiveItems(editSjRows);
+      // 2. Update rawItems locally immediately so UI and filters update without waiting for fetch
+      setRawItems((prev) => {
+        const otherItems = prev.filter((it) => (it.no_sj || '').trim().toUpperCase() !== targetNoSj);
+        const updated = [...otherItems, ...sanitizedRows];
+        try {
+          localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
+      // 3. Update active SJ locally if it's the one currently open in workspace
+      if (activeSJ && (activeSJ.no_sj || '').trim().toUpperCase() === targetNoSj) {
+        setActiveItems(sanitizedRows);
         const updatedGroup: PickingSuratJalanGroup = {
           ...activeSJ,
           tujuan: editSjTujuan.trim(),
           catatan: editSjCatatan.trim(),
-          items: editSjRows,
-          total_items: editSjRows.length,
-          total_qty_req: editSjRows.reduce((a, b) => a + Number(b.qty_req || 0), 0),
+          items: sanitizedRows,
+          unexpected_items: Array.isArray(activeSJ.unexpected_items) ? activeSJ.unexpected_items : [],
+          total_items: sanitizedRows.length,
+          total_qty_req: sanitizedRows.reduce((a, b) => a + Number(b.qty_req || 0), 0),
+          total_qty_picked: sanitizedRows.reduce((a, b) => a + Number(b.qty_picked || 0), 0),
         };
         setActiveSJ(updatedGroup);
       }
@@ -2082,7 +2158,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
         </div>
 
         {/* Warning Section for Unexpected / Wrong Items (Salah Ambil) */}
-        {unexpectedItems.length > 0 && (
+        {unexpectedItems && unexpectedItems.length > 0 && (
           <div className="bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-400 dark:border-rose-700 p-4 rounded-2xl shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -2099,7 +2175,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
             </div>
 
             <div className="space-y-2">
-              {unexpectedItems.map((unexp, idx) => (
+              {(unexpectedItems || []).map((unexp, idx) => (
                 <div
                   key={idx}
                   className="bg-white dark:bg-[#131d31] p-3 rounded-xl border border-rose-200 dark:border-rose-900 flex flex-wrap justify-between items-center gap-2"
@@ -2178,17 +2254,21 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
             </span>
           </div>
 
-          {activeItems.map((item, index) => {
-            const isCompleted = item.qty_picked === item.qty_req;
-            const isOver = item.qty_picked > item.qty_req;
+          {(activeItems || []).map((item, index) => {
+            if (!item) return null;
+            const reqQty = Math.max(1, Number(item.qty_req) || 1);
+            const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+            const isCompleted = pickedQty === reqQty;
+            const isOver = pickedQty > reqQty;
+            const itemSku = String(item.sku || '').trim().toUpperCase();
 
-            const productLocs = getProductLocations(item.sku, item.lokasi);
+            const productLocs = getProductLocations(itemSku, item.lokasi);
             const primaryLoc = productLocs.find((l) => l.isPrimary) || productLocs[0];
-            const allWarehouseLocs = productLocs.filter(l => isWarehouseLocation(l.lokasi));
+            const allWarehouseLocs = productLocs.filter(l => l && l.lokasi && isWarehouseLocation(l.lokasi));
             const displayLokasi = allWarehouseLocs.length > 0 ? allWarehouseLocs.map(l => l.lokasi).join(', ') : (item.lokasi || 'A-01');
 
             const isCurrentShelf = activeLocation && (
-              allWarehouseLocs.some(l => l.lokasi.toUpperCase() === activeLocation.toUpperCase())
+              allWarehouseLocs.some(l => l && l.lokasi && l.lokasi.toUpperCase() === activeLocation.toUpperCase())
             );
 
             let cardBorder = 'border-slate-200 dark:border-slate-800';
@@ -2209,25 +2289,25 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
               cardBorder = 'border-amber-300 dark:border-amber-800/60 bg-amber-50/20 dark:bg-amber-950/10';
               statusBadge = (
                 <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-300 dark:border-amber-700/50">
-                  Lebih +{item.qty_picked - item.qty_req}
+                  Lebih +{pickedQty - reqQty}
                 </span>
               );
-            } else if (item.qty_picked > 0) {
+            } else if (pickedQty > 0) {
               cardBorder = 'border-blue-200 dark:border-blue-800/50 bg-blue-50/10 dark:bg-blue-950/10';
               statusBadge = (
                 <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
-                  Kurang {item.qty_req - item.qty_picked}
+                  Kurang {reqQty - pickedQty}
                 </span>
               );
             }
 
             const isWarehouse = isWarehouseLocation(primaryLoc?.lokasi || item.lokasi || '');
 
-            const catMatch = productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === item.sku?.toUpperCase());
+            const catMatch = productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === itemSku);
             const displaySize = (item.size && item.size !== '-') 
               ? item.size 
-              : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
-            const displayName = formatProductNameWithSize(item.nama_produk, displaySize);
+              : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(itemSku));
+            const displayName = formatProductNameWithSize(item.nama_produk || itemSku, displaySize);
 
             return (
               <div
@@ -3492,3 +3572,19 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     </div>
   );
 });
+
+export const PickingTasksView: React.FC<PickingTasksViewProps> = (props) => {
+  return (
+    <ErrorBoundary
+      fallbackTitle="Terjadi Kendala pada Tampilan Tugas Picking"
+      onReset={() => {
+        try {
+          localStorage.removeItem('wms_active_picking_session');
+        } catch {}
+        window.location.reload();
+      }}
+    >
+      <PickingTasksViewInner {...props} />
+    </ErrorBoundary>
+  );
+};

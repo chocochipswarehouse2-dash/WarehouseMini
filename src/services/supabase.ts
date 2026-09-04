@@ -2391,7 +2391,7 @@ export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]>
   try {
     const data = await supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc');
 
-    if (data && Array.isArray(data) && data.length > 0) {
+    if (data && Array.isArray(data)) {
       const groups = new Map<string, any>();
       
       for (const row of data) {
@@ -2417,6 +2417,18 @@ export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]>
            lokasi: row.lokasi || '-',
         });
       }
+
+      // Check local cache for any offline or unsynced records
+      try {
+        const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
+        for (const c of cached) {
+          if (c && c.noPeminjaman && !groups.has(c.noPeminjaman)) {
+            groups.set(c.noPeminjaman, c);
+            // Auto-sync missing record to Supabase in background
+            savePeminjamanToSupabase(c).catch(() => {});
+          }
+        }
+      } catch {}
       
       const records: PeminjamanRecord[] = Array.from(groups.values());
       localStorage.setItem('wms_peminjaman_cache', JSON.stringify(records));
@@ -2443,10 +2455,18 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
         { status: record.status || 'Dipinjam', tanggal_kembali: null },
         `no_peminjaman=eq.${encodeURIComponent(record.noPeminjaman || '')}`
       );
+      // Keep local cache updated
+      try {
+        const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
+        const updated = cached.map(c => c.noPeminjaman === record.noPeminjaman ? { ...c, status: record.status || 'Dipinjam' } : c);
+        localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+      } catch {}
       return true;
     }
 
-    const payload = (record.items || []).map(it => {
+    // Explicit numeric ID avoids collision with out-of-sync PostgreSQL sequence on peminjaman table
+    const baseId = Math.floor(Date.now() / 1000) * 1000;
+    const payload = (record.items || []).map((it, idx) => {
       const rawSize = (it.size || '').trim();
       const cleanSize = (rawSize && rawSize !== '-') 
         ? rawSize 
@@ -2454,6 +2474,7 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
       const rawNama = it.produk || it.sku || 'Unknown';
       const formattedNama = formatProductNameWithSize(rawNama, cleanSize);
       return {
+        id: baseId + idx,
         no_peminjaman: record.noPeminjaman,
         pic: record.namaPeminjam,
         keperluan: record.keperluan,
@@ -2472,9 +2493,25 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
     if (payload.length > 0) {
       await supabaseFetch('peminjaman', 'POST', payload);
     }
+
+    // Always keep local cache synced
+    try {
+      const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
+      const filtered = cached.filter(c => c.noPeminjaman !== record.noPeminjaman);
+      filtered.unshift(record);
+      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(filtered));
+    } catch {}
+
     return true;
   } catch (err) {
     console.warn('Error saving peminjaman to Supabase, caching locally:', err);
+    // Cache locally as fallback
+    try {
+      const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
+      const filtered = cached.filter(c => c.noPeminjaman !== record.noPeminjaman);
+      filtered.unshift(record);
+      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(filtered));
+    } catch {}
     return false;
   }
 }
@@ -2906,64 +2943,133 @@ export async function updatePickingSuratJalanDetailsSupabase(
   newItems: Array<{ sku: string; nama_produk: string; size?: string; lokasi?: string; qty_req: number }>,
   deletedItemIds: string[]
 ): Promise<boolean> {
+  const cleanNoSj = no_sj.trim().toUpperCase();
+  const isSpsOrPjm = cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM');
+
   try {
-    // Attempt to delete items from peminjaman
+    // 1. Delete removed items from picking_list and peminjaman
     if (deletedItemIds.length > 0) {
       for (const id of deletedItemIds) {
-        // we only have ID for picking_list, so we must fetch the SKU first to delete from peminjaman
-        supabaseFetch<any[]>('picking_list', 'GET', null, `id=eq.${id}`).then((rows) => {
-          if (rows && rows[0]) {
-            const encodedSj = encodeURIComponent(no_sj);
-            const encodedSku = encodeURIComponent(rows[0].sku);
-            if (encodedSj) {
-            supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}&sku=ilike.${encodedSku}`).catch(()=>{});
+        if (/^\d+$/.test(String(id))) {
+          try {
+            const rows = await supabaseFetch<any[]>('picking_list', 'GET', null, `id=eq.${id}`);
+            if (rows && rows[0] && isSpsOrPjm) {
+              const encodedSj = encodeURIComponent(cleanNoSj);
+              const encodedSku = encodeURIComponent(rows[0].sku);
+              await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}&sku=ilike.${encodedSku}`).catch(() => {});
             }
-          }
-        }).catch(()=>{});
+          } catch {}
+          await supabaseFetch('picking_list', 'DELETE', undefined, `id=eq.${id}`).catch(() => {});
+        }
       }
     }
     
     const nowIso = new Date().toISOString();
 
-    // 1. Update existing items
+    // 2. Update existing items
     for (const item of items) {
-      if (item.id) {
+      const cleanSku = (item.sku || '').trim().toUpperCase();
+      const patchData: Record<string, any> = {
+        tujuan: tujuan.trim(),
+        qty_req: Math.max(1, Number(item.qty_req) || 1),
+        lokasi: item.lokasi || 'A-01',
+        nama_produk: item.nama_produk,
+        size: item.size || '-',
+        sku: cleanSku,
+      };
+
+      if (item.id && /^\d+$/.test(String(item.id))) {
+        await supabaseFetch('picking_list', 'PATCH', patchData, `id=eq.${item.id}`).catch(() => {});
+      } else {
         await supabaseFetch(
           'picking_list',
           'PATCH',
-          {
-            tujuan: tujuan.trim(),
-            qty_req: item.qty_req,
-            lokasi: item.lokasi,
-            nama_produk: item.nama_produk,
-          },
-          `id=eq.${item.id}`
-        );
+          patchData,
+          `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(cleanSku)}`
+        ).catch(() => {});
       }
-    }
 
-    // 2. Delete removed items
-    for (const id of deletedItemIds) {
-      await supabaseFetch('picking_list', 'DELETE', undefined, `id=eq.${id}`);
+      // If SPS or PJM, also sync to peminjaman table
+      if (isSpsOrPjm && cleanSku) {
+        await supabaseFetch(
+          'peminjaman',
+          'PATCH',
+          {
+            nama_produk: item.nama_produk,
+            size: item.size || '-',
+            qty: Math.max(1, Number(item.qty_req) || 1),
+            lokasi: item.lokasi || 'BLOK F',
+          },
+          `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(cleanSku)}`
+        ).catch(() => {});
+      }
     }
 
     // 3. Insert newly added items
     if (newItems.length > 0) {
-      const rows = newItems.map((it) => ({
-        no_sj: no_sj.trim().toUpperCase(),
+      const basePickId = Math.floor(Date.now() / 1000) * 1000;
+      const rows = newItems.map((it, idx) => ({
+        id: basePickId + idx,
+        no_sj: cleanNoSj,
         tanggal: nowIso.slice(0, 10),
         tujuan: tujuan.trim(),
         sku: it.sku.trim().toUpperCase(),
         nama_produk: it.nama_produk.trim(),
         size: it.size || '-',
-        qty_req: Number(it.qty_req) || 1,
+        qty_req: Math.max(1, Number(it.qty_req) || 1),
         qty_picked: 0,
         lokasi: it.lokasi || 'A-01',
         status: 'PENDING' as const,
         created_at: nowIso,
       }));
-      await supabaseFetch('picking_list', 'POST', rows);
+      await supabaseFetch('picking_list', 'POST', rows).catch(() => {});
+
+      // If SPS / PJM, also add to peminjaman table
+      if (isSpsOrPjm) {
+        const pjmRows = newItems.map((it, idx) => ({
+          id: basePickId + 500 + idx,
+          no_peminjaman: cleanNoSj,
+          pic: tujuan.replace(/^SPS:\s*/i, '').split('-')[0]?.trim() || 'Operator',
+          keperluan: tujuan.split('-')[1]?.trim() || 'Peminjaman',
+          tanggal_pinjam: nowIso.slice(0, 10),
+          sku: it.sku.trim().toUpperCase(),
+          nama_produk: it.nama_produk.trim(),
+          size: it.size || '-',
+          qty: Math.max(1, Number(it.qty_req) || 1),
+          lokasi: it.lokasi || 'BLOK F',
+          status: 'Dipinjam',
+          operator: 'Operator',
+          keterangan: 'Added via edit SJ'
+        }));
+        await supabaseFetch('peminjaman', 'POST', pjmRows).catch(() => {});
+      }
     }
+
+    // 4. Immediately update local wms_picking_cache so everything stays synchronized
+    try {
+      const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
+      const filtered = cached.filter((c) => (c.no_sj || '').trim().toUpperCase() !== cleanNoSj);
+      const updatedExisting = items.map((it) => ({
+        ...it,
+        no_sj: cleanNoSj,
+        tujuan: tujuan.trim(),
+      }));
+      const brandNew = newItems.map((it, idx) => ({
+        id: `pick_new_${Date.now()}_${idx}`,
+        no_sj: cleanNoSj,
+        tanggal: nowIso.slice(0, 10),
+        tujuan: tujuan.trim(),
+        sku: it.sku.trim().toUpperCase(),
+        nama_produk: it.nama_produk.trim(),
+        size: it.size || '-',
+        qty_req: Math.max(1, Number(it.qty_req) || 1),
+        qty_picked: 0,
+        lokasi: it.lokasi || 'A-01',
+        status: 'PENDING' as const,
+        created_at: nowIso,
+      }));
+      localStorage.setItem('wms_picking_cache', JSON.stringify([...filtered, ...updatedExisting, ...brandNew]));
+    } catch {}
 
     return true;
   } catch (err) {
