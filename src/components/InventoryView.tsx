@@ -760,7 +760,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         setActiveAreaFilters(['ALL', 'GUDANG', 'STORE', 'ONLINE', 'OFFLINE']);
       }
     } else {
-      let next = activeAreaFilters.filter((x) => x !== 'ALL');
+      let next: AreaFilterType[] = activeAreaFilters.filter((x) => x !== 'ALL');
       if (next.includes(code)) {
         next = next.filter((x) => x !== code);
       } else {

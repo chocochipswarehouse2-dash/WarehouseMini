@@ -433,14 +433,14 @@ export default function App() {
                   const locUpper = newLog.lokasi!.toUpperCase();
                   return prev.map(p => {
                     if (p.k.toUpperCase() === skuUpper) {
-                      const updated = { ...p, stokMap: { ...(p.stokMap || {}) } };
+                      const updated = { ...p };
                       const qty = Number(newLog.qty) || 0;
-                      const currentLocStok = updated.stokMap[locUpper] || 0;
-                      
-                      if (newLog.type === 'IN' || newLog.type === 'ADJ_IN') {
-                        updated.stokMap[locUpper] = currentLocStok + qty;
-                      } else if (newLog.type === 'OUT' || newLog.type === 'ADJ_OUT') {
-                        updated.stokMap[locUpper] = Math.max(0, currentLocStok - qty);
+                      if (typeof updated.q === 'number') {
+                        if (newLog.type === 'IN' || newLog.type === 'ADJ_IN') {
+                          updated.q += qty;
+                        } else if (newLog.type === 'OUT' || newLog.type === 'ADJ_OUT') {
+                          updated.q = Math.max(0, updated.q - qty);
+                        }
                       }
                       upsertProductInLocalDb(updated).catch(() => {});
                       return updated;
@@ -1244,7 +1244,7 @@ export default function App() {
             localStorage.removeItem('wms_user_permissions');
           }
         }}
-        onRefreshCatalog={loadProducts}
+        onRefreshCatalog={() => loadProducts(true)}
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
         notificationPermission={notificationPermission}

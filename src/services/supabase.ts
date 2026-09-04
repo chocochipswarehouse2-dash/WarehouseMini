@@ -81,13 +81,16 @@ let currentConfig = {
 
 export function getStoredSupabaseConfig() {
   const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-  let url = (isBrowser ? localStorage.getItem('wms_supabase_url') : null) || DEFAULT_SUPABASE_URL;
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ? String(import.meta.env.VITE_SUPABASE_URL) : null;
+  const envKey = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ? String(import.meta.env.VITE_SUPABASE_ANON_KEY) : null;
+
+  let url = (isBrowser ? localStorage.getItem('wms_supabase_url') : null) || envUrl || DEFAULT_SUPABASE_URL;
   try {
     url = new URL(url).origin;
   } catch (e) {
     // Ignore invalid URLs here, let client throw
   }
-  let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || DEFAULT_SUPABASE_ANON_KEY;
+  let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
   // Auto-migrate legacy project ref to the new default in browser localStorage
   if (url && (url.includes('filgijcfhgqlirzhvwho') || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated')))) {

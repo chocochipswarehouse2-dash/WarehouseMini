@@ -87,7 +87,7 @@ interface SettingsModalProps {
   onClose: () => void;
   session: UserSession | null;
   onUpdateSession: (newSession: UserSession) => void;
-  onRefreshCatalog: (endpoint: string, token: string) => Promise<void>;
+  onRefreshCatalog: (endpoint?: string, token?: string) => Promise<void>;
   darkMode: boolean;
   onToggleDarkMode: () => void;
   notificationPermission: NotificationPermission;
@@ -97,7 +97,7 @@ interface SettingsModalProps {
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type SettingsTab = 'supabase' | 'gas' | 'users' | 'device' | 'deploy_apk' | 'whatsapp';
+type SettingsTab = 'database' | 'supabase' | 'gas' | 'users' | 'device' | 'deploy_apk' | 'whatsapp';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,

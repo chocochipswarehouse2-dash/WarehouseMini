@@ -36,6 +36,7 @@ interface UpdateDatabaseModalProps {
   onClose: () => void;
   session: UserSession | null;
   onRefreshCatalog?: () => Promise<void> | void;
+  onSuccess?: () => void;
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
@@ -242,6 +243,7 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   onClose,
   session,
   onRefreshCatalog,
+  onSuccess,
   onNotify,
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
@@ -636,6 +638,10 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
 
       // Reload cloud count
       await loadDatabaseCount();
+
+      if (onSuccess) {
+        onSuccess();
+      }
 
       if (onNotify) {
         onNotify(`Database berhasil diperbarui dengan ${uploadResult.totalUploaded.toLocaleString()} SKU baru!`, 'success');

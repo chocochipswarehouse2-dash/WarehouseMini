@@ -320,11 +320,15 @@ export interface ChannelStockItem {
 export interface StockRealtimeItem {
   id?: string;
   sku: string;
+  kode?: string;
   nama_produk?: string;
+  nama?: string;
   size?: string;
+  ukuran?: string;
   lokasi: string;
   area: string;
   sisa_stok: number;
+  qty?: number;
   updated_at?: string;
 }
 

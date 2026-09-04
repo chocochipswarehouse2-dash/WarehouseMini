@@ -907,7 +907,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           lokasi: it.lokasi || catMatch?.lokasi || 'A-01',
           qty_req: Math.max(1, Number(it.qty_req) || 1),
           qty_picked: Math.max(0, Number(it.qty_picked) || 0),
-          status: (it.status === 'SELESAI' ? 'SELESAI' : 'SEDANG PICKING') as const,
+          status: it.status === 'SELESAI' ? ('SELESAI' as const) : ('SEDANG PICKING' as const),
           picker_name: it.picker_name || currentUser,
         };
       });
@@ -1808,7 +1808,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 </span>
                 <button
                   type="button"
-                  onClick={handleOpenEditSJModal}
+                  onClick={() => handleOpenEditSJModal(activeSJ)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] rounded-lg flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition-all active:scale-95 ml-1"
                   title="Ubah info SJ, tambah SKU baru atau ubah target SKU"
                 >
