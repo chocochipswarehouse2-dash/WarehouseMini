@@ -269,7 +269,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
-    can_perbaikan: false,
+    can_perbaikan: true,
   }
 };
 
