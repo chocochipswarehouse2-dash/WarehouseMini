@@ -78,6 +78,7 @@ import {
   playSuccessBeep,
   playErrorBeep,
   playCategoryBeep,
+  playNewTaskChime,
   vibrateDevice,
 } from '../services/audio';
 
@@ -727,7 +728,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
+                    {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Perbaikan', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
                       const details = ROLE_DETAILS[r];
                       const isCurrent = session.role === r || (r === 'Superadmin' && session.role === 'All');
                       return (
@@ -866,7 +867,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Pilih Template Role Utama:
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
+                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Perbaikan', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
                           const details = ROLE_DETAILS[r];
                           const isSelected = newRole === r;
                           return (
@@ -1465,11 +1466,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="button"
                     onClick={() => {
                       playErrorBeep();
-                      vibrateDevice([100, 50, 100]);
                     }}
                     className="px-3 py-1.5 bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 rounded-xl text-xs font-bold hover:bg-rose-200 cursor-pointer"
                   >
-                    🔊 Test Beep Error
+                    🔊 Test Beep Error (Keras)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playNewTaskChime();
+                    }}
+                    className="px-3 py-1.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-bold hover:bg-amber-200 cursor-pointer"
+                  >
+                    🔔 Test Notif Tugas Baru
                   </button>
                 </div>
               </div>

@@ -27,6 +27,7 @@ import {
   Database,
   BarChart3,
   Users,
+  Scissors,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -49,6 +50,7 @@ interface SidebarProps {
   onOpenUpdateDatabase?: () => void;
   onLogout: () => void;
   totalScannedCount: number;
+  hasNewPickingAlert?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -69,6 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenUpdateDatabase,
   onLogout,
   totalScannedCount,
+  hasNewPickingAlert = false,
 }) => {
   const userIsAdmin = isSuperadmin(session);
   const canScan = userIsAdmin || hasPermission(session, 'can_scan');
@@ -77,6 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canViewInventory = userIsAdmin || hasPermission(session, 'can_view_inventory');
   const canApproveSo = userIsAdmin || hasPermission(session, 'can_approve_so');
   const canViewMutasi = userIsAdmin || hasPermission(session, 'can_view_mutasi');
+  const canPerbaikan = userIsAdmin || hasPermission(session, 'can_perbaikan');
   const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
@@ -127,6 +131,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: FileText,
       description: 'Log pinjam live TikTok/Shopee',
       access: canPeminjaman,
+    },
+    {
+      id: 'perbaikan' as ActivePage,
+      label: 'Perbaikan & Defect',
+      shortLabel: 'Perbaikan',
+      icon: Scissors,
+      description: 'Reject, Cuci, Permak & Defect',
+      access: canPerbaikan,
     },
   ].filter((item) => item.access);
 
@@ -211,6 +223,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
+            const isPicking = item.id === 'picking_tasks';
+            const showPickingBadge = isPicking && hasNewPickingAlert;
             return (
               <button
                 key={item.id}
@@ -224,18 +238,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 } ${collapsed ? 'justify-center px-2' : ''}`}
               >
                 <div
-                  className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                  className={`p-1.5 rounded-lg transition-colors shrink-0 relative ${
                     isActive
                       ? 'bg-white/20 text-white'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-[#ff7a00] group-hover:bg-[#ff7a00]/10'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
+                  {showPickingBadge && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping" />
+                  )}
                 </div>
 
                 {!collapsed && (
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs truncate leading-snug">{item.label}</div>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="text-xs truncate leading-snug">{item.label}</div>
+                      {showPickingBadge && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-rose-500 text-white rounded-full animate-pulse shrink-0">
+                          BARU
+                        </span>
+                      )}
+                      {(item as any).badgeText && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-400/30 rounded-full shrink-0">
+                          {(item as any).badgeText}
+                        </span>
+                      )}
+                    </div>
                     <div
                       className={`text-[10px] font-normal truncate ${
                         isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'

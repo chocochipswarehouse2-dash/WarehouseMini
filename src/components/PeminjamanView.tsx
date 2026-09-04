@@ -43,7 +43,7 @@ import {
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
-import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch } from '../utils/sortUtils';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
 
 interface PeminjamanViewProps {
   session: UserSession | null;
@@ -285,10 +285,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       const skuUpper = (cs.sku || '').toUpperCase().trim();
       if (!skuUpper) return;
       const total = typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0));
+      const effectiveSize = (cs.size && cs.size !== 'ALL' && cs.size !== '-') ? cs.size : extractSizeFromSku(cs.sku);
       const itemData = {
         sku: cs.sku,
         produk: cs.produk || cs.sku,
-        size: cs.size || 'ALL',
+        size: effectiveSize && effectiveSize !== '-' ? effectiveSize : (cs.size || 'ALL'),
         lokasi: cs.whLocStr || cs.locStr || 'Warehouse',
         stok: Math.max(0, total),
         whQty: cs.whQty || 0,
@@ -309,6 +310,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       const skuUpper = (p.k || '').toUpperCase().trim();
       if (!skuUpper) return;
       
+      const effectiveSize = (p.s && p.s !== 'ALL' && p.s !== '-') ? p.s : extractSizeFromSku(p.k || '');
       const existing = skuMap.get(skuUpper);
       if (existing) {
         // If existing has 0 stok but p has stokMap or channel stock
@@ -318,8 +320,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         if (existing.produk === skuUpper && p.p && p.p !== skuUpper) {
           existing.produk = p.p;
         }
-        if ((!existing.size || existing.size === 'ALL') && p.s) {
-          existing.size = p.s;
+        if ((!existing.size || existing.size === 'ALL' || existing.size === '-') && effectiveSize && effectiveSize !== '-') {
+          existing.size = effectiveSize;
         }
         return;
       }
@@ -331,7 +333,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       const itemData = {
         sku: p.k || '',
         produk: p.p || p.k || '',
-        size: p.s || 'ALL',
+        size: effectiveSize && effectiveSize !== '-' ? effectiveSize : (p.s || 'ALL'),
         lokasi: p.lokasi || 'Warehouse',
         stok: Math.max(0, stok || 0),
         whQty: 0,
@@ -395,9 +397,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
 
     // If typing custom / in-progress text
+    const inferredSize = extractSizeFromSku(rawVal);
     handleItemChange(itemId, {
       sku: rawVal,
       produk: rawVal,
+      size: inferredSize !== '-' ? inferredSize : '',
     });
   };
 
@@ -612,13 +616,20 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         tglPinjam,
         timestamp: nowIso,
         status: 'Dipinjam',
-        items: validItems.map((it) => ({
-          produk: it.produk,
-          sku: it.sku || `SKU-${it.produk.slice(0, 4).toUpperCase()}`,
-          size: it.size || 'ALL',
-          qty: it.qty,
-          lokasi: it.lokasi || 'BLOK F',
-        })),
+        items: validItems.map((it) => {
+          const rawSize = (it.size || '').trim();
+          const cleanSize = (rawSize && rawSize !== '-') 
+            ? rawSize 
+            : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
+          const formattedNama = formatProductNameWithSize(it.produk, cleanSize);
+          return {
+            produk: formattedNama,
+            sku: it.sku || `SKU-${it.produk.slice(0, 4).toUpperCase()}`,
+            size: cleanSize,
+            qty: it.qty,
+            lokasi: it.lokasi || 'BLOK F',
+          };
+        }),
         username: session?.username || 'Operator',
       };
 
@@ -627,18 +638,26 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
       // 2. Also create picking tasks in Supabase for Fulfillment
       try {
-        const pickingTasks: PickingListItem[] = validItems.map((it) => ({
-          no_sj: noSps,
-          tanggal: tglPinjam,
-          tujuan: `SPS: ${namaPeminjam.trim()} - ${keperluan.trim()}`,
-          sku: it.sku.toUpperCase(),
-          nama_produk: it.produk,
-          qty_req: it.qty,
-          qty_picked: 0,
-          lokasi: it.lokasi || 'BLOK F',
-          status: 'PENDING',
-          created_at: nowIso,
-        }));
+        const pickingTasks: PickingListItem[] = validItems.map((it) => {
+          const rawSize = (it.size || '').trim();
+          const cleanSize = (rawSize && rawSize !== '-') 
+            ? rawSize 
+            : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
+          const formattedNama = formatProductNameWithSize(it.produk, cleanSize);
+          return {
+            no_sj: noSps,
+            tanggal: tglPinjam,
+            tujuan: `SPS: ${namaPeminjam.trim()} - ${keperluan.trim()}`,
+            sku: it.sku.toUpperCase(),
+            nama_produk: formattedNama,
+            size: cleanSize,
+            qty_req: it.qty,
+            qty_picked: 0,
+            lokasi: it.lokasi || 'BLOK F',
+            status: 'PENDING',
+            created_at: nowIso,
+          };
+        });
         await supabaseFetch('picking_list', 'POST', pickingTasks);
       } catch (err) {
         console.warn('Gagal menambahkan ke picking_list Supabase', err);
@@ -783,7 +802,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   // WhatsApp Message Generator
   const generateWaMessage = (record: PeminjamanRecord, type: 'personal' | 'grup') => {
     if (type === 'personal') {
-      const itemsList = record.items.map((it) => `- ${it.produk} (Qty: ${it.qty})`).join('\n');
+      const itemsList = record.items.map((it) => `- ${it.produk} (Size: ${it.size}) (Qty: ${it.qty})`).join('\n');
       return (
         `Halo Ka ${record.namaPeminjam},\n` +
         `Pengajuan peminjaman produk kamu telah kami terima:\n\n` +
@@ -796,7 +815,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       );
     } else {
       const itemsList = record.items
-        .map((it) => `📦 ${it.produk}\n🔢 Qty: ${it.qty} pcs | 📍 Lokasi: ${it.lokasi}`)
+        .map((it) => `📦 ${it.produk} (Size: ${it.size})\n🔢 Qty: ${it.qty} pcs | 📍 Lokasi: ${it.lokasi}`)
         .join('\n\n');
       return (
         `@vina @yesi @novi @ria @nur\n` +

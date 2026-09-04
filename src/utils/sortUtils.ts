@@ -99,3 +99,52 @@ export function fuzzySearchMultiple(query: string, targets: (string | undefined)
   }
   return true;
 }
+
+/**
+ * Extract size from SKU if size is not explicitly provided.
+ * Recognizes common apparel sizing patterns:
+ * - Separated by - / _ / space: e.g. "SKU-M", "SKU_XL", "SKU S"
+ * - Trailing standard sizes: e.g. "XXXL", "3XL", "XXL", "2XL", "XL", "XS", "ALL", "FS"
+ * - Single letter trailing codes: e.g. "F26FBH363BNM" -> "M", "F24CBI160WHS" -> "S", "F24CBI160CHS" -> "S"
+ */
+export function extractSizeFromSku(sku: string): string {
+  const clean = (sku || '').trim().toUpperCase();
+  if (!clean || clean.length < 3) return '-';
+
+  // 1. Explicit separator: -S, _M, /L, .XL, -ALL, -FS
+  const sepMatch = clean.match(/[-_/\s.](XXXL|3XL|XXL|2XL|XL|XS|[SML]|ALL|FS)$/i);
+  if (sepMatch) return sepMatch[1].toUpperCase();
+
+  // 2. Trailing multi-character standard sizes
+  const multiMatch = clean.match(/(XXXL|3XL|XXL|2XL|XL|XS|ALL|FS)$/i);
+  if (multiMatch) return multiMatch[1].toUpperCase();
+
+  // 3. Trailing single letter size (S, M, L) preceded by letter/digit (e.g. BNM -> M, WHS -> S, CHS -> S)
+  if (clean.length >= 4) {
+    const singleMatch = clean.match(/[A-Z0-9]([SML])$/i);
+    if (singleMatch) return singleMatch[1].toUpperCase();
+  }
+
+  return '-';
+}
+
+/**
+ * Format product name so the size is guaranteed to be visible in the name
+ * if size is known and not already contained in the product name.
+ */
+export function formatProductNameWithSize(name: string, size?: string): string {
+  const cleanName = (name || '').trim();
+  const cleanSize = (size || '').trim().toUpperCase();
+  if (!cleanName) return '';
+  if (!cleanSize || cleanSize === '-' || cleanSize === 'DEFAULT') {
+    return cleanName;
+  }
+
+  // Check if name already has the size (e.g. "Luca Skirt Brown - M", "Luca Skirt Brown (M)", "Luca Skirt Brown M")
+  const regex = new RegExp(`(?:[-/( ]|^)\\s*${cleanSize}\\s*(?:[-/) ]|$)`, 'i');
+  if (regex.test(cleanName)) {
+    return cleanName;
+  }
+
+  return `${cleanName} - ${cleanSize}`;
+}

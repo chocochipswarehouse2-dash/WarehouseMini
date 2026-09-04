@@ -17,7 +17,7 @@ export interface PermissionGroup {
   permissions: PermissionItem[];
 }
 
-export const TOTAL_PERMISSIONS_COUNT = 18;
+export const TOTAL_PERMISSIONS_COUNT = 19;
 
 export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
@@ -40,6 +40,11 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         key: 'can_peminjaman',
         label: 'Peminjaman Barang (SPS)',
         description: 'Peminjaman sample baju live TikTok/Shopee & pengembalian',
+      },
+      {
+        key: 'can_perbaikan',
+        label: 'Perbaikan, Cuci & Defect',
+        description: 'Pengelolaan reject, sortir QC, cuci, permak, dan ACC defect',
       },
     ],
   },
@@ -164,6 +169,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: true,
     can_view_karyawan: true, can_view_presensi: true, can_view_roster: true, can_view_lembur_cuti: true,
     can_approve_hr: true,
+    can_perbaikan: true,
   },
   'All': {
     can_scan: true, can_picking: true, can_peminjaman: true,
@@ -173,6 +179,17 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: true,
     can_view_karyawan: true, can_view_presensi: true, can_view_roster: true, can_view_lembur_cuti: true,
     can_approve_hr: true,
+    can_perbaikan: true,
+  },
+  'Perbaikan': {
+    can_scan: true, can_picking: false, can_peminjaman: false,
+    can_view_inventory: true, can_view_mutasi: true, can_approve_so: false,
+    can_export_data: true, can_sync_dealpos: false, can_manage_users: false,
+    can_manage_settings: false, can_edit_data: true, can_delete_data: false,
+    can_import_export_data: false,
+    can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
+    can_approve_hr: false,
+    can_perbaikan: true,
   },
   'HR & Admin': {
     can_scan: false, can_picking: false, can_peminjaman: false,
@@ -182,6 +199,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: true, can_view_presensi: true, can_view_roster: true, can_view_lembur_cuti: true,
     can_approve_hr: true,
+    can_perbaikan: false,
   },
   'Scanner Barcode': {
     can_scan: true, can_picking: false, can_peminjaman: false,
@@ -191,6 +209,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   },
   'Inventory': {
     can_scan: false, can_picking: false, can_peminjaman: false,
@@ -200,6 +219,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   },
   'Stock Opname': {
     can_scan: false, can_picking: false, can_peminjaman: false,
@@ -209,6 +229,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   },
   'Mutasi': {
     can_scan: false, can_picking: false, can_peminjaman: false,
@@ -218,6 +239,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   },
   'Tugas Picking': {
     can_scan: false, can_picking: true, can_peminjaman: false,
@@ -227,6 +249,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   },
   'Peminjaman': {
     can_scan: false, can_picking: false, can_peminjaman: true,
@@ -236,6 +259,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   },
   'Operator': {
     can_scan: true, can_picking: true, can_peminjaman: false,
@@ -245,6 +269,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_import_export_data: false,
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
+    can_perbaikan: false,
   }
 };
 
@@ -296,6 +321,7 @@ export const ROLE_DETAILS: Record<string, { desc: string, icon: string, badge: s
   Mutasi: { desc: 'Melihat riwayat mutasi barang', icon: '🔄', badge: 'bg-amber-500' },
   'Tugas Picking': { desc: 'Akses fitur Tugas Picking pesanan', icon: '🛒', badge: 'bg-orange-500' },
   Peminjaman: { desc: 'Akses fitur Peminjaman / SPS', icon: '🤝', badge: 'bg-cyan-500' },
+  Perbaikan: { desc: 'Akses perbaikan, sortir QC, cuci, permak & defect', icon: '✂️', badge: 'bg-rose-600' },
   'HR & Admin': { desc: 'Akses khusus data karyawan, absensi, jadwal roster & approval HR', icon: '👥', badge: 'bg-teal-500' },
   Operator: { desc: 'Akses default operasional', icon: '⚙️', badge: 'bg-slate-500' },
   All: { desc: 'Akses penuh (Legacy)', icon: '⭐', badge: 'bg-indigo-500' },
@@ -326,6 +352,8 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
       return hasPermission(session, 'can_picking');
     case 'peminjaman':
       return hasPermission(session, 'can_peminjaman');
+    case 'perbaikan':
+      return hasPermission(session, 'can_perbaikan');
     case 'karyawan':
       return hasPermission(session, 'can_view_karyawan');
     case 'presensi':

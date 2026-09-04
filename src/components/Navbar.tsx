@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   BarChart3,
   Users,
+  Scissors,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -43,6 +44,7 @@ interface NavbarProps {
   onOpenApkModal: () => void;
   onLogout: () => void;
   totalScannedCount: number;
+  hasNewPickingAlert?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -61,6 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenApkModal,
   onLogout,
   totalScannedCount,
+  hasNewPickingAlert = false,
 }) => {
   const getPageInfo = () => {
     switch (activePage) {
@@ -76,6 +79,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Tugas Picking', subtitle: 'Ambil Barang Surat Jalan', icon: Package };
       case 'peminjaman':
         return { title: 'Peminjaman (SPS)', subtitle: 'Log Pinjam Live & Studio', icon: FileText };
+      case 'perbaikan':
+        return { title: 'Perbaikan & Defect', subtitle: 'Reject, Cuci, Permak & Defect', icon: Scissors };
       case 'karyawan':
         return { title: 'Data Karyawan', subtitle: 'Direktori & Profil Karyawan', icon: Users };
       case 'presensi':
@@ -167,6 +172,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right side: Quick Action Buttons & User Summary */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Quick Shortcut to Picking if there is a new picking task */}
+        {hasNewPickingAlert && activePage !== 'picking_tasks' && (
+          <button
+            type="button"
+            onClick={() => onSelectPage('picking_tasks')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-xs font-black shadow-md shadow-rose-500/30 animate-bounce cursor-pointer transition-all active:scale-95"
+            title="Ada tugas picking baru! Klik untuk buka."
+          >
+            <Package className="w-3.5 h-3.5" />
+            <span className="hidden xs:inline">Tugas Baru!</span>
+          </button>
+        )}
+
         {/* APK / PWA Install Button */}
         <button
           id="btnOpenApkModal"

@@ -9,6 +9,7 @@ export type ActivePage =
   | 'stock_opname'
   | 'mutasi_log'
   | 'inventory'
+  | 'perbaikan'
   | 'karyawan'
   | 'presensi'
   | 'roster_shift'
@@ -24,6 +25,7 @@ export type UserRole =
   | 'Mutasi'
   | 'Tugas Picking'
   | 'Peminjaman'
+  | 'Perbaikan'
   | 'HR & Admin'
   | 'Operator'
   | 'Custom'
@@ -47,7 +49,8 @@ export type UserPermissionKey =
   | 'can_view_presensi'
   | 'can_view_roster'
   | 'can_view_lembur_cuti'
-  | 'can_approve_hr';
+  | 'can_approve_hr'
+  | 'can_perbaikan';
 
 export interface UserPermissions {
   can_scan: boolean;
@@ -68,6 +71,7 @@ export interface UserPermissions {
   can_view_roster?: boolean;
   can_view_lembur_cuti?: boolean;
   can_approve_hr?: boolean;
+  can_perbaikan?: boolean;
 }
 
 export interface WmsUser {
@@ -426,3 +430,58 @@ export interface CameraDevice {
   id: string;
   label: string;
 }
+
+// ------------------------------------------------------------
+// MODUL PERBAIKAN: REJECT, CUCI, PERMAK, DEFECT
+// ------------------------------------------------------------
+export type PerbaikanTahap =
+  | 'REJECT'            // Baru masuk, menunggu sortir Kepala QC
+  | 'CUCI'              // Sedang proses pencucian noda
+  | 'PERMAK'            // Sedang proses jahit/permak
+  | 'DEFECT'            // Vonis cacat permanen / gagal perbaikan
+  | 'SELESAI_GRADE_A'   // Sembuh/bersih, kembali ke stok reguler
+  | 'SELESAI_DEFECT_SALE' // Selesai di-ACC harga obral defect
+  | 'SELESAI_SCRAP';    // Dimusnahkan / write-off limbah
+
+export type PerbaikanStatusPengerjaan =
+  | 'PENDING'
+  | 'SEDANG_PROSES'
+  | 'SELESAI_CUCI'
+  | 'SELESAI_PERMAK'
+  | 'GAGAL';
+
+export interface PerbaikanTicket {
+  id?: number | string;
+  ticket_no: string;            // e.g. RJC-20260904-001
+  tanggal: string;
+  sku: string;
+  nama_produk: string;
+  size?: string;
+  qty: number;
+  lokasi_asal: string;          // e.g. A-01 / RETUR / PERBAIKAN-01
+  lokasi_sekarang: string;      // e.g. PERBAIKAN-01, CC-01, PMK-01, DF-01
+  is_already_in_repair?: boolean;
+  sumber_barang: 'Gudang Fisik' | 'Retur Marketplace' | 'Penerimaan CMT' | 'Live/Studio' | 'Toko';
+  kategori_rusak: 'Noda / Kotor' | 'Jahitan Rusak' | 'Kain Sobek / Bolong' | 'Kancing / Resleting' | 'Cacat Kain / Warna' | 'Aksesoris Kurang' | 'Lainnya';
+  detail_kerusakan: string;
+  foto_urls: string[];          // WebP base64 / URL terkompresi
+  foto_sesudah?: string[];
+  tahap: PerbaikanTahap;
+  status_pengerjaan: PerbaikanStatusPengerjaan;
+  qc_pic?: string;
+  qc_tanggal?: string;
+  qc_catatan?: string;
+  petugas_reparasi?: string;
+  reparasi_mulai?: string;
+  reparasi_selesai?: string;
+  reparasi_catatan?: string;
+  biaya_reparasi?: number;
+  acc_harga_defect?: number;
+  acc_harga_by?: string;
+  acc_harga_tanggal?: string;
+  acc_harga_catatan?: string;
+  operator_input: string;
+  created_at?: string;
+  updated_at?: string;
+}
+

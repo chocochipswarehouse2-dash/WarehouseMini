@@ -78,7 +78,7 @@ import {
   playSaveSuccessChime,
   vibrateDevice,
 } from '../services/audio';
-import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch } from '../utils/sortUtils';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
 
 
 interface PickingTasksViewProps {
@@ -430,11 +430,22 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
       }
 
       const group = map.get(sjKey)!;
+      const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === item.sku?.toUpperCase());
+      const effectiveSize = (item.size && item.size !== '-') 
+        ? item.size 
+        : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
+      const effectiveName = formatProductNameWithSize(item.nama_produk, effectiveSize);
+      const enhancedItem: PickingListItem = {
+        ...item,
+        size: effectiveSize,
+        nama_produk: effectiveName,
+      };
+
       if (item.is_unexpected || item.qty_req === 0) {
-        group.unexpected_items.push(item);
+        group.unexpected_items.push(enhancedItem);
         group.total_qty_picked += Number(item.qty_picked) || 0;
       } else {
-        group.items.push(item);
+        group.items.push(enhancedItem);
         group.total_items += 1;
         group.total_qty_req += Number(item.qty_req) || 0;
         group.total_qty_picked += Number(item.qty_picked) || 0;
@@ -871,11 +882,20 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
     }
 
     // Set active workspace
-    const itemsClone = sj.items.map((it) => ({
-      ...it,
-      status: 'SEDANG PICKING' as const,
-      picker_name: it.picker_name || currentUser,
-    }));
+    const itemsClone = sj.items.map((it) => {
+      const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === it.sku?.toUpperCase());
+      const effectiveSize = (it.size && it.size !== '-') 
+        ? it.size 
+        : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(it.sku));
+      const effectiveName = formatProductNameWithSize(it.nama_produk, effectiveSize);
+      return {
+        ...it,
+        size: effectiveSize,
+        nama_produk: effectiveName,
+        status: 'SEDANG PICKING' as const,
+        picker_name: it.picker_name || currentUser,
+      };
+    });
 
     setActiveSJ(sj);
     setActiveItems(itemsClone);
@@ -2203,6 +2223,12 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
 
             const isWarehouse = isWarehouseLocation(primaryLoc?.lokasi || item.lokasi || '');
 
+            const catMatch = productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === item.sku?.toUpperCase());
+            const displaySize = (item.size && item.size !== '-') 
+              ? item.size 
+              : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
+            const displayName = formatProductNameWithSize(item.nama_produk, displaySize);
+
             return (
               <div
                 key={item.id || index}
@@ -2238,9 +2264,9 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
                     </button>
 
                     {/* BIG SIZE BADGE */}
-                    {item.size && item.size !== '-' && (
+                    {displaySize && displaySize !== '-' && (
                       <span className="px-3 py-1.5 bg-amber-500/15 text-amber-900 dark:text-amber-300 border-2 border-amber-500/40 text-xs sm:text-sm font-black rounded-xl shadow-xs uppercase tracking-wide">
-                        Size: {item.size}
+                        Size: {displaySize}
                       </span>
                     )}
 
@@ -2259,7 +2285,7 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
 
                   {/* BIG NAMA PRODUK */}
                   <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white leading-tight">
-                    {item.nama_produk}
+                    {displayName}
                   </h3>
 
 

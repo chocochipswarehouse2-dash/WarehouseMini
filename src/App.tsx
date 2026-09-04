@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, startTransition } from 'react';
 import confetti from 'canvas-confetti';
-import { Scan, FileText, ShieldAlert } from 'lucide-react';
+import { Scan, FileText, ShieldAlert, Package, X } from 'lucide-react';
 import {
   CategoryType,
   ProductItem,
@@ -38,6 +38,7 @@ import {
 
 // Lazy load large components
 const PeminjamanView = React.lazy(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
+const PerbaikanView = React.lazy(() => import('./components/PerbaikanView').then(m => ({ default: m.PerbaikanView })));
 const PickingTasksView = React.lazy(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
 const StockOpnameView = React.lazy(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
 const MutasiLogView = React.lazy(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
@@ -65,6 +66,7 @@ import { getDefaultPageForSession, canAccessPage, canAccessSettings } from './se
 import {
   playCategoryBeep,
   playErrorBeep,
+  playNewTaskChime,
   playSaveSuccessChime,
   playSuccessBeep,
   vibrateDevice,
@@ -120,6 +122,14 @@ export default function App() {
     getNotificationPermissionStatus()
   );
 
+  // Realtime Incoming Picking Task Alert
+  const [newPickingTaskAlert, setNewPickingTaskAlert] = useState<{
+    no_sj: string;
+    count: number;
+    tujuan: string;
+    timestamp: number;
+  } | null>(null);
+
   // Active module page
   const [activePage, setActivePage] = useState<ActivePage>(() => getDefaultPageForSession(session));
   const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getDefaultPageForSession(session)]));
@@ -129,6 +139,10 @@ export default function App() {
     if (session && !canAccessPage(session, activePage)) {
       const allowedPage = getDefaultPageForSession(session);
       setActivePage(allowedPage);
+    }
+    // Dismiss alert tugas picking jika user sedang berada di halaman picking
+    if (activePage === 'picking_tasks') {
+      setNewPickingTaskAlert(null);
     }
   }, [session, activePage]);
 
@@ -394,6 +408,8 @@ export default function App() {
     if (!session) return;
 
     let debounceCatalogTimer: any = null;
+    let pickingDebounceTimer: any = null;
+    let incomingPickingRows: Array<{ no_sj: string; tujuan?: string; nama_produk?: string; sku?: string }> = [];
     try {
       const supabase = getSupabaseClient();
       const channel = supabase
@@ -488,6 +504,62 @@ export default function App() {
           { event: '*', schema: 'public', table: 'picking_list' },
           (payload) => {
             globalRealtimeStore.notify('picking_list', payload);
+
+            // Notifikasi Realtime saat ada Tugas Picking / Surat Jalan / Refill baru diinput oleh Admin
+            if (payload.eventType === 'INSERT' && payload.new) {
+              const row = payload.new as any;
+              const sj = row.no_sj || 'Tugas Baru';
+              const tujuan = row.tujuan || 'Gudang';
+              incomingPickingRows.push({
+                no_sj: sj,
+                tujuan,
+                nama_produk: row.nama_produk,
+                sku: row.sku,
+              });
+
+              if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
+              pickingDebounceTimer = setTimeout(() => {
+                const totalItems = incomingPickingRows.length;
+                const uniqueSjs = Array.from(new Set(incomingPickingRows.map((r) => r.no_sj))).filter(Boolean);
+                const firstSj = uniqueSjs[0] || 'Surat Jalan';
+                const firstTujuan = incomingPickingRows[0]?.tujuan || 'Gudang';
+                incomingPickingRows = [];
+
+                // 1. Putar nada lonceng tugas baru (jelas & nyaring di gudang)
+                playNewTaskChime();
+
+                // 2. Getarkan HP picker
+                vibrateDevice([250, 100, 250, 100, 450]);
+
+                // 3. Web Push / System Notification (muncul di status bar HP / Chrome)
+                const notifTitle = '📋 Tugas Picking Baru Masuk!';
+                const notifBody =
+                  uniqueSjs.length > 1
+                    ? `${uniqueSjs.length} Surat Jalan baru masuk (${totalItems} SKU). Buka untuk mulai picking.`
+                    : `SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}. Buka untuk mulai picking.`;
+
+                showPushNotification(notifTitle, {
+                  body: notifBody,
+                  tag: `picking-task-${firstSj}`,
+                });
+
+                // 4. In-App Toast
+                showToast(
+                  uniqueSjs.length > 1
+                    ? `📋 ${uniqueSjs.length} Tugas Picking Baru Masuk (${totalItems} item)!`
+                    : `📋 Tugas Picking Baru Masuk: SJ #${firstSj} (${totalItems} item) - Tujuan: ${firstTujuan}`,
+                  'info'
+                );
+
+                // 5. Simpan state alert untuk banner & badge di UI
+                setNewPickingTaskAlert({
+                  no_sj: firstSj,
+                  count: totalItems,
+                  tujuan: firstTujuan,
+                  timestamp: Date.now(),
+                });
+              }, 650);
+            }
           }
         )
         .on(
@@ -503,6 +575,7 @@ export default function App() {
 
       return () => {
         if (debounceCatalogTimer) clearTimeout(debounceCatalogTimer);
+        if (pickingDebounceTimer) clearTimeout(pickingDebounceTimer);
         supabase.removeChannel(channel);
       };
     } catch (err) {
@@ -870,6 +943,56 @@ export default function App() {
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
+      {/* Floating Incoming Picking Task Banner */}
+      {newPickingTaskAlert && activePage !== 'picking_tasks' && (
+        <aside
+          role="status"
+          aria-live="polite"
+          aria-label="Notifikasi Tugas Picking Baru"
+          className="fixed bottom-20 sm:bottom-6 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
+          <div className="bg-gradient-to-r from-[#ff7a00] to-amber-600 text-white p-3.5 rounded-2xl shadow-xl shadow-[#ff7a00]/30 border border-orange-300/40 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 animate-pulse">
+                <Package className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-orange-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span>Tugas Picking Masuk!</span>
+                </div>
+                <div className="text-sm font-black truncate">
+                  SJ #{newPickingTaskAlert.no_sj} ({newPickingTaskAlert.count} Item)
+                </div>
+                <div className="text-[11px] text-orange-100 truncate font-medium">
+                  Tujuan: {newPickingTaskAlert.tujuan}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  handleSelectPage('picking_tasks');
+                  setNewPickingTaskAlert(null);
+                }}
+                className="px-3 py-1.5 bg-white text-[#ff7a00] hover:bg-orange-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
+              >
+                Buka
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewPickingTaskAlert(null)}
+                aria-label="Tutup pemberitahuan tugas picking baru"
+                className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
       {/* Login Modal Overlay */}
       <LoginModal
         isOpen={!session}
@@ -897,6 +1020,7 @@ export default function App() {
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onLogout={handleLogout}
         totalScannedCount={scannedData.length}
+        hasNewPickingAlert={!!newPickingTaskAlert}
       />
 
       {/* Main App Container (Navbar + Page Content) */}
@@ -918,6 +1042,7 @@ export default function App() {
           onOpenApkModal={() => setIsApkModalOpen(true)}
           onLogout={handleLogout}
           totalScannedCount={scannedData.length}
+          hasNewPickingAlert={!!newPickingTaskAlert}
         />
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
@@ -1035,6 +1160,14 @@ export default function App() {
                   onNotify={showToast}
                   currentUser={session?.username || 'Operator'}
                   productCatalog={productDatabase}
+                />
+            )}
+
+            {activePage === 'perbaikan' && (
+                <PerbaikanView
+                  session={session}
+                  productCatalog={productDatabase}
+                  onShowToast={showToast}
                 />
             )}
 
