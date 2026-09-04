@@ -70,7 +70,6 @@ import {
   isWarehouseLocation,
   getAreaFromLokasi,
   getSupabaseClient,
-  supabaseFetch,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -180,8 +179,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     lokasi: string;
     lokasi_picked: string;
     targetSJItemSku?: string;
-    originalSku?: string;
-    id?: string | number;
   } | null>(null);
 
   // Modal Rekap Penyelesaian
@@ -1270,8 +1267,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       lokasi: it.lokasi || 'A-01',
       lokasi_picked: it.lokasi_picked || it.lokasi || activeLocation || 'A-01',
       targetSJItemSku: '',
-      originalSku: it.sku,
-      id: it.id,
     });
     setIsEditItemModalOpen(true);
   };
@@ -1323,104 +1318,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         onNotify(`Data salah ambil ${editingItemData.sku} diperbarui.`, 'info');
       }
     } else {
-      // REGULAR ITEM - Allows editing picked qty, location, and substituting SKU/Size directly
+      // REGULAR ITEM
       const nextActive = [...activeItems];
       const validPicked = Math.max(0, Number(qty_picked) || 0);
-      const oldItem = nextActive[index];
-      const oldSku = editingItemData.originalSku || oldItem.sku;
-      const newSku = (editingItemData.sku || oldItem.sku).trim().toUpperCase();
-      const newSize = editingItemData.size || oldItem.size || '-';
-      const newNama = editingItemData.nama_produk || oldItem.nama_produk;
-      const newReq = Number(editingItemData.qty_req) || oldItem.qty_req || 1;
-      const newLokasiPicked = (lokasi_picked || '').trim() || oldItem.lokasi;
-
-      const isSubstituted = oldSku.toUpperCase() !== newSku.toUpperCase() || oldItem.size !== newSize;
-
       nextActive[index] = {
         ...nextActive[index],
-        sku: newSku,
-        nama_produk: newNama,
-        size: newSize,
-        qty_req: newReq,
         qty_picked: validPicked,
-        lokasi_picked: newLokasiPicked,
-        status: validPicked >= newReq ? 'SELESAI' : 'SEDANG PICKING',
+        lokasi_picked: lokasi_picked.trim(),
+        status: validPicked >= nextActive[index].qty_req ? 'SELESAI' : 'SEDANG PICKING',
       };
       setActiveItems(nextActive);
-
-      // Persist to Supabase picking_list
-      const patchPick: any = {
-        sku: newSku,
-        nama_produk: newNama,
-        size: newSize,
-        qty_req: newReq,
-        qty_picked: validPicked,
-        lokasi: newLokasiPicked,
-      };
-
-      if (oldItem.id && /^\d+$/.test(String(oldItem.id))) {
-        supabaseFetch('picking_list', 'PATCH', patchPick, `id=eq.${oldItem.id}`).catch(console.warn);
-      } else if (activeSJ?.no_sj) {
-        supabaseFetch(
-          'picking_list',
-          'PATCH',
-          patchPick,
-          `no_sj=ilike.${encodeURIComponent(activeSJ.no_sj)}&sku=ilike.${encodeURIComponent(oldSku)}`
-        ).catch(console.warn);
-      }
-
-      // If activeSJ is from Peminjaman (SPS / PJM), also update the peminjaman table in Supabase!
-      const isSpsOrPjm =
-        (activeSJ?.no_sj || '').toUpperCase().startsWith('SPS') ||
-        (activeSJ?.no_sj || '').toUpperCase().startsWith('PJM') ||
-        (activeSJ?.tujuan || '').includes('SPS:');
-
-      if (isSpsOrPjm && activeSJ?.no_sj) {
-        const patchPeminjaman: any = {
-          sku: newSku,
-          nama_produk: newNama,
-          size: newSize,
-          qty: newReq,
-          lokasi: newLokasiPicked,
-        };
-        supabaseFetch(
-          'peminjaman',
-          'PATCH',
-          patchPeminjaman,
-          `no_peminjaman=ilike.${encodeURIComponent(activeSJ.no_sj)}&sku=ilike.${encodeURIComponent(oldSku)}`
-        ).catch(console.warn);
-
-        // Update local cache for peminjaman
-        try {
-          const cached = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
-          const updatedCache = cached.map((c: any) => {
-            if (c.noPeminjaman === activeSJ.no_sj) {
-              const updatedItems = (c.items || []).map((it: any) => {
-                if (it.sku?.toUpperCase() === oldSku.toUpperCase()) {
-                  return { ...it, sku: newSku, size: newSize, produk: newNama, qty: newReq };
-                }
-                return it;
-              });
-              return { ...c, items: updatedItems };
-            }
-            return c;
-          });
-          localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updatedCache));
-        } catch {}
-      }
-
-      if (isSubstituted) {
-        playSuccessBeep();
-        onNotify(
-          `✅ Produk berhasil disubstitusi ke ${newSku} (${newSize})! Riwayat tugas & peminjaman telah disinkronkan.`,
-          'success'
-        );
-      } else {
-        onNotify(
-          `SKU ${newSku} diperbarui: ${validPicked}/${newReq} pcs (Rak: ${newLokasiPicked})`,
-          'success'
-        );
-      }
+      onNotify(`SKU ${editingItemData.sku} diperbarui: ${validPicked}/${editingItemData.qty_req} pcs (Rak: ${lokasi_picked})`, 'success');
     }
 
     setIsEditItemModalOpen(false);
@@ -3452,124 +3360,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </option>
                     ))}
                   </select>
-                </div>
-              )}
-
-              {/* Fitur Khusus: Ganti / Edit Ukuran & Produk Saat Picking */}
-              {editingItemData.type === 'REGULAR' && (
-                <div className="p-3.5 bg-orange-50/80 dark:bg-orange-950/30 rounded-2xl border border-orange-200 dark:border-orange-800/60 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-black text-orange-900 dark:text-orange-200">
-                      <Sparkles className="w-4 h-4 text-[#ff7a00]" />
-                      <span>Ganti Ukuran / Produk (Substitusi Saat Picking)</span>
-                    </div>
-                    <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/50 px-2 py-0.5 rounded-md">
-                      Edit Langsung
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                    Contoh: Jika dipinjam size S namun yang tersedia di rak size M, pilih ukuran pengganti di bawah:
-                  </p>
-
-                  {/* Quick Size Switcher */}
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                      Pilihan Cepat Ukuran:
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', 'ALL'].map((sz) => {
-                        const isCurrent = (editingItemData.size || '').toUpperCase() === sz;
-                        return (
-                          <button
-                            key={sz}
-                            type="button"
-                            onClick={() => {
-                              const oldSize = editingItemData.size || '';
-                              const curSku = editingItemData.sku;
-                              let newSku = curSku;
-                              
-                              if (new RegExp(`[-_]${oldSize}$`, 'i').test(curSku)) {
-                                newSku = curSku.replace(new RegExp(`[-_]${oldSize}$`, 'i'), `-${sz}`);
-                              } else if (new RegExp(`\\b${oldSize}\\b`, 'i').test(curSku)) {
-                                newSku = curSku.replace(new RegExp(`\\b${oldSize}\\b`, 'i'), sz);
-                              }
-
-                              if (productCatalog && productCatalog.length > 0) {
-                                const matchInCat = (productCatalog as any[]).find(
-                                  (p: any) =>
-                                    String(p.sku || '').toUpperCase() === newSku.toUpperCase() ||
-                                    (String(p.size || '').toUpperCase() === sz &&
-                                      String(p.nama_produk || '').toLowerCase().includes(
-                                        editingItemData.nama_produk
-                                          .toLowerCase()
-                                          .replace(/size\s+[a-z0-9]+/i, '')
-                                          .trim()
-                                      ))
-                                );
-                                if (matchInCat && matchInCat.sku) {
-                                  newSku = String(matchInCat.sku);
-                                }
-                              }
-
-                              const newNama = formatProductNameWithSize(editingItemData.nama_produk, sz);
-                              setEditingItemData({
-                                ...editingItemData,
-                                size: sz,
-                                sku: newSku,
-                                nama_produk: newNama,
-                              });
-                            }}
-                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                              isCurrent
-                                ? 'bg-[#ff7a00] text-white shadow-sm ring-2 ring-[#ff7a00]/30 font-extrabold'
-                                : 'bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-orange-400'
-                            }`}
-                          >
-                            {sz}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Manual SKU & Product Name Input */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">
-                        SKU Terpilih / Baru
-                      </label>
-                      <input
-                        type="text"
-                        value={editingItemData.sku}
-                        onChange={(e) => {
-                          const val = e.target.value.toUpperCase();
-                          const sz = extractSizeFromSku(val);
-                          setEditingItemData({
-                            ...editingItemData,
-                            sku: val,
-                            size: sz !== '-' ? sz : editingItemData.size,
-                          });
-                        }}
-                        className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">
-                        Nama Produk
-                      </label>
-                      <input
-                        type="text"
-                        value={editingItemData.nama_produk}
-                        onChange={(e) =>
-                          setEditingItemData({
-                            ...editingItemData,
-                            nama_produk: e.target.value,
-                          })
-                        }
-                        className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
-                      />
-                    </div>
-                  </div>
                 </div>
               )}
 

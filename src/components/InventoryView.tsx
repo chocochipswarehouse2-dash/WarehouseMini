@@ -113,7 +113,7 @@ let globalInventoryLastFetch = 0;
 const CACHE_STALE_TTL = 3 * 60 * 1000; // 3 minutes
 
 const SIZE_ORDER_MAP: Record<string, number> = {
-  'ALL': 0, 'DEFAULT': 1, 'FREE': 2, 'XS': 3, 'S': 4, 'M': 5, 'L': 6, 'XL': 7, 'XXL': 8, '3XL': 9, '4XL': 10,
+  'ALL': 0, 'DEFAULT': 1, 'FREE': 2, 'XS': 3, 'S': 4, 'M': 5, 'L': 6, 'XL': 7, 'XXL': 8, '3XL': 9, '4XL': 10
 };
 
 const getSizeOrder = (size: string): number => {

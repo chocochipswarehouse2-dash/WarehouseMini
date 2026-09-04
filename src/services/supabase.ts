@@ -2485,115 +2485,10 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
 export async function deletePeminjamanFromSupabase(noPeminjaman: string): Promise<boolean> {
   if (!noPeminjaman) return false;
   try {
-    const encoded = encodeURIComponent(noPeminjaman);
-    await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encoded}`);
-    // Also delete from picking_list
-    await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encoded}`).catch(() => {});
-
-    // Update local cache
-    try {
-      const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
-      const filtered = cached.filter(c => c.noPeminjaman !== noPeminjaman);
-      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(filtered));
-    } catch {}
-
-    try {
-      const pickCache = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
-      const filteredPick = pickCache.filter((item: any) => item.no_sj !== noPeminjaman);
-      localStorage.setItem('wms_picking_cache', JSON.stringify(filteredPick));
-    } catch {}
-
+    await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodeURIComponent(noPeminjaman)}`);
     return true;
   } catch (err) {
     console.error('Error deleting peminjaman:', err);
-    return false;
-  }
-}
-
-export async function updatePeminjamanInSupabase(oldNoPeminjaman: string, record: PeminjamanRecord): Promise<boolean> {
-  if (!oldNoPeminjaman) return false;
-  try {
-    const encodedOld = encodeURIComponent(oldNoPeminjaman);
-    // 1. Delete previous rows for this peminjaman number
-    await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedOld}`);
-
-    const baseId = Math.floor(Date.now() / 1000) * 1000;
-    const cleanNo = (record.noPeminjaman || oldNoPeminjaman).trim();
-    const contact = record.kontak_peminjam || record.kontakPeminjam || record.noWa || record.email || null;
-
-    // 2. Re-insert updated items
-    const payload = (record.items || []).map((it, idx) => {
-      const rawSize = (it.size || '').trim();
-      const cleanSize = (rawSize && rawSize !== '-') 
-        ? rawSize 
-        : (extractSizeFromSku(it.sku || '') !== '-' ? extractSizeFromSku(it.sku || '') : 'ALL');
-      const rawNama = it.produk || it.sku || 'Unknown';
-      const formattedNama = formatProductNameWithSize(rawNama, cleanSize);
-      return {
-        id: baseId + idx,
-        no_peminjaman: cleanNo,
-        pic: record.namaPeminjam || record.nama_peminjam || '',
-        keperluan: record.keperluan || '',
-        tanggal_pinjam: record.tglPinjam || record.tanggal_pinjam || new Date().toISOString().slice(0, 10),
-        sku: (it.sku || '').trim().toUpperCase(),
-        nama_produk: formattedNama,
-        size: cleanSize,
-        qty: it.qty || 1,
-        lokasi: it.lokasi || 'BLOK F',
-        status: record.status || 'Dipinjam',
-        operator: record.username || record.operator || 'Admin',
-        kontak_peminjam: contact,
-        keterangan: record.keterangan || ''
-      };
-    });
-
-    if (payload.length > 0) {
-      await supabaseFetch('peminjaman', 'POST', payload);
-    }
-
-    // 3. Sync to picking_list
-    try {
-      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encodedOld}`);
-      const pickingRows = (record.items || []).map((it, idx) => {
-        const rawSize = (it.size || '').trim();
-        const cleanSize = (rawSize && rawSize !== '-') 
-          ? rawSize 
-          : (extractSizeFromSku(it.sku || '') !== '-' ? extractSizeFromSku(it.sku || '') : 'ALL');
-        const rawNama = it.produk || it.sku || 'Unknown';
-        const formattedNama = formatProductNameWithSize(rawNama, cleanSize);
-        return {
-          id: baseId + 500 + idx,
-          no_sj: cleanNo,
-          tanggal: record.tglPinjam || record.tanggal_pinjam || new Date().toISOString().slice(0, 10),
-          tujuan: `SPS: ${(record.namaPeminjam || '').trim()} - ${(record.keperluan || '').trim()}`,
-          sku: (it.sku || '').trim().toUpperCase(),
-          nama_produk: formattedNama,
-          size: cleanSize,
-          qty_req: it.qty || 1,
-          qty_picked: 0,
-          lokasi: it.lokasi || 'BLOK F',
-          status: 'PENDING',
-          created_at: new Date().toISOString()
-        };
-      });
-      if (pickingRows.length > 0) {
-        await supabaseFetch('picking_list', 'POST', pickingRows);
-      }
-    } catch (e) {
-      console.warn('Sync picking_list on peminjaman update warning:', e);
-    }
-
-    // 4. Update local cache
-    try {
-      const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
-      const updated = cached.filter(c => c.noPeminjaman !== oldNoPeminjaman && c.noPeminjaman !== cleanNo);
-      updated.unshift({ ...record, noPeminjaman: cleanNo, id: cleanNo });
-      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
-    } catch {}
-
-    return true;
-  } catch (err) {
-    console.error('Error updating peminjaman in Supabase:', err);
     return false;
   }
 }
@@ -2607,16 +2502,11 @@ export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]>
       
       for (const row of data) {
         const no = row.no_peminjaman;
-        const contact = row.kontak_peminjam || row.no_wa || row.email || '';
         if (!groups.has(no)) {
           groups.set(no, {
              id: no,
              noPeminjaman: no,
              namaPeminjam: row.pic || '',
-             kontak_peminjam: contact,
-             kontakPeminjam: contact,
-             noWa: contact,
-             email: contact.includes('@') ? contact : undefined,
              keperluan: row.keperluan || '',
              tglPinjam: row.tanggal_pinjam || '',
              timestamp: row.created_at || new Date().toISOString(),
@@ -2663,19 +2553,18 @@ export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]>
 
 export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promise<boolean> {
   try {
-    const contact = record.kontak_peminjam || record.kontakPeminjam || record.noWa || record.email || null;
     const check = await supabaseFetch<any[]>('peminjaman', 'GET', null, `no_peminjaman=eq.${encodeURIComponent(record.noPeminjaman || '')}&limit=1`);
     if (check && check.length > 0) {
       await supabaseFetch(
         'peminjaman',
         'PATCH',
-        { status: record.status || 'Dipinjam', tanggal_kembali: null, kontak_peminjam: contact },
+        { status: record.status || 'Dipinjam', tanggal_kembali: null },
         `no_peminjaman=eq.${encodeURIComponent(record.noPeminjaman || '')}`
       );
       // Keep local cache updated
       try {
         const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
-        const updated = cached.map(c => c.noPeminjaman === record.noPeminjaman ? { ...c, status: record.status || 'Dipinjam', kontak_peminjam: contact || undefined, kontakPeminjam: contact || undefined } : c);
+        const updated = cached.map(c => c.noPeminjaman === record.noPeminjaman ? { ...c, status: record.status || 'Dipinjam' } : c);
         localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
       } catch {}
       return true;
@@ -2694,7 +2583,6 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
         id: baseId + idx,
         no_peminjaman: record.noPeminjaman,
         pic: record.namaPeminjam,
-        kontak_peminjam: contact,
         keperluan: record.keperluan,
         tanggal_pinjam: record.tglPinjam,
         sku: it.sku || `SKU-${Date.now()}`,
