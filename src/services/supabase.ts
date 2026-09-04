@@ -274,7 +274,8 @@ export async function supabaseFetch<T = unknown>(
   table: string,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   payload?: unknown,
-  queryParams = ''
+  queryParams = '',
+  preferRepresentation = false
 ): Promise<T> {
   const { url, key } = getStoredSupabaseConfig();
   const endpoint = `${url}/rest/v1/${table}${queryParams ? '?' + queryParams : ''}`;
@@ -286,9 +287,11 @@ export async function supabaseFetch<T = unknown>(
 
   if (method === 'POST' || method === 'PATCH') {
     if (queryParams && queryParams.includes('on_conflict')) {
-      headers['Prefer'] = 'return=representation,resolution=merge-duplicates';
+      headers['Prefer'] = preferRepresentation
+        ? 'return=representation,resolution=merge-duplicates'
+        : 'return=minimal,resolution=merge-duplicates';
     } else {
-      headers['Prefer'] = 'return=representation';
+      headers['Prefer'] = preferRepresentation ? 'return=representation' : 'return=minimal';
     }
   }
 
@@ -303,10 +306,18 @@ export async function supabaseFetch<T = unknown>(
     throw new Error(`Supabase Error (${response.status}): ${errorText}`);
   }
 
-  if (response.status !== 204) {
-    return (await response.json()) as T;
+  if (response.status === 204) {
+    return null as T;
   }
-  return null as T;
+  const text = await response.text();
+  if (!text || text.trim() === '') {
+    return null as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null as T;
+  }
 }
 
 /**
@@ -697,8 +708,13 @@ export function generateUUID(): string {
 export async function insertStockOpnameQueue(items: StockOpnameQueueItem[]): Promise<unknown> {
   if (!items.length) return [];
 
+  // OPTIMIZATION: Hanya masukkan item yang benar-benar ada selisih (selisih !== 0).
+  // Item yang sesuai (fisik == sistem) tidak membutuhkan adjustment approval.
+  const discrepantItems = items.filter((it) => Number(it.selisih) !== 0);
+  if (!discrepantItems.length) return [];
+
   // Sanitize payload strictly to match Supabase stock_opname_queue columns: id, sesi_id, tanggal, sku, nama_produk, size, lokasi, area, qty_sistem, qty_fisik, selisih, status, jenis, alasan, operator, invoice, approved_by, tanggal_approve
-  const sanitized = items.map((it) => ({
+  const sanitized = discrepantItems.map((it) => ({
     id: isValidUUID(it.id) ? it.id : generateUUID(),
     sesi_id: it.sesi_id || `SESI-${Date.now()}`,
     tanggal: it.tanggal || new Date().toISOString(),
@@ -731,14 +747,14 @@ export async function insertStockOpnameQueue(items: StockOpnameQueueItem[]): Pro
 /**
  * Fetch latest log_produk items for real-time history inspection with automatic chunked pagination
  */
-export async function fetchRecentLogs(limit = 2000): Promise<LogProdukItem[]> {
+export async function fetchRecentLogs(limit = 1000): Promise<LogProdukItem[]> {
   return fetchAllLogs(limit);
 }
 
 /**
- * Fetch all log_produk items with chunked pagination to load 100% of records from Supabase
+ * Fetch all log_produk items with chunked pagination to load recent records from Supabase
  */
-export async function fetchAllLogs(maxRows = 50000): Promise<LogProdukItem[]> {
+export async function fetchAllLogs(maxRows = 2000): Promise<LogProdukItem[]> {
   const allLogs: LogProdukItem[] = [];
   const pageSize = 1000;
   let offset = 0;
@@ -746,7 +762,7 @@ export async function fetchAllLogs(maxRows = 50000): Promise<LogProdukItem[]> {
   try {
     while (offset < maxRows) {
       const batchPromises = [];
-      const batchSize = 5; // 5 parallel requests
+      const batchSize = Math.min(2, Math.ceil((maxRows - offset) / pageSize));
       for (let i = 0; i < batchSize && offset < maxRows; i++) {
         const currentLimit = Math.min(pageSize, maxRows - offset);
         batchPromises.push(
@@ -1011,26 +1027,32 @@ export async function approveStockOpnameQueueItems(
   const nowIso = new Date().toISOString();
 
   try {
+    // 1. Batch update Supabase queue status to APPROVED (chunks of 100 to minimize HTTP requests)
+    const validIds = items.map((it) => it.id).filter(Boolean) as string[];
+    const chunkSize = 100;
+    for (let i = 0; i < validIds.length; i += chunkSize) {
+      const chunk = validIds.slice(i, i + chunkSize);
+      const inClause = chunk.map((id) => `"${id}"`).join(',');
+      await supabaseFetch(
+        'stock_opname_queue',
+        'PATCH',
+        {
+          status: 'APPROVED',
+          approved_by: approvedBy || 'Admin',
+          tanggal_approve: nowIso,
+        },
+        `id=in.(${encodeURIComponent(inClause)})`
+      );
+    }
+
+    // 2. Create ADJ_IN or ADJ_OUT in log_produk ONLY if selisih != 0
     const logsToInsert: LogProdukItem[] = [];
-
     for (const item of items) {
-      // 1. Update Supabase queue status to APPROVED
-      if (item.id) {
-        await supabaseFetch(
-          'stock_opname_queue',
-          'PATCH',
-          {
-            status: 'APPROVED',
-            approved_by: approvedBy || 'Admin',
-            tanggal_approve: nowIso,
-          },
-          `id=eq.${item.id}`
-        );
-      }
-
-      // 2. Create ADJ_IN or ADJ_OUT in log_produk with keterangan Adjustment SO
       const diff = Number(item.selisih) || 0;
-      const adjType = diff >= 0 ? 'ADJ_IN' : 'ADJ_OUT';
+      // OPTIMIZATION: Jangan pernah catat log adjustment jika selisih = 0!
+      if (diff === 0) continue;
+
+      const adjType = diff > 0 ? 'ADJ_IN' : 'ADJ_OUT';
       const loc = item.lokasi || 'Warehouse';
       const ketReason = item.alasan ? ` - ${item.alasan}` : ` (Sesi: ${item.sesi_id || '-'})`;
       logsToInsert.push({
@@ -1071,24 +1093,26 @@ export async function rejectStockOpnameQueueItems(
   const nowIso = new Date().toISOString();
 
   try {
-    for (const item of items) {
-      if (item.id) {
-        await supabaseFetch(
-          'stock_opname_queue',
-          'PATCH',
-          {
-            status: 'REJECTED',
-            approved_by: rejectedBy || 'Admin',
-            tanggal_approve: nowIso,
-          },
-          `id=eq.${item.id}`
-        );
-      }
+    const validIds = items.map((it) => it.id).filter(Boolean) as string[];
+    const chunkSize = 100;
+    for (let i = 0; i < validIds.length; i += chunkSize) {
+      const chunk = validIds.slice(i, i + chunkSize);
+      const inClause = chunk.map((id) => `"${id}"`).join(',');
+      await supabaseFetch(
+        'stock_opname_queue',
+        'PATCH',
+        {
+          status: 'REJECTED',
+          approved_by: rejectedBy || 'Admin',
+          tanggal_approve: nowIso,
+        },
+        `id=in.(${encodeURIComponent(inClause)})`
+      );
     }
     return { success: true, count: items.length };
   } catch (err: any) {
     console.error('Error rejecting SO Queue items:', err);
-    return { success: false, count: 0, error: err.message || 'Gagal me-reject item' };
+    return { success: false, count: 0, error: err.message || 'Gagal reject adjustment' };
   }
 }
 
@@ -2320,8 +2344,8 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
   // 3. Fetch Master Produk to enrich product names & include products with 0 stock
   try {
     const masterQuery = searchKeyword && searchKeyword.trim()
-      ? `select=*${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&limit=100`
-      : 'select=*&limit=3000';
+      ? `select=sku,nama_produk,nama,size,ukuran${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&limit=100`
+      : 'select=sku,nama_produk,nama,size,ukuran&limit=3000';
 
     const masterRows = await supabaseFetch<any[]>('master_produk', 'GET', null, masterQuery);
     if (masterRows && Array.isArray(masterRows)) {

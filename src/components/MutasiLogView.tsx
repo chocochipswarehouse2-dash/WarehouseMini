@@ -118,7 +118,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchAllLogs(15000);
+      const data = await fetchAllLogs(1000);
       // Deduplicate by ID
       const unique = Array.from(
         new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()

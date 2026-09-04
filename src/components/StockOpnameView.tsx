@@ -75,7 +75,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchStockOpnameQueue('ALL', 15000);
+      const data = await fetchStockOpnameQueue('ALL', 1000);
       const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
       setSoQueue(unique);
       setSelectedSoIds([]);

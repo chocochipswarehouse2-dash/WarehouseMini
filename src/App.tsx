@@ -867,6 +867,9 @@ export default function App() {
             const qty_sistem = sysRow ? Number(sysRow.sisa_stok) : 0;
             const selisih = qty_fisik - qty_sistem;
 
+            // OPTIMIZATION: Lewati jika fisik == sistem (selisih 0), tidak perlu antrean adjustment approval
+            if (selisih === 0) return;
+
             const pData = productDatabase.find((p) => p.k.toUpperCase() === sku.toUpperCase());
             soQueueToInsert.push({
               sesi_id: invoiceBase,
@@ -877,9 +880,7 @@ export default function App() {
               lokasi,
               alasan: ketText
                 ? `Pending Adjustment - ${ketText}`
-                : selisih !== 0
-                ? `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`
-                : 'Opname Sesuai (Fisik = Sistem)',
+                : `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
               area: sysRow?.area || getAreaFromLokasi(lokasi),
               qty_sistem,
               qty_fisik,
