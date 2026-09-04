@@ -9,6 +9,7 @@ export type ActivePage =
   | 'stock_opname'
   | 'mutasi_log'
   | 'inventory'
+  | 'karyawan'
   | 'presensi'
   | 'roster_shift'
   | 'lembur_cuti'
@@ -23,6 +24,8 @@ export type UserRole =
   | 'Mutasi'
   | 'Tugas Picking'
   | 'Peminjaman'
+  | 'HR & Admin'
+  | 'Operator'
   | 'Custom'
   | string;
 
@@ -40,6 +43,10 @@ export type UserPermissionKey =
   | 'can_delete_data'
   | 'can_view_mutasi'
   | 'can_import_export_data'
+  | 'can_view_karyawan'
+  | 'can_view_presensi'
+  | 'can_view_roster'
+  | 'can_view_lembur_cuti'
   | 'can_approve_hr';
 
 export interface UserPermissions {
@@ -56,6 +63,10 @@ export interface UserPermissions {
   can_delete_data: boolean;
   can_view_mutasi: boolean;
   can_import_export_data: boolean;
+  can_view_karyawan?: boolean;
+  can_view_presensi?: boolean;
+  can_view_roster?: boolean;
+  can_view_lembur_cuti?: boolean;
   can_approve_hr?: boolean;
 }
 
@@ -185,6 +196,7 @@ export interface LocalUserRecord {
   role: UserRole;
   permissions?: Partial<UserPermissions>;
   created_at?: string;
+  nik?: string;
 }
 
 export interface ProductItem {

@@ -50,8 +50,9 @@ import {
   Code2,
   FileCode,
   CheckCheck, Share2, Loader2, UploadCloud,
+  ShieldAlert,
 } from 'lucide-react';
-import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord } from '../types';
+import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
 import {
   DEFAULT_SUPABASE_URL,
@@ -62,6 +63,7 @@ import {
   fetchWmsUsersFromSupabase,
   saveWmsUserToSupabase,
   deleteWmsUserFromSupabase,
+  fetchKaryawanDirectory,
 } from '../services/supabase';
 import {
   hasPermission,
@@ -111,11 +113,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onNotify,
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
-  const canManageUsers = hasPermission(session, 'can_manage_users');
-  const canManageSettings = hasPermission(session, 'can_manage_settings');
+  const canManageUsers = userIsSuperadmin || hasPermission(session, 'can_manage_users');
+  const canManageSettings = userIsSuperadmin || hasPermission(session, 'can_manage_settings');
+  const canAccessModal = userIsSuperadmin || canManageUsers || canManageSettings;
 
   // Default tab based on permissions
-  const [activeTab, setActiveTab] = useState<SettingsTab>('supabase');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    if (userIsSuperadmin || canManageSettings) return 'database';
+    if (canManageUsers) return 'users';
+    return 'device';
+  });
 
   // Supabase Config State
   const [supabaseUrl, setSupabaseUrl] = useState<string>('');
@@ -138,11 +145,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Users Management State
   const [userList, setUserList] = useState<LocalUserRecord[]>([]);
+  const [karyawanDirectory, setKaryawanDirectory] = useState<KaryawanRecord[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [showPasswords, setShowPasswords] = useState<boolean>(false);
   const [newUsername, setNewUsername] = useState<string>('');
   const [newName, setNewName] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
+  const [newNik, setNewNik] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('Operator');
   const [newPermissions, setNewPermissions] = useState<UserPermissions>({
     ...ROLE_DEFAULT_PERMISSIONS['Operator'],
@@ -164,7 +173,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const loadUsersFromSupabase = async () => {
     setIsLoadingUsers(true);
     try {
-      const dbUsers = await fetchWmsUsersFromSupabase();
+      const [dbUsers, karyawanList] = await Promise.all([
+        fetchWmsUsersFromSupabase(),
+        fetchKaryawanDirectory().catch(() => []),
+      ]);
+
+      if (karyawanList && karyawanList.length > 0) {
+        setKaryawanDirectory(karyawanList);
+      }
+
       if (dbUsers && dbUsers.length > 0) {
         setUserList(dbUsers as LocalUserRecord[]);
         saveLocalUsersList(dbUsers as LocalUserRecord[]);
@@ -419,6 +436,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       password: cleanP || (editingIndex !== null ? userList[editingIndex].password : '123456'),
       role: newRole,
       permissions: { ...newPermissions },
+      nik: newNik.trim() || undefined,
     };
 
     if (editingIndex !== null) {
@@ -447,6 +465,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       role: newRole,
       password: userToSave.password,
       permissions: newPermissions,
+      nik: newNik.trim() || undefined,
     });
 
     // If current logged-in user is updated, update active session
@@ -456,6 +475,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         name: cleanName,
         role: newRole,
         permissions: newPermissions,
+        nik: newNik.trim() || undefined,
       });
     }
 
@@ -463,6 +483,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewUsername('');
     setNewName('');
     setNewPassword('');
+    setNewNik('');
     setNewRole('Operator');
     setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS['Operator'] });
     setIsPermissionFormOpen(false);
@@ -475,6 +496,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewUsername(u.username);
     setNewName(u.name || u.username);
     setNewPassword(u.password || '');
+    setNewNik(u.nik || '');
     setNewRole(u.role || 'Operator');
     setNewPermissions(
       u.permissions
@@ -518,6 +540,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onNotify(`Role aktif beralih ke: ${targetRole}`, 'info');
     playCategoryBeep();
   };
+
+  if (!isOpen) return null;
+
+  if (!canAccessModal) {
+    return (
+      <div
+        id="settingsModalOverlay"
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      >
+        <div
+          id="settingsModalContent"
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 text-center space-y-4"
+        >
+          <div className="w-12 h-12 bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Akses Pengaturan Dibatasi</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Akun Anda tidak memiliki hak akses untuk membuka pengaturan sistem. Hanya Superadmin atau akun dengan izin Konfigurasi Sistem/Manajemen Pengguna yang diizinkan.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 px-4 bg-[#ff7a00] hover:bg-[#e06b00] text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -568,34 +623,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Tab Navigation */}
         <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('database')}
-            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'database'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            <span>Cloud Database</span>
-            {isRealtimeConnected && (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]"></span>
-            )}
-          </button>
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('database')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'database'
+                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              <span>Cloud Database</span>
+              {isRealtimeConnected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]"></span>
+              )}
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('users')}
-            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'users'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Manajemen Pengguna ({userList.length})</span>
-          </button>
+          {canManageUsers && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('users')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'users'
+                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Manajemen Pengguna ({userList.length})</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -610,31 +669,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <span>Preferensi Perangkat</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('deploy_apk')}
-            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'deploy_apk'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Rocket className="w-4 h-4" />
-            <span>Deploy & APK</span>
-          </button>
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('deploy_apk')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'deploy_apk'
+                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Rocket className="w-4 h-4" />
+              <span>Deploy & APK</span>
+            </button>
+          )}
           
-          <button
-            type="button"
-            onClick={() => setActiveTab('whatsapp')}
-            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'whatsapp'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Integrasi WhatsApp</span>
-          </button>
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('whatsapp')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'whatsapp'
+                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Integrasi WhatsApp</span>
+            </button>
+          )}
         </div>
 
         {/* Tab Content Body */}
@@ -645,7 +708,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'users' && (
             <div className="space-y-6">
               {/* Quick Role Simulation Switcher for Superadmin Testing */}
-              {session && (
+              {session && userIsSuperadmin && (
                 <div className="p-4 bg-gradient-to-r from-[#ff7a00]/10 via-[#ff7a00]/5 to-transparent border border-[#ff7a00]/30 rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -664,7 +727,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Operator'] as UserRole[]).map((r) => {
+                    {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
                       const details = ROLE_DETAILS[r];
                       const isCurrent = session.role === r || (r === 'Superadmin' && session.role === 'All');
                       return (
@@ -719,8 +782,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {isPermissionFormOpen && (
                   <form onSubmit={handleSaveUser} className="p-4 sm:p-5 space-y-4">
-                    {/* Basic Info: Username, Name, Password */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Basic Info: Username, Name, Password, NIK / Data Karyawan */}
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                           Username / ID Login <span className="text-rose-500">*</span>
@@ -750,6 +813,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tautkan NIK Karyawan
+                        </label>
+                        {karyawanDirectory.length > 0 ? (
+                          <select
+                            value={newNik}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewNik(val);
+                              const match = karyawanDirectory.find((k) => k.nik === val);
+                              if (match && !newName) {
+                                setNewName(match.nama);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          >
+                            <option value="">-- Tanpa NIK --</option>
+                            {karyawanDirectory.map((k) => (
+                              <option key={k.nik} value={k.nik}>
+                                {k.nik} - {k.nama} ({k.divisi || 'Umum'})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={newNik}
+                            onChange={(e) => setNewNik(e.target.value)}
+                            placeholder="e.g. WH0001"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                           Password
                         </label>
                         <input
@@ -768,7 +866,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Pilih Template Role Utama:
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Operator'] as UserRole[]).map((r) => {
+                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
                           const details = ROLE_DETAILS[r];
                           const isSelected = newRole === r;
                           return (
@@ -970,6 +1068,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               {isCurrentUser && (
                                 <span className="text-[9px] px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded font-bold">
                                   Akun Anda
+                                </span>
+                              )}
+                              {usr.nik && (
+                                <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 rounded font-bold border border-cyan-200 dark:border-cyan-800">
+                                  NIK: {usr.nik}
                                 </span>
                               )}
                             </div>

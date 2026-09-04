@@ -21,8 +21,11 @@ import {
   Calendar,
   Zap,
   ShieldCheck,
+  BarChart3,
+  Users,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
+import { canAccessSettings } from '../services/permissions';
 
 interface NavbarProps {
   session: UserSession | null;
@@ -73,6 +76,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Tugas Picking', subtitle: 'Ambil Barang Surat Jalan', icon: Package };
       case 'peminjaman':
         return { title: 'Peminjaman (SPS)', subtitle: 'Log Pinjam Live & Studio', icon: FileText };
+      case 'karyawan':
+        return { title: 'Data Karyawan', subtitle: 'Direktori & Profil Karyawan', icon: Users };
       case 'presensi':
         return { title: 'Presensi & Shift Saya', subtitle: 'Live Clock & Presensi Harian', icon: Clock };
       case 'roster_shift':
@@ -81,6 +86,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Lembur & Ijin/Cuti', subtitle: 'Pengajuan & Riwayat Mandiri', icon: Zap };
       case 'hr_approval':
         return { title: 'Persetujuan HR (Admin)', subtitle: 'Approval Lembur & Cuti Karyawan', icon: ShieldCheck };
+      case 'hr_rekap':
+        return { title: 'Rekap & Laporan HR', subtitle: 'Rekap Lembur, Cuti & Absensi Karyawan', icon: BarChart3 };
       default:
         return { title: 'WMS Chocochips', subtitle: 'Warehouse System', icon: ScanBarcode };
     }
@@ -191,15 +198,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </button>
 
-        {/* Settings Button */}
-        <button
-          id="btnSettings"
-          onClick={onOpenSettings}
-          title="Pengaturan Sistem"
-          className="p-2 text-slate-600 dark:text-slate-400 hover:text-[#ff7a00] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+        {/* Settings Button - Hanya untuk Superadmin atau user dengan izin Konfigurasi Sistem / Manajemen User */}
+        {canAccessSettings(session) && (
+          <button
+            id="btnSettings"
+            onClick={onOpenSettings}
+            title="Pengaturan Sistem"
+            className="p-2 text-slate-600 dark:text-slate-400 hover:text-[#ff7a00] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        )}
 
         {/* User Role Tag & Logout on Desktop */}
         {session && (

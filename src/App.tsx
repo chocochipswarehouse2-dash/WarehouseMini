@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { Scan, FileText } from 'lucide-react';
+import { Scan, FileText, ShieldAlert } from 'lucide-react';
 import {
   CategoryType,
   ProductItem,
@@ -43,6 +43,7 @@ const StockOpnameView = React.lazy(() => import('./components/StockOpnameView').
 const MutasiLogView = React.lazy(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
 const InventoryView = React.lazy(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
 const PresensiView = React.lazy(() => import('./components/hr/PresensiView').then(m => ({ default: m.PresensiView })));
+const KaryawanView = React.lazy(() => import('./components/hr/KaryawanView').then(m => ({ default: m.KaryawanView })));
 const RosterShiftView = React.lazy(() => import('./components/hr/RosterShiftView').then(m => ({ default: m.RosterShiftView })));
 const LemburCutiView = React.lazy(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
 const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
@@ -58,6 +59,7 @@ import {
   verifySupabaseLogin,
   isDummyProduct,
 } from './services/supabase';
+import { getDefaultPageForSession, canAccessPage, canAccessSettings } from './services/permissions';
 import {
   playCategoryBeep,
   playErrorBeep,
@@ -117,8 +119,34 @@ export default function App() {
   );
 
   // Active module page
-  const [activePage, setActivePage] = useState<ActivePage>('inventory');
-  const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>(['inventory']));
+  const [activePage, setActivePage] = useState<ActivePage>(() => getDefaultPageForSession(session));
+  const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getDefaultPageForSession(session)]));
+
+  // Auto-redirect jika halaman aktif tidak diizinkan untuk sesi user
+  useEffect(() => {
+    if (session && !canAccessPage(session, activePage)) {
+      const allowedPage = getDefaultPageForSession(session);
+      setActivePage(allowedPage);
+    }
+  }, [session, activePage]);
+
+  // Handler navigasi dengan verifikasi izin halaman
+  const handleSelectPage = useCallback((page: ActivePage) => {
+    if (!canAccessPage(session, page)) {
+      showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
+      return;
+    }
+    setActivePage(page);
+  }, [session]);
+
+  // Handler pembukaan pengaturan sistem dengan verifikasi izin
+  const handleOpenSettings = useCallback(() => {
+    if (!canAccessSettings(session)) {
+      showToast('Akses ditolak: Akun Anda tidak memiliki izin untuk membuka Pengaturan Sistem.', 'error');
+      return;
+    }
+    setIsSettingsOpen(true);
+  }, [session]);
 
   useEffect(() => {
     setVisitedPages((prev) => {
@@ -208,6 +236,7 @@ export default function App() {
   const loadProducts = useCallback(
     async (forceRefresh = false) => {
       // 1. Instant 0ms load from Native Local Database (IndexedDB)
+      let hasLocalData = false;
       if (!forceRefresh) {
         try {
           const localProducts = await getAllProductsFromLocalDb();
@@ -215,7 +244,7 @@ export default function App() {
             const clean = localProducts.filter((it) => !isDummyProduct(it));
             if (clean.length > 0) {
               setProductDatabase(clean);
-              return; // Already loaded full database from local storage, 0 network egress!
+              hasLocalData = true;
             }
           }
         } catch (err) {
@@ -223,31 +252,40 @@ export default function App() {
         }
 
         // Fallback check legacy localStorage if localDb was empty
-        try {
-          const cache: ProductItem[] = JSON.parse(localStorage.getItem('wms_product_cache') || '[]');
-          if (Array.isArray(cache) && cache.length > 0) {
-            const cleanCache = cache.filter((it) => it && (it.k || (it as any).sku) && !isDummyProduct(it));
-            if (cleanCache.length > 0) {
-              setProductDatabase(cleanCache);
-              saveProductsToLocalDb(cleanCache, 'merge').catch(() => {});
+        if (!hasLocalData) {
+          try {
+            const cache: ProductItem[] = JSON.parse(localStorage.getItem('wms_product_cache') || '[]');
+            if (Array.isArray(cache) && cache.length > 0) {
+              const cleanCache = cache.filter((it) => it && (it.k || (it as any).sku) && !isDummyProduct(it));
+              if (cleanCache.length > 0) {
+                setProductDatabase(cleanCache);
+                hasLocalData = true;
+                saveProductsToLocalDb(cleanCache, 'merge').catch(() => {});
+              }
             }
-          }
-        } catch {}
+          } catch {}
+        }
       }
 
-      // 2. Fetch fresh master products from Supabase (if local DB is empty or forceRefresh requested)
+      // 2. Fetch fresh master products directly from Supabase (Always revalidate in background, SWR!)
       try {
-        const supabaseProducts = await fetchMasterProductsFromSupabase(50000, forceRefresh);
+        const supabaseProducts = await fetchMasterProductsFromSupabase(50000, true);
         if (supabaseProducts && supabaseProducts.length > 0) {
           const finalList = supabaseProducts.filter((it) => !isDummyProduct(it));
           setProductDatabase(finalList);
           await saveProductsToLocalDb(finalList, 'replace');
+          if (forceRefresh) {
+            showToast(`Katalog berhasil disinkronkan (${finalList.length} produk dari Supabase)!`, 'success');
+          }
         }
       } catch (err) {
         console.warn('Supabase product sync error:', err);
+        if (forceRefresh) {
+          showToast('Gagal menyinkronkan katalog dari Supabase.', 'error');
+        }
       }
     },
-    []
+    [showToast]
   );
 
   const handleAddDiscoveredProducts = useCallback((newItems: ProductItem[]) => {
@@ -432,6 +470,10 @@ export default function App() {
       // Set session expiry to 7 days from now
       const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
       localStorage.setItem('wms_session_expiry', expiry.toString());
+
+      // Navigate to the user's primary allowed module page
+      const firstPage = getDefaultPageForSession(newSession);
+      setActivePage(firstPage);
 
       showToast(`Selamat datang, ${res.user || user} (${res.role || 'Operator'})!`, 'success');
       playSuccessBeep();
@@ -770,7 +812,7 @@ export default function App() {
       <Sidebar
         session={session}
         activePage={activePage}
-        onSelectPage={setActivePage}
+        onSelectPage={handleSelectPage}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
@@ -780,7 +822,7 @@ export default function App() {
         notificationPermission={notificationPermission}
         onRequestNotification={handleRequestNotification}
         isRealtimeConnected={isRealtimeConnected}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={handleOpenSettings}
         onOpenApkModal={() => setIsApkModalOpen(true)}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onLogout={handleLogout}
@@ -793,7 +835,7 @@ export default function App() {
         <Navbar
           session={session}
           activePage={activePage}
-          onSelectPage={setActivePage}
+          onSelectPage={handleSelectPage}
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           onToggleSidebarCollapse={toggleSidebarCollapse}
           isSidebarCollapsed={isSidebarCollapsed}
@@ -802,7 +844,7 @@ export default function App() {
           notificationPermission={notificationPermission}
           onRequestNotification={handleRequestNotification}
           isRealtimeConnected={isRealtimeConnected}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSettings={handleOpenSettings}
           onOpenApkModal={() => setIsApkModalOpen(true)}
           onLogout={handleLogout}
           totalScannedCount={scannedData.length}
@@ -810,7 +852,30 @@ export default function App() {
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
-          {activePage === 'scanner' && (
+          {session && !canAccessPage(session, activePage) ? (
+            <div className="min-h-[60vh] flex items-center justify-center p-4">
+              <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
+                <div className="w-14 h-14 bg-rose-100 dark:bg-rose-950/60 rounded-2xl flex items-center justify-center mx-auto text-rose-600 dark:text-rose-400">
+                  <ShieldAlert className="w-7 h-7" />
+                </div>
+                <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                  Akses Halaman Dibatasi
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Akun Anda (<span className="font-bold text-slate-700 dark:text-slate-200">{session.name || session.username}</span> - Role: <span className="font-extrabold text-[#ff7a00]">{session.role}</span>) tidak memiliki izin untuk mengakses halaman ini.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActivePage(getDefaultPageForSession(session))}
+                  className="px-4 py-2.5 bg-[#ff7a00] text-white rounded-xl text-xs font-extrabold hover:bg-[#e06b00] transition-colors cursor-pointer"
+                >
+                  Buka Modul Utama Anda
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {activePage === 'scanner' && (
             <div className="block">
               <div className="max-w-2xl mx-auto space-y-4">
                 <div className="space-y-2">
@@ -903,6 +968,13 @@ export default function App() {
                 />
             )}
 
+            {activePage === 'karyawan' && (
+                <KaryawanView
+                  session={session}
+                  onShowToast={showToast}
+                />
+            )}
+
             {activePage === 'presensi' && (
                 <PresensiView
                   session={session}
@@ -938,6 +1010,8 @@ export default function App() {
                 />
             )}
           </React.Suspense>
+            </>
+          )}
         </main>
       </div>
 

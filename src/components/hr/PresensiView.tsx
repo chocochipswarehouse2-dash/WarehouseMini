@@ -11,8 +11,11 @@ import {
   UserCheck,
   Coffee,
   RotateCcw,
+  ShieldAlert,
+  Shield,
 } from 'lucide-react';
 import { UserSession, PresensiRecord, RosterShiftRecord, MasterShiftRecord } from '../../types';
+import { hasPermission, isSuperadmin } from '../../services/permissions';
 import {
   fetchPresensiToday,
   submitPresensiRecord,
@@ -163,6 +166,36 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
   const todayRoster = upcomingRoster.find((r) => r.tanggal === todayIso);
   const isShiftLibur = todayRoster?.shift?.toLowerCase().includes('libur');
+
+  const userIsAdmin = isSuperadmin(session);
+  const canViewPresensi = userIsAdmin || hasPermission(session, 'can_view_presensi');
+
+  if (!canViewPresensi) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-lg space-y-4">
+          <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/60 rounded-2xl flex items-center justify-center mx-auto text-rose-600 dark:text-rose-400">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h2 className="text-lg font-black text-slate-900 dark:text-white">
+            Akses Presensi &amp; Shift Dibatasi
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-[#ff7a00]">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Presensi &amp; Shift</b>.
+          </p>
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 text-left space-y-1">
+            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-[#ff7a00]" />
+              <span>Pengaturan Hak Akses Role:</span>
+            </div>
+            <p>
+              Hubungi Superadmin untuk mengaktifkan izin <b>can_view_presensi</b> pada profil role akun Anda melalui menu <b>Pengaturan &gt; Manajemen Pengguna &amp; Role</b>.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">

@@ -4,9 +4,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ command }) => {
   const isGithubPages = process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_PAGES === 'true';
-  const base = process.env.VITE_BASE || (isGithubPages ? '/WarehouseMini/' : './');
+  const base = process.env.VITE_BASE || (command === 'serve' ? '/' : (isGithubPages ? '/WarehouseMini/' : './'));
 
   return {
     base,

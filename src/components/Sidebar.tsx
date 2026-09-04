@@ -26,9 +26,10 @@ import {
   Lock,
   Database,
   BarChart3,
+  Users,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
-import { hasPermission, isSuperadmin, ROLE_DETAILS } from '../services/permissions';
+import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
 
 interface SidebarProps {
   session: UserSession | null;
@@ -70,12 +71,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalScannedCount,
 }) => {
   const userIsAdmin = isSuperadmin(session);
-  const canScan = hasPermission(session, 'can_scan');
-  const canPicking = hasPermission(session, 'can_picking');
-  const canPeminjaman = hasPermission(session, 'can_peminjaman');
-  const canViewInventory = hasPermission(session, 'can_view_inventory');
-  const canApproveSo = hasPermission(session, 'can_approve_so');
-  const canManageUsers = hasPermission(session, 'can_manage_users');
+  const canScan = userIsAdmin || hasPermission(session, 'can_scan');
+  const canPicking = userIsAdmin || hasPermission(session, 'can_picking');
+  const canPeminjaman = userIsAdmin || hasPermission(session, 'can_peminjaman');
+  const canViewInventory = userIsAdmin || hasPermission(session, 'can_view_inventory');
+  const canApproveSo = userIsAdmin || hasPermission(session, 'can_approve_so');
+  const canViewMutasi = userIsAdmin || hasPermission(session, 'can_view_mutasi');
+  const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
     {
@@ -92,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Inventory',
       icon: Layers,
       description: 'Stok fisik rak & per SKU',
-      access: canViewInventory || canScan || userIsAdmin,
+      access: canViewInventory,
     },
     {
       id: 'stock_opname' as ActivePage,
@@ -100,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'SO',
       icon: ClipboardList,
       description: 'Audit fisik & antrean approval',
-      access: canViewInventory || canScan || userIsAdmin || canApproveSo,
+      access: canApproveSo,
     },
     {
       id: 'mutasi_log' as ActivePage,
@@ -108,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Mutasi',
       icon: ArrowRightLeft,
       description: 'Riwayat IN/OUT & edit invoice',
-      access: canViewInventory || canScan || userIsAdmin,
+      access: canViewMutasi,
     },
     {
       id: 'picking_tasks' as ActivePage,
@@ -129,15 +131,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ].filter((item) => item.access);
 
   const canApproveHr = userIsAdmin || hasPermission(session, 'can_approve_hr');
+  const canViewKaryawan = userIsAdmin || hasPermission(session, 'can_view_karyawan');
+  const canViewPresensi = userIsAdmin || hasPermission(session, 'can_view_presensi');
+  const canViewRoster = userIsAdmin || hasPermission(session, 'can_view_roster');
+  const canViewLemburCuti = userIsAdmin || hasPermission(session, 'can_view_lembur_cuti');
 
   const hrNavItems = [
+    {
+      id: 'karyawan' as ActivePage,
+      label: 'Data Karyawan',
+      shortLabel: 'Karyawan',
+      icon: Users,
+      description: 'Daftar profil & direktori staf',
+      access: canViewKaryawan,
+    },
     {
       id: 'presensi' as ActivePage,
       label: 'Presensi & Shift Saya',
       shortLabel: 'Presensi',
       icon: Clock,
       description: 'Absen masuk/pulang & shift',
-      access: true,
+      access: canViewPresensi,
     },
     {
       id: 'roster_shift' as ActivePage,
@@ -145,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Roster',
       icon: Calendar,
       description: 'Jadwal shift seluruh tim',
-      access: true,
+      access: canViewRoster,
     },
     {
       id: 'lembur_cuti' as ActivePage,
@@ -153,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Lembur',
       icon: Zap,
       description: 'Form lembur, ijin & cuti',
-      access: true,
+      access: canViewLemburCuti,
     },
     {
       id: 'hr_approval' as ActivePage,
@@ -373,36 +387,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </button>
 
-      {/* Settings Modal */}
-      <button
-        type="button"
-        onClick={() => {
-          onOpenSettings();
-          onCloseMobile();
-        }}
-        title={
-          canManageUsers || userIsAdmin
-            ? 'Pengaturan Sistem, Database & User Role'
-            : 'Pengaturan Preferensi Perangkat'
-        }
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-          collapsed ? 'justify-center px-2' : ''
-        }`}
-      >
-        <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-          <Settings className="w-4 h-4 text-slate-500" />
-        </div>
-        {!collapsed && (
-          <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span className="truncate">Pengaturan Sistem</span>
-            {userIsAdmin && (
-              <span className="text-[9px] px-1.5 py-0.2 bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 rounded font-black">
-                ADMIN
-              </span>
-            )}
+      {/* Settings Modal - Hanya untuk Superadmin atau user dengan izin Konfigurasi Sistem / Manajemen User */}
+      {userCanAccessSettings && (
+        <button
+          type="button"
+          onClick={() => {
+            onOpenSettings();
+            onCloseMobile();
+          }}
+          title={
+            userIsAdmin
+              ? 'Pengaturan Sistem, Database & User Role'
+              : 'Pengaturan Sistem & Hak Akses'
+          }
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+            collapsed ? 'justify-center px-2' : ''
+          }`}
+        >
+          <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+            <Settings className="w-4 h-4 text-slate-500" />
           </div>
-        )}
-      </button>
+          {!collapsed && (
+            <div className="flex-1 text-left truncate flex items-center justify-between">
+              <span className="truncate">Pengaturan Sistem</span>
+              {userIsAdmin && (
+                <span className="text-[9px] px-1.5 py-0.2 bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 rounded font-black">
+                  ADMIN
+                </span>
+              )}
+            </div>
+          )}
+        </button>
+      )}
 
       {/* Update Database (Superadmin only) */}
       {userIsAdmin && onOpenUpdateDatabase && (

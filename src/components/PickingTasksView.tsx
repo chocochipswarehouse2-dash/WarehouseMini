@@ -92,8 +92,14 @@ export const PickingTasksView: React.FC<PickingTasksViewProps> = React.memo(({
   currentUser,
   productCatalog = [],
 }) => {
-  // State: All raw items from Supabase
-  const [rawItems, setRawItems] = useState<PickingListItem[]>([]);
+  // State: All raw items from Supabase (instant cached initialization)
+  const [rawItems, setRawItems] = useState<PickingListItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('wms_raw_picking_list_cache');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
