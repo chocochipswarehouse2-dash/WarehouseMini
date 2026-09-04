@@ -25,18 +25,27 @@ import {
   ShieldCheck,
   Building,
   Smartphone,
+  Edit,
+  Phone,
+  Mail,
+  MessageSquare,
+  AlertCircle,
 } from 'lucide-react';
 import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem } from '../types';
 import {
   fetchPeminjamanFromSupabase,
   savePeminjamanToSupabase,
   deletePeminjamanFromSupabase,
+  updatePeminjamanInSupabase,
   returnPeminjamanSupabase,
   getSupabaseClient,
   fetchRealtimeChannelStocksSupabase,
   fetchChannelStocksBySkus,
   supabaseFetch,
 } from '../services/supabase';
+import { isSuperadmin } from '../services/permissions';
+import { showPushNotification } from '../services/pushNotification';
+import { playNewTaskChime, playSuccessBeep, vibrateDevice } from '../services/audio';
 import { globalRealtimeStore } from '../services/store';
 import {
   getLocalPeminjamanRecords,
@@ -64,6 +73,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Form State
   const [namaPeminjam, setNamaPeminjam] = useState<string>('');
+  const [kontakPeminjam, setKontakPeminjam] = useState<string>('');
   const [keperluan, setKeperluan] = useState<string>('');
   const [tglPinjam, setTglPinjam] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState<PeminjamanItemForm[]>([
@@ -81,6 +91,33 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     },
   ]);
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // Admin Permission Check & Edit State
+  const userIsAdmin = Boolean(
+    isSuperadmin(session) ||
+    session?.role === 'Superadmin' ||
+    session?.role === 'All' ||
+    session?.role === 'HR & Admin'
+  );
+
+  const [editingRecord, setEditingRecord] = useState<{
+    originalNo: string;
+    noPeminjaman: string;
+    namaPeminjam: string;
+    kontakPeminjam: string;
+    keperluan: string;
+    tglPinjam: string;
+    status: 'Dipinjam' | 'Dikembalikan';
+    items: Array<{
+      id: string;
+      produk: string;
+      sku: string;
+      size: string;
+      qty: number;
+      lokasi: string;
+    }>;
+  } | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Channel stock state - Loaded directly from Supabase realtime
   const [selectedChannel, setSelectedChannel] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('STUDIO');
@@ -607,11 +644,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     try {
       const noSps = `SPS-${Date.now().toString().slice(-6)}`;
       const nowIso = new Date().toISOString();
+      const rawKontak = kontakPeminjam.trim();
 
       const newRecord: PeminjamanRecord = {
         id: noSps,
         noPeminjaman: noSps,
         namaPeminjam: namaPeminjam.trim(),
+        kontak_peminjam: rawKontak,
+        kontakPeminjam: rawKontak,
         keperluan: keperluan.trim(),
         tglPinjam,
         timestamp: nowIso,
@@ -647,7 +687,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           return {
             no_sj: noSps,
             tanggal: tglPinjam,
-            tujuan: `SPS: ${namaPeminjam.trim()} - ${keperluan.trim()}`,
+            tujuan: `SPS: ${namaPeminjam.trim()} - ${keperluan.trim()}${rawKontak ? ` (${rawKontak})` : ''}`,
             sku: it.sku.toUpperCase(),
             nama_produk: formattedNama,
             size: cleanSize,
@@ -663,6 +703,55 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         console.warn('Gagal menambahkan ke picking_list Supabase', err);
       }
 
+      // 3. Send automated notifications to borrower (WA or Email)
+      if (rawKontak) {
+        const personalMsg = generateWaMessage(newRecord, 'personal');
+        const isEmail = rawKontak.includes('@');
+        
+        if (isEmail) {
+          const mailSubject = encodeURIComponent(`Notifikasi Peminjaman Barang - ${noSps}`);
+          const mailBody = encodeURIComponent(personalMsg);
+          const mailLink = `mailto:${rawKontak}?subject=${mailSubject}&body=${mailBody}`;
+          try {
+            window.open(mailLink, '_blank');
+          } catch {}
+        } else {
+          let cleanPhone = rawKontak.replace(/[^0-9+]/g, '');
+          if (cleanPhone.startsWith('0')) cleanPhone = '62' + cleanPhone.slice(1);
+          if (cleanPhone.startsWith('+')) cleanPhone = cleanPhone.slice(1);
+
+          const fonnteToken = localStorage.getItem('wms_fonnte_token');
+          if (fonnteToken && cleanPhone) {
+            fetch('https://api.fonnte.com/send', {
+              method: 'POST',
+              headers: { 'Authorization': fonnteToken.trim() },
+              body: new URLSearchParams({ target: cleanPhone, message: personalMsg }),
+            }).catch(console.warn);
+          }
+
+          // Open direct WhatsApp chat with prefilled message
+          if (cleanPhone) {
+            const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(personalMsg)}`;
+            try {
+              window.open(waUrl, '_blank');
+            } catch {}
+          }
+        }
+      }
+
+      // 4. Send task notification to picker and admin (Push, Audio, Vibration)
+      try {
+        showPushNotification('📋 Tugas Picking Peminjaman Baru', {
+          body: `Surat Jalan ${noSps} untuk ${namaPeminjam.trim()} (${validItems.length} item) siap diambil di gudang!`,
+          tag: noSps,
+        });
+        playNewTaskChime();
+        vibrateDevice([200, 100, 200]);
+        window.dispatchEvent(new CustomEvent('wms_new_peminjaman_task', { detail: { noSps, namaPeminjam } }));
+      } catch (notifErr) {
+        console.warn('Notification error:', notifErr);
+      }
+
       // Update state & cache
       const updated = [newRecord, ...records.filter((r) => r.noPeminjaman !== noSps)];
       setRecords(updated);
@@ -676,6 +765,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
       // Reset form
       setNamaPeminjam('');
+      setKontakPeminjam('');
       setKeperluan('');
       setItems([
         {
@@ -692,7 +782,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         },
       ]);
 
-      onShowToast(`Peminjaman ${noSps} berhasil disimpan ke Database!`, 'success');
+      onShowToast(
+        `Peminjaman ${noSps} berhasil diajukan! Notif terkirim ke ${rawKontak || 'peminjam'} & tugas masuk antrean picking.`,
+        'success'
+      );
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Gagal mengirim pengajuan peminjaman';
       onShowToast(errMsg, 'error');
@@ -830,7 +923,114 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
   };
 
-  // Send WhatsApp Text via Fonnte
+  // Admin Handlers for Edit & Delete Peminjaman
+  const handleOpenEditModal = (rec: PeminjamanRecord) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin yang berhak mengedit riwayat peminjaman.', 'error');
+      return;
+    }
+    setEditingRecord({
+      originalNo: rec.noPeminjaman,
+      noPeminjaman: rec.noPeminjaman,
+      namaPeminjam: rec.namaPeminjam,
+      kontakPeminjam: rec.kontak_peminjam || rec.kontakPeminjam || rec.noWa || rec.email || '',
+      keperluan: rec.keperluan,
+      tglPinjam: rec.tglPinjam,
+      status: (rec.status as any) || 'Dipinjam',
+      items: rec.items.map((it, idx) => ({
+        id: `edit-item-${idx}-${Date.now()}`,
+        produk: it.produk,
+        sku: it.sku,
+        size: it.size || '-',
+        qty: it.qty,
+        lokasi: it.lokasi || 'BLOK F',
+      })),
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRecord) return;
+    if (!editingRecord.namaPeminjam.trim()) {
+      onShowToast('Nama / PIC Peminjam tidak boleh kosong', 'error');
+      return;
+    }
+    if (!editingRecord.keperluan.trim()) {
+      onShowToast('Keperluan peminjaman tidak boleh kosong', 'error');
+      return;
+    }
+    const validItems = editingRecord.items.filter((it) => it.produk.trim() && it.qty > 0);
+    if (validItems.length === 0) {
+      onShowToast('Minimal harus ada 1 item produk yang valid', 'error');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const updatedRecord: PeminjamanRecord = {
+        id: editingRecord.noPeminjaman,
+        noPeminjaman: editingRecord.noPeminjaman,
+        namaPeminjam: editingRecord.namaPeminjam.trim(),
+        kontak_peminjam: editingRecord.kontakPeminjam.trim(),
+        kontakPeminjam: editingRecord.kontakPeminjam.trim(),
+        keperluan: editingRecord.keperluan.trim(),
+        tglPinjam: editingRecord.tglPinjam,
+        status: editingRecord.status,
+        items: validItems.map((it) => {
+          const cleanSize = (it.size && it.size !== '-') ? it.size : extractSizeFromSku(it.sku);
+          return {
+            produk: formatProductNameWithSize(it.produk, cleanSize),
+            sku: it.sku.trim().toUpperCase(),
+            size: cleanSize,
+            qty: Number(it.qty) || 1,
+            lokasi: it.lokasi || 'BLOK F',
+          };
+        }),
+        username: session?.username || 'Admin',
+      };
+
+      const success = await updatePeminjamanInSupabase(editingRecord.originalNo, updatedRecord);
+      if (success) {
+        setRecords((prev) =>
+          prev.map((r) => (r.noPeminjaman === editingRecord.originalNo ? updatedRecord : r))
+        );
+        setEditingRecord(null);
+        playSuccessBeep();
+        onShowToast(`Riwayat peminjaman ${updatedRecord.noPeminjaman} berhasil diperbarui oleh Admin!`, 'success');
+      } else {
+        throw new Error('Gagal memperbarui peminjaman di Supabase');
+      }
+    } catch (err: any) {
+      onShowToast(err?.message || 'Gagal memperbarui peminjaman', 'error');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteRecord = async (rec: PeminjamanRecord) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin yang berhak menghapus riwayat peminjaman.', 'error');
+      return;
+    }
+    const confirmDelete = window.confirm(
+      `Apakah Anda yakin ingin menghapus data peminjaman ${rec.noPeminjaman} (${rec.namaPeminjam}) secara permanen?\n\nPerhatian: Data tugas picking terkait pada daftar picking gudang juga akan otomatis dibersihkan.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const ok = await deletePeminjamanFromSupabase(rec.noPeminjaman);
+      if (ok) {
+        setRecords((prev) => prev.filter((r) => r.noPeminjaman !== rec.noPeminjaman));
+        playSuccessBeep();
+        onShowToast(`Data peminjaman ${rec.noPeminjaman} berhasil dihapus oleh Admin.`, 'success');
+      } else {
+        throw new Error('Gagal menghapus data dari Supabase');
+      }
+    } catch (err: any) {
+      onShowToast(err?.message || 'Gagal menghapus peminjaman', 'error');
+    }
+  };
+
+  // Send WhatsApp Text via Fonnte or Direct Link
   const handleSendWa = async (record: PeminjamanRecord, type: 'personal' | 'grup') => {
     const text = generateWaMessage(record, type);
     const token = localStorage.getItem('wms_fonnte_token');
@@ -838,17 +1038,39 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     // As fallback, still copy to clipboard
     navigator.clipboard.writeText(text);
 
+    // Default to group target if personal number is unknown
+    const groupTarget = localStorage.getItem('wms_fonnte_group_target') || '';
+    const contact = record.kontak_peminjam || record.kontakPeminjam || record.noWa || record.email || '';
+    
+    let target = '';
+    if (type === 'grup') {
+      target = groupTarget;
+    } else {
+      if (contact && contact.includes('@')) {
+        const mailUrl = `mailto:${contact}?subject=${encodeURIComponent(`Info Peminjaman ${record.noPeminjaman}`)}&body=${encodeURIComponent(text)}`;
+        window.open(mailUrl, '_blank');
+        onShowToast(`Membuka email notifikasi ke ${contact}`, 'info');
+        return;
+      } else if (contact) {
+        let clean = contact.replace(/[^0-9+]/g, '');
+        if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+        if (clean.startsWith('+')) clean = clean.slice(1);
+        target = clean;
+      } else {
+        target = prompt("Masukkan nomor tujuan PIC (Cth: 628...):", "") || "";
+      }
+    }
+
     if (!token) {
-      onShowToast(`Pesan disalin! (Token Fonnte belum diatur di Pengaturan)`, 'warning');
+      if (type === 'personal' && target) {
+        window.open(`https://wa.me/${target}?text=${encodeURIComponent(text)}`, '_blank');
+        onShowToast(`Membuka WhatsApp ke ${target}`, 'success');
+      } else {
+        onShowToast(`Pesan disalin! (Token Fonnte belum diatur di Pengaturan)`, 'warning');
+      }
       return;
     }
 
-    // Default to group target if personal number is unknown, or you can prompt for it
-    const groupTarget = localStorage.getItem('wms_fonnte_group_target') || '';
-    
-    // Ideally we should ask for personal number, but for now we just use the group target or a placeholder
-    const target = type === 'grup' ? groupTarget : (prompt("Masukkan nomor tujuan PIC (Cth: 628...):", "") || "");
-    
     if (!target) {
        onShowToast('Nomor tujuan tidak ada. Pesan hanya disalin ke clipboard.', 'warning');
        return;
@@ -870,8 +1092,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         throw new Error(data.reason || 'Gagal mengirim pesan');
       }
     } catch (err: unknown) {
+      // Direct WA fallback
+      if (type === 'personal' && target) {
+        window.open(`https://wa.me/${target}?text=${encodeURIComponent(text)}`, '_blank');
+      }
       const msg = err instanceof Error ? err.message : 'Error menghubungi API Fonnte';
-      onShowToast(`Gagal kirim via Fonnte: ${msg}`, 'error');
+      onShowToast(`Gagal kirim via Fonnte: ${msg}. Membuka tautan WA langsung.`, 'warning');
     }
   };
 
@@ -1105,8 +1331,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               1. INFORMASI PEMINJAM (DIVISI LIVE / STUDIO)
             </div>
 
-            {/* PIC & Keperluan 2-Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* PIC & Kontak & Keperluan Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider">
                   NAMA / PIC PEMINJAM <span className="text-rose-500">*</span>
@@ -1119,6 +1345,23 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     value={namaPeminjam}
                     onChange={(e) => setNamaPeminjam(e.target.value)}
                     placeholder="Contoh: Sarah / Host Live"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider flex items-center justify-between">
+                  <span>NO. WA / EMAIL <span className="text-emerald-500 font-extrabold">*</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal lowercase">notif otomatis</span>
+                </label>
+                <div className="relative">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    value={kontakPeminjam}
+                    onChange={(e) => setKontakPeminjam(e.target.value)}
+                    placeholder="Cth: 08123456789 atau nama@email.com"
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
@@ -1708,9 +1951,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </div>
 
                   <div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{rec.namaPeminjam}</span>
+                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{rec.namaPeminjam}</span>
+                      </div>
+                      {(rec.kontak_peminjam || rec.kontakPeminjam || rec.noWa || rec.email) && (
+                        <div className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                          <Phone className="w-2.5 h-2.5" />
+                          <span>{rec.kontak_peminjam || rec.kontakPeminjam || rec.noWa || rec.email}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                       {rec.keperluan} &bull; {rec.tglPinjam}
@@ -1731,12 +1982,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     ))}
                   </div>
 
-                  {/* Actions */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  {/* Actions (with Admin Edit & Delete) */}
+                  <div className={`grid ${userIsAdmin ? 'grid-cols-5' : 'grid-cols-3'} gap-1.5 pt-1`}>
                     <button
                       type="button"
                       onClick={() => setSelectedRecordForModal(rec)}
                       className="py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      title="Lihat Detail Peminjaman"
                     >
                       <FileText className="w-3 h-3 text-emerald-400" />
                       <span>Detail</span>
@@ -1745,18 +1997,44 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       type="button"
                       onClick={() => handlePrintSJ(rec)}
                       className="py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      title="Cetak Surat Jalan (PDF)"
                     >
                       <Printer className="w-3 h-3" />
-                      <span>Cetak SJ</span>
+                      <span>Cetak</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSendWa(rec, 'grup')}
                       className="py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors"
+                      title="Kirim Pesan ke Grup WA Gudang"
                     >
                       <Share2 className="w-3 h-3" />
-                      <span>Kirim WA</span>
+                      <span>WA</span>
                     </button>
+
+                    {/* Admin Only Actions */}
+                    {userIsAdmin && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditModal(rec)}
+                          className="py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          title="Edit Riwayat Peminjaman (Admin Khusus)"
+                        >
+                          <Edit className="w-3 h-3 text-amber-500" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRecord(rec)}
+                          className="py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          title="Hapus Riwayat Peminjaman (Admin Khusus)"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-500" />
+                          <span>Hapus</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1765,6 +2043,271 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         </div>
       )}
     </div>
+
+      {/* MODAL ADMIN: EDIT RIWAYAT PEMINJAMAN */}
+      {editingRecord && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-amber-500/5 dark:bg-amber-950/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                  <Edit className="w-4 h-4 text-amber-500" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                      Edit Riwayat Peminjaman
+                    </h3>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500 text-black">
+                      ADMIN ONLY
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    Invoice: {editingRecord.noPeminjaman}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRecord(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Nama / PIC Peminjam <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRecord.namaPeminjam}
+                    onChange={(e) =>
+                      setEditingRecord({ ...editingRecord, namaPeminjam: e.target.value })
+                    }
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    No. WA / Alamat Email Peminjam
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRecord.kontakPeminjam}
+                    onChange={(e) =>
+                      setEditingRecord({ ...editingRecord, kontakPeminjam: e.target.value })
+                    }
+                    placeholder="Contoh: 08123456789 atau nama@email.com"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Keperluan Peminjaman <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRecord.keperluan}
+                    onChange={(e) =>
+                      setEditingRecord({ ...editingRecord, keperluan: e.target.value })
+                    }
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-800 dark:text-white outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Status Pengembalian
+                  </label>
+                  <select
+                    value={editingRecord.status}
+                    onChange={(e) =>
+                      setEditingRecord({
+                        ...editingRecord,
+                        status: e.target.value as 'Dipinjam' | 'Dikembalikan',
+                      })
+                    }
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-amber-500"
+                  >
+                    <option value="Dipinjam">Dipinjam (Belum Kembali)</option>
+                    <option value="Dikembalikan">Dikembalikan (Selesai)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Items Editor */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
+                    Daftar Produk ({editingRecord.items.length} Item)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingRecord({
+                        ...editingRecord,
+                        items: [
+                          ...editingRecord.items,
+                          {
+                            id: `item-${Date.now()}`,
+                            produk: '',
+                            sku: '',
+                            size: 'ALL',
+                            qty: 1,
+                            lokasi: 'BLOK F',
+                          },
+                        ],
+                      });
+                    }}
+                    className="px-2.5 py-1 bg-slate-100 dark:bg-[#16161a] hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition-colors"
+                  >
+                    <Plus className="w-3 h-3 text-amber-500" />
+                    <span>Tambah Produk</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {editingRecord.items.map((it, idx) => (
+                    <div
+                      key={it.id || idx}
+                      className="p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                        <div className="sm:col-span-4">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                            Nama Produk
+                          </label>
+                          <input
+                            type="text"
+                            value={it.produk}
+                            onChange={(e) => {
+                              const newItems = [...editingRecord.items];
+                              newItems[idx] = { ...newItems[idx], produk: e.target.value };
+                              setEditingRecord({ ...editingRecord, items: newItems });
+                            }}
+                            className="w-full p-2 bg-white dark:bg-[#16161a] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-white outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                            SKU
+                          </label>
+                          <input
+                            type="text"
+                            value={it.sku}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              const newItems = [...editingRecord.items];
+                              const sz = extractSizeFromSku(val);
+                              newItems[idx] = {
+                                ...newItems[idx],
+                                sku: val,
+                                size: sz !== '-' ? sz : newItems[idx].size,
+                              };
+                              setEditingRecord({ ...editingRecord, items: newItems });
+                            }}
+                            className="w-full p-2 bg-white dark:bg-[#16161a] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-white outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                            Size
+                          </label>
+                          <select
+                            value={it.size}
+                            onChange={(e) => {
+                              const sz = e.target.value;
+                              const newItems = [...editingRecord.items];
+                              newItems[idx] = { ...newItems[idx], size: sz };
+                              setEditingRecord({ ...editingRecord, items: newItems });
+                            }}
+                            className="w-full p-2 bg-white dark:bg-[#16161a] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white outline-none"
+                          >
+                            {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', 'ALL'].map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                            Qty (Pcs)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={it.qty}
+                            onChange={(e) => {
+                              const newItems = [...editingRecord.items];
+                              newItems[idx] = {
+                                ...newItems[idx],
+                                qty: Math.max(1, Number(e.target.value) || 1),
+                              };
+                              setEditingRecord({ ...editingRecord, items: newItems });
+                            }}
+                            className="w-full p-2 bg-white dark:bg-[#16161a] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-center text-slate-800 dark:text-white outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-1 flex justify-end pt-4 sm:pt-0">
+                          <button
+                            type="button"
+                            disabled={editingRecord.items.length <= 1}
+                            onClick={() => {
+                              const newItems = editingRecord.items.filter((_, i) => i !== idx);
+                              setEditingRecord({ ...editingRecord, items: newItems });
+                            }}
+                            className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg disabled:opacity-30 disabled:pointer-events-none"
+                            title="Hapus Baris Produk"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingRecord(null)}
+                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isSavingEdit}
+                onClick={handleSaveEdit}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isSavingEdit ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-black" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Simpan Perubahan Admin</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL PREVIEW SURAT JALAN & WHATSAPP FONNTE */}
       {selectedRecordForModal && (

@@ -283,6 +283,10 @@ export interface PeminjamanRecord {
   channel?: string;
   nama_peminjam?: string;
   namaPeminjam?: string;
+  kontak_peminjam?: string;
+  kontakPeminjam?: string;
+  noWa?: string;
+  email?: string;
   keperluan?: string;
   sku?: string;
   nama_produk?: string;

@@ -118,10 +118,14 @@ CREATE TABLE IF NOT EXISTS public.peminjaman (
   lokasi TEXT DEFAULT '-',
   status TEXT DEFAULT 'Dipinjam', -- 'Dipinjam', 'Dikembalikan'
   operator TEXT NOT NULL,
+  kontak_peminjam TEXT, -- No WA / Email peminjam
   tanggal_kembali DATE,
   keterangan TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Migration for existing installations
+ALTER TABLE public.peminjaman ADD COLUMN IF NOT EXISTS kontak_peminjam TEXT;
 
 -- 8. VIEW REALTIME STOK OTOMATIS (SISA STOK = IN - OUT)
 CREATE OR REPLACE VIEW public.view_stok_realtime AS
