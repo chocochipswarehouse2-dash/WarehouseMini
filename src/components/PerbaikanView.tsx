@@ -257,13 +257,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     };
   }, []);
 
-  // Save to localStorage as secondary backup cache
+  // Save to localStorage as secondary backup cache (debounced to avoid thread freeze)
   useEffect(() => {
-    try {
-      localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(tickets));
-    } catch (e) {
-      console.warn('Gagal menyimpan tiket perbaikan ke local storage:', e);
-    }
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(tickets));
+      } catch (e) {
+        console.warn('Gagal menyimpan tiket perbaikan ke local storage:', e);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
   }, [tickets]);
 
   // Tab State: 'input' | 'reject' | 'cuci' | 'permak' | 'defect' | 'rekap'
@@ -276,8 +279,18 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const deferredSearch = useDeferredValue(searchQuery);
   const [filterKategori, setFilterKategori] = useState<string>('ALL');
 
+  // Display Limit for Ticket Cards (24 items per batch for silky-smooth 60fps rendering)
+  const [ticketDisplayLimit, setTicketDisplayLimit] = useState<number>(24);
+  const TICKET_RENDER_STEP = 24;
+
+  // Reset ticket display limit when tab or filters change
+  useEffect(() => {
+    setTicketDisplayLimit(24);
+  }, [activeTab, filterKategori, deferredSearch]);
+
   // Form Input Reject State (Pendataan & Sortir Sekaligus)
   const [formSku, setFormSku] = useState('');
+  const deferredFormSku = useDeferredValue(formSku);
   const [formNama, setFormNama] = useState('');
   const [formSize, setFormSize] = useState('Default');
   const [formQty, setFormQty] = useState(1);
@@ -334,16 +347,42 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [lightboxImages, setLightboxImages] = useState<string[] | null>(null);
   const [printModalTicket, setPrintModalTicket] = useState<PerbaikanTicket | null>(null);
 
-  // Autocomplete SKU dari catalog
-  const skuSuggestions = useMemo(() => {
-    if (!formSku.trim() || formSku.length < 2) return [];
-    const q = formSku.toUpperCase();
-    return productCatalog
-      .filter((p) => p.k.toUpperCase().includes(q) || (p.p && p.p.toUpperCase().includes(q)))
-      .slice(0, 5);
-  }, [formSku, productCatalog]);
+  // Fast indexed catalog map for O(1) SKU lookup
+  const catalogSkuMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    if (!Array.isArray(productCatalog)) return map;
+    for (let i = 0; i < productCatalog.length; i++) {
+      const p = productCatalog[i];
+      if (p && p.k) {
+        map.set(p.k.toUpperCase().trim(), p);
+      }
+    }
+    return map;
+  }, [productCatalog]);
 
-  // Deteksi Stok Fisik Area Perbaikan (CC = Cuci, PMK = Permak, DF = Defect)
+  // Autocomplete SKU dari catalog dengan fast search & early break
+  const skuSuggestions = useMemo(() => {
+    const q = deferredFormSku.trim().toUpperCase();
+    if (!q || q.length < 2 || !Array.isArray(productCatalog)) return [];
+
+    // Jika sudah cocok sempurna dengan yang dipilih, sembunyikan dropdown
+    if (catalogSkuMap.has(q) && formNama) return [];
+
+    const result: ProductItem[] = [];
+    for (let i = 0; i < productCatalog.length; i++) {
+      const p = productCatalog[i];
+      if (!p) continue;
+      const kUpper = p.k.toUpperCase();
+      const pUpper = (p.p || p.n || '').toUpperCase();
+      if (kUpper.includes(q) || pUpper.includes(q)) {
+        result.push(p);
+        if (result.length >= 5) break; // Berhenti langsung begitu 5 item ditemukan
+      }
+    }
+    return result;
+  }, [deferredFormSku, productCatalog, catalogSkuMap, formNama]);
+
+  // Deteksi Stok Fisik Area Perbaikan (CC = Cuci, PMK = Permak, DF = Defect) dengan fast pre-filtering
   const physicalRepairItems = useMemo(() => {
     const result: Array<{
       sku: string;
@@ -354,7 +393,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       tahap: 'CUCI' | 'PERMAK' | 'DEFECT';
     }> = [];
 
-    productCatalog.forEach((p) => {
+    if (!Array.isArray(productCatalog)) return result;
+
+    for (let i = 0; i < productCatalog.length; i++) {
+      const p = productCatalog[i];
+      if (!p) continue;
+
       if (Array.isArray(p.locList) && p.locList.length > 0) {
         p.locList.forEach((l) => {
           const locStr = typeof l === 'string' ? l.trim().toUpperCase() : String(l.lokasi || '').trim().toUpperCase();
@@ -368,8 +412,22 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           }
         });
       } else if (p.lokasi) {
-        const locs = String(p.lokasi).split(/[,/;\n|]+/).map((x) => x.trim().toUpperCase());
-        locs.forEach((locStr) => {
+        const locUpper = String(p.lokasi).toUpperCase();
+        // Fast skip 99% of items that do not contain CC, CUCI, PMK, PERMAK, DF, DEFECT
+        if (
+          !locUpper.includes('CC') &&
+          !locUpper.includes('CUCI') &&
+          !locUpper.includes('PMK') &&
+          !locUpper.includes('PERMAK') &&
+          !locUpper.includes('DF') &&
+          !locUpper.includes('DEFECT')
+        ) {
+          continue;
+        }
+
+        const locs = locUpper.split(/[,/;\n|]+/);
+        locs.forEach((locRaw) => {
+          const locStr = locRaw.trim();
           if (locStr.startsWith('CC') || locStr.includes('CUCI')) {
             result.push({ sku: p.k, nama: p.p || p.n || p.k, size: p.s, lokasi: locStr, qty: p.q && p.q > 0 ? p.q : 1, tahap: 'CUCI' });
           } else if (locStr.startsWith('PMK') || locStr.includes('PERMAK')) {
@@ -379,7 +437,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           }
         });
       }
-    });
+    }
 
     return result;
   }, [productCatalog]);
@@ -1493,13 +1551,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     required
                     value={formSku}
                     onChange={(e) => {
-                      setFormSku(e.target.value);
-                      // Auto-fill nama if found exact match
-                      const exact = productCatalog.find(
-                        (p) => p.k.toUpperCase() === e.target.value.trim().toUpperCase()
-                      );
+                      const val = e.target.value;
+                      setFormSku(val);
+                      // Auto-fill nama if found exact match in O(1)
+                      const exact = catalogSkuMap.get(val.trim().toUpperCase());
                       if (exact) {
-                        setFormNama(exact.p);
+                        setFormNama(exact.p || exact.n || '');
                         setFormSize(exact.s || 'Default');
                       }
                     }}
@@ -2077,8 +2134,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       {activeTab !== 'input' && (
         <div className="space-y-3">
           {filteredTickets.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {filteredTickets.map((item) => (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {filteredTickets.slice(0, ticketDisplayLimit).map((item) => (
                 <div
                   key={item.id}
                   className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow relative overflow-hidden"
@@ -2266,6 +2324,22 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 </div>
               ))}
             </div>
+
+            {filteredTickets.length > ticketDisplayLimit && (
+              <div className="flex justify-center pt-2 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setTicketDisplayLimit((prev) => prev + TICKET_RENDER_STEP)}
+                  className="px-6 py-2.5 bg-white dark:bg-[#131d31] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <span>⬇️ Tampilkan Lebih Banyak (+{TICKET_RENDER_STEP} Tiket)</span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    (Sisa {filteredTickets.length - ticketDisplayLimit} dari {filteredTickets.length})
+                  </span>
+                </button>
+              </div>
+            )}
+            </>
           ) : (
             <div className="p-8 text-center bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
               <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto text-slate-400">
