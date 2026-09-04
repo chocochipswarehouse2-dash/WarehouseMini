@@ -77,7 +77,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const deferredSearch = useDeferredValue(searchQuery);
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT'>('ALL');
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
-  const [displayLimit, setDisplayLimit] = useState(150);
+  const [displayLimit, setDisplayLimit] = useState(30);
 
   // Bulk Delete State
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());

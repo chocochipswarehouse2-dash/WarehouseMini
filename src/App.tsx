@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, startTransition } from 'react';
 import confetti from 'canvas-confetti';
 import { Scan, FileText, ShieldAlert } from 'lucide-react';
 import {
@@ -58,7 +58,9 @@ import {
   fetchMasterProductsFromSupabase,
   verifySupabaseLogin,
   isDummyProduct,
+  supabaseFetch,
 } from './services/supabase';
+import { WmsUser } from './types';
 import { getDefaultPageForSession, canAccessPage, canAccessSettings } from './services/permissions';
 import {
   playCategoryBeep,
@@ -130,13 +132,81 @@ export default function App() {
     }
   }, [session, activePage]);
 
+  // Sinkronisasi hak akses sesi user secara background dari Supabase tabel wms_users
+  useEffect(() => {
+    if (!session || !session.username) return;
+    let isMounted = true;
+
+    // Preload lazy components to make navigation smooth
+    const preloadTimer = setTimeout(() => {
+      import('./components/PeminjamanView');
+      import('./components/PickingTasksView');
+      import('./components/StockOpnameView');
+      import('./components/MutasiLogView');
+      import('./components/InventoryView');
+      import('./components/hr/PresensiView');
+      import('./components/hr/KaryawanView');
+      import('./components/hr/RosterShiftView');
+      import('./components/hr/LemburCutiView');
+      import('./components/hr/HrApprovalView');
+      import('./components/hr/HrRekapView');
+    }, 2000);
+
+    const syncSessionPermissions = async () => {
+      try {
+        const cleanUser = session.username.trim().toLowerCase();
+        const data = await supabaseFetch<WmsUser[]>(
+          'wms_users',
+          'GET',
+          null,
+          `username=ilike.${encodeURIComponent(cleanUser)}&limit=1`
+        );
+        if (!isMounted || !data || data.length === 0) return;
+
+        const u = data[0];
+        const newRole = u.role || session.role;
+        const newPermissions = u.permissions;
+
+        const roleChanged = newRole !== session.role;
+        const permsChanged = JSON.stringify(newPermissions || {}) !== JSON.stringify(session.permissions || {});
+
+        if (roleChanged || permsChanged) {
+          const updatedSession: UserSession = {
+            ...session,
+            role: newRole,
+            permissions: newPermissions,
+            name: u.name || session.name,
+            nik: u.nik || session.nik,
+          };
+          setSession(updatedSession);
+          localStorage.setItem('wms_user_role', newRole);
+          if (newPermissions) {
+            localStorage.setItem('wms_user_permissions', JSON.stringify(newPermissions));
+          } else {
+            localStorage.removeItem('wms_user_permissions');
+          }
+        }
+      } catch (err) {
+        // Silent catch agar tidak mengganggu operasional jika offline
+      }
+    };
+
+    syncSessionPermissions();
+    return () => {
+      isMounted = false;
+      clearTimeout(preloadTimer);
+    };
+  }, [session?.username]);
+
   // Handler navigasi dengan verifikasi izin halaman
   const handleSelectPage = useCallback((page: ActivePage) => {
     if (!canAccessPage(session, page)) {
       showToast('Akses ditolak: Akun Anda tidak memiliki hak akses untuk modul ini.', 'warning');
       return;
     }
-    setActivePage(page);
+    startTransition(() => {
+      setActivePage(page);
+    });
   }, [session]);
 
   // Handler pembukaan pengaturan sistem dengan verifikasi izin

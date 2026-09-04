@@ -2047,27 +2047,37 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     : '';
 
   try {
-    // Primary query: non-zero remaining stocks (chunked sequentially for safety)
-    let offset = 0;
-    const pageSize = 1000;
-    let keepFetching = true;
-    const viewRowsNonZero: any[] = [];
-
-    while (keepFetching && offset < 15000) {
+    // Primary query: non-zero remaining stocks (chunked for safety)
+    const pageSize = 2000; // Increase page size if supported, PostgREST default max is usually 1000 or limits configured
+    let viewRowsNonZero: any[] = [];
+    
+    if (searchKeyword && searchKeyword.trim()) {
+      // If there's a search keyword, it's usually a small result set, fetch once
       const chunk = await supabaseFetch<any[]>(
         'view_stok_realtime',
         'GET',
         null,
-        `select=*&sisa_stok=neq.0${searchFilter}&limit=${pageSize}&offset=${offset}`
+        `select=*&sisa_stok=neq.0${searchFilter}&limit=3000`
       );
-      if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
-        break;
+      if (chunk && Array.isArray(chunk)) viewRowsNonZero = chunk;
+    } else {
+      // Parallelize fetching for full load to avoid 4+ seconds sequential block
+      const offsets = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000];
+      const fetchPromises = offsets.map(offset => 
+        supabaseFetch<any[]>(
+          'view_stok_realtime',
+          'GET',
+          null,
+          `select=*&sisa_stok=neq.0&limit=${pageSize}&offset=${offset}`
+        ).catch(() => []) // fail gracefully for each chunk
+      );
+      
+      const results = await Promise.all(fetchPromises);
+      for (const chunk of results) {
+        if (chunk && Array.isArray(chunk)) {
+          viewRowsNonZero.push(...chunk);
+        }
       }
-      viewRowsNonZero.push(...chunk);
-      if (chunk.length < pageSize) {
-        break;
-      }
-      offset += chunk.length;
     }
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
@@ -3379,3 +3389,127 @@ export async function fetchPresensiRange(
   }
 }
 
+
+export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<StockRealtimeItem[]> {
+  if (!skus || skus.length === 0) return [];
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  const skuList = skus.map(s => `"${s}"`).join(',');
+  const encodedSkus = encodeURIComponent(`(${skuList})`);
+  
+  try {
+    const res = await fetch(`${supaUrl}/rest/v1/view_stok_realtime?sku=in.${encodedSkus}&sisa_stok=neq.0`, {
+      method: 'GET',
+      headers: {
+        'apikey': supaKey,
+        'Authorization': `Bearer ${supaKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    return [];
+  } catch (err) {
+    console.error('Error fetching delta stocks:', err);
+    return [];
+  }
+}
+
+export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('../types').ChannelStockItem[]> {
+  if (!skus || skus.length === 0) return [];
+  const viewRows = await fetchSupabaseStokFisikBySkus(skus);
+  
+  const stockMap = new Map<
+    string,
+    {
+      sku: string;
+      produk: string;
+      size: string;
+      locations: Map<string, { lokasi: string; area: string; qty: number }>;
+      directStudio?: number;
+      directShp?: number;
+      directTtk?: number;
+    }
+  >();
+  
+  if (viewRows && Array.isArray(viewRows) && viewRows.length > 0) {
+    for (const r of viewRows) {
+      const sku = String(r.sku || r.kode || '').trim().toUpperCase();
+      if (!sku || sku === 'UNDEFINED' || sku === 'NULL') continue;
+      const sisa = Number(r.sisa_stok ?? r.qty ?? 0);
+      const lok = String(r.lokasi || 'BLOK F').trim();
+      const area = String(r.area || getAreaFromLokasi(lok)).trim();
+      const nama = String(r.nama_produk || r.nama || sku).trim();
+      
+      let size = String(r.size || r.ukuran || '').trim();
+      if (!size || size === '-' || size === 'ALL') {
+        if (sku.endsWith('XXL')) size = 'XXL';
+        else if (sku.endsWith('XL')) size = 'XL';
+        else if (sku.endsWith('XS')) size = 'XS';
+        else if (sku.endsWith('L')) size = 'L';
+        else if (sku.endsWith('M')) size = 'M';
+        else if (sku.endsWith('S')) size = 'S';
+        else size = 'ALL';
+      }
+
+      if (!stockMap.has(sku)) {
+        stockMap.set(sku, { sku, produk: nama, size: size || 'ALL', locations: new Map() });
+      }
+
+      const entry = stockMap.get(sku)!;
+      if (entry.produk === sku && nama !== sku) entry.produk = nama;
+      if ((!entry.size || entry.size === 'ALL' || entry.size === '-') && size && size !== '-') entry.size = size;
+
+      const lokKey = `${lok.toUpperCase()}__${area.toUpperCase()}`;
+      const prev = entry.locations.get(lokKey)?.qty || 0;
+      entry.locations.set(lokKey, { lokasi: lok, area, qty: prev + sisa });
+    }
+  }
+  
+  const result: import('../types').ChannelStockItem[] = [];
+  
+  for (const entry of stockMap.values()) {
+    let wh = 0, std = 0, shp = 0, ttk = 0;
+    
+    // Default mapped specific locations if direct counts not present
+    for (const [_, locData] of entry.locations.entries()) {
+      const l = locData.lokasi.toUpperCase();
+      const a = locData.area.toUpperCase();
+      const q = locData.qty;
+      
+      if (a === 'STUDIO' || l === 'STUDIO' || l === 'STUDIO (BLOK F)') {
+        std += q;
+      } else if (a === 'SHOPEE' || a === 'SHP' || l === 'SHOPEE' || l === 'SHP') {
+        shp += q;
+      } else if (a === 'TIKTOK' || a === 'TTK' || l === 'TIKTOK' || l === 'TTK') {
+        ttk += q;
+      } else if (a === 'ONLINE') {
+        shp += q; // Fallback mapping
+      } else {
+        wh += q;
+      }
+    }
+    
+    // Add locStr logic
+    const locNames = Array.from(entry.locations.values())
+      .filter(it => it.qty > 0 && it.area !== 'STUDIO' && it.area !== 'SHOPEE' && it.area !== 'TIKTOK' && it.area !== 'ONLINE')
+      .map(it => it.lokasi);
+    const uniqueLocs = Array.from(new Set(locNames));
+    const locStr = uniqueLocs.length > 0 ? uniqueLocs.join(', ') : 'Gudang (Stok Habis)';
+    
+    result.push({
+      sku: entry.sku,
+      produk: entry.produk,
+      size: entry.size,
+      locStr,
+      whQty: wh,
+      studioQty: entry.directStudio ?? std,
+      shpQty: entry.directShp ?? shp,
+      ttkQty: entry.directTtk ?? ttk,
+      totalQty: wh + (entry.directStudio ?? std) + (entry.directShp ?? shp) + (entry.directTtk ?? ttk)
+    });
+  }
+  
+  return result.sort((a, b) => b.totalQty - a.totalQty);
+}

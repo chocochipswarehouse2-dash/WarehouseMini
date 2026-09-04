@@ -55,7 +55,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const [statusFilter, setStatusFilter] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING');
   const [diffFilter, setDiffFilter] = useState<'ALL' | 'DIFF' | 'PLUS' | 'MINUS' | 'ZERO'>('ALL');
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([]);
-  const [displayLimit, setDisplayLimit] = useState(150);
+  const [displayLimit, setDisplayLimit] = useState(30);
 
   // In-app confirmation modal
   const [confirmModal, setConfirmModal] = useState<{

@@ -37,6 +37,7 @@ import { saveInventoryStocksToLocalDb, getAllInventoryStocksFromLocalDb } from '
 import {
   fetchAllStockRealtime,
   fetchSupabaseStokFisikDirect,
+  fetchSupabaseStokFisikBySkus,
   fetchStockForLocations,
   getAreaFromLokasi,
   getSupabaseClient,
@@ -168,8 +169,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const deferredSearch = useDeferredValue(searchQuery);
   const [sortOption, setSortOption] = useState<InventorySortOption>('NAME_ASC');
   const [onlyWithStock, setOnlyWithStock] = useState<boolean>(false);
-  const [displayLimit, setDisplayLimit] = useState<number>(60);
-  const RENDER_STEP = 60;
+  const [displayLimit, setDisplayLimit] = useState<number>(20);
+  const RENDER_STEP = 20;
 
   // KPI Modal Drilldown State
   const [kpiModal, setKpiModal] = useState<KpiModalType>(null);
@@ -287,6 +288,37 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     // Supabase Realtime Subscription via global store
     let debounceTimer: any = null;
+    let pendingSkus = new Set<string>();
+
+    const updateDeltaStocks = async () => {
+      if (pendingSkus.size === 0) return;
+      const skus = Array.from(pendingSkus);
+      pendingSkus.clear();
+      
+      try {
+        const deltaRows = await fetchSupabaseStokFisikBySkus(skus);
+        
+        // Remove old rows for these SKUs, insert new ones
+        setStockList((prev) => {
+          const filtered = prev.filter(p => !skus.includes(p.sku || ''));
+          const merged = [...filtered, ...deltaRows];
+          globalInventoryStockCache = merged;
+          return merged;
+        });
+      } catch (err) {
+        console.warn('Delta stock fetch failed:', err);
+      }
+    };
+
+    const triggerDebouncedDelta = (payload: any) => {
+      if (payload && payload.new && payload.new.sku) {
+        pendingSkus.add(payload.new.sku);
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        updateDeltaStocks();
+      }, 500);
+    };
 
     const triggerDebouncedReload = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -295,9 +327,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       }, 300);
     };
 
-    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedReload);
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedDelta);
     const unsubMaster = globalRealtimeStore.subscribe('master_produk', triggerDebouncedReload);
-    const unsubStok = globalRealtimeStore.subscribe('view_stok_realtime', triggerDebouncedReload);
+    const unsubStok = globalRealtimeStore.subscribe('view_stok_realtime', triggerDebouncedDelta);
 
     setIsRealtimeActive(true);
 

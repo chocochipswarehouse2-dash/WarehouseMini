@@ -34,6 +34,7 @@ import {
   returnPeminjamanSupabase,
   getSupabaseClient,
   fetchRealtimeChannelStocksSupabase,
+  fetchChannelStocksBySkus,
   supabaseFetch,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
@@ -59,6 +60,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 }) => {
   // Navigation tabs for mobile / view switcher
   const [activeTab, setActiveTab] = useState<'form' | 'stok' | 'riwayat'>('form');
+  const [displayLimit, setDisplayLimit] = useState(30);
 
   // Form State
   const [namaPeminjam, setNamaPeminjam] = useState<string>('');
@@ -184,20 +186,49 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
     // Supabase Realtime via global store
     let debounceTimer: any = null;
+    let pendingSkus = new Set<string>();
 
-    const triggerDebouncedSync = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        if (!isMounted) return;
-        fetchPeminjamanFromSupabase().then((d) => {
-          if (isMounted && d && d.length > 0) setRecords(d);
-        });
-        loadChannelStocks();
-      }, 400);
+    const handlePeminjamanChange = () => {
+      fetchPeminjamanFromSupabase().then((d) => {
+        if (isMounted && d && d.length > 0) setRecords(d);
+      });
     };
 
-    const unsubPeminjaman = globalRealtimeStore.subscribe('peminjaman', triggerDebouncedSync);
-    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedSync);
+    const updateDeltaStocks = async () => {
+      if (pendingSkus.size === 0 || !isMounted) return;
+      const skus = Array.from(pendingSkus);
+      pendingSkus.clear();
+      
+      try {
+        const deltaRows = await fetchChannelStocksBySkus(skus);
+        if (deltaRows.length > 0) {
+          setChannelStocks((prev) => {
+            const map = new Map<string, ChannelStockItem>();
+            prev.forEach((it) => map.set(it.sku.toUpperCase(), it));
+            deltaRows.forEach((it) => map.set(it.sku.toUpperCase(), it));
+            return Array.from(map.values()).sort((a, b) => {
+              if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
+              return a.produk.localeCompare(b.produk);
+            });
+          });
+        }
+      } catch (err) {
+        console.warn('Delta stock fetch failed:', err);
+      }
+    };
+
+    const handleLogChange = (payload: any) => {
+      if (payload && payload.new && payload.new.sku) {
+        pendingSkus.add(payload.new.sku);
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        updateDeltaStocks();
+      }, 500);
+    };
+
+    const unsubPeminjaman = globalRealtimeStore.subscribe('peminjaman', handlePeminjamanChange);
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', handleLogChange);
 
     return () => {
       isMounted = false;
@@ -1466,7 +1497,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     </td>
                   </tr>
                 ) : (
-                  filteredStocks.map((stk) => {
+                  <>
+                  {filteredStocks.slice(0, displayLimit).map((stk) => {
                     const displayQty =
                       selectedChannel === 'STUDIO'
                         ? stk.studioQty
@@ -1572,7 +1604,21 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         </td>
                       </tr>
                     );
-                  })
+                  })}
+                  {filteredStocks.length > displayLimit && (
+                    <tr>
+                      <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setDisplayLimit((prev) => prev + 30)}
+                          className="px-4 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Tampilkan Lebih Banyak ({filteredStocks.length - displayLimit} baris lagi)
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 )}
               </tbody>
             </table>
