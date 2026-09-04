@@ -1202,8 +1202,8 @@ let memoryStokFisikCache: StockRealtimeItem[] | null = null;
 let memoryStokFisikLastFetch = 0;
 
 export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
-  // SWR: return in-memory cache if fresh within 3 seconds and not forcing refresh
-  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 3000) {
+  // SWR: return in-memory cache if fresh within 5 minutes and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 300000) {
     return memoryStokFisikCache;
   }
 
@@ -1904,7 +1904,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
-          fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+          fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&order=sku.asc&limit=${pageSize}&offset=${off}`, {
             headers: {
               apikey: supaKey,
               Authorization: 'Bearer ' + supaKey,

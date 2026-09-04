@@ -351,21 +351,23 @@ export default function App() {
         }
       }
 
-      // 2. Fetch fresh master products directly from Supabase (Always revalidate in background, SWR!)
-      try {
-        const supabaseProducts = await fetchMasterProductsFromSupabase(50000, true);
-        if (supabaseProducts && supabaseProducts.length > 0) {
-          const finalList = supabaseProducts.filter((it) => !isDummyProduct(it));
-          setProductDatabase(finalList);
-          await saveProductsToLocalDb(finalList, 'replace');
-          if (forceRefresh) {
-            showToast(`Katalog berhasil disinkronkan (${finalList.length} produk dari Supabase)!`, 'success');
+      // 2. Fetch fresh master products directly from Supabase (Hanya jika belum ada cache lokal atau user klik refresh manual)
+      if (!hasLocalData || forceRefresh) {
+        try {
+          const supabaseProducts = await fetchMasterProductsFromSupabase(50000, forceRefresh);
+          if (supabaseProducts && supabaseProducts.length > 0) {
+            const finalList = supabaseProducts.filter((it) => !isDummyProduct(it));
+            setProductDatabase(finalList);
+            await saveProductsToLocalDb(finalList, 'replace');
+            if (forceRefresh) {
+              showToast(`Katalog berhasil disinkronkan (${finalList.length} produk dari Supabase)!`, 'success');
+            }
           }
-        }
-      } catch (err) {
-        console.warn('Supabase product sync error:', err);
-        if (forceRefresh) {
-          showToast('Gagal menyinkronkan katalog dari Supabase.', 'error');
+        } catch (err) {
+          console.warn('Supabase product sync error:', err);
+          if (forceRefresh) {
+            showToast('Gagal menyinkronkan katalog dari Supabase.', 'error');
+          }
         }
       }
     },
