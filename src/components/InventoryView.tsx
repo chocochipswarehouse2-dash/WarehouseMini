@@ -1054,23 +1054,138 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const classifyMapItem = (item: NormalizedInventoryItem) => {
     const nama = String(item.produk || '').trim().toLowerCase();
     const sku = String(item.sku || '').trim().toLowerCase();
-    const hasZLoc = item.locStr.toUpperCase().includes('Z') || item.locStr.toUpperCase().includes('SLOW');
+    const locStr = String(item.locStr || '');
+    const locUpper = locStr.toUpperCase();
 
-    if (sku.startsWith('z-') || sku.startsWith('z_') || sku === 'z' || nama.includes('slow moving') || nama.includes('slowmoving') || hasZLoc) {
+    // 1. Z: Slow Moving (Rak Z, SKU Z, or Slow Moving in name)
+    const hasZLoc =
+      locUpper.includes('Z') ||
+      locUpper.includes('SLOW') ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return u.startsWith('Z') || u.includes('SLOW');
+        }));
+
+    if (
+      sku.startsWith('z-') ||
+      sku.startsWith('z_') ||
+      sku === 'z' ||
+      nama.includes('slow moving') ||
+      nama.includes('slowmoving') ||
+      hasZLoc
+    ) {
       return { code: 'Z', label: 'Z. SLOW MOVING', short: 'Z', icon: '⏳', color: 'bg-slate-500 text-white' };
     }
-    if (sku.startsWith('ds') || sku.startsWith('sc') || nama.includes('special condition') || nama.includes('clearance') || nama.includes('sale') || sku.includes('sale')) {
-      return { code: 'D', label: 'D. SALE', short: 'D', icon: '🏷️', color: 'bg-rose-500 text-white' };
+
+    // 2. D: Lokasi / Rak D (D001, D002, ..., D011 etc. excluding DF/Defect) or Sale / Special Condition
+    const hasDLoc =
+      (/(^|[\s,;/|])D\d{1,3}\b/i.test(locStr) && !/(^|[\s,;/|])DF/i.test(locStr)) ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return /^D\d+/i.test(u) && !u.startsWith('DF') && !u.startsWith('DEF');
+        }));
+
+    const isSaleOrSC =
+      sku.startsWith('ds') ||
+      sku.startsWith('sc') ||
+      nama.startsWith('sc -') ||
+      nama.startsWith('sc-') ||
+      nama.startsWith('sc ') ||
+      nama.includes('special condition') ||
+      nama.includes('clearance') ||
+      nama.includes('sale') ||
+      sku.includes('sale');
+
+    if (hasDLoc || isSaleOrSC) {
+      return { code: 'D', label: 'D. SALE / LOKASI D', short: 'D', icon: '🏷️', color: 'bg-rose-500 text-white' };
     }
-    if (nama.includes('belt') || nama.includes('aksesoris') || nama.includes('accessories') || nama.includes('acc') || nama.includes('bag') || nama.includes('gift') || nama.includes('box') || nama.includes('paperbag') || sku.startsWith('pb-') || sku.startsWith('acc-') || sku.startsWith('blt')) {
+
+    // 3. Belt & Aksesoris
+    const hasBeltLoc =
+      locUpper.includes('BELT') ||
+      locUpper.includes('ACC') ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return u.includes('BELT') || u.includes('ACC');
+        }));
+
+    if (
+      hasBeltLoc ||
+      nama.includes('belt') ||
+      nama.includes('aksesoris') ||
+      nama.includes('accessories') ||
+      nama.includes('acc') ||
+      nama.includes('bag') ||
+      nama.includes('gift') ||
+      nama.includes('box') ||
+      nama.includes('paperbag') ||
+      sku.startsWith('pb-') ||
+      sku.startsWith('acc-') ||
+      sku.startsWith('blt')
+    ) {
       return { code: 'BELT', label: 'BELT (AKSESORIS)', short: 'BELT', icon: '🎀', color: 'bg-purple-500 text-white' };
     }
-    if (nama.includes('pants') || nama.includes('skirt') || nama.includes('skort') || nama.includes('culotte') || nama.includes('shorts') || nama.includes('bottom') || nama.includes('jeans') || nama.includes('trouser') || nama.includes('celana') || nama.includes('rok') || nama.includes('kulot') || nama.includes('legging')) {
+
+    // 4. B: Bottom (Rak B or Pants/Skirt/Celana/Rok)
+    const hasBLoc =
+      (/(^|[\s,;/|])B\d{1,3}\b/i.test(locStr) && !/(^|[\s,;/|])BLOK/i.test(locStr) && !/(^|[\s,;/|])BELT/i.test(locStr)) ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return /^B\d+/i.test(u) && !u.includes('BLOK') && !u.includes('BELT');
+        }));
+
+    if (
+      hasBLoc ||
+      nama.includes('pants') ||
+      nama.includes('skirt') ||
+      nama.includes('skort') ||
+      nama.includes('culotte') ||
+      nama.includes('shorts') ||
+      nama.includes('bottom') ||
+      nama.includes('jeans') ||
+      nama.includes('trouser') ||
+      nama.includes('celana') ||
+      nama.includes('rok') ||
+      nama.includes('kulot') ||
+      nama.includes('legging')
+    ) {
       return { code: 'B', label: 'B. BOTTOM', short: 'B', icon: '👖', color: 'bg-blue-500 text-white' };
     }
-    if (nama.includes('dress') || nama.includes('jumpsuit') || nama.includes('one set') || nama.includes('oneset') || nama.includes('set') || nama.includes('romper') || nama.includes('gown') || nama.includes('maxi') || nama.includes('midi')) {
+
+    // 5. A: Dress & Set (Rak A or Dress/Set/Jumpsuit)
+    const hasALoc =
+      /(^|[\s,;/|])A\d{1,3}\b/i.test(locStr) ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return /^A\d+/i.test(u);
+        }));
+
+    if (
+      hasALoc ||
+      nama.includes('dress') ||
+      nama.includes('jumpsuit') ||
+      nama.includes('one set') ||
+      nama.includes('oneset') ||
+      nama.includes('set') ||
+      nama.includes('romper') ||
+      nama.includes('gown') ||
+      nama.includes('maxi') ||
+      nama.includes('midi')
+    ) {
       return { code: 'A', label: 'A. DRESS', short: 'A', icon: '👗', color: 'bg-amber-500 text-white' };
     }
+
+    // 6. C: Top (Fallback / Atasan)
     return { code: 'C', label: 'C. TOP', short: 'C', icon: '👚', color: 'bg-emerald-500 text-white' };
   };
 
@@ -2301,7 +2416,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             { id: 'A', label: '👗 A. DRESS' },
                             { id: 'B', label: '👖 B. BOTTOM' },
                             { id: 'C', label: '👚 C. TOP' },
-                            { id: 'D', label: '🏷️ D. SALE' },
+                            { id: 'D', label: '🏷️ D. SALE (LOKASI D)' },
                             { id: 'BELT', label: '🎀 BELT' },
                             { id: 'Z', label: '⏳ Z. SLOW' },
                           ] as const
