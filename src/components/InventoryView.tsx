@@ -45,6 +45,7 @@ import {
   supabaseFetch,
   getMemoryStokFisikCache,
   setMemoryStokFisikCache,
+  isDummyProduct,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
@@ -500,7 +501,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       const lokasi = String(sRow.lokasi || '').trim();
       const area = String(sRow.area || '').trim();
       const qty = Number(sRow.sisa_stok) || 0;
-      if (!sku || qty === 0) return;
+      if (!sku || qty === 0 || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
 
       if (!skuStockMap[sku]) {
         skuStockMap[sku] = {
@@ -835,20 +836,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     };
 
     productCatalog.forEach((item) => {
-      if (!item) return;
+      if (!item || isDummyProduct(item)) return;
       const sku = String(item.k || item.sku || '').trim().toUpperCase();
-      if (!sku) return;
+      if (!sku || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
       seenSkus.add(sku);
       result.push(normalizeRow(item, sku, skuStockMap[sku]));
     });
 
-    // C. Add extra SKUs present in Supabase stock but not yet in productCatalog
-    Object.keys(skuStockMap).forEach((sku) => {
-      if (!seenSkus.has(sku)) {
-        result.push(normalizeRow(null, sku, skuStockMap[sku]));
-      }
-    });
-
+    // Produk di luar master_produk tidak boleh ditampilkan di inventori
     return result;
   }, [productCatalog, stockList, dealposDeltaMap]);
 

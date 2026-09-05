@@ -38,10 +38,30 @@ export const DEFAULT_SEED_PRODUCTS: ProductItem[] = [];
  */
 export function isDummyProduct(item: ProductItem | null | undefined): boolean {
   if (!item || !item.k) return true;
-  const sku = item.k.toUpperCase().trim();
-  const name = String(item.p || item.n || '').toLowerCase();
+  const sku = String(item.k || (item as any).sku || '').toUpperCase().trim();
+  const name = String(item.p || item.n || (item as any).nama_produk || '').toLowerCase().trim();
   
-  // Detect known dummy product patterns
+  // 1. Filter out location tags, koli barcodes, or tags starting with or containing #
+  if (sku.startsWith('#') || sku.includes('#') || name.startsWith('#')) {
+    return true;
+  }
+
+  // 2. Filter out non-product tags accidentally scanned as SKUs
+  if (
+    sku === 'KOLI' ||
+    sku === 'BOX' ||
+    sku.startsWith('LOK ') ||
+    sku.startsWith('RAK ') ||
+    sku === 'UNDEFINED' ||
+    sku === 'NULL' ||
+    name === 'sku tidak ditemukan' ||
+    name === 'undefined' ||
+    name === 'null'
+  ) {
+    return true;
+  }
+
+  // 3. Detect known dummy product patterns
   if (
     sku === 'SKU-001' ||
     sku === 'SKU-002' ||
@@ -1737,7 +1757,9 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     ''
   ).trim();
 
-  if (!sku || sku === 'undefined' || sku === 'null') return null;
+  if (!sku || sku.toLowerCase() === 'undefined' || sku.toLowerCase() === 'null') return null;
+  if (sku.startsWith('#') || sku.includes('#')) return null;
+  if (sku.toUpperCase() === 'KOLI' || sku.toUpperCase() === 'BOX' || sku.toUpperCase().startsWith('LOK ') || sku.toUpperCase().startsWith('RAK ')) return null;
 
   const nama = String(
     row.nama_produk ||
@@ -2098,10 +2120,9 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
           let item = productsMap.get(sku);
           if (!item) {
-            item = extractProductFromRow(r);
-            if (item && !isDummyProduct(item)) {
-              productsMap.set(sku, item);
-            }
+            // ONLY associate stock with products that exist in master_produk!
+            // Products outside master_produk must NEVER be created as catalog products.
+            continue;
           }
 
           if (item && r.lokasi) {
@@ -2171,26 +2192,25 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     }
   };
 
-  await Promise.allSettled([fetchMasterTable(), fetchStockTable()]);
+  // 3. Sequential: First fetch all master_produk to build the true catalog
+  await fetchMasterTable();
 
-  // If still empty (e.g. offline or unpopulated tables), fallback to picking_list / log_produk
-  if (productsMap.size === 0) {
-    const fallbackTables = ['log_produk', 'picking_list'];
-    await Promise.allSettled(
-      fallbackTables.map(async (table) => {
-        try {
-          const rows = await supabaseFetch<any[]>(table, 'GET', null, 'select=*&limit=1000');
-          if (Array.isArray(rows)) {
-            for (const r of rows) {
-              const item = extractProductFromRow(r);
-              if (item && item.k && !isDummyProduct(item)) {
-                productsMap.set(item.k.toUpperCase(), item);
-              }
-            }
+  // Then enrich the existing master catalog with live location & stock from view_stok_realtime
+  if (productsMap.size > 0) {
+    await fetchStockTable();
+  } else {
+    // If master_produk returned 0 rows (e.g. offline/network glitch), fallback only to picking_list
+    try {
+      const rows = await supabaseFetch<any[]>('picking_list', 'GET', null, 'select=*&limit=1000');
+      if (Array.isArray(rows)) {
+        for (const r of rows) {
+          const item = extractProductFromRow(r);
+          if (item && item.k && !isDummyProduct(item)) {
+            productsMap.set(item.k.toUpperCase(), item);
           }
-        } catch {}
-      })
-    );
+        }
+      }
+    } catch {}
   }
 
   const result = Array.from(productsMap.values()).filter((it) => !isDummyProduct(it));

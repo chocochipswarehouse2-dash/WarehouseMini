@@ -4,6 +4,7 @@
  */
 
 import { ProductItem, StockRealtimeItem } from '../types';
+import { isDummyProduct } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
 const DB_VERSION = 1;
@@ -94,8 +95,11 @@ export async function getLocalDb(): Promise<IDBDatabase> {
  */
 function sanitizeProduct(item: ProductItem): ProductItem | null {
   if (!item) return null;
+  if (isDummyProduct(item)) return null;
   const sku = String(item.k || (item as any).sku || '').trim().toUpperCase();
   if (!sku || sku === 'UNDEFINED' || sku === 'NULL') return null;
+  if (sku.startsWith('#') || sku.includes('#')) return null;
+  if (sku === 'KOLI' || sku === 'BOX' || sku.startsWith('LOK ') || sku.startsWith('RAK ')) return null;
 
   return {
     ...item,
@@ -114,13 +118,36 @@ export async function getAllProductsFromLocalDb(): Promise<ProductItem[]> {
   try {
     const db = await getLocalDb();
     return new Promise<ProductItem[]>((resolve, reject) => {
-      const transaction = db.transaction('products', 'readonly');
+      const transaction = db.transaction('products', 'readwrite');
       const store = transaction.objectStore('products');
       const request = store.getAll();
 
       request.onsuccess = () => {
         const results = request.result || [];
-        resolve(results);
+        const clean: ProductItem[] = [];
+        const dirtyKeys: string[] = [];
+
+        for (const it of results) {
+          if (it && !isDummyProduct(it)) {
+            const sku = String(it.k || (it as any).sku || '').trim().toUpperCase();
+            if (sku && !sku.startsWith('#') && !sku.includes('#') && sku !== 'KOLI' && sku !== 'BOX') {
+              clean.push(it);
+              continue;
+            }
+          }
+          if (it) {
+            dirtyKeys.push(String(it.k || (it as any).sku || (it as any).id || ''));
+          }
+        }
+
+        // Clean dirty keys from local database
+        if (dirtyKeys.length > 0) {
+          for (const k of dirtyKeys) {
+            if (k) try { store.delete(k); } catch {}
+          }
+        }
+
+        resolve(clean);
       };
 
       request.onerror = () => {
@@ -131,7 +158,13 @@ export async function getAllProductsFromLocalDb(): Promise<ProductItem[]> {
     console.warn('Failed to get products from local database, falling back to localStorage:', err);
     try {
       const raw = localStorage.getItem('wms_product_cache');
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter(it => it && !isDummyProduct(it) && !String(it.k || it.sku || '').startsWith('#'));
+          return clean;
+        }
+      }
     } catch {}
     return [];
   }
