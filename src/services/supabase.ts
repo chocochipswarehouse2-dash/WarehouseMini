@@ -4143,3 +4143,42 @@ export async function recordPerbaikanStockMutation(params: {
   }
 }
 
+
+
+/**
+ * Upsert roster shift automatically for approved cuti/ijin
+ */
+export async function upsertRosterShiftForCuti(cuti: PerijinanCutiRecord): Promise<void> {
+  const sb = getSupabaseClient();
+  const dStart = new Date(cuti.tgl_mulai);
+  const dEnd = new Date(cuti.tgl_selesai);
+  
+  const dates = [];
+  let current = new Date(dStart);
+  while (current <= dEnd) {
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const day = String(current.getDate()).padStart(2, '0');
+    dates.push(`${year}-${month}-${day}`);
+    current.setDate(current.getDate() + 1);
+  }
+  
+  const payload = dates.map(tanggal => ({
+    nik: cuti.nik,
+    tanggal,
+    shift: cuti.jenis.toUpperCase().includes('CUTI') ? 'CUTI' : 'IJIN',
+    keterangan: cuti.alasan,
+  }));
+  
+  // Using upsert on NIK & Tanggal requires unique constraint on (nik, tanggal), 
+  // but let's just insert/update each sequentially or use upsert if supported.
+  for (const record of payload) {
+    // Check if exists
+    const { data: existing } = await sb.from('roster_shift').select('id').eq('nik', record.nik).eq('tanggal', record.tanggal).limit(1);
+    if (existing && existing.length > 0) {
+      await sb.from('roster_shift').update(record).eq('id', existing[0].id);
+    } else {
+      await sb.from('roster_shift').insert([record]);
+    }
+  }
+}

@@ -18,6 +18,7 @@ import {
   updateLemburStatus,
   fetchCutiRecords,
   updateCutiStatus,
+  upsertRosterShiftForCuti,
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
+  Edit2,
+  Save,
+  X,
   Clock,
   Calendar,
   CheckCircle2,
@@ -18,6 +21,7 @@ import { UserSession, PresensiRecord, RosterShiftRecord, MasterShiftRecord } fro
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import {
   fetchPresensiToday,
+  fetchPresensiRange,
   submitPresensiRecord,
   fetchRosterShiftList,
   fetchMasterShiftList,
@@ -33,6 +37,34 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
   const [todayIso, setTodayIso] = useState<string>('');
+
+  const [activeTab, setActiveTab] = useState<'harian' | 'log'>('harian');
+  const [logRecords, setLogRecords] = useState<PresensiRecord[]>([]);
+  const [loadingLog, setLoadingLog] = useState<boolean>(false);
+  const [editingPresensiId, setEditingPresensiId] = useState<number | string | null>(null);
+  const [editPresensiData, setEditPresensiData] = useState<Partial<PresensiRecord>>({});
+
+  const loadLogData = useCallback(async () => {
+    setLoadingLog(true);
+    try {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      const start = d.toISOString().slice(0, 10);
+      const data = await fetchPresensiRange(start, todayIso);
+      setLogRecords(data);
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setLoadingLog(false);
+    }
+  }, [todayIso]);
+
+  useEffect(() => {
+    if (activeTab === 'log') {
+      loadLogData();
+    }
+  }, [activeTab, loadLogData]);
+
 
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -199,6 +231,24 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800">
+        <button
+          onClick={() => setActiveTab('harian')}
+          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'harian' ? 'border-[#ff7a00] text-[#ff7a00]' : 'border-transparent text-slate-500'}`}
+        >
+          Presensi Harian
+        </button>
+        <button
+          onClick={() => setActiveTab('log')}
+          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'log' ? 'border-[#ff7a00] text-[#ff7a00]' : 'border-transparent text-slate-500'}`}
+        >
+          Log Presensi
+        </button>
+      </div>
+      
+      {activeTab === 'harian' && (
+        <div className="space-y-6">
       {/* HEADER CLOCK & PROFILE BANNER */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1e293b] p-6 sm:p-8 text-white shadow-xl border border-slate-700/60">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-[#ff7a00]/15 rounded-full blur-3xl pointer-events-none"></div>
@@ -478,6 +528,100 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
           </div>
         )}
       </div>
+
+        </div>
+      )}
+
+      {activeTab === 'log' && (
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 border border-slate-200 dark:border-slate-800">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="font-black text-lg text-slate-900 dark:text-white">Log Presensi (30 Hari Terakhir)</h2>
+            <button onClick={loadLogData} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><RotateCcw className="w-4 h-4" /></button>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs whitespace-nowrap text-slate-900 dark:text-white">
+              <thead className="bg-slate-50 dark:bg-slate-900/50">
+                <tr>
+                  <th className="p-3">Tanggal</th>
+                  <th className="p-3">NIK</th>
+                  <th className="p-3">Nama</th>
+                  <th className="p-3">Shift</th>
+                  <th className="p-3">Jam Masuk</th>
+                  <th className="p-3">Jam Pulang</th>
+                  <th className="p-3">Status</th>
+                  {userIsAdmin && <th className="p-3">Aksi</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {logRecords.map((r, i) => (
+                  <tr key={r.id || i}>
+                    <td className="p-3">{r.tanggal}</td>
+                    <td className="p-3">{r.nik}</td>
+                    <td className="p-3">{r.nama_karyawan || r.nik}</td>
+                    
+                    {editingPresensiId === r.id ? (
+                      <>
+                        <td className="p-3">
+                           <input type="text" value={editPresensiData.shift || ''} onChange={e => setEditPresensiData({...editPresensiData, shift: e.target.value})} className="border p-1 rounded w-20 text-xs bg-transparent dark:border-slate-700"/>
+                        </td>
+                        <td className="p-3">
+                           <input type="time" value={editPresensiData.jam_masuk || ''} onChange={e => setEditPresensiData({...editPresensiData, jam_masuk: e.target.value})} className="border p-1 rounded w-20 text-xs bg-transparent dark:border-slate-700"/>
+                        </td>
+                        <td className="p-3">
+                           <input type="time" value={editPresensiData.jam_pulang || ''} onChange={e => setEditPresensiData({...editPresensiData, jam_pulang: e.target.value})} className="border p-1 rounded w-20 text-xs bg-transparent dark:border-slate-700"/>
+                        </td>
+                        <td className="p-3">
+                           <select value={editPresensiData.status || ''} onChange={e => setEditPresensiData({...editPresensiData, status: e.target.value})} className="border p-1 rounded w-24 text-xs bg-white dark:bg-slate-900 dark:border-slate-700">
+                             <option value="Hadir">Hadir</option>
+                             <option value="Terlambat">Terlambat</option>
+                             <option value="Alpha">Alpha</option>
+                             <option value="Izin">Izin</option>
+                             <option value="Cuti">Cuti</option>
+                           </select>
+                        </td>
+                        <td className="p-3 flex gap-2">
+                          <button onClick={async () => {
+                            if (!editPresensiData.id) return;
+                            try {
+                              await submitPresensiRecord(editPresensiData);
+                              onShowToast('Presensi berhasil diupdate', 'success');
+                              setEditingPresensiId(null);
+                              loadLogData();
+                            } catch(e) {
+                              onShowToast('Gagal update', 'error');
+                            }
+                          }} className="text-emerald-500"><Save className="w-4 h-4" /></button>
+                          <button onClick={() => setEditingPresensiId(null)} className="text-slate-400"><X className="w-4 h-4" /></button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="p-3">{r.shift}</td>
+                        <td className="p-3">{r.jam_masuk || '-'}</td>
+                        <td className="p-3">{r.jam_pulang || '-'}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${r.status === 'Hadir' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        {userIsAdmin && (
+                          <td className="p-3">
+                            <button onClick={() => { setEditingPresensiId(r.id || null); setEditPresensiData(r); }} className="text-blue-500 p-1 hover:bg-blue-50 dark:hover:bg-blue-900 rounded"><Edit2 className="w-4 h-4"/></button>
+                          </td>
+                        )}
+                      </>
+                    )}
+                  </tr>
+                ))}
+                {logRecords.length === 0 && !loadingLog && (
+                  <tr><td colSpan={8} className="text-center p-4 text-slate-400">Tidak ada log data presensi</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

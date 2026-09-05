@@ -13,6 +13,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { UserSession, LemburRecord, PerijinanCutiRecord } from '../../types';
+import { hasPermission, isSuperadmin } from '../../services/permissions';
 import {
   fetchLemburRecords,
   submitLemburRecord,
@@ -50,11 +51,14 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const userNik = session?.nik || (session?.username && session.username.startsWith('WH') ? session.username : 'WH0001');
   const userName = session?.name || session?.username || 'Karyawan';
 
+  const isAdmin = isSuperadmin(session) || hasPermission(session, 'can_manage_hr');
+  
   const loadData = async () => {
     setLoading(true);
     try {
+      const lemburPromise = isAdmin ? fetchLemburRecords() : fetchLemburRecords(userNik);
       const [lList, cList] = await Promise.all([
-        fetchLemburRecords(),
+        lemburPromise,
         fetchCutiRecords(),
       ]);
       setLemburList(lList);

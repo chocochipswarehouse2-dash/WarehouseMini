@@ -693,6 +693,22 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       ]);
 
       onShowToast(`Peminjaman ${noSps} berhasil disimpan ke Database!`, 'success');
+
+      // Auto-send WhatsApp notification via Fonnte to the logged in user
+      const users = getLocalUsers();
+      const currentUser = users.find(u => u.username === session?.username);
+      const targetPhone = currentUser?.phone;
+      const token = localStorage.getItem('wms_fonnte_token');
+      
+      if (token && targetPhone) {
+        const textMsg = generateWaMessage(newRecord, 'personal');
+        fetch('https://api.fonnte.com/send', {
+          method: 'POST',
+          headers: { 'Authorization': token.trim() },
+          body: new URLSearchParams({ target: targetPhone, message: textMsg }),
+        }).catch(err => console.warn('Failed auto WA', err));
+      }
+
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Gagal mengirim pengajuan peminjaman';
       onShowToast(errMsg, 'error');

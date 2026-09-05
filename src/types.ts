@@ -83,6 +83,8 @@ export interface WmsUser {
   permissions?: Partial<UserPermissions>;
   created_at?: string;
   nik?: string;
+  no_hp?: string;
+  email?: string;
 }
 
 export interface UserSession {
@@ -96,6 +98,8 @@ export interface UserSession {
   supabaseAnonKey?: string;
   nik?: string;
   divisi?: string;
+  no_hp?: string;
+  email?: string;
 }
 
 export interface KaryawanRecord {
@@ -201,6 +205,8 @@ export interface LocalUserRecord {
   permissions?: Partial<UserPermissions>;
   created_at?: string;
   nik?: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface ProductItem {

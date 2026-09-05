@@ -153,6 +153,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newName, setNewName] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
   const [newNik, setNewNik] = useState<string>('');
+  const [newPhone, setNewPhone] = useState<string>('');
+  const [newEmail, setNewEmail] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('Operator');
   const [newPermissions, setNewPermissions] = useState<UserPermissions>({
     ...ROLE_DEFAULT_PERMISSIONS['Operator'],
@@ -438,6 +440,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       role: newRole,
       permissions: { ...newPermissions },
       nik: newNik.trim() || undefined,
+      phone: newPhone.trim() || undefined,
+      email: newEmail.trim() || undefined,
     };
 
     if (editingIndex !== null) {
@@ -467,6 +471,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       password: userToSave.password,
       permissions: newPermissions,
       nik: newNik.trim() || undefined,
+      phone: newPhone.trim() || undefined,
+      email: newEmail.trim() || undefined,
     });
 
     // If current logged-in user is updated, update active session
@@ -485,6 +491,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewName('');
     setNewPassword('');
     setNewNik('');
+    setNewPhone('');
+    setNewEmail('');
     setNewRole('Operator');
     setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS['Operator'] });
     setIsPermissionFormOpen(false);
@@ -498,6 +506,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewName(u.name || u.username);
     setNewPassword(u.password || '');
     setNewNik(u.nik || '');
+    setNewPhone(u.phone || '');
+    setNewEmail(u.email || '');
     setNewRole(u.role || 'Operator');
     setNewPermissions(
       u.permissions
@@ -768,23 +778,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (isPermissionFormOpen) {
+                      if (isPermissionFormOpen && editingIndex === null) {
                         setIsPermissionFormOpen(false);
-                        setEditingIndex(null);
                       } else {
+                        setEditingIndex(null);
+                        setNewUsername('');
+                        setNewName('');
+                        setNewPassword('');
+                        setNewNik('');
+                        setNewPhone('');
+                        setNewEmail('');
+                        setNewRole('Operator');
+                        setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS['Operator'] });
                         setIsPermissionFormOpen(true);
                       }
                     }}
                     className="text-xs text-[#ff7a00] font-bold hover:underline cursor-pointer flex items-center gap-1"
                   >
-                    {isPermissionFormOpen ? 'Tutup Form' : '+ Buka Form Tambah User'}
+                    {isPermissionFormOpen && editingIndex === null ? 'Tutup Form' : '+ Buka Form Tambah User'}
                   </button>
                 </div>
 
-                {isPermissionFormOpen && (
+                {isPermissionFormOpen && editingIndex === null && (
                   <form onSubmit={handleSaveUser} className="p-4 sm:p-5 space-y-4">
                     {/* Basic Info: Username, Name, Password, NIK / Data Karyawan */}
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                           Username / ID Login <span className="text-rose-500">*</span>
@@ -856,6 +874,295 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="Default: 123456"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          No HP (WhatsApp)
+                        </label>
+                        <input
+                          type="text"
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value)}
+                          placeholder="e.g. 628123456"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Email (Opsional)
+                        </label>
+                        <input
+                          type="email"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          placeholder="e.g. user@email.com"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Role Preset Selector */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                        Pilih Template Role Utama:
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Perbaikan', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
+                          const details = ROLE_DETAILS[r];
+                          const isSelected = newRole === r;
+                          return (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => handleRolePresetSelect(r)}
+                              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                                isSelected
+                                  ? 'bg-[#ff7a00]/10 border-[#ff7a00] text-[#ff7a00] shadow-sm'
+                                  : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                              }`}
+                            >
+                              <div className="text-base mb-1">{details?.icon}</div>
+                              <div className="text-xs font-bold truncate">{r}</div>
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">
+                                {details?.desc}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Granular Permission Checkbox Matrix */}
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                        <div>
+                          <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-[#ff7a00]" />
+                            <span>Pengaturan Hak Akses Spesifik (Granular Permissions)</span>
+                          </h4>
+                          <p className="text-[10px] text-slate-400">
+                            Centang atau hapus centang untuk menyesuaikan fitur apa saja yang boleh dibuka oleh user ini
+                          </p>
+                        </div>
+
+                        <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-300 dark:border-emerald-800">
+                          {countGrantedPermissions(newPermissions)} / {TOTAL_PERMISSIONS_COUNT} Izin Aktif
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {PERMISSION_GROUPS.map((group) => {
+                          const groupKeys = group.permissions.map((p) => p.key);
+                          const isAllGroupSelected = groupKeys.every((k) => newPermissions[k]);
+
+                          return (
+                            <div
+                              key={group.id}
+                              className="p-3.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5 shadow-xs"
+                            >
+                              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">{group.badge}</span>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 dark:text-white">
+                                      {group.title}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400">{group.description}</div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleSelectAllGroupPermissions(groupKeys, !isAllGroupSelected)
+                                  }
+                                  className="text-[10px] font-bold text-[#ff7a00] hover:underline cursor-pointer"
+                                >
+                                  {isAllGroupSelected ? 'Batal' : 'Pilih Semua'}
+                                </button>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                {group.permissions.map((perm) => {
+                                  const isChecked = !!newPermissions[perm.key];
+                                  return (
+                                    <label
+                                      key={perm.key}
+                                      className={`flex items-start gap-2.5 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                        isChecked
+                                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 text-slate-900 dark:text-white'
+                                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => handleTogglePermission(perm.key)}
+                                        className="mt-0.5 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-bold flex items-center gap-1">
+                                          <span>{perm.label}</span>
+                                          {perm.isSuperadminOnly && (
+                                            <span className="text-[8px] font-extrabold px-1 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded">
+                                              SUPERADMIN
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 leading-tight">
+                                          {perm.description}
+                                        </div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Form Buttons */}
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPermissionFormOpen(false);
+                          setEditingIndex(null);
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{editingIndex !== null ? 'Simpan Perubahan User' : 'Simpan User Baru'}</span>
+                      </button>
+                    </div>
+                  </form>)}
+      {editingIndex !== null && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-blue-500" />
+                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  Edit Data & Izin User: "{newUsername}"
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingIndex(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveUser} className="p-4 sm:p-5 space-y-4">
+                    {/* Basic Info: Username, Name, Password, NIK / Data Karyawan */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Username / ID Login <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="e.g. gudang1"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Nama Lengkap Staff
+                        </label>
+                        <input
+                          type="text"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          placeholder="e.g. Budi Santoso"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tautkan NIK Karyawan
+                        </label>
+                        {karyawanDirectory.length > 0 ? (
+                          <select
+                            value={newNik}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewNik(val);
+                              const match = karyawanDirectory.find((k) => k.nik === val);
+                              if (match && !newName) {
+                                setNewName(match.nama);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          >
+                            <option value="">-- Tanpa NIK --</option>
+                            {karyawanDirectory.map((k) => (
+                              <option key={k.nik} value={k.nik}>
+                                {k.nik} - {k.nama} ({k.divisi || 'Umum'})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={newNik}
+                            onChange={(e) => setNewNik(e.target.value)}
+                            placeholder="e.g. WH0001"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Password
+                        </label>
+                        <input
+                          type="text"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Default: 123456"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          No HP (WhatsApp)
+                        </label>
+                        <input
+                          type="text"
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value)}
+                          placeholder="e.g. 628123456"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Email (Opsional)
+                        </label>
+                        <input
+                          type="email"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          placeholder="e.g. user@email.com"
                           className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
                         />
                       </div>
@@ -1005,7 +1312,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </button>
                     </div>
                   </form>
-                )}
+          </div>
+        </div>
+      )}
+
               </div>
 
               {/* User List Table */}
