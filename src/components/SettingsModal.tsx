@@ -514,7 +514,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         ? { ...ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'], ...u.permissions }
         : { ...ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'] }
     );
-    setIsPermissionFormOpen(true);
+    setIsPermissionFormOpen(false);
   };
 
   const handleDeleteUser = (idx: number) => {
@@ -761,17 +761,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               )}
 
-              {/* Add / Edit User Form Accordion */}
+              {/* Add User Form Accordion */}
               <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-[#0f172a]/50">
                 <div className="p-4 bg-white dark:bg-[#101726] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    {editingIndex !== null ? (
-                      <Edit2 className="w-4 h-4 text-blue-500" />
-                    ) : (
-                      <Plus className="w-4 h-4 text-[#ff7a00]" />
-                    )}
+                    <Plus className="w-4 h-4 text-[#ff7a00]" />
                     <span className="text-xs font-extrabold text-slate-800 dark:text-white">
-                      {editingIndex !== null ? `Edit Data & Izin User: "${newUsername}"` : 'Tambah Pengguna & Pengaturan Role Baru'}
+                      Tambah Pengguna & Pengaturan Role Baru
                     </span>
                   </div>
 
@@ -1043,7 +1039,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                       >
                         <Save className="w-3.5 h-3.5" />
-                        <span>{editingIndex !== null ? 'Simpan Perubahan User' : 'Simpan User Baru'}</span>
+                        <span>Simpan User Baru</span>
                       </button>
                     </div>
                   </form>)}
@@ -1308,7 +1304,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                       >
                         <Save className="w-3.5 h-3.5" />
-                        <span>{editingIndex !== null ? 'Simpan Perubahan User' : 'Simpan User Baru'}</span>
+                        <span>Simpan Perubahan User</span>
                       </button>
                     </div>
                   </form>
