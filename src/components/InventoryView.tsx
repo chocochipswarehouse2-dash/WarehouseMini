@@ -48,7 +48,7 @@ import {
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
-import { partialSearchMatch } from '../utils/sortUtils';
+import { partialSearchMatch, sortAlphabeticalAndSize } from '../utils/sortUtils';
 
 // ========================================================
 // DEFINISI KONSTANTA KOLOM AREA SESUAI SPESIFIKASI WMS
@@ -76,6 +76,9 @@ export interface NormalizedInventoryItem {
     DEFECT: { fisik: number; dp: number };
   };
   singles: { [key: string]: number };
+  stokStudio?: number;
+  stokShp?: number;
+  stokTtk?: number;
   totalFisikGudang: number;
   totalStore: number;
   totalOnline: number;
@@ -486,6 +489,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         l: string[];
         nama_produk?: string;
         size?: string;
+        stokStudio: number;
+        stokShp: number;
+        stokTtk: number;
       }
     > = {};
 
@@ -502,24 +508,49 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           l: [],
           nama_produk: sRow.nama_produk,
           size: sRow.size,
+          stokStudio: 0,
+          stokShp: 0,
+          stokTtk: 0,
         };
       }
 
       const a = area.toUpperCase();
       const l = lokasi.toUpperCase();
+
+      // Track individual sub-channels for Blok F (Studio, Shopee, TikTok)
+      if (l.includes('STUDIO') || l.includes('SAMPLE') || a.includes('STUDIO')) {
+        skuStockMap[sku].stokStudio = (skuStockMap[sku].stokStudio || 0) + qty;
+      }
+      if (l.includes('SHOPEE') || l.includes('SHP') || a.includes('SHOPEE')) {
+        skuStockMap[sku].stokShp = (skuStockMap[sku].stokShp || 0) + qty;
+      }
+      if (l.includes('TIKTOK') || l.includes('TTK') || l === 'TT' || a.includes('TIKTOK')) {
+        skuStockMap[sku].stokTtk = (skuStockMap[sku].stokTtk || 0) + qty;
+      }
+
       let kat = 'Gudang Utama';
 
-      if (a === 'WAREHOUSE' || a.includes('GUDANG') || a.includes('MAP') || a.includes('AKSESORIS') || l.startsWith('BELT')) {
-        kat = 'Gudang Utama';
-      } else if (
-        (a === 'BLOK F' || a.includes('BLOK') || a.includes('LIVE')) &&
-        (l === 'SHOPEE' || l === 'TIKTOK' || l === 'TT' || l === 'LIVE' || l.includes('SHP') || l.includes('TTK') || l.includes('TIK') || l.includes('TOK'))
+      if (
+        l.includes('SHOPEE') ||
+        l.includes('TIKTOK') ||
+        l === 'TT' ||
+        l.includes('SHP') ||
+        l.includes('TTK') ||
+        l.includes('LIVE') ||
+        a.includes('LIVE') ||
+        a === 'BLOK F' ||
+        a.includes('BLOK')
       ) {
-        kat = 'Barang Live';
+        if (l.includes('STUDIO') || l.includes('SAMPLE') || a.includes('STUDIO')) {
+          kat = 'Sample Studio';
+        } else {
+          kat = 'Barang Live';
+        }
       } else if (
         a === 'STUDIO' ||
         a.includes('STUDIO') ||
-        ((a === 'BLOK F' || a.includes('BLOK')) && (l === 'STUDIO' || l === 'SAMPLE' || l.includes('STUDIO')))
+        l.includes('STUDIO') ||
+        l.includes('SAMPLE')
       ) {
         kat = 'Sample Studio';
       } else if (
@@ -624,6 +655,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         0
       );
 
+      let shpFisik = Number(mapped?.stokShp || row?.stokShp || 0);
+      let ttkFisik = Number(mapped?.stokTtk || row?.stokTtk || 0);
+      if (mapped?.stokStudio) studioFisik = Math.max(studioFisik, Number(mapped.stokStudio));
+
       let permakFisik = Number(f['PERMAK'] ?? f['Permak / Cuci'] ?? f['Permak'] ?? 0);
       const permakDp = Number(
         d['PERMAK'] ??
@@ -658,6 +693,41 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         ? row.l
         : [];
       const locStr = formatLocationString(locList);
+
+      // Always inspect locList directly to extract sub-channel quantities (Shopee, TikTok, Studio)
+      if (locList && locList.length > 0) {
+        let locStudio = 0;
+        let locShp = 0;
+        let locTtk = 0;
+        for (const itemLoc of locList) {
+          let locName = '';
+          let locQty = 0;
+          if (typeof itemLoc === 'string') {
+            const parts = itemLoc.split(':');
+            locName = parts[0] || '';
+            locQty = Number(parts[1]) || 0;
+          } else if (typeof itemLoc === 'object' && itemLoc !== null) {
+            locName = (itemLoc as any).lokasi || '';
+            locQty = Number((itemLoc as any).qty) || 0;
+          }
+          const lU = locName.toUpperCase().trim();
+          if (lU.includes('STUDIO') || lU.includes('SAMPLE')) {
+            locStudio += locQty;
+          } else if (lU.includes('SHOPEE') || lU.includes('SHP')) {
+            locShp += locQty;
+          } else if (lU.includes('TIKTOK') || lU.includes('TTK') || lU === 'TT') {
+            locTtk += locQty;
+          }
+        }
+        if (locStudio > 0) studioFisik = Math.max(studioFisik, locStudio);
+        if (locShp > 0) shpFisik = Math.max(shpFisik, locShp);
+        if (locTtk > 0) ttkFisik = Math.max(ttkFisik, locTtk);
+      }
+
+      // Ensure liveFisik accurately covers shpFisik and ttkFisik
+      if (shpFisik + ttkFisik > liveFisik) {
+        liveFisik = shpFisik + ttkFisik;
+      }
 
       // 3. Fallback: If physical counts are all 0 but locations are detected, derive quantities directly from locations!
       if (mapFisik === 0 && liveFisik === 0 && studioFisik === 0 && permakFisik === 0 && defectFisik === 0) {
@@ -715,6 +785,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         );
       });
 
+      // Also fallback if DealPOS singleVals has SHP or TTK and physical was 0
+      if (shpFisik === 0 && singleVals['SHP'] > 0) shpFisik = singleVals['SHP'];
+      if (ttkFisik === 0 && singleVals['TTK'] > 0) ttkFisik = singleVals['TTK'];
+
       const produk = String(row?.p || row?.produk || row?.nama_produk || mapped?.nama_produk || sku);
       const size = String(row?.s || row?.size || mapped?.size || '-');
 
@@ -746,6 +820,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           DEFECT: { fisik: defectFisik, dp: defectDp },
         },
         singles: singleVals,
+        stokStudio: studioFisik,
+        stokShp: shpFisik,
+        stokTtk: ttkFisik,
         totalFisikGudang: mapFisik + liveFisik + studioFisik + permakFisik + defectFisik,
         totalStore: sTot,
         totalOnline: onTot,
@@ -2209,12 +2286,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                     );
                   }
 
+                  // Sort alphabetically by product name and clothing size
+                  list = sortAlphabeticalAndSize(list, (i) => i.produk || i.sku || '', (i) => i.size || '');
+
                   const totalPcs = list.reduce((sum, it) => sum + it.komparasi.MAP.fisik, 0);
 
                   return (
                     <div className="space-y-3">
                       {/* Segmented Tabs */}
-                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold">
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
                         {(
                           [
                             { id: 'ALL', label: '🌐 SEMUA' },
@@ -2243,13 +2323,16 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
                       {/* Search & Export */}
                       <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={kpiModalSearch}
-                          onChange={(e) => setKpiModalSearch(e.target.value)}
-                          placeholder="🔍 Cari Produk / SKU / Lokasi..."
-                          className="flex-1 px-3 py-1.5 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500"
-                        />
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="🔍 Cari Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -2264,48 +2347,72 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             ]);
                             handleExportModalCSV(`stok_map_${kpiMapTab}`, headers, rows);
                           }}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap"
+                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0"
                         >
                           <Download className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Export CSV</span>
+                          <span className="hidden sm:inline">Export CSV</span>
+                          <span className="sm:hidden">CSV</span>
                         </button>
                       </div>
 
-                      {/* Table */}
-                      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 dark:bg-[#0E1420] text-[10px] font-extrabold uppercase text-slate-500 sticky top-0">
+                      {/* Table and Responsive Mobile View */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
                             <tr>
-                              <th className="p-2.5">Produk</th>
-                              <th className="p-2.5 text-center">Size</th>
-                              <th className="p-2.5">SKU</th>
-                              <th className="p-2.5 text-center">Kategori</th>
-                              <th className="p-2.5 text-right">Qty MAP</th>
+                              <th className="p-2.5">PRODUK &amp; LOKASI</th>
+                              <th className="p-2.5 text-center w-12">SIZE</th>
+                              <th className="p-2.5 text-center w-14">KAT</th>
+                              <th className="p-2.5 text-center w-16 text-amber-600 dark:text-amber-400">QTY MAP</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                            {list.slice(0, modalDisplayLimit).map((it, idx) => (
-                              <tr key={`${it.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
-                                  {it.produk}
-                                  {it.locStr !== '-' && <div className="text-[10px] text-emerald-600 font-mono font-normal">📍 {it.locStr}</div>}
-                                </td>
-                                <td className="p-2.5 text-center">
-                                  <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 font-mono text-[10px] font-bold rounded">
-                                    {it.size}
-                                  </span>
-                                </td>
-                                <td className="p-2.5 font-mono text-slate-500">{it.sku}</td>
-                                <td className="p-2.5 text-center">
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${it.kat.color}`}>
-                                    {it.kat.short}
-                                  </span>
-                                </td>
-                                <td className="p-2.5 text-right font-mono font-extrabold text-amber-600 dark:text-amber-400">
-                                  {it.komparasi.MAP.fisik}
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada produk di area MAP dengan filter ini
                                 </td>
                               </tr>
-                            ))}
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => (
+                                  <tr
+                                    key={`${it.sku}_${idx}`}
+                                    className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                  >
+                                    <td className="p-2.5">
+                                      <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                        {it.produk}
+                                      </div>
+                                      <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                        <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                        {it.locStr && it.locStr !== '-' && (
+                                          <>
+                                            <span>&bull;</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                        {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${it.kat.color}`}>
+                                        {it.kat.short}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-xs font-extrabold text-amber-600 dark:text-amber-400">
+                                        {it.komparasi.MAP.fisik}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </>
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -2335,17 +2442,26 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               {kpiModal === 'BLOK_F' && (
                 (() => {
                   let list = normalizedInventory
-                    .filter((p) => (p.komparasi.STUDIO.fisik || 0) + (p.komparasi.LIVE.fisik || 0) > 0)
+                    .filter((p) => {
+                      const st = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const sh = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const tt = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const lv = p.komparasi.LIVE.fisik || 0;
+                      return (st + sh + tt + lv) > 0;
+                    })
                     .map((p) => {
-                      const studioQty = p.komparasi.STUDIO.fisik || 0;
-                      const shpQty = p.singles['SHP'] || 0;
-                      const ttkQty = p.singles['TTK'] || 0;
+                      const studioQty = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const shpQty = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const ttkQty = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const totalLive = (studioQty + shpQty + ttkQty) > 0
+                        ? (studioQty + shpQty + ttkQty)
+                        : (studioQty + (p.komparasi.LIVE.fisik || 0));
                       return {
                         ...p,
                         studioQty,
                         shpQty,
                         ttkQty,
-                        totalLive: studioQty + (p.komparasi.LIVE.fisik || 0),
+                        totalLive,
                       };
                     });
 
@@ -2359,42 +2475,86 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                     );
                   }
 
-                  const totalPcs = list.reduce((sum, it) => sum + it.totalLive, 0);
+                  // Sort alphabetically by product name and natural clothing size
+                  list = sortAlphabeticalAndSize(list, (i) => i.produk || i.sku || '', (i) => i.size || '');
+
+                  const totalPcs = list.reduce((sum, it) => {
+                    if (kpiBlokFTab === 'STUDIO') return sum + it.studioQty;
+                    if (kpiBlokFTab === 'SHOPEE') return sum + it.shpQty;
+                    if (kpiBlokFTab === 'TIKTOK') return sum + it.ttkQty;
+                    return sum + it.totalLive;
+                  }, 0);
 
                   return (
                     <div className="space-y-3">
-                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold">
-                        {(
-                          [
-                            { id: 'STUDIO', label: '📍 STUDIO' },
-                            { id: 'SHOPEE', label: '🧡 SHOPEE' },
-                            { id: 'TIKTOK', label: '🖤 TIKTOK' },
-                            { id: 'ALL', label: '🌐 SEMUA' },
-                          ] as const
-                        ).map((tab) => (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setKpiBlokFTab(tab.id)}
-                            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                              kpiBlokFTab === tab.id
-                                ? 'bg-blue-600 text-white font-extrabold shadow-xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            {tab.label}
-                          </button>
-                        ))}
+                      {/* Channel Switcher Tabs */}
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('STUDIO')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'STUDIO'
+                              ? 'bg-emerald-600 text-white font-extrabold shadow-[0_0_10px_rgba(5,150,105,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          📍 Studio
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('SHOPEE')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'SHOPEE'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🧡 Shopee
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('TIKTOK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'TIKTOK'
+                              ? 'bg-slate-800 text-white font-extrabold shadow-[0_0_10px_rgba(30,41,59,0.3)] border border-slate-700'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🖤 TikTok
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'ALL'
+                              ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🌐 Semua
+                        </button>
                       </div>
 
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok Blok F (Divisi Live):</b> Daftar barang yang sudah tersedia di channel/lokasi terpilih. Anda dapat memantau ketersediaan fisik Studio, Shopee, &amp; TikTok.
+                        </p>
+                      </div>
+
+                      {/* Search & Export Bar */}
                       <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={kpiModalSearch}
-                          onChange={(e) => setKpiModalSearch(e.target.value)}
-                          placeholder="🔍 Cari Produk / SKU..."
-                          className="flex-1 px-3 py-1.5 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500"
-                        />
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="🔍 Cari Nama Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -2411,39 +2571,161 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             ]);
                             handleExportModalCSV(`stok_blokf_${kpiBlokFTab}`, headers, rows);
                           }}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap"
+                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0"
                         >
                           <Download className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Export CSV</span>
+                          <span className="hidden sm:inline">Export CSV</span>
+                          <span className="sm:hidden">CSV</span>
                         </button>
                       </div>
 
-                      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 dark:bg-[#0E1420] text-[10px] font-extrabold uppercase text-slate-500 sticky top-0">
-                            <tr>
-                              <th className="p-2.5">Produk</th>
-                              <th className="p-2.5 text-center">Size</th>
-                              <th className="p-2.5">SKU</th>
-                              <th className="p-2.5 text-center text-emerald-600">Studio</th>
-                              <th className="p-2.5 text-center text-amber-600">SHP</th>
-                              <th className="p-2.5 text-center text-slate-800 dark:text-slate-200">TTK</th>
-                            </tr>
+                      {/* Unified Responsive Table (Exact PeminjamanView Layout) */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            {kpiBlokFTab === 'ALL' ? (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; SKU</th>
+                                <th className="p-2.5 text-center w-12">SIZE</th>
+                                <th className="p-2.5 text-center w-14 text-emerald-600 dark:text-emerald-400">STUDIO</th>
+                                <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">SHOPEE</th>
+                                <th className="p-2.5 text-center w-14 text-slate-700 dark:text-slate-300">TIKTOK</th>
+                                <th className="p-2.5 text-center w-14 text-cyan-600 dark:text-cyan-400">TOTAL</th>
+                              </tr>
+                            ) : (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; LOKASI</th>
+                                <th className="p-2.5 text-center w-14">SIZE</th>
+                                <th className="p-2.5 text-center w-16">
+                                  {kpiBlokFTab === 'STUDIO' ? 'STUDIO' : kpiBlokFTab === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK'}
+                                </th>
+                              </tr>
+                            )}
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                            {list.slice(0, modalDisplayLimit).map((it, idx) => (
-                              <tr key={`${it.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
-                                  {it.produk}
-                                  {it.locStr !== '-' && <div className="text-[10px] text-blue-500 font-mono font-normal">📍 {it.locStr}</div>}
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={kpiBlokFTab === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada stok pada filter ini
                                 </td>
-                                <td className="p-2.5 text-center font-mono font-bold text-xs">{it.size}</td>
-                                <td className="p-2.5 font-mono text-slate-500">{it.sku}</td>
-                                <td className="p-2.5 text-center font-mono font-bold text-emerald-600">{it.studioQty}</td>
-                                <td className="p-2.5 text-center font-mono font-bold text-amber-600">{it.shpQty}</td>
-                                <td className="p-2.5 text-center font-mono font-bold text-slate-800 dark:text-slate-200">{it.ttkQty}</td>
                               </tr>
-                            ))}
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => {
+                                  const displayQty =
+                                    kpiBlokFTab === 'STUDIO'
+                                      ? it.studioQty
+                                      : kpiBlokFTab === 'SHOPEE'
+                                      ? it.shpQty
+                                      : it.ttkQty;
+
+                                  if (kpiBlokFTab === 'ALL') {
+                                    return (
+                                      <tr
+                                        key={`${it.sku}_${idx}`}
+                                        className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                      >
+                                        <td className="p-2.5">
+                                          <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                            {it.produk}
+                                          </div>
+                                          <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                            <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                            {it.locStr && it.locStr !== '-' && (
+                                              <>
+                                                <span>&bull;</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                            {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.studioQty > 0 ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.studioQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.shpQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.shpQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.ttkQty > 0 ? 'text-slate-800 dark:text-slate-200 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.ttkQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
+                                            {it.totalLive}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  return (
+                                    <tr
+                                      key={`${it.sku}_${idx}`}
+                                      className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                    >
+                                      <td className="p-2.5">
+                                        <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                          {it.produk}
+                                        </div>
+                                        <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                          <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                          {it.locStr && it.locStr !== '-' && (
+                                            <>
+                                              <span>&bull;</span>
+                                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        {/* Channel breakdown pills */}
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {it.ttkQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                                              🖤 TikTok: {it.ttkQty}
+                                            </span>
+                                          )}
+                                          {it.shpQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
+                                              🧡 Shopee: {it.shpQty}
+                                            </span>
+                                          )}
+                                          {it.studioQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold">
+                                              📍 Studio: {it.studioQty}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                          {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'Default'}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        {displayQty > 0 ? (
+                                          <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            {displayQty}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                                            Sold
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </>
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -2462,7 +2744,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
                       <div className="text-right text-[11px] text-slate-500 font-mono">
                         Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
-                        <b className="text-blue-500">{totalPcs} Pcs</b> Tersedia di Blok F
+                        <b className="text-emerald-500 dark:text-emerald-400">{totalPcs} Pcs</b> Tersedia di Blok F
                       </div>
                     </div>
                   );
@@ -2547,34 +2829,94 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                         </button>
                       </div>
 
-                      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden max-h-[360px] overflow-y-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 dark:bg-[#0E1420] text-[10px] font-extrabold uppercase text-slate-500 sticky top-0">
-                            <tr>
-                              <th className="p-2.5">Produk</th>
-                              <th className="p-2.5 text-center">Size</th>
-                              <th className="p-2.5">SKU</th>
-                              <th className="p-2.5 text-center text-amber-600">Permak</th>
-                              <th className="p-2.5 text-center text-rose-600">Defect</th>
-                              <th className="p-2.5 text-right font-extrabold">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                            {list.slice(0, modalDisplayLimit).map((it, idx) => (
-                              <tr key={`${it.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
-                                  {it.produk}
-                                  {it.locStr !== '-' && <div className="text-[10px] text-rose-500 font-mono font-normal">📍 {it.locStr}</div>}
-                                </td>
-                                <td className="p-2.5 text-center font-mono font-bold text-xs">{it.size}</td>
-                                <td className="p-2.5 font-mono text-slate-500">{it.sku}</td>
-                                <td className="p-2.5 text-center font-mono font-bold text-amber-600">{it.permakQty}</td>
-                                <td className="p-2.5 text-center font-mono font-bold text-rose-600">{it.defectQty}</td>
-                                <td className="p-2.5 text-right font-mono font-black text-rose-600">{it.totalPerbaikan}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      {/* Responsive List Container */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden max-h-[380px] overflow-y-auto">
+                        {list.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 text-xs">
+                            Tidak ada produk dalam status perbaikan dengan filter ini
+                          </div>
+                        ) : (
+                          <>
+                            {/* Mobile View: Clean Card Items (sm:hidden) */}
+                            <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800/60">
+                              {list.slice(0, modalDisplayLimit).map((it, idx) => (
+                                <div key={`${it.sku}_${idx}`} className="p-3 bg-white dark:bg-[#161F30] hover:bg-slate-50 dark:hover:bg-slate-800/40 space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug break-words flex-1">
+                                      {it.produk}
+                                    </div>
+                                    <span className="shrink-0 px-2 py-0.5 font-mono text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-md">
+                                      {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                    <span className="font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded">
+                                      {it.sku}
+                                    </span>
+                                    {it.locStr && it.locStr !== '-' && (
+                                      <span className="text-rose-500 font-mono text-[10px] flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded border border-rose-200/50 dark:border-rose-800/40">
+                                        📍 {it.locStr}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-xs">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase">
+                                      Rincian Perbaikan
+                                    </span>
+                                    <div className="flex items-center gap-1.5 font-mono">
+                                      {it.permakQty > 0 && (
+                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                          Permak: {it.permakQty}
+                                        </span>
+                                      )}
+                                      {it.defectQty > 0 && (
+                                        <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
+                                          Defect: {it.defectQty}
+                                        </span>
+                                      )}
+                                      <span className="text-[11px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                        Tot: {it.totalPerbaikan}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Desktop / Tablet View: Wide Table (hidden sm:block) */}
+                            <div className="hidden sm:block overflow-x-auto">
+                              <table className="w-full text-left text-xs min-w-[500px]">
+                                <thead className="bg-slate-100 dark:bg-[#0E1420] text-[10px] font-extrabold uppercase text-slate-500 sticky top-0">
+                                  <tr>
+                                    <th className="p-2.5">Produk</th>
+                                    <th className="p-2.5 text-center">Size</th>
+                                    <th className="p-2.5">SKU</th>
+                                    <th className="p-2.5 text-center text-amber-600">Permak</th>
+                                    <th className="p-2.5 text-center text-rose-600">Defect</th>
+                                    <th className="p-2.5 text-right font-extrabold">Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                                  {list.slice(0, modalDisplayLimit).map((it, idx) => (
+                                    <tr key={`${it.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                      <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
+                                        {it.produk}
+                                        {it.locStr !== '-' && <div className="text-[10px] text-rose-500 font-mono font-normal">📍 {it.locStr}</div>}
+                                      </td>
+                                      <td className="p-2.5 text-center font-mono font-bold text-xs">{it.size}</td>
+                                      <td className="p-2.5 font-mono text-slate-500">{it.sku}</td>
+                                      <td className="p-2.5 text-center font-mono font-bold text-amber-600">{it.permakQty}</td>
+                                      <td className="p-2.5 text-center font-mono font-bold text-rose-600">{it.defectQty}</td>
+                                      <td className="p-2.5 text-right font-mono font-black text-rose-600">{it.totalPerbaikan}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {list.length > modalDisplayLimit && (
