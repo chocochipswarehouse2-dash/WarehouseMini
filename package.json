@@ -5,7 +5,7 @@
   "description": "WMS Scanner PWA",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000",
+    "dev": "vite --host 0.0.0.0 --port 3000 --strictPort",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

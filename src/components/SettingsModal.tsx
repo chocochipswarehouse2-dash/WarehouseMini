@@ -471,7 +471,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       password: userToSave.password,
       permissions: newPermissions,
       nik: newNik.trim() || undefined,
-      phone: newPhone.trim() || undefined,
+      no_hp: newPhone.trim() || undefined,
       email: newEmail.trim() || undefined,
     });
 

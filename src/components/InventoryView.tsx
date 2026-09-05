@@ -2407,25 +2407,25 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   return (
                     <div className="space-y-3">
                       {/* Segmented Tabs */}
-                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
                         {(
                           [
-                            { id: 'ALL', label: '🌐 SEMUA' },
-                            { id: 'A', label: '👗 A. DRESS' },
-                            { id: 'B', label: '👖 B. BOTTOM' },
-                            { id: 'C', label: '👚 C. TOP' },
-                            { id: 'D', label: '🏷️ D. SALE (LOKASI D)' },
-                            { id: 'BELT', label: '🎀 BELT' },
-                            { id: 'Z', label: '⏳ Z. SLOW' },
+                            { id: 'ALL', label: '🌐 Semua' },
+                            { id: 'A', label: '👗 A. Dress' },
+                            { id: 'B', label: '👖 B. Bottom' },
+                            { id: 'C', label: '👚 C. Top' },
+                            { id: 'D', label: '🏷️ D. Sale' },
+                            { id: 'BELT', label: '🎀 Belt' },
+                            { id: 'Z', label: '⏳ Z. Slow' },
                           ] as const
                         ).map((tab) => (
                           <button
                             key={tab.id}
                             type="button"
                             onClick={() => setKpiMapTab(tab.id)}
-                            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
                               kpiMapTab === tab.id
-                                ? 'bg-amber-500 text-black font-extrabold shadow-xs'
+                                ? 'bg-emerald-600 text-white font-extrabold shadow-[0_0_10px_rgba(5,150,105,0.3)] border border-emerald-500'
                                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                             }`}
                           >
@@ -2434,17 +2434,34 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                         ))}
                       </div>
 
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok MAP:</b> Daftar barang yang sudah tersedia di gudang utama sesuai kategorinya.
+                        </p>
+                      </div>
+
                       {/* Search & Export */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex gap-2 items-center w-full">
                         <div className="relative flex-1">
-                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                           <input
                             type="text"
                             value={kpiModalSearch}
                             onChange={(e) => setKpiModalSearch(e.target.value)}
-                            placeholder="🔍 Cari Produk / SKU / Lokasi..."
-                            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                            placeholder="Cari Nama Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                           />
+                          {kpiModalSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setKpiModalSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -2460,11 +2477,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             ]);
                             handleExportModalCSV(`stok_map_${kpiMapTab}`, headers, rows);
                           }}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
                         >
-                          <Download className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="hidden sm:inline">Export CSV</span>
-                          <span className="sm:hidden">CSV</span>
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
                         </button>
                       </div>
 
@@ -2476,7 +2492,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                               <th className="p-2.5">PRODUK &amp; LOKASI</th>
                               <th className="p-2.5 text-center w-12">SIZE</th>
                               <th className="p-2.5 text-center w-14">KAT</th>
-                              <th className="p-2.5 text-center w-16 text-amber-600 dark:text-amber-400">QTY MAP</th>
+                              <th className="p-2.5 text-center w-16 text-emerald-600 dark:text-emerald-400">QTY MAP</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -2518,7 +2534,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                       </span>
                                     </td>
                                     <td className="p-2.5 text-center">
-                                      <span className="font-mono text-xs font-extrabold text-amber-600 dark:text-amber-400">
+                                      <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
                                         {it.komparasi.MAP.fisik}
                                       </span>
                                     </td>
@@ -2684,11 +2700,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             ]);
                             handleExportModalCSV(`stok_blokf_${kpiBlokFTab}`, headers, rows);
                           }}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
                         >
-                          <Download className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="hidden sm:inline">Export CSV</span>
-                          <span className="sm:hidden">CSV</span>
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
                         </button>
                       </div>
 
@@ -2889,37 +2904,70 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
                   return (
                     <div className="space-y-3">
-                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold">
-                        {(
-                          [
-                            { id: 'ALL', label: '🌐 SEMUA' },
-                            { id: 'PERMAK', label: '🪡 PERMAK' },
-                            { id: 'DEFECT', label: '⚠️ DEFECT' },
-                          ] as const
-                        ).map((tab) => (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setKpiPerbaikanTab(tab.id)}
-                            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                              kpiPerbaikanTab === tab.id
-                                ? 'bg-rose-600 text-white font-extrabold shadow-xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            {tab.label}
-                          </button>
-                        ))}
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiPerbaikanTab === 'ALL'
+                              ? 'bg-rose-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-rose-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🌐 Semua
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('PERMAK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiPerbaikanTab === 'PERMAK'
+                              ? 'bg-blue-600 text-white font-extrabold shadow-[0_0_10px_rgba(37,99,235,0.3)] border border-blue-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🪡 Permak
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('DEFECT')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiPerbaikanTab === 'DEFECT'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)] border border-amber-400'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          ⚠️ Defect
+                        </button>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={kpiModalSearch}
-                          onChange={(e) => setKpiModalSearch(e.target.value)}
-                          placeholder="🔍 Cari Produk / SKU..."
-                          className="flex-1 px-3 py-1.5 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-rose-500"
-                        />
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-rose-500/5 dark:bg-rose-950/20 border border-rose-500/20 rounded-xl text-[11px] text-rose-800 dark:text-rose-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok Perbaikan:</b> Daftar barang yang sedang dalam antrean permak atau masuk sebagai barang defect.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 items-center w-full">
+                        <div className="relative flex-1">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="Cari Produk / SKU..."
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium"
+                          />
+                          {kpiModalSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setKpiModalSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -2935,10 +2983,521 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             ]);
                             handleExportModalCSV(`stok_perbaikan_${kpiPerbaikanTab}`, headers, rows);
                           }}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap"
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
                         >
-                          <Download className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Export CSV</span>
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      {/* Unified Responsive Table (Exact PeminjamanView Layout) */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                              <th className="p-2.5">PRODUK & LOKASI</th>
+                              <th className="p-2.5 text-center w-12">SIZE</th>
+                              <th className="p-2.5 text-center w-14 text-blue-600 dark:text-blue-400">PERMAK</th>
+                              <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">DEFECT</th>
+                              <th className="p-2.5 text-center w-14 text-rose-600 dark:text-rose-400">TOTAL</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada produk dalam status perbaikan dengan filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => (
+                                  <tr
+                                    key={`${it.sku}_${idx}`}
+                                    className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                  >
+                                    <td className="p-2.5">
+                                      <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                        {it.produk}
+                                      </div>
+                                      <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                        <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                        {it.locStr && it.locStr !== '-' && (
+                                          <>
+                                            <span>&bull;</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                        {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`font-mono text-xs font-bold ${it.permakQty > 0 ? 'text-blue-600 dark:text-blue-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {it.permakQty || 0}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`font-mono text-xs font-bold ${it.defectQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {it.defectQty || 0}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-xs font-extrabold text-rose-600 dark:text-rose-400">
+                                        {it.totalPerbaikan}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {list.length > modalDisplayLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
+                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-right text-[11px] text-slate-500 font-mono">
+                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
+                        <b className="text-amber-500">{totalPcs} Pcs</b> Fisik MAP
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* MODAL 3: STOK BLOK F (STUDIO / SHOPEE / TIKTOK / ALL) */}
+              {kpiModal === 'BLOK_F' && (
+                (() => {
+                  let list = normalizedInventory
+                    .filter((p) => {
+                      const st = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const sh = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const tt = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const lv = p.komparasi.LIVE.fisik || 0;
+                      return (st + sh + tt + lv) > 0;
+                    })
+                    .map((p) => {
+                      const studioQty = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const shpQty = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const ttkQty = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const totalLive = (studioQty + shpQty + ttkQty) > 0
+                        ? (studioQty + shpQty + ttkQty)
+                        : (studioQty + (p.komparasi.LIVE.fisik || 0));
+                      return {
+                        ...p,
+                        studioQty,
+                        shpQty,
+                        ttkQty,
+                        totalLive,
+                      };
+                    });
+
+                  if (kpiBlokFTab === 'STUDIO') list = list.filter((p) => p.studioQty > 0);
+                  else if (kpiBlokFTab === 'SHOPEE') list = list.filter((p) => p.shpQty > 0);
+                  else if (kpiBlokFTab === 'TIKTOK') list = list.filter((p) => p.ttkQty > 0);
+
+                  if (kpiModalSearch.trim()) {
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
+                    );
+                  }
+
+                  // Sort alphabetically by product name and natural clothing size
+                  list = sortAlphabeticalAndSize(list, (i) => i.produk || i.sku || '', (i) => i.size || '');
+
+                  const totalPcs = list.reduce((sum, it) => {
+                    if (kpiBlokFTab === 'STUDIO') return sum + it.studioQty;
+                    if (kpiBlokFTab === 'SHOPEE') return sum + it.shpQty;
+                    if (kpiBlokFTab === 'TIKTOK') return sum + it.ttkQty;
+                    return sum + it.totalLive;
+                  }, 0);
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Channel Switcher Tabs */}
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('STUDIO')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'STUDIO'
+                              ? 'bg-emerald-600 text-white font-extrabold shadow-[0_0_10px_rgba(5,150,105,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          📍 Studio
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('SHOPEE')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'SHOPEE'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🧡 Shopee
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('TIKTOK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'TIKTOK'
+                              ? 'bg-slate-800 text-white font-extrabold shadow-[0_0_10px_rgba(30,41,59,0.3)] border border-slate-700'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🖤 TikTok
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'ALL'
+                              ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🌐 Semua
+                        </button>
+                      </div>
+
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok Blok F (Divisi Live):</b> Daftar barang yang sudah tersedia di channel/lokasi terpilih. Anda dapat memantau ketersediaan fisik Studio, Shopee, &amp; TikTok.
+                        </p>
+                      </div>
+
+                      {/* Search & Export Bar */}
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="🔍 Cari Nama Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'STUDIO', 'SHOPEE', 'TIKTOK', 'TOTAL'];
+                            const rows = list.map((it) => [
+                              it.produk,
+                              it.size,
+                              it.sku,
+                              it.locStr || '-',
+                              it.studioQty,
+                              it.shpQty,
+                              it.ttkQty,
+                              it.totalLive,
+                            ]);
+                            handleExportModalCSV(`stok_blokf_${kpiBlokFTab}`, headers, rows);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      {/* Unified Responsive Table (Exact PeminjamanView Layout) */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            {kpiBlokFTab === 'ALL' ? (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; SKU</th>
+                                <th className="p-2.5 text-center w-12">SIZE</th>
+                                <th className="p-2.5 text-center w-14 text-emerald-600 dark:text-emerald-400">STUDIO</th>
+                                <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">SHOPEE</th>
+                                <th className="p-2.5 text-center w-14 text-slate-700 dark:text-slate-300">TIKTOK</th>
+                                <th className="p-2.5 text-center w-14 text-cyan-600 dark:text-cyan-400">TOTAL</th>
+                              </tr>
+                            ) : (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; LOKASI</th>
+                                <th className="p-2.5 text-center w-14">SIZE</th>
+                                <th className="p-2.5 text-center w-16">
+                                  {kpiBlokFTab === 'STUDIO' ? 'STUDIO' : kpiBlokFTab === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK'}
+                                </th>
+                              </tr>
+                            )}
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={kpiBlokFTab === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada stok pada filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => {
+                                  const displayQty =
+                                    kpiBlokFTab === 'STUDIO'
+                                      ? it.studioQty
+                                      : kpiBlokFTab === 'SHOPEE'
+                                      ? it.shpQty
+                                      : it.ttkQty;
+
+                                  if (kpiBlokFTab === 'ALL') {
+                                    return (
+                                      <tr
+                                        key={`${it.sku}_${idx}`}
+                                        className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                      >
+                                        <td className="p-2.5">
+                                          <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                            {it.produk}
+                                          </div>
+                                          <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                            <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                            {it.locStr && it.locStr !== '-' && (
+                                              <>
+                                                <span>&bull;</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                            {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.studioQty > 0 ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.studioQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.shpQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.shpQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.ttkQty > 0 ? 'text-slate-800 dark:text-slate-200 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.ttkQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
+                                            {it.totalLive}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  return (
+                                    <tr
+                                      key={`${it.sku}_${idx}`}
+                                      className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                    >
+                                      <td className="p-2.5">
+                                        <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                          {it.produk}
+                                        </div>
+                                        <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                          <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                          {it.locStr && it.locStr !== '-' && (
+                                            <>
+                                              <span>&bull;</span>
+                                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        {/* Channel breakdown pills */}
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {it.ttkQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                                              🖤 TikTok: {it.ttkQty}
+                                            </span>
+                                          )}
+                                          {it.shpQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
+                                              🧡 Shopee: {it.shpQty}
+                                            </span>
+                                          )}
+                                          {it.studioQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold">
+                                              📍 Studio: {it.studioQty}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                          {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'Default'}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        {displayQty > 0 ? (
+                                          <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            {displayQty}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                                            Sold
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {list.length > modalDisplayLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
+                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-right text-[11px] text-slate-500 font-mono">
+                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
+                        <b className="text-emerald-500 dark:text-emerald-400">{totalPcs} Pcs</b> Tersedia di Blok F
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* MODAL 4: STOK PERBAIKAN (PERMAK & DEFECT & CUCI) */}
+              {kpiModal === 'PERBAIKAN' && (
+                (() => {
+                  let list = normalizedInventory
+                    .filter((p) => (p.komparasi.PERMAK.fisik || 0) + (p.komparasi.DEFECT.fisik || 0) > 0)
+                    .map((p) => ({
+                      ...p,
+                      permakQty: p.komparasi.PERMAK.fisik || 0,
+                      defectQty: p.komparasi.DEFECT.fisik || 0,
+                      totalPerbaikan: (p.komparasi.PERMAK.fisik || 0) + (p.komparasi.DEFECT.fisik || 0),
+                    }));
+
+                  if (kpiPerbaikanTab === 'PERMAK') list = list.filter((p) => p.permakQty > 0);
+                  else if (kpiPerbaikanTab === 'DEFECT') list = list.filter((p) => p.defectQty > 0);
+
+                  if (kpiModalSearch.trim()) {
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
+                    );
+                  }
+
+                  const totalPcs = list.reduce((sum, it) => sum + it.totalPerbaikan, 0);
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiPerbaikanTab === 'ALL'
+                              ? 'bg-rose-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-rose-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🌐 Semua
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('PERMAK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiPerbaikanTab === 'PERMAK'
+                              ? 'bg-blue-600 text-white font-extrabold shadow-[0_0_10px_rgba(37,99,235,0.3)] border border-blue-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🪡 Permak
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('DEFECT')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiPerbaikanTab === 'DEFECT'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)] border border-amber-400'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          ⚠️ Defect
+                        </button>
+                      </div>
+
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-rose-500/5 dark:bg-rose-950/20 border border-rose-500/20 rounded-xl text-[11px] text-rose-800 dark:text-rose-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok Perbaikan:</b> Daftar barang yang sedang dalam antrean permak atau masuk sebagai barang defect.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 items-center w-full">
+                        <div className="relative flex-1">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="Cari Produk / SKU..."
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium"
+                          />
+                          {kpiModalSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setKpiModalSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'PERMAK', 'DEFECT', 'TOTAL'];
+                            const rows = list.map((it) => [
+                              it.produk,
+                              it.size,
+                              it.sku,
+                              it.locStr || '-',
+                              it.permakQty,
+                              it.defectQty,
+                              it.totalPerbaikan,
+                            ]);
+                            handleExportModalCSV(`stok_perbaikan_${kpiPerbaikanTab}`, headers, rows);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
                         </button>
                       </div>
 

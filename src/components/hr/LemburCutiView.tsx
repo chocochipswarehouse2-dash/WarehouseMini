@@ -51,7 +51,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const userNik = session?.nik || (session?.username && session.username.startsWith('WH') ? session.username : 'WH0001');
   const userName = session?.name || session?.username || 'Karyawan';
 
-  const isAdmin = isSuperadmin(session) || hasPermission(session, 'can_manage_hr');
+  const isAdmin = isSuperadmin(session) || hasPermission(session, 'can_approve_hr');
   
   const loadData = async () => {
     setLoading(true);

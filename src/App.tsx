@@ -352,8 +352,8 @@ export default function App() {
         }
       }
 
-      // 2. Fetch fresh master products directly from Supabase (Hanya jika belum ada cache lokal atau user klik refresh manual)
-      if (!hasLocalData || forceRefresh) {
+      // 2. Fetch fresh master products directly from Supabase (Stale-While-Revalidate pattern)
+      const fetchFromSupabase = async () => {
         try {
           const supabaseProducts = await fetchMasterProductsFromSupabase(50000, forceRefresh);
           if (supabaseProducts && supabaseProducts.length > 0) {
@@ -370,6 +370,16 @@ export default function App() {
             showToast('Gagal menyinkronkan katalog dari Supabase.', 'error');
           }
         }
+      };
+
+      if (!hasLocalData || forceRefresh) {
+        // Blocking fetch if no local data or manual refresh requested
+        await fetchFromSupabase();
+      } else {
+        // Non-blocking background sync (SWR) to ensure data is correct & fresh
+        fetchFromSupabase().catch((err) => {
+          console.warn('Background sync error:', err);
+        });
       }
     },
     [showToast]

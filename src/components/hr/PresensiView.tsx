@@ -558,7 +558,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   <tr key={r.id || i}>
                     <td className="p-3">{r.tanggal}</td>
                     <td className="p-3">{r.nik}</td>
-                    <td className="p-3">{r.nama_karyawan || r.nik}</td>
+                    <td className="p-3">{r.nama || r.nik}</td>
                     
                     {editingPresensiId === r.id ? (
                       <>
