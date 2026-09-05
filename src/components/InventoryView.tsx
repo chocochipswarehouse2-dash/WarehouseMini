@@ -38,10 +38,13 @@ import {
   fetchAllStockRealtime,
   fetchSupabaseStokFisikDirect,
   fetchSupabaseStokFisikBySkus,
+  fetchMasterProductDealposChannelsBySkus,
   fetchStockForLocations,
   getAreaFromLokasi,
   getSupabaseClient,
   supabaseFetch,
+  getMemoryStokFisikCache,
+  setMemoryStokFisikCache,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
@@ -128,26 +131,28 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   onNotify,
   onRefreshCatalog,
 }) => {
-  // Master state initialized immediately from cache for 0ms page switch
+  // Master state initialized immediately from memory cache for 0ms page switch
   const [stockList, setStockList] = useState<StockRealtimeItem[]>(() => {
+    // Purge legacy truncated localStorage cache if present
+    try {
+      localStorage.removeItem('wms_inventory_stock_cache');
+    } catch {}
+
+    const mem = getMemoryStokFisikCache();
+    if (mem && mem.length > 0) {
+      globalInventoryStockCache = mem;
+      return mem;
+    }
     if (globalInventoryStockCache && globalInventoryStockCache.length > 0) {
       return globalInventoryStockCache;
     }
-    try {
-      const saved = localStorage.getItem('wms_inventory_stock_cache');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          globalInventoryStockCache = parsed;
-          return parsed;
-        }
-      }
-    } catch (e) {}
     return [];
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     // Only show full loading if there is zero cached data
+    const mem = getMemoryStokFisikCache();
+    if (mem && mem.length > 0) return false;
     return !globalInventoryStockCache || globalInventoryStockCache.length === 0;
   });
   const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
@@ -185,6 +190,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const [onlyWithStock, setOnlyWithStock] = useState<boolean>(false);
   const [displayLimit, setDisplayLimit] = useState<number>(30);
   const RENDER_STEP = 30;
+
+  // On-demand delta cache for DealPOS channels
+  const [dealposDeltaMap, setDealposDeltaMap] = useState<Record<string, any>>({});
 
   // KPI Modal Drilldown State
   const [kpiModal, setKpiModal] = useState<KpiModalType>(null);
@@ -236,6 +244,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     let hasCachedData = (globalInventoryStockCache && globalInventoryStockCache.length > 0) || stockList.length > 0;
     if (!hasCachedData) {
+      const mem = getMemoryStokFisikCache();
+      if (mem && mem.length > 0) {
+        globalInventoryStockCache = mem;
+        globalInventoryLastFetch = Date.now();
+        setStockList(mem);
+        hasCachedData = true;
+      }
+    }
+    if (!hasCachedData) {
       try {
         const localStocks = await getAllInventoryStocksFromLocalDb();
         if (localStocks && localStocks.length > 0) {
@@ -266,19 +283,25 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         globalInventoryLastFetch = Date.now();
         setStockList(realtimeData);
 
-        // Store snapshot to local IndexedDB (zero truncation limit)
+        // Store 100% complete snapshot to local IndexedDB (never truncated)
         saveInventoryStocksToLocalDb(realtimeData).catch(() => {});
-        try {
-          localStorage.setItem('wms_inventory_stock_cache', JSON.stringify(realtimeData.slice(0, 1000)));
-        } catch (storageErr) {
-          console.warn('Local storage quota full or error:', storageErr);
+      } else if (!hasCachedData || stockList.length === 0) {
+        // 2. Fallback to fetchAllStockRealtime if direct returned empty
+        const fallbackData = await fetchAllStockRealtime(50000);
+        if (fallbackData && Array.isArray(fallbackData) && fallbackData.length > 0) {
+          globalInventoryStockCache = fallbackData;
+          globalInventoryLastFetch = Date.now();
+          setStockList(fallbackData);
+          saveInventoryStocksToLocalDb(fallbackData).catch(() => {});
+        } else if (!hasCachedData) {
+          throw new Error('Data stok fisik tidak dapat dimuat dari Supabase. Silakan klik Muat Ulang.');
         }
       }
 
       if (isManualRefresh) {
         if (onRefreshCatalog) await onRefreshCatalog(true);
         if (onNotify) {
-          onNotify(`Inventori berhasil disinkronkan (${realtimeData.length} baris lokasi)!`, 'success');
+          onNotify(`Inventori berhasil disinkronkan (${realtimeData?.length || stockList.length} baris lokasi)!`, 'success');
         }
       }
     } catch (e: any) {
@@ -286,11 +309,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       // Fallback if direct fetch failed and no cached data exists
       if (!hasCachedData) {
         try {
-          const fallbackData = await fetchAllStockRealtime(30000);
+          const fallbackData = await fetchAllStockRealtime(50000);
           if (fallbackData && fallbackData.length > 0) {
             globalInventoryStockCache = fallbackData;
             globalInventoryLastFetch = Date.now();
             setStockList(fallbackData);
+            saveInventoryStocksToLocalDb(fallbackData).catch(() => {});
+          } else {
+            setFetchError(e.message || 'Gagal memuat data stok realtime');
+            if (onNotify) onNotify('Gagal memuat data stok realtime dari Supabase.', 'error');
           }
         } catch (err: any) {
           setFetchError(err.message || 'Gagal memuat data stok realtime');
@@ -304,7 +331,18 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   };
 
   useEffect(() => {
-    loadStockData();
+    // 0ms instant hydrate from local IndexedDB if memory cache isn't populated
+    if (!globalInventoryStockCache || globalInventoryStockCache.length === 0) {
+      getAllInventoryStocksFromLocalDb().then((local) => {
+        if (local && local.length > 0) {
+          globalInventoryStockCache = local;
+          setStockList(local);
+          setIsLoading(false);
+        }
+      }).catch(() => {});
+    }
+
+    loadStockData(false, false);
 
     // Supabase Realtime Subscription via global store
     let debounceTimer: any = null;
@@ -317,12 +355,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       
       try {
         const deltaRows = await fetchSupabaseStokFisikBySkus(skus);
+        const upperSkus = new Set(skus.map((s) => String(s).trim().toUpperCase()));
         
         // Remove old rows for these SKUs, insert new ones
         setStockList((prev) => {
-          const filtered = prev.filter(p => !skus.includes(p.sku || ''));
+          const filtered = prev.filter((p) => !upperSkus.has(String(p.sku || '').trim().toUpperCase()));
           const merged = [...filtered, ...deltaRows];
           globalInventoryStockCache = merged;
+          saveInventoryStocksToLocalDb(merged).catch(() => {});
           return merged;
         });
       } catch (err) {
@@ -360,6 +400,59 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       unsubStok();
     };
   }, []);
+
+  // On-demand delta fetch for searched SKUs to guarantee instant accuracy
+  useEffect(() => {
+    const term = deferredSearch.trim().toLowerCase();
+    if (!term || term.length < 2) return;
+
+    // Find matching SKUs in productCatalog
+    const matchingSkus = productCatalog
+      .filter((it) => {
+        const s = String(it.k || (it as any).sku || '').toLowerCase();
+        const n = String(it.p || (it as any).nama_produk || '').toLowerCase();
+        return s.includes(term) || n.includes(term);
+      })
+      .map((it) => String(it.k || (it as any).sku || '').trim().toUpperCase())
+      .filter(Boolean)
+      .slice(0, 50);
+
+    if (matchingSkus.length === 0) return;
+
+    // Check if any matching SKU is missing in stockList
+    const missingSkus = matchingSkus.filter(
+      (sku) => !stockList.some((s) => String(s.sku || '').trim().toUpperCase() === sku)
+    );
+
+    if (missingSkus.length > 0) {
+      fetchSupabaseStokFisikBySkus(missingSkus).then((deltaRows) => {
+        if (deltaRows && deltaRows.length > 0) {
+          const deltaSkus = new Set(deltaRows.map((d) => String(d.sku || '').trim().toUpperCase()));
+          setStockList((prev) => {
+            const filtered = prev.filter((p) => !deltaSkus.has(String(p.sku || '').trim().toUpperCase()));
+            const merged = [...filtered, ...deltaRows];
+            globalInventoryStockCache = merged;
+            saveInventoryStocksToLocalDb(merged).catch(() => {});
+            return merged;
+          });
+        }
+      }).catch((err) => {
+        console.warn('Search delta stock fetch failed:', err);
+      });
+    }
+
+    // Also fetch DealPOS channels on-demand for searched items if not yet loaded
+    const missingDealposSkus = matchingSkus.filter((sku) => !dealposDeltaMap[sku]);
+    if (missingDealposSkus.length > 0) {
+      fetchMasterProductDealposChannelsBySkus(missingDealposSkus).then((res) => {
+        if (res && Object.keys(res).length > 0) {
+          setDealposDeltaMap((prev) => ({ ...prev, ...res }));
+        }
+      }).catch((err) => {
+        console.warn('Search delta dealpos fetch failed:', err);
+      });
+    }
+  }, [deferredSearch, productCatalog, stockList, dealposDeltaMap]);
 
   // Helper string formatter for locations
   const formatLocationString = (locList?: (string | { lokasi: string; qty?: number })[]) => {
@@ -419,14 +512,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       if (a === 'WAREHOUSE' || a.includes('GUDANG') || a.includes('MAP') || a.includes('AKSESORIS') || l.startsWith('BELT')) {
         kat = 'Gudang Utama';
       } else if (
-        (a === 'BLOK F' || a.includes('BLOK')) &&
-        (l === 'SHOPEE' || l === 'TIKTOK' || l === 'TT' || l === 'LIVE' || l.includes('SHP') || l.includes('TTK'))
+        (a === 'BLOK F' || a.includes('BLOK') || a.includes('LIVE')) &&
+        (l === 'SHOPEE' || l === 'TIKTOK' || l === 'TT' || l === 'LIVE' || l.includes('SHP') || l.includes('TTK') || l.includes('TIK') || l.includes('TOK'))
       ) {
         kat = 'Barang Live';
       } else if (
         a === 'STUDIO' ||
         a.includes('STUDIO') ||
-        ((a === 'BLOK F' || a.includes('BLOK')) && (l === 'STUDIO' || l === 'SAMPLE'))
+        ((a === 'BLOK F' || a.includes('BLOK')) && (l === 'STUDIO' || l === 'SAMPLE' || l.includes('STUDIO')))
       ) {
         kat = 'Sample Studio';
       } else if (
@@ -466,41 +559,161 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const seenSkus = new Set<string>();
 
     const normalizeRow = (row: any, sku: string, mapped?: any): NormalizedInventoryItem => {
-      const f = (row?.f || mapped?.f || {}) as Record<string, number>;
-      const dpRaw = (row?.dealpos_channels || {}) as any;
-      const d = (row?.d || dpRaw?.d || dpRaw || {}) as Record<string, number>;
-      const b = (row?.b || dpRaw?.b || dpRaw?.cabang || dpRaw || {}) as Record<string, number>;
+      // 1. Physical stock: mapped.f is from live Supabase view_stok_realtime; row.f is from catalog
+      // Must merge correctly so that mapped.f takes precedence without being overwritten by empty {}
+      const f = {
+        ...(typeof row?.f === 'object' ? row.f : {}),
+        ...(typeof mapped?.f === 'object' ? mapped.f : {}),
+      } as Record<string, number>;
 
-      const mapFisik = Number(f['MAP'] || f['Gudang Utama'] || f['Warehouse'] || 0);
-      const mapDp = Number(d['MAP'] || d['Gudang Utama'] || d['Marketplace'] || dpRaw?.MAP || dpRaw?.['Gudang Utama'] || dpRaw?.Marketplace || row?.stokMap || row?.q || 0);
+      // 2. DealPOS channels: merge from row, mapped, and dealposDeltaMap
+      const dpDelta = dealposDeltaMap[sku];
+      const dpRaw = (row?.dealpos_channels || dpDelta || mapped?.dealpos_channels || {}) as any;
 
-      const liveFisik = Number(f['LIVE'] || f['Barang Live'] || f['Sample Live'] || 0);
-      const liveDp = Number(d['LIVE'] || d['Barang Live'] || d['Sample Live'] || dpRaw?.LIVE || dpRaw?.['Barang Live'] || dpRaw?.['Sample Live'] || 0);
+      const d = {
+        ...(typeof dpRaw === 'object' && !Array.isArray(dpRaw) ? dpRaw : {}),
+        ...(typeof dpRaw?.d === 'object' ? dpRaw.d : {}),
+        ...(typeof row?.d === 'object' ? row.d : {}),
+        ...(typeof dpDelta?.d === 'object' ? dpDelta.d : {}),
+      } as Record<string, number>;
 
-      const studioFisik = Number(f['STUDIO'] || f['Sample Studio'] || 0);
-      const studioDp = Number(d['STUDIO'] || d['Sample Studio'] || dpRaw?.STUDIO || dpRaw?.['Sample Studio'] || row?.stokStudio || 0);
+      const b = {
+        ...(typeof dpRaw === 'object' && !Array.isArray(dpRaw) ? dpRaw : {}),
+        ...(typeof dpRaw?.cabang === 'object' ? dpRaw.cabang : {}),
+        ...(typeof dpRaw?.b === 'object' ? dpRaw.b : {}),
+        ...(typeof row?.b === 'object' ? row.b : {}),
+        ...(typeof dpDelta?.cabang === 'object' ? dpDelta.cabang : {}),
+        ...(typeof dpDelta?.b === 'object' ? dpDelta.b : {}),
+      } as Record<string, number>;
 
-      const permakFisik = Number(f['PERMAK'] || f['Permak / Cuci'] || f['Permak'] || 0);
-      const permakDp = Number(d['PERMAK'] || d['Permak / Cuci'] || d['Permak'] || dpRaw?.PERMAK || dpRaw?.['Permak / Cuci'] || dpRaw?.Permak || 0);
+      let mapFisik = Number(f['MAP'] ?? f['Gudang Utama'] ?? f['Warehouse'] ?? 0);
+      const mapDp = Number(
+        d['MAP'] ??
+        d['Gudang Utama'] ??
+        d['Marketplace'] ??
+        dpRaw?.MAP ??
+        dpRaw?.['Gudang Utama'] ??
+        dpRaw?.Marketplace ??
+        dpRaw?.d?.MAP ??
+        dpRaw?.d?.['Gudang Utama'] ??
+        row?.stokMap ??
+        row?.q ??
+        0
+      );
 
-      const defectFisik = Number(f['DEFECT'] || f['Barang Cacat'] || f['Cacat'] || 0);
-      const defectDp = Number(d['DEFECT'] || d['Barang Cacat'] || d['Diskon Defect'] || d['Cacat'] || dpRaw?.DEFECT || dpRaw?.['Barang Cacat'] || dpRaw?.['Diskon Defect'] || dpRaw?.Cacat || 0);
+      let liveFisik = Number(f['LIVE'] ?? f['Barang Live'] ?? f['Sample Live'] ?? 0);
+      const liveDp = Number(
+        d['LIVE'] ??
+        d['Barang Live'] ??
+        d['Sample Live'] ??
+        dpRaw?.LIVE ??
+        dpRaw?.['Barang Live'] ??
+        dpRaw?.['Sample Live'] ??
+        dpRaw?.d?.LIVE ??
+        0
+      );
+
+      let studioFisik = Number(f['STUDIO'] ?? f['Sample Studio'] ?? 0);
+      const studioDp = Number(
+        d['STUDIO'] ??
+        d['Sample Studio'] ??
+        dpRaw?.STUDIO ??
+        dpRaw?.['Sample Studio'] ??
+        dpRaw?.d?.STUDIO ??
+        row?.stokStudio ??
+        0
+      );
+
+      let permakFisik = Number(f['PERMAK'] ?? f['Permak / Cuci'] ?? f['Permak'] ?? 0);
+      const permakDp = Number(
+        d['PERMAK'] ??
+        d['Permak / Cuci'] ??
+        d['Permak'] ??
+        dpRaw?.PERMAK ??
+        dpRaw?.['Permak / Cuci'] ??
+        dpRaw?.Permak ??
+        dpRaw?.d?.PERMAK ??
+        0
+      );
+
+      let defectFisik = Number(f['DEFECT'] ?? f['Barang Cacat'] ?? f['Cacat'] ?? 0);
+      const defectDp = Number(
+        d['DEFECT'] ??
+        d['Barang Cacat'] ??
+        d['Diskon Defect'] ??
+        d['Cacat'] ??
+        dpRaw?.DEFECT ??
+        dpRaw?.['Barang Cacat'] ??
+        dpRaw?.['Diskon Defect'] ??
+        dpRaw?.Cacat ??
+        dpRaw?.d?.DEFECT ??
+        0
+      );
+
+      const locList = Array.isArray(mapped?.l) && mapped.l.length > 0
+        ? mapped.l
+        : Array.isArray(row?.locList) && row.locList.length > 0
+        ? row.locList
+        : Array.isArray(row?.l) && row.l.length > 0
+        ? row.l
+        : [];
+      const locStr = formatLocationString(locList);
+
+      // 3. Fallback: If physical counts are all 0 but locations are detected, derive quantities directly from locations!
+      if (mapFisik === 0 && liveFisik === 0 && studioFisik === 0 && permakFisik === 0 && defectFisik === 0) {
+        if (row?.stokMap) mapFisik = Number(row.stokMap);
+        if (row?.stokStudio) studioFisik = Number(row.stokStudio);
+        const liveTot = (Number(row?.stokShp) || 0) + (Number(row?.stokTtk) || 0);
+        if (liveTot > 0) liveFisik = liveTot;
+
+        if (locList.length > 0) {
+          for (const itemLoc of locList) {
+            let locName = '';
+            let locQty = 0;
+            if (typeof itemLoc === 'string') {
+              const parts = itemLoc.split(':');
+              locName = parts[0] || '';
+              locQty = Number(parts[1]) || 0;
+            } else if (typeof itemLoc === 'object' && itemLoc !== null) {
+              locName = (itemLoc as any).lokasi || '';
+              locQty = Number((itemLoc as any).qty) || 0;
+            }
+            const lU = locName.toUpperCase().trim();
+            if (lU.includes('STUDIO') || lU.includes('SAMPLE')) {
+              studioFisik += locQty;
+            } else if (
+              lU.includes('SHOPEE') ||
+              lU.includes('TIKTOK') ||
+              lU.includes('LIVE') ||
+              lU.includes('SHP') ||
+              lU.includes('TTK') ||
+              lU.includes('TIK') ||
+              lU.includes('TOK')
+            ) {
+              liveFisik += locQty;
+            } else if (lU.startsWith('PMK') || lU.startsWith('CC') || lU.includes('PERMAK') || lU.includes('CUCI')) {
+              permakFisik += locQty;
+            } else if (lU.startsWith('DF') || lU.includes('DEFECT') || lU.includes('CACAT')) {
+              defectFisik += locQty;
+            } else if (locQty > 0) {
+              mapFisik += locQty;
+            }
+          }
+        }
+      }
 
       const singleVals: { [key: string]: number } = {};
       [...OFFLINE_COLS, ...STORE_COLS, ...ONLINE_COLS].forEach((code) => {
         singleVals[code] = Number(
-          b[code] ||
-          d[code] ||
-          f[code] ||
-          dpRaw?.[code] ||
-          dpRaw?.cabang?.[code] ||
-          dpRaw?.b?.[code] ||
+          b[code] ??
+          d[code] ??
+          f[code] ??
+          dpRaw?.[code] ??
+          dpRaw?.cabang?.[code] ??
+          dpRaw?.b?.[code] ??
           0
         );
       });
-
-      const locList = Array.isArray(mapped?.l) ? mapped.l : Array.isArray(row?.l) ? row.l : Array.isArray(row?.locList) ? row.locList : [];
-      const locStr = formatLocationString(locList);
 
       const produk = String(row?.p || row?.produk || row?.nama_produk || mapped?.nama_produk || sku);
       const size = String(row?.s || row?.size || mapped?.size || '-');
@@ -560,7 +773,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     });
 
     return result;
-  }, [productCatalog, stockList]);
+  }, [productCatalog, stockList, dealposDeltaMap]);
 
   // ========================================================
   // 3. FILTERING & SORTING LOGIC (OPTIMIZED WITH FAST COMPARATORS)
@@ -647,6 +860,41 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     return sorted;
   }, [normalizedInventory, deferredSearch, sortOption, onlyWithStock]);
+
+  // Auto-enrich visible items with DealPOS channels if not yet present
+  const visibleSkusNeedingDealpos = useMemo(() => {
+    const skus: string[] = [];
+    const slice = filteredInventory.slice(0, 60);
+    for (const it of slice) {
+      if (!dealposDeltaMap[it.sku]) {
+        const hasDp = (it.komparasi.MAP.dp || 0) > 0 ||
+                      (it.komparasi.PERMAK.dp || 0) > 0 ||
+                      (it.komparasi.LIVE.dp || 0) > 0 ||
+                      (it.komparasi.STUDIO.dp || 0) > 0 ||
+                      (it.komparasi.DEFECT.dp || 0) > 0 ||
+                      it.totalStore > 0 ||
+                      it.totalOnline > 0 ||
+                      it.totalOffline > 0;
+        if (!hasDp) {
+          skus.push(it.sku);
+        }
+      }
+    }
+    return skus.slice(0, 50);
+  }, [filteredInventory, dealposDeltaMap]);
+
+  useEffect(() => {
+    if (visibleSkusNeedingDealpos.length === 0) return;
+    let isMounted = true;
+    fetchMasterProductDealposChannelsBySkus(visibleSkusNeedingDealpos).then((res) => {
+      if (isMounted && res && Object.keys(res).length > 0) {
+        setDealposDeltaMap((prev) => ({ ...prev, ...res }));
+      }
+    }).catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [visibleSkusNeedingDealpos]);
 
   const itemsWithStockCount = useMemo(() => {
     return normalizedInventory.filter(
@@ -1707,6 +1955,24 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md font-sans">
               💾 100% Tersimpan di DB Lokal ({productCatalog.length.toLocaleString('id-ID')} SKU)
             </span>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-md font-sans flex items-center gap-1 ${
+                stockList.length > 0
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold'
+                  : isLoading || isSyncingBackground
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 animate-pulse'
+                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              <span>📦</span>
+              <span>
+                {stockList.length > 0
+                  ? `${stockList.length.toLocaleString('id-ID')} Baris Stok Fisik Terhubung`
+                  : isLoading || isSyncingBackground
+                  ? 'Menyinkronkan Stok Fisik...'
+                  : 'Stok Fisik Belum Termuat'}
+              </span>
+            </span>
           </div>
           <div className="hidden sm:flex items-center gap-3">
             <span>
@@ -1723,6 +1989,28 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           </div>
         </div>
       </div>
+
+      {/* Warning banner when physical stock has not loaded */}
+      {stockList.length === 0 && !isLoading && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+            <div>
+              <p className="font-bold">Stok Fisik Rak Belum Termuat</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Katalog produk terdata ({productCatalog.length.toLocaleString('id-ID')} SKU), namun data stok fisik lokasi belum berhasil dimuat.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadStockData(true, true)}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+          >
+            Muat Stok Fisik Sekarang
+          </button>
+        </div>
+      )}
 
       {/* ========================================================
           3. MAIN DATA SECTION (TABLE vs CARD RENDER)

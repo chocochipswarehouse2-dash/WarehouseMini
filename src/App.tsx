@@ -57,6 +57,7 @@ import {
   insertLogProduk,
   insertStockOpnameQueue,
   fetchMasterProductsFromSupabase,
+  fetchSupabaseStokFisikDirect,
   verifySupabaseLogin,
   isDummyProduct,
   supabaseFetch,
@@ -400,6 +401,10 @@ export default function App() {
   // Load product database on mount & session ready
   useEffect(() => {
     loadProducts();
+    // Preload physical stock in background so Inventory tab opens instantly with full 4,500+ items
+    fetchSupabaseStokFisikDirect().catch((err) => {
+      console.warn('Background physical stock preload warning:', err);
+    });
     if (session) {
       requestScreenWakeLock();
     }
@@ -451,6 +456,7 @@ export default function App() {
               }
             }
             globalRealtimeStore.notify('log_produk', payload);
+            globalRealtimeStore.notify('view_stok_realtime', payload);
           }
         )
         .on(
@@ -562,13 +568,6 @@ export default function App() {
                 });
               }, 650);
             }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'view_stok_realtime' },
-          (payload) => {
-            globalRealtimeStore.notify('view_stok_realtime', payload);
           }
         )
         .subscribe((status) => {

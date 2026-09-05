@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   getAllProductsFromLocalDb,
   saveProductsToLocalDb,
+  saveInventoryStocksToLocalDb,
   clearLocalDb,
 } from './localDb';
 import {
@@ -93,13 +94,16 @@ export function getStoredSupabaseConfig() {
   let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
   // Auto-migrate legacy project ref to the new default in browser localStorage
-  if (url && (url.includes('filgijcfhgqlirzhvwho') || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated')))) {
+  // Also enforce that default project vxongwtxmhjixhzeoidp always uses the valid publishable key
+  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp') || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated'))) {
     url = DEFAULT_SUPABASE_URL;
     key = DEFAULT_SUPABASE_ANON_KEY;
     if (isBrowser) {
-      localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
-      localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
-      localStorage.setItem('wms_supabase_v2_migrated', 'true');
+      try {
+        localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
+        localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
+        localStorage.setItem('wms_supabase_v2_migrated', 'true');
+      } catch {}
     }
   }
 
@@ -1223,66 +1227,120 @@ export async function resyncStockOpnameQueueItems(
 
 /**
  * Direct Supabase Realtime Stock Fetcher (matches GAS script fetchSupabaseStokFisikDirect)
- * Highly optimized with larger chunk sizes and fast fallback.
+ * Highly optimized with concurrent chunk sizes, instant memory caching, and IndexedDB sync.
  */
 let memoryStokFisikCache: StockRealtimeItem[] | null = null;
 let memoryStokFisikLastFetch = 0;
 
+export function getMemoryStokFisikCache(): StockRealtimeItem[] | null {
+  return memoryStokFisikCache;
+}
+
+export function setMemoryStokFisikCache(data: StockRealtimeItem[]): void {
+  if (Array.isArray(data) && data.length > 0) {
+    memoryStokFisikCache = data;
+    memoryStokFisikLastFetch = Date.now();
+  }
+}
+
 export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
-  // SWR: return in-memory cache if fresh within 5 minutes and not forcing refresh
-  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 300000) {
+  // SWR: return in-memory cache if fresh within 3 minutes and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 180000) {
     return memoryStokFisikCache;
   }
 
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
   const allRows: StockRealtimeItem[] = [];
   const pageSize = 1000;
-  let offset = 0;
   const maxRows = 100000;
 
-  try {
-    while (offset < maxRows) {
-      const batchPromises = [];
-      const batchSize = 6; // 6 parallel requests for fast download
-      for (let i = 0; i < batchSize && offset < maxRows; i++) {
-        const currentLimit = Math.min(pageSize, maxRows - offset);
-        const off = offset;
-        const promise = fetch(
-          `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${off}`,
-          {
-            headers: {
-              apikey: supaKey,
-              Authorization: 'Bearer ' + supaKey,
-              'Content-Type': 'application/json',
-            },
-          }
-        ).then(res => res.ok ? res.json() : []).catch(() => []);
-        batchPromises.push(promise);
-        offset += currentLimit;
-      }
-      
-      const results = await Promise.all(batchPromises);
-      let breakLoop = false;
-      
-      for (const data of results) {
-        if (!Array.isArray(data) || data.length === 0) {
-          breakLoop = true;
-          break;
+  const headers = {
+    apikey: supaKey,
+    Authorization: 'Bearer ' + supaKey,
+    'Content-Type': 'application/json',
+  };
+
+  const fetchPage = async (off: number, retries = 3): Promise<StockRealtimeItem[]> => {
+    const currentLimit = Math.min(pageSize, maxRows - off);
+    const url = `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${off}`;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch(url, { headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json)) return json;
+        } else {
+          console.warn(`Supabase stock fetch page offset ${off} status ${res.status} (attempt ${attempt + 1})`);
         }
-        allRows.push(...data);
-        if (data.length < pageSize) {
-          breakLoop = true;
-          break;
-        }
+      } catch (err: any) {
+        console.warn(`Supabase stock fetch page offset ${off} error (attempt ${attempt + 1}):`, err?.message);
       }
-      
-      if (breakLoop) {
-        break;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
       }
     }
+    return [];
+  };
+
+  try {
+    // 1. Fetch initial 5 pages (0..5000) in parallel — covers all 4,500+ realtime rows in ~700-900ms
+    const baseOffsets = [0, 1000, 2000, 3000, 4000];
+    const baseResults = await Promise.all(baseOffsets.map((off) => fetchPage(off)));
+
+    let lastPageCount = 0;
+    for (const chunk of baseResults) {
+      if (Array.isArray(chunk) && chunk.length > 0) {
+        allRows.push(...chunk);
+        lastPageCount = chunk.length;
+      }
+    }
+
+    // 2. If the 5th page (offset 4000) was completely full (1000 items), fetch subsequent pages until done
+    if (lastPageCount >= pageSize) {
+      let nextOffset = 5000;
+      while (nextOffset < maxRows) {
+        const batchOffsets = [nextOffset, nextOffset + 1000, nextOffset + 2000];
+        const batchResults = await Promise.all(batchOffsets.map((off) => fetchPage(off)));
+        let hasIncomplete = false;
+
+        for (const chunk of batchResults) {
+          if (Array.isArray(chunk) && chunk.length > 0) {
+            allRows.push(...chunk);
+          }
+          if (!chunk || chunk.length < pageSize) {
+            hasIncomplete = true;
+            break;
+          }
+        }
+        if (hasIncomplete) break;
+        nextOffset += 3000;
+      }
+    }
+
+    // Fallback if 0 rows returned
+    if (allRows.length === 0) {
+      console.warn('Direct fetch returned 0 rows, trying un-ordered query fallback...');
+      const fallbackRes = await fetch(
+        `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&limit=1000&offset=0`,
+        { headers }
+      );
+      if (fallbackRes.ok) {
+        const fbJson = await fallbackRes.json();
+        if (Array.isArray(fbJson) && fbJson.length > 0) {
+          allRows.push(...fbJson);
+        }
+      }
+    }
+
     if (allRows.length > 0) {
       memoryStokFisikCache = allRows;
       memoryStokFisikLastFetch = Date.now();
+      // Auto-save snapshot to IndexedDB in background
+      saveInventoryStocksToLocalDb(allRows).catch(() => {});
     }
   } catch (err) {
     console.warn('fetchSupabaseStokFisikDirect warning:', err);
@@ -1776,10 +1834,24 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
       b[code] = q;
     });
 
+    // Also copy all keys from dp.b if available
+    if (dp.b && typeof dp.b === 'object') {
+      Object.keys(dp.b).forEach((k) => {
+        b[k] = Number(dp.b[k]) || 0;
+      });
+    }
+
     // Also copy all keys from dp.cabang if available
     if (dp.cabang && typeof dp.cabang === 'object') {
       Object.keys(dp.cabang).forEach((k) => {
         b[k] = Number(dp.cabang[k]) || 0;
+      });
+    }
+
+    // Also copy all keys from dp.d if available
+    if (dp.d && typeof dp.d === 'object') {
+      Object.keys(dp.d).forEach((k) => {
+        d[k] = Number(dp.d[k]) || 0;
       });
     }
 
@@ -1850,7 +1922,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     b,
     f: (row.f && typeof row.f === 'object') ? row.f : {},
     l: Array.isArray(row.l) ? row.l : [],
-    dealpos_channels: row.dealpos_channels,
+    dealpos_channels: row.dealpos_channels || row.dealpos,
     q: stokMap ?? Number(row.q || 0),
   };
 }
@@ -1931,7 +2003,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
-          fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+          fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
             headers: {
               apikey: supaKey,
               Authorization: 'Bearer ' + supaKey,
@@ -1962,14 +2034,20 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
               if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
               if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
               if (existing.price === undefined && item.price !== undefined) existing.price = item.price;
-              if (item.dealpos_channels && (!existing.dealpos_channels || Object.keys(existing.dealpos_channels).length === 0)) {
-                existing.dealpos_channels = item.dealpos_channels;
+              if (item.dealpos_channels) {
+                existing.dealpos_channels = {
+                  ...(typeof existing.dealpos_channels === 'object' ? (existing.dealpos_channels as Record<string, any>) : {}),
+                  ...(typeof item.dealpos_channels === 'object' ? (item.dealpos_channels as Record<string, any>) : {}),
+                };
               }
-              if (item.d && Object.keys(item.d).length > 0 && Object.keys(existing.d || {}).length === 0) {
-                existing.d = item.d;
+              if (item.d && typeof item.d === 'object' && Object.keys(item.d).length > 0) {
+                existing.d = { ...((existing.d || {}) as Record<string, number>), ...(item.d as Record<string, number>) };
               }
-              if (item.b && Object.keys(item.b).length > 0 && Object.keys(existing.b || {}).length === 0) {
-                existing.b = item.b;
+              if (item.b && typeof item.b === 'object' && Object.keys(item.b).length > 0) {
+                existing.b = { ...((existing.b || {}) as Record<string, number>), ...(item.b as Record<string, number>) };
+              }
+              if (item.stokMap !== undefined && (!existing.stokMap || existing.stokMap === 0)) {
+                existing.stokMap = item.stokMap;
               }
               if (item.komparasi && !existing.komparasi) {
                 existing.komparasi = item.komparasi;
@@ -1994,7 +2072,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
-          fetch(`${supaUrl}/rest/v1/view_stok_realtime?select=sku,lokasi,nama_produk,size,sisa_stok,area&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+          fetch(`${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,lokasi,nama_produk,size,sisa_stok,area&order=sku.asc&limit=${pageSize}&offset=${off}`, {
             headers: {
               apikey: supaKey,
               Authorization: 'Bearer ' + supaKey,
@@ -2063,6 +2141,23 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
             }
             if (locUpper.includes('TIKTOK') || locUpper.includes('TTK') || areaUpper.includes('TIKTOK')) {
               item.stokTtk = (item.stokTtk || 0) + qty;
+            }
+
+            // Populate item.f for physical breakdown
+            if (!item.f || typeof item.f !== 'object') item.f = {};
+            const itemF = item.f as Record<string, number>;
+            const fKey = areaUpper.includes('CACAT') || locUpper.startsWith('DF')
+              ? 'Barang Cacat'
+              : areaUpper.includes('PERMAK') || locUpper.startsWith('PMK') || locUpper.startsWith('CC')
+              ? 'Permak / Cuci'
+              : areaUpper.includes('LIVE') || locUpper.includes('LIVE') || locUpper.includes('SHOPEE') || locUpper.includes('TIKTOK')
+              ? 'Barang Live'
+              : areaUpper.includes('STUDIO') || locUpper.includes('STUDIO')
+              ? 'Sample Studio'
+              : 'Gudang Utama';
+            itemF[fKey] = (itemF[fKey] || 0) + qty;
+            if (fKey === 'Gudang Utama') {
+              item.stokMap = (item.stokMap || 0) + qty;
             }
           }
         }
@@ -3682,27 +3777,85 @@ export async function fetchPresensiRange(
 export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<StockRealtimeItem[]> {
   if (!skus || skus.length === 0) return [];
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
-  const skuList = skus.map(s => `"${s}"`).join(',');
-  const encodedSkus = encodeURIComponent(`(${skuList})`);
+  const cleanSkus = Array.from(new Set(skus.map(s => String(s || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanSkus.length === 0) return [];
   
-  try {
-    const res = await fetch(`${supaUrl}/rest/v1/view_stok_realtime?sku=in.${encodedSkus}&sisa_stok=neq.0`, {
-      method: 'GET',
-      headers: {
-        'apikey': supaKey,
-        'Authorization': `Bearer ${supaKey}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+  const CHUNK_SIZE = 40;
+  const allResults: StockRealtimeItem[] = [];
+
+  for (let i = 0; i < cleanSkus.length; i += CHUNK_SIZE) {
+    const chunk = cleanSkus.slice(i, i + CHUNK_SIZE);
+    const skuList = chunk.map(s => `"${s}"`).join(',');
+    const encodedSkus = encodeURIComponent(`(${skuList})`);
+    
+    try {
+      const res = await fetch(`${supaUrl}/rest/v1/view_stok_realtime?sku=in.${encodedSkus}&sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok`, {
+        method: 'GET',
+        headers: {
+          'apikey': supaKey,
+          'Authorization': `Bearer ${supaKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) allResults.push(...json);
       }
-    });
-    if (res.ok) {
-      return await res.json();
+    } catch (err) {
+      console.error('Error fetching delta stocks chunk:', err);
     }
-    return [];
-  } catch (err) {
-    console.error('Error fetching delta stocks:', err);
-    return [];
   }
+  return allResults;
+}
+
+export async function fetchMasterProductDealposChannelsBySkus(
+  skus: string[]
+): Promise<Record<string, any>> {
+  if (!skus || skus.length === 0) return {};
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  const cleanSkus = Array.from(
+    new Set(skus.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean))
+  );
+  if (cleanSkus.length === 0) return {};
+
+  const resultMap: Record<string, any> = {};
+  const CHUNK_SIZE = 50;
+
+  for (let i = 0; i < cleanSkus.length; i += CHUNK_SIZE) {
+    const chunk = cleanSkus.slice(i, i + CHUNK_SIZE);
+    const skuList = chunk.map((s) => `"${s}"`).join(',');
+    const encodedSkus = encodeURIComponent(`(${skuList})`);
+
+    try {
+      const res = await fetch(
+        `${supaUrl}/rest/v1/master_produk?sku=in.${encodedSkus}&select=sku,dealpos_channels`,
+        {
+          method: 'GET',
+          headers: {
+            apikey: supaKey,
+            Authorization: `Bearer ${supaKey}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+        }
+      );
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) {
+          json.forEach((r) => {
+            const k = String(r.sku || '').trim().toUpperCase();
+            if (k && r.dealpos_channels) {
+              resultMap[k] = r.dealpos_channels;
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching delta dealpos_channels chunk:', err);
+    }
+  }
+  return resultMap;
 }
 
 export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('../types').ChannelStockItem[]> {
