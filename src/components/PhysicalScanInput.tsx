@@ -73,7 +73,7 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
   return (
     <div
       id="containerPhysical"
-      className="bg-white dark:bg-[#09090B] px-3 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+      className="bg-transparent px-3 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
     >
       <div className="max-w-lg mx-auto flex flex-col gap-1.5">
         <div className="relative">

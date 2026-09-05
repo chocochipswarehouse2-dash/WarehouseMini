@@ -1088,7 +1088,7 @@ export default function App() {
                 <div className="space-y-2">
                   {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
                   <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
-                    <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
+                    <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md">
                       <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
 
                       {(scanMode === 'fisik' || scanMode === 'manual') && (

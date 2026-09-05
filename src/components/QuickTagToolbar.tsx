@@ -20,7 +20,7 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
   return (
     <div
       id="quickTagToolbar"
-      className="bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800/80 px-2 py-1.5 transition-colors"
+      className="bg-white dark:bg-[#0F0F12] rounded-b-[inherit] border-b border-slate-200 dark:border-slate-800/80 px-2 py-1.5 transition-colors"
     >
       <div className="max-w-lg mx-auto flex flex-col gap-1.5">
         {/* Category Mode Quick Toggle & Active Indicator */}

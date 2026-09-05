@@ -1866,11 +1866,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
         {/* STICKY BARCODE SCANNER BAR (FREEZE / STICKY AT TOP UNDER NAVBAR) */}
         <div className="sticky top-[52px] sm:top-[58px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pt-1 pb-2">
-          <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
+          <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
             {/* METODE PEMINDAIAN SELECTOR */}
             <div
               id="pickingScanMethodContainer"
-              className="bg-white dark:bg-[#0F0F12] px-4 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+              className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-4 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
             >
               <div className="max-w-lg mx-auto">
                 <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 text-center">
@@ -1961,7 +1961,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
             {/* MODE 2: MANUAL SEARCH & AUTOCOMPLETE INPUT */}
             {inputMode === 'manual' && (
-              <div className="bg-white dark:bg-[#09090B] px-4 py-3.5 border-b border-slate-200 dark:border-slate-800/80">
+              <div className="bg-transparent px-4 py-3.5 border-b border-slate-200 dark:border-slate-800/80">
                 <form onSubmit={handleManualSearchSubmit} className="max-w-lg mx-auto space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                     <div className="sm:col-span-6 relative">

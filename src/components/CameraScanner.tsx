@@ -363,7 +363,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   return (
     <div
       id="containerKameraSection"
-      className="bg-white dark:bg-[#09090B] border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+      className="bg-transparent border-b border-slate-200 dark:border-slate-800/80 transition-colors"
     >
       <div className="max-w-lg mx-auto overflow-hidden">
         {/* Compact Camera Toolbar */}

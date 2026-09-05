@@ -14,7 +14,7 @@ export const ScanMethodSelector: React.FC<ScanMethodSelectorProps> = ({
   return (
     <div
       id="scanMethodContainer"
-      className="bg-white dark:bg-[#0F0F12] px-2 py-1.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+      className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-2 py-1.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
     >
       <div className="max-w-lg mx-auto">
         <div className="flex bg-slate-100 dark:bg-[#09090B] p-0.5 rounded-xl border border-slate-200 dark:border-slate-800">
