@@ -1839,101 +1839,104 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
   return (
     <div id="inventoryViewContainer" className="space-y-4 max-w-7xl mx-auto pb-16">
+      {/* Header Banner */}
+      <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 mb-2 relative overflow-hidden shadow-xl shadow-slate-900/10 border border-slate-800">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <Boxes className="w-32 h-32 transform rotate-12" />
+        </div>
+        <div className="relative z-10">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold tracking-widest uppercase mb-3 border border-emerald-500/30">
+            <Sparkles className="w-3 h-3" />
+            Sistem Terpadu WMS • Manajemen Inventori
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black mb-2 tracking-tight">Katalog & Stok Gudang</h2>
+          <p className="text-sm text-slate-400 mb-0 leading-relaxed max-w-2xl">
+            Pantau real-time pergerakan stok, rincian alokasi MAP, stok sampel Live Blok F, serta antrean produk perbaikan & defect di seluruh titik penyimpanan.
+          </p>
+        </div>
+      </div>
+
       {/* ========================================================
           1. TOP KPI STAT CARDS (4-GRID DENGAN INTERACTIVE MODAL)
           ======================================================== */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
         {/* KPI 1: TOTAL SKU */}
         <div
           onClick={() => setKpiModal('CATEGORY')}
-          className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 sm:p-4.5 shadow-xs hover:border-amber-500/40 hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden group"
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-300 group shadow-xs"
           title="Klik untuk melihat diagram kategori produk"
         >
-          <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-500" />
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                TOTAL SKU PRODUK
-              </span>
-              <div className="text-lg sm:text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">
-                {kpiStats.totalSku.toLocaleString('id-ID')}
-              </div>
-              <span className="text-[10px] text-slate-400 block truncate">Katalog terdaftar &amp; aktif</span>
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>TOTAL SKU PRODUK</span>
+            <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Package className="w-4 h-4" />
             </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">
-              📦
-            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
+            {kpiStats.totalSku.toLocaleString('id-ID')}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Katalog terdaftar & aktif
           </div>
         </div>
 
         {/* KPI 2: TOTAL STOK REAL (MAP + KANAL FISIK) */}
         <div
           onClick={() => setKpiModal('MAP')}
-          className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 sm:p-4.5 shadow-xs hover:border-emerald-500/40 hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden group"
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-emerald-300 group shadow-xs"
           title="Klik untuk melihat rincian stok MAP & kanal fisik"
         >
-          <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-500" />
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                TOTAL STOK REAL
-              </span>
-              <div className="text-lg sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                {kpiStats.totalRealFisik.toLocaleString('id-ID')} <span className="text-xs font-normal">pcs</span>
-              </div>
-              <span className="text-[10px] text-slate-400 block truncate">
-                MAP: {kpiStats.totalMap.toLocaleString('id-ID')} pcs · Klik rincian
-              </span>
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>TOTAL STOK REAL</span>
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Building className="w-4 h-4" />
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">
-              🏢
-            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+            {kpiStats.totalRealFisik.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            MAP: {kpiStats.totalMap.toLocaleString('id-ID')} pcs · Klik detail
           </div>
         </div>
 
         {/* KPI 3: STOK BLOK F */}
         <div
           onClick={() => setKpiModal('BLOK_F')}
-          className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 sm:p-4.5 shadow-xs hover:border-blue-500/40 hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden group"
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-blue-300 group shadow-xs"
           title="Klik untuk melihat stok Studio, Shopee & TikTok"
         >
-          <div className="absolute top-0 left-0 bottom-0 w-1 bg-blue-500" />
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                STOK BLOK F
-              </span>
-              <div className="text-lg sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
-                {kpiStats.totalBlokF.toLocaleString('id-ID')} <span className="text-xs font-normal">pcs</span>
-              </div>
-              <span className="text-[10px] text-slate-400 block truncate">Sample Live &amp; Studio</span>
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>STOK BLOK F</span>
+            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Video className="w-4 h-4" />
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">
-              🎥
-            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
+            {kpiStats.totalBlokF.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Sample Live & Studio
           </div>
         </div>
 
         {/* KPI 4: STOK PERBAIKAN */}
         <div
           onClick={() => setKpiModal('PERBAIKAN')}
-          className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 sm:p-4.5 shadow-xs hover:border-rose-500/40 hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden group"
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-rose-300 group shadow-xs"
           title="Klik untuk melihat daftar antrean Permak & Defect"
         >
-          <div className="absolute top-0 left-0 bottom-0 w-1 bg-rose-500" />
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                STOK PERBAIKAN
-              </span>
-              <div className="text-lg sm:text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">
-                {kpiStats.totalPerbaikan.toLocaleString('id-ID')} <span className="text-xs font-normal">pcs</span>
-              </div>
-              <span className="text-[10px] text-slate-400 block truncate">Permak &amp; Barang Defect</span>
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>STOK PERBAIKAN</span>
+            <div className="w-7 h-7 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Wrench className="w-4 h-4" />
             </div>
-            <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">
-              🛠️
-            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">
+            {kpiStats.totalPerbaikan.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Permak & Barang Defect
           </div>
         </div>
       </div>
