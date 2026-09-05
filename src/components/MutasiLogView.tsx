@@ -22,6 +22,12 @@ import {
   Download,
   FileSpreadsheet,
   Package,
+  Smartphone,
+  Copy,
+  Check,
+  User,
+  Clock,
+  LayoutGrid,
 } from 'lucide-react';
 import { ProductItem, UserSession, LogProdukItem } from '../types';
 import {
@@ -78,6 +84,34 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT'>('ALL');
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
   const [displayLimit, setDisplayLimit] = useState(30);
+
+  // View Mode: 'CARD' (Mobile / Smartphone optimized) | 'TABLE' (Spreadsheet multi-column)
+  const [viewMode, setViewMode] = useState<'TABLE' | 'CARD'>(() => {
+    try {
+      const saved = localStorage.getItem('wms_mutasi_view_mode');
+      if (saved === 'TABLE' || saved === 'CARD') return saved;
+    } catch {}
+    return typeof window !== 'undefined' && window.innerWidth <= 768 ? 'CARD' : 'TABLE';
+  });
+
+  const [copiedInvoice, setCopiedInvoice] = useState<string | null>(null);
+
+  const handleToggleViewMode = (mode: 'TABLE' | 'CARD') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('wms_mutasi_view_mode', mode);
+    } catch {}
+  };
+
+  const handleCopyInvoice = (inv: string) => {
+    if (!inv || inv === '-') return;
+    try {
+      navigator.clipboard.writeText(inv);
+      setCopiedInvoice(inv);
+      setTimeout(() => setCopiedInvoice(null), 1800);
+      if (onNotify) onNotify(`Nomor invoice ${inv} berhasil disalin ke clipboard!`, 'info');
+    } catch {}
+  };
 
   // Bulk Delete State
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
@@ -547,6 +581,36 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* View Mode Switcher (Kartu vs Tabel) */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80 shrink-0 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => handleToggleViewMode('CARD')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'CARD'
+                    ? 'bg-white dark:bg-slate-900 text-[#ff7a00] shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+                title="Tampilan Kartu (Responsif Layar HP)"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Kartu</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleViewMode('TABLE')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'TABLE'
+                    ? 'bg-white dark:bg-slate-900 text-[#ff7a00] shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+                title="Tampilan Tabel Spreadsheet"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Tabel</span>
+              </button>
+            </div>
+
             <button
               id="btnRefreshMutasiLogs"
               type="button"
@@ -555,7 +619,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh Data</span>
+              <span className="hidden xs:inline">Refresh Data</span>
             </button>
 
             {canExportData && (
@@ -566,7 +630,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 className="px-3.5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Ekspor CSV</span>
+                <span className="hidden xs:inline">Ekspor CSV</span>
               </button>
             )}
             
@@ -701,166 +765,365 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           </div>
         ) : (
           <div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    <th className="py-3 px-4 w-10 text-center">
-                      <input 
-                        type="checkbox" 
-                        className="rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700"
-                        checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
-                        onChange={toggleSelectAll}
-                      />
-                    </th>
-                    <th className="py-3 px-4">Tipe & Waktu</th>
-                    <th className="py-3 px-4">Invoice</th>
-                    <th className="py-3 px-4">SKU & Produk</th>
-                    <th className="py-3 px-4">Lokasi & Area</th>
-                    <th className="py-3 px-4 text-center">Qty</th>
-                    <th className="py-3 px-4">Operator & Catatan</th>
-                    <th className="py-3 px-4 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+            {viewMode === 'CARD' ? (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {/* Mobile Selection Toolbar */}
+                <div className="flex items-center justify-between px-3.5 sm:px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-slate-800 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-300 select-none">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
+                      checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
+                      onChange={toggleSelectAll}
+                    />
+                    <span>Pilih Semua {selectedIds.size > 0 && `(${selectedIds.size}/${filteredLogs.length})`}</span>
+                  </label>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    Menampilkan {Math.min(displayLimit, filteredLogs.length)} dari {filteredLogs.length}
+                  </span>
+                </div>
+
+                {/* Mobile Cards Container */}
+                <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 bg-slate-50/40 dark:bg-black/20">
                   {filteredLogs.slice(0, displayLimit).map((item) => {
                     const isTypeIn = item.type === 'IN' || item.type === 'ADJ_IN';
-                    const isAdj = item.type.startsWith('ADJ_');
                     const isSelected = selectedIds.has(item.id!);
+                    const formattedDate = item.created_at
+                      ? new Date(item.created_at).toLocaleString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '-';
 
                     return (
-                      <tr
+                      <div
                         key={item.id || `${item.invoice}_${item.sku}_${Math.random()}`}
-                        className={`transition-colors group ${isSelected ? 'bg-rose-50 dark:bg-rose-900/20' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}`}
+                        className={`rounded-2xl border transition-all p-3.5 flex flex-col justify-between gap-2.5 shadow-2xs ${
+                          isSelected
+                            ? 'bg-rose-50/90 dark:bg-rose-950/25 border-rose-300 dark:border-rose-800/80 ring-1 ring-rose-500/40'
+                            : 'bg-white dark:bg-[#121216] border-slate-200/90 dark:border-slate-800/90 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
                       >
-                        <td className="py-3 px-4 text-center">
-                          <input 
-                            type="checkbox" 
-                            className="rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
-                            checked={isSelected}
-                            onChange={() => toggleSelection(item.id!)}
-                          />
-                        </td>
-                        {/* Type & Time */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
+                        {/* 1. Header: Type Badge, Checkbox, Timestamp, Actions */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <input 
+                              type="checkbox" 
+                              className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer shrink-0"
+                              checked={isSelected}
+                              onChange={() => toggleSelection(item.id!)}
+                            />
+
+                            {/* Type Badge */}
                             <span
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shrink-0 ${
                                 item.type === 'IN'
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
                                   : item.type === 'OUT'
-                                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                  ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
+                                  : item.type === 'ADJ_IN'
+                                  ? 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20'
+                                  : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
                               }`}
                             >
                               {isTypeIn ? (
-                                <ArrowDownLeft className="w-3 h-3" />
+                                <ArrowDownLeft className="w-3 h-3 shrink-0" />
                               ) : (
-                                <ArrowUpRight className="w-3 h-3" />
+                                <ArrowUpRight className="w-3 h-3 shrink-0" />
                               )}
-                              {item.type}
+                              <span>{item.type}</span>
                             </span>
                           </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 font-mono">
-                            {item.created_at
-                              ? new Date(item.created_at).toLocaleString('id-ID', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : '-'}
-                          </div>
-                        </td>
 
-                        {/* Invoice */}
-                        <td className="py-3 px-4">
-                          <span className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md text-[11px] select-all">
-                            {item.invoice || '-'}
-                          </span>
-                        </td>
-
-                        {/* SKU & Product */}
-                        <td className="py-3 px-4 max-w-xs">
-                          <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
-                            {item.sku}
-                            {item.size && item.size !== '-' && item.size !== 'Default' && (
-                              <span className="text-[10px] px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300 font-sans">
-                                {item.size}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                            {item.nama_produk || '-'}
-                          </div>
-                        </td>
-
-                        {/* Location & Area */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 font-mono">
-                            <MapPin className="w-3 h-3" />
-                            {item.lokasi}
-                          </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                            {item.area || getAreaFromLokasi(item.lokasi)}
-                          </div>
-                        </td>
-
-                        {/* Qty */}
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
-                              isTypeIn
-                                ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
-                            }`}
-                          >
-                            {item.qty}
-                          </span>
-                        </td>
-
-                        {/* Operator & Note */}
-                        <td className="py-3 px-4 max-w-[200px]">
-                          <div className="font-medium text-slate-700 dark:text-slate-300 truncate text-[11px]">
-                            {item.operator || '-'}
-                          </div>
-                          {item.keterangan && (
-                            <div className="text-[10px] text-slate-400 truncate italic">
-                              "{item.keterangan}"
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-3 px-4 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Edit Invoice Button */}
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               type="button"
                               onClick={() => handleOpenEditInvoice(item.invoice)}
-                              title="Edit Invoice ini (semua item dalam invoice)"
-                              className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-[#ff7a00] dark:hover:text-[#ff7a00] hover:bg-[#ff7a00]/10 rounded-lg transition-colors cursor-pointer"
+                              title="Edit invoice ini (semua item)"
+                              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-[#ff7a00]/10 text-slate-600 hover:text-[#ff7a00] dark:bg-slate-800 dark:text-slate-300 dark:hover:text-[#ff7a00] flex items-center justify-center transition-colors cursor-pointer"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
 
-                            {/* Delete Single Item */}
                             <button
                               type="button"
                               onClick={() => handleDeleteSingleItem(item.id!, item.sku)}
-                              title="Hapus baris ini saja"
-                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                              title="Hapus baris log ini"
+                              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-rose-500/10 text-slate-400 hover:text-rose-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-rose-400 flex items-center justify-center transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                        </td>
-                      </tr>
+                        </div>
+
+                        {/* 2. Invoice & Timestamp Row */}
+                        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/70 dark:border-slate-800 text-xs">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1 shrink-0">
+                              <Tag className="w-3 h-3 text-slate-400" />
+                              Invoice:
+                            </span>
+                            <span className="font-mono font-bold text-xs text-slate-900 dark:text-slate-100 truncate select-all">
+                              {item.invoice || '-'}
+                            </span>
+                            {item.invoice && item.invoice !== '-' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyInvoice(item.invoice)}
+                                title="Salin nomor invoice"
+                                className="p-0.5 text-slate-400 hover:text-[#ff7a00] transition-colors rounded cursor-pointer shrink-0"
+                              >
+                                {copiedInvoice === item.invoice ? (
+                                  <Check className="w-3 h-3 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="text-[10px] font-mono text-slate-600 dark:text-slate-400 flex items-center gap-1 shrink-0">
+                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>{formattedDate}</span>
+                          </div>
+                        </div>
+
+                        {/* 3. SKU & Product Name */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-mono font-black text-sm text-slate-900 dark:text-slate-100 tracking-tight select-all">
+                              {item.sku}
+                            </span>
+                            {item.size && item.size !== '-' && item.size !== 'Default' && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                Size: {item.size}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 leading-snug line-clamp-2">
+                            {item.nama_produk || '-'}
+                          </p>
+                        </div>
+
+                        {/* 4. Two-Column Metric Grid: Location & Qty */}
+                        <div className="grid grid-cols-2 gap-2 pt-0.5">
+                          {/* Lokasi & Area */}
+                          <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-indigo-500 shrink-0" />
+                              Lokasi Rak
+                            </span>
+                            <span className="font-mono font-black text-xs text-indigo-600 dark:text-indigo-400 truncate mt-0.5">
+                              {item.lokasi || '-'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                              {item.area || getAreaFromLokasi(item.lokasi) || 'Warehouse'}
+                            </span>
+                          </div>
+
+                          {/* Perubahan Qty */}
+                          <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-2 flex flex-col justify-center items-end">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Perubahan Qty
+                            </span>
+                            <div className="mt-0.5">
+                              <span
+                                className={`inline-block px-2.5 py-0.5 rounded-lg font-mono font-black text-sm ${
+                                  isTypeIn
+                                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+                                    : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-500/20'
+                                }`}
+                              >
+                                {isTypeIn ? `+${item.qty}` : `-${item.qty}`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 5. Footer: Operator & Catatan */}
+                        <div className="border-t border-slate-100 dark:border-slate-800/80 pt-2 flex flex-col gap-1 text-[11px]">
+                          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                            <User className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">
+                              Operator: <b className="text-slate-800 dark:text-slate-200">{item.operator || '-'}</b>
+                            </span>
+                          </div>
+                          {item.keterangan && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-900/40 px-2 py-1 rounded-md border border-slate-100 dark:border-slate-800/60 truncate">
+                              "{item.keterangan}"
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      <th className="py-3 px-4 w-10 text-center">
+                        <input 
+                          type="checkbox" 
+                          className="rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
+                          checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
+                          onChange={toggleSelectAll}
+                        />
+                      </th>
+                      <th className="py-3 px-4">Tipe & Waktu</th>
+                      <th className="py-3 px-4">Invoice</th>
+                      <th className="py-3 px-4">SKU & Produk</th>
+                      <th className="py-3 px-4">Lokasi & Area</th>
+                      <th className="py-3 px-4 text-center">Qty</th>
+                      <th className="py-3 px-4">Operator & Catatan</th>
+                      <th className="py-3 px-4 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {filteredLogs.slice(0, displayLimit).map((item) => {
+                      const isTypeIn = item.type === 'IN' || item.type === 'ADJ_IN';
+                      const isSelected = selectedIds.has(item.id!);
+
+                      return (
+                        <tr
+                          key={item.id || `${item.invoice}_${item.sku}_${Math.random()}`}
+                          className={`transition-colors group ${isSelected ? 'bg-rose-50 dark:bg-rose-900/20' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}`}
+                        >
+                          <td className="py-3 px-4 text-center">
+                            <input 
+                              type="checkbox" 
+                              className="rounded text-[#ff7a00] focus:ring-[#ff7a00] bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
+                              checked={isSelected}
+                              onChange={() => toggleSelection(item.id!)}
+                            />
+                          </td>
+                          {/* Type & Time */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                                  item.type === 'IN'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                    : item.type === 'OUT'
+                                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                }`}
+                              >
+                                {isTypeIn ? (
+                                  <ArrowDownLeft className="w-3 h-3" />
+                                ) : (
+                                  <ArrowUpRight className="w-3 h-3" />
+                                )}
+                                {item.type}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-1 font-mono">
+                              {item.created_at
+                                ? new Date(item.created_at).toLocaleString('id-ID', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '-'}
+                            </div>
+                          </td>
+
+                          {/* Invoice */}
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md text-[11px] select-all">
+                              {item.invoice || '-'}
+                            </span>
+                          </td>
+
+                          {/* SKU & Product */}
+                          <td className="py-3 px-4 max-w-xs">
+                            <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
+                              {item.sku}
+                              {item.size && item.size !== '-' && item.size !== 'Default' && (
+                                <span className="text-[10px] px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300 font-sans">
+                                  {item.size}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              {item.nama_produk || '-'}
+                            </div>
+                          </td>
+
+                          {/* Location & Area */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 font-mono">
+                              <MapPin className="w-3 h-3" />
+                              {item.lokasi}
+                            </div>
+                            <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                              {item.area || getAreaFromLokasi(item.lokasi)}
+                            </div>
+                          </td>
+
+                          {/* Qty */}
+                          <td className="py-3 px-4 text-center whitespace-nowrap">
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
+                                isTypeIn
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                                  : 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                              }`}
+                            >
+                              {item.qty}
+                            </span>
+                          </td>
+
+                          {/* Operator & Note */}
+                          <td className="py-3 px-4 max-w-[200px]">
+                            <div className="font-medium text-slate-700 dark:text-slate-300 truncate text-[11px]">
+                              {item.operator || '-'}
+                            </div>
+                            {item.keterangan && (
+                              <div className="text-[10px] text-slate-600 dark:text-slate-400 truncate italic">
+                                "{item.keterangan}"
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Edit Invoice Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditInvoice(item.invoice)}
+                                title="Edit Invoice ini (semua item dalam invoice)"
+                                className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-[#ff7a00] dark:hover:text-[#ff7a00] hover:bg-[#ff7a00]/10 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Delete Single Item */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleItem(item.id!, item.sku)}
+                                title="Hapus baris ini saja"
+                                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* Pagination / Show More */}
             {filteredLogs.length > displayLimit && (
@@ -1098,27 +1361,31 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
       {/* Floating Action Bar for Selected Items */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-bottom-5 fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl px-4 py-3 flex items-center gap-4">
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              <span className="text-[#ff7a00]">{selectedIds.size}</span> log terpilih
+        <div className="fixed bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-md animate-in slide-in-from-bottom-5 fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 flex items-center justify-between gap-2.5">
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 min-w-0">
+              <span className="text-[#ff7a00] font-black">{selectedIds.size}</span>
+              <span className="text-slate-600 dark:text-slate-300 truncate">log terpilih</span>
             </div>
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700"></div>
-            <button
-              type="button"
-              onClick={handleDeleteSelected}
-              className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Hapus Terpilih</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                className="px-3 sm:px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Hapus Terpilih</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg"
+                title="Batal Pilih"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
