@@ -3082,8 +3082,8 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
       }
     }
     if (toInsert.length > 0) {
-      // Fire-and-forget background insert to sync Supabase picking_list
-      supabaseFetch('picking_list', 'POST', toInsert).catch(console.warn);
+      // Background insert to sync Supabase picking_list
+      insertPickingListRowsToSupabase(toInsert).catch(console.warn);
     }
   }
 
@@ -3309,6 +3309,109 @@ export async function completePickingSuratJalanSupabase(
   }
 }
 
+/**
+ * Robustly inserts rows into the Supabase 'picking_list' table.
+ * Handles schema variations automatically (e.g. presence or absence of 'size' column).
+ */
+export async function insertPickingListRowsToSupabase(
+  newItems: Array<{
+    no_sj: string;
+    tanggal?: string;
+    tujuan?: string;
+    sku: string;
+    nama_produk: string;
+    size?: string;
+    qty_req: number;
+    qty_picked?: number;
+    lokasi?: string;
+    status?: string;
+    picker_name?: string;
+    created_at?: string;
+  }>
+): Promise<boolean> {
+  if (!newItems || newItems.length === 0) return true;
+
+  const nowIso = new Date().toISOString();
+
+  // 1. Full rows including 'size'
+  const fullRows = newItems.map((it) => {
+    const cleanSize = (it.size || '').trim();
+    let nama = it.nama_produk || it.sku;
+    if (cleanSize && cleanSize !== '-' && cleanSize !== 'ALL') {
+      nama = formatProductNameWithSize(nama, cleanSize);
+    }
+    return {
+      no_sj: String(it.no_sj || '').trim().toUpperCase(),
+      tanggal: String(it.tanggal || nowIso.slice(0, 10)),
+      tujuan: String(it.tujuan || 'Marketplace').trim(),
+      sku: String(it.sku || '').trim().toUpperCase(),
+      nama_produk: nama,
+      size: cleanSize || '-',
+      qty_req: Number(it.qty_req) || 1,
+      qty_picked: Number(it.qty_picked) || 0,
+      lokasi: String(it.lokasi || '-').trim(),
+      status: String(it.status || 'PENDING').trim().toUpperCase(),
+      created_at: it.created_at || nowIso,
+    };
+  });
+
+  // 2. Schema-compliant rows matching official supabase_schema.sql (NO 'size' column)
+  const schemaCompliantRows = fullRows.map(({ size, ...rest }) => rest);
+
+  // Attempt 1: Full payload
+  try {
+    await supabaseFetch('picking_list', 'POST', fullRows);
+    return true;
+  } catch (err: any) {
+    const errMsg = String(err?.message || err || '');
+    console.warn('insertPickingListRowsToSupabase: Attempt 1 with size column failed, trying schema-compliant without size:', errMsg);
+
+    // Attempt 2: Without size column
+    try {
+      await supabaseFetch('picking_list', 'POST', schemaCompliantRows);
+      return true;
+    } catch (err2: any) {
+      console.warn('insertPickingListRowsToSupabase: Attempt 2 without size column failed, trying minimal payload:', err2?.message);
+
+      // Attempt 3: Minimal fields only
+      const minimalRows = schemaCompliantRows.map((r) => ({
+        no_sj: r.no_sj,
+        tanggal: r.tanggal,
+        tujuan: r.tujuan,
+        sku: r.sku,
+        nama_produk: r.nama_produk,
+        qty_req: r.qty_req,
+        qty_picked: 0,
+        lokasi: r.lokasi,
+        status: 'PENDING',
+      }));
+
+      try {
+        await supabaseFetch('picking_list', 'POST', minimalRows);
+        return true;
+      } catch (err3: any) {
+        console.warn('insertPickingListRowsToSupabase: Attempt 3 failed, trying row-by-row fallback:', err3?.message);
+        
+        // Attempt 4: Row-by-row fallback
+        let successCount = 0;
+        let lastError: any = err3;
+        for (const row of minimalRows) {
+          try {
+            await supabaseFetch('picking_list', 'POST', [row]);
+            successCount++;
+          } catch (rErr) {
+            lastError = rErr;
+          }
+        }
+        if (successCount === 0) {
+          throw new Error(`Gagal menyimpan ke tabel picking_list Supabase: ${lastError?.message || 'Error tidak diketahui'}`);
+        }
+        return true;
+      }
+    }
+  }
+}
+
 export async function createPickingSuratJalanSupabase(
   no_sj: string,
   tujuan: string,
@@ -3341,48 +3444,43 @@ export async function createPickingSuratJalanSupabase(
     };
   });
 
-  // 1. Immediately store to local picking cache so it appears in Tugas Picking right away
+  // 1. Immediately store to local caches so it appears in Tugas Picking right away
   try {
-    const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
-    // Filter out existing identical items
-    const filteredCache = cached.filter(
-      (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
-    );
-    const updatedCache = [...newItems, ...filteredCache];
-    localStorage.setItem('wms_picking_cache', JSON.stringify(updatedCache));
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // Update wms_picking_cache
+      const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
+      const filteredCache = cached.filter(
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+      );
+      localStorage.setItem('wms_picking_cache', JSON.stringify([...newItems, ...filteredCache]));
+
+      // Update wms_raw_picking_list_cache (used by PickingTasksView)
+      const rawCached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_raw_picking_list_cache') || '[]');
+      const filteredRaw = rawCached.filter(
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+      );
+      localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify([...newItems, ...filteredRaw]));
+    }
   } catch (cErr) {
     console.warn('Error saving picking to local cache:', cErr);
   }
 
-  // 2. Sync to Supabase tables (try picking_list first, then refill)
+  // 2. Persist to Supabase picking_list table with schema fallback
   try {
-    const rows = newItems.map((it) => ({
-      no_sj: it.no_sj,
-      tanggal: it.tanggal,
-      tujuan: it.tujuan,
-      sku: it.sku,
-      nama_produk: it.nama_produk,
-      size: it.size,
-      qty_req: it.qty_req,
-      qty_picked: 0,
-      lokasi: it.lokasi,
-      status: 'PENDING',
-      created_at: it.created_at,
-    }));
-
-    try {
-      await supabaseFetch('picking_list', 'POST', rows);
-    } catch {
-      try {
-        await supabaseFetch('refill', 'POST', rows);
-      } catch {}
-    }
-
-    return { success: true, createdItems: newItems };
-  } catch (err) {
-    console.warn('Error syncing picking SJ to Supabase remote (persisted locally):', err);
-    return { success: true, createdItems: newItems };
+    await insertPickingListRowsToSupabase(newItems);
+  } catch (err: any) {
+    console.error('Error syncing picking SJ to Supabase remote:', err);
+    throw err;
   }
+
+  // 3. Dispatch picking update event if in browser
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('picking_list_updated', { detail: newItems }));
+    } catch {}
+  }
+
+  return { success: true, createdItems: newItems };
 }
 
 export async function updatePickingSuratJalanDetailsSupabase(
@@ -3427,15 +3525,16 @@ export async function updatePickingSuratJalanDetailsSupabase(
         sku: cleanSku,
       };
 
-      if (item.id && /^\d+$/.test(String(item.id))) {
-        await supabaseFetch('picking_list', 'PATCH', patchData, `id=eq.${item.id}`).catch(() => {});
-      } else {
-        await supabaseFetch(
-          'picking_list',
-          'PATCH',
-          patchData,
-          `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(cleanSku)}`
-        ).catch(() => {});
+      const condition = item.id && /^\d+$/.test(String(item.id))
+        ? `id=eq.${item.id}`
+        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(cleanSku)}`;
+
+      try {
+        await supabaseFetch('picking_list', 'PATCH', patchData, condition);
+      } catch (patchErr) {
+        // Retry without 'size' if column doesn't exist
+        const { size, ...cleanPatch } = patchData;
+        await supabaseFetch('picking_list', 'PATCH', cleanPatch, condition).catch(() => {});
       }
 
       // If SPS or PJM, also sync to peminjaman table
@@ -3456,9 +3555,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
 
     // 3. Insert newly added items
     if (newItems.length > 0) {
-      const basePickId = Math.floor(Date.now() / 1000) * 1000;
-      const rows = newItems.map((it, idx) => ({
-        id: basePickId + idx,
+      const rows = newItems.map((it) => ({
         no_sj: cleanNoSj,
         tanggal: nowIso.slice(0, 10),
         tujuan: tujuan.trim(),
@@ -3471,10 +3568,11 @@ export async function updatePickingSuratJalanDetailsSupabase(
         status: 'PENDING' as const,
         created_at: nowIso,
       }));
-      await supabaseFetch('picking_list', 'POST', rows).catch(() => {});
+      await insertPickingListRowsToSupabase(rows).catch(console.warn);
 
       // If SPS / PJM, also add to peminjaman table
       if (isSpsOrPjm) {
+        const basePickId = Math.floor(Date.now() / 1000) * 1000;
         const pjmRows = newItems.map((it, idx) => ({
           id: basePickId + 500 + idx,
           no_peminjaman: cleanNoSj,

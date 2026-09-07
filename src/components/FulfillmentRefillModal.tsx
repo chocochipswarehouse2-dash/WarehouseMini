@@ -79,24 +79,79 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Helper: Parse CSV Line
-  const parseRefillCsvLine = (text: string): string[] => {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
+  /**
+   * RFC 4180 compliant CSV parser with auto-detection of delimiters (comma, semicolon, tab)
+   */
+  const parseRefillCsv = (text: string): string[][] => {
+    const clean = text.replace(/^\uFEFF/, ''); // Remove UTF-8 BOM
+    if (!clean.trim()) return [];
+
+    // Determine delimiter from first few non-empty lines
+    const linesSample = clean.split(/\r?\n/).filter((l) => l.trim().length > 0).slice(0, 3);
+    let delimiter = ',';
+    if (linesSample.length > 0) {
+      const counts = { ',': 0, ';': 0, '\t': 0 };
+      for (const line of linesSample) {
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') inQ = !inQ;
+          else if (!inQ) {
+            if (ch === ',') counts[',']++;
+            else if (ch === ';') counts[';']++;
+            else if (ch === '\t') counts['\t']++;
+          }
+        }
+      }
+      if (counts[';'] > counts[','] && counts[';'] >= counts['\t']) {
+        delimiter = ';';
+      } else if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) {
+        delimiter = '\t';
       }
     }
-    result.push(current.trim());
-    return result;
+
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentVal = '';
+    let insideQuotes = false;
+
+    for (let i = 0; i < clean.length; i++) {
+      const char = clean[i];
+      const nextChar = clean[i + 1];
+
+      if (char === '"') {
+        if (insideQuotes && nextChar === '"') {
+          currentVal += '"';
+          i++; // skip escaped quote
+        } else {
+          insideQuotes = !insideQuotes;
+        }
+      } else if (char === delimiter && !insideQuotes) {
+        currentRow.push(currentVal.trim());
+        currentVal = '';
+      } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+        if (char === '\r' && nextChar === '\n') {
+          i++;
+        }
+        currentRow.push(currentVal.trim());
+        currentVal = '';
+        if (currentRow.some((c) => c !== '')) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+      } else {
+        currentVal += char;
+      }
+    }
+
+    if (currentVal || currentRow.length > 0) {
+      currentRow.push(currentVal.trim());
+      if (currentRow.some((c) => c !== '')) {
+        rows.push(currentRow);
+      }
+    }
+
+    return rows;
   };
 
   // Handle Multi-CSV file selection
@@ -112,45 +167,111 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const content = await file.text();
-        const lines = content.split(/\r\n|\n/);
-        if (lines.length < 2) continue;
+        const rows = parseRefillCsv(content);
+        if (rows.length === 0) continue;
 
-        // Check if first row is header
-        let startIndex = 1;
-        const firstLine = lines[0].toLowerCase();
-        if (!firstLine.includes('date') && !firstLine.includes('number') && !firstLine.includes('sku') && !firstLine.includes('product')) {
-          startIndex = 0;
+        const defaultSjFromName = file.name.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
+        // Inspect header row
+        const firstRow = rows[0].map((h) => String(h || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+        
+        let idxNoSJ = firstRow.findIndex((h) =>
+          ['nosj', 'nomorsj', 'nosuratjalan', 'suratjalan', 'transfernumber', 'deliverynumber', 'nodelivery', 'notransfer', 'number', 'nomor', 'invoice', 'sj', 'notrx', 'noorder'].includes(h)
+        );
+        let idxSku = firstRow.findIndex((h) =>
+          ['sku', 'code', 'barcode', 'kode', 'itemcode', 'kodeproduk', 'kodebarang', 'partnumber'].includes(h)
+        );
+        let idxNama = firstRow.findIndex((h) =>
+          ['product', 'produk', 'nama', 'item', 'itemname', 'productname', 'namaproduk', 'namabarang', 'title', 'description'].includes(h)
+        );
+        let idxVariant = firstRow.findIndex((h) =>
+          ['variant', 'size', 'ukuran', 'varian', 'opsi', 'option'].includes(h)
+        );
+        let idxQty = firstRow.findIndex((h) =>
+          ['quantity', 'qty', 'jumlah', 'pcs', 'kuantitas', 'totalqty', 'targetqty', 'qtyreq', 'qtyorder'].includes(h)
+        );
+        let idxDestination = firstRow.findIndex((h) =>
+          ['destination', 'tujuan', 'outlettujuan', 'ke', 'to', 'channel', 'customer', 'toko', 'cabang', 'store', 'penerima'].includes(h)
+        );
+        let idxDate = firstRow.findIndex((h) =>
+          ['date', 'tanggal', 'tgl', 'created', 'createdat', 'transferdate', 'deliverydate'].includes(h)
+        );
+        let idxLokasi = firstRow.findIndex((h) =>
+          ['lokasi', 'location', 'rak', 'bin', 'shelf'].includes(h)
+        );
+        let idxCategory = firstRow.findIndex((h) =>
+          ['category', 'kategori', 'cat', 'jenis'].includes(h)
+        );
+        let idxPrice = firstRow.findIndex((h) =>
+          ['price', 'harga', 'sellprice', 'sellingprice'].includes(h)
+        );
+
+        // Fallback search with partial substring
+        if (idxNoSJ === -1) idxNoSJ = firstRow.findIndex((h) => h.includes('surat') || h.includes('delivery') || h.includes('transfer') || h.includes('nosj'));
+        if (idxSku === -1) idxSku = firstRow.findIndex((h) => h.includes('sku') || h.includes('code') || h.includes('kode') || h.includes('barcode'));
+        if (idxNama === -1) idxNama = firstRow.findIndex((h) => h.includes('product') || h.includes('nama') || h.includes('item'));
+        if (idxVariant === -1) idxVariant = firstRow.findIndex((h) => h.includes('size') || h.includes('variant') || h.includes('ukuran') || h.includes('varian'));
+        if (idxQty === -1) idxQty = firstRow.findIndex((h) => h.includes('qty') || h.includes('jumlah') || h.includes('quantity') || h.includes('pcs'));
+        if (idxDestination === -1) idxDestination = firstRow.findIndex((h) => h.includes('tujuan') || h.includes('destination') || h.includes('outlet'));
+
+        const isHeaderRow = (idxSku !== -1 && idxQty !== -1) || 
+                            (idxNoSJ !== -1 && (idxSku !== -1 || idxNama !== -1)) ||
+                            firstRow.some((h) => ['date', 'number', 'sku', 'product', 'code', 'quantity', 'tujuan', 'destination'].some(k => h.includes(k)));
+
+        let startRowIndex = isHeaderRow ? 1 : 0;
+
+        // Positional fallbacks
+        if (idxSku === -1) {
+          if (rows[0].length >= 8) {
+            // Standard DealPOS format (0: Date, 1: No SJ, 2: Category, 3: Product, 4: Variant, 5: Code/SKU, 6: Price, 7: Qty, 8: Source, 9: Destination)
+            idxDate = 0;
+            idxNoSJ = 1;
+            idxCategory = 2;
+            idxNama = 3;
+            idxVariant = 4;
+            idxSku = 5;
+            idxPrice = 6;
+            idxQty = 7;
+            idxDestination = 9;
+          } else if (rows[0].length >= 4) {
+            idxNoSJ = 0;
+            idxSku = 1;
+            idxNama = 2;
+            idxQty = 3;
+          } else {
+            idxSku = 0;
+            idxNama = 1;
+            idxQty = 2;
+          }
         }
 
-        for (let j = startIndex; j < lines.length; j++) {
-          const line = lines[j].trim();
-          if (!line) continue;
+        for (let j = startRowIndex; j < rows.length; j++) {
+          const row = rows[j];
+          if (!row || row.length === 0) continue;
 
-          const row = parseRefillCsvLine(line);
-          if (row.length < 4) continue;
+          let noSJ = (idxNoSJ !== -1 ? row[idxNoSJ] : '')?.trim() || defaultSjFromName;
+          let sku = (idxSku !== -1 ? row[idxSku] : '')?.trim() || '';
+          let produk = (idxNama !== -1 ? row[idxNama] : '')?.trim() || '';
+          let variant = (idxVariant !== -1 ? row[idxVariant] : '')?.trim() || '';
+          let dateVal = (idxDate !== -1 ? row[idxDate] : '')?.trim() || new Date().toLocaleDateString('id-ID');
+          let category = (idxCategory !== -1 ? row[idxCategory] : '')?.trim() || 'Apparel';
+          let price = (idxPrice !== -1 ? row[idxPrice] : '')?.trim() || '';
+          let destination = (idxDestination !== -1 ? row[idxDestination] : '')?.trim() || 'Marketplace';
+          let explicitLokasi = (idxLokasi !== -1 ? row[idxLokasi] : '')?.trim() || '';
 
-          // Standard format: 0: Date, 1: No SJ, 2: Category, 3: Product, 4: Variant, 5: Code/SKU, 6: Price, 7: Qty, 8: Source, 9: Destination, 10: Status
-          let dateVal = row[0] || new Date().toLocaleDateString('id-ID');
-          let noSJ = (row[1] || '').trim();
-          let category = row[2] || 'Apparel';
-          let produk = (row[3] || '').trim();
-          let variant = (row[4] || '').trim();
-          let sku = (row[5] || '').trim();
-          let price = row[6] || '';
-          let qty = Number(row[7]) || 0;
-          let destination = (row[9] || '').trim() || 'Marketplace';
+          // Parse Qty safely
+          const rawQtyStr = (idxQty !== -1 ? row[idxQty] : '')?.toString().trim().replace(/,/g, '.') || '1';
+          const parsedQty = parseFloat(rawQtyStr);
+          const qty = isNaN(parsedQty) || parsedQty <= 0 ? 1 : Math.round(parsedQty);
 
-          // Fallback if fewer columns or different layout
-          if (!noSJ && file.name) {
-            noSJ = file.name.replace(/\.[^/.]+$/, '').toUpperCase();
+          if (!sku && produk) {
+            sku = produk;
           }
-          if (!sku && row[1] && row.length <= 6) {
-            sku = row[1];
-            produk = row[2] || sku;
-            qty = Number(row[3]) || 1;
+          if (!produk && sku) {
+            produk = sku;
           }
 
-          if (!noSJ || !sku || qty <= 0) continue;
+          if (!sku || qty <= 0) continue;
 
           let namaFinal = produk;
           if (variant && variant !== '-' && variant.toLowerCase() !== 'default') {
@@ -162,8 +283,9 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               namaFinal = variant;
             }
           }
-          let lokasi = '-';
-          if (productCatalog && productCatalog.length > 0) {
+
+          let lokasi = explicitLokasi || '-';
+          if (lokasi === '-' && productCatalog && productCatalog.length > 0) {
             const cleanSku = sku.toUpperCase();
             const matchedProduct = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
             if (matchedProduct && matchedProduct.lokasi) {
@@ -177,11 +299,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             }
           }
 
-          if (!groupsMap[noSJ]) {
-            groupsMap[noSJ] = {
+          const cleanSjKey = (noSJ || defaultSjFromName).toUpperCase();
+          if (!groupsMap[cleanSjKey]) {
+            groupsMap[cleanSjKey] = {
               id: `sj_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 5)}`,
               fileName: file.name,
-              noSJ: noSJ.toUpperCase(),
+              noSJ: cleanSjKey,
               tujuan: destination,
               date: dateVal,
               items: [],
@@ -190,11 +313,11 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             };
           }
 
-          const existingItem = groupsMap[noSJ].items.find((it) => it.sku.toUpperCase() === sku.toUpperCase());
+          const existingItem = groupsMap[cleanSjKey].items.find((it) => it.sku.toUpperCase() === sku.toUpperCase());
           if (existingItem) {
             existingItem.qty += qty;
           } else {
-            groupsMap[noSJ].items.push({
+            groupsMap[cleanSjKey].items.push({
               nama: namaFinal,
               sku: sku.toUpperCase(),
               size: variant || '-',
@@ -205,8 +328,8 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             });
           }
 
-          groupsMap[noSJ].totalQty += qty;
-          groupsMap[noSJ].totalItems = groupsMap[noSJ].items.length;
+          groupsMap[cleanSjKey].totalQty += qty;
+          groupsMap[cleanSjKey].totalItems = groupsMap[cleanSjKey].items.length;
         }
       }
 
@@ -436,12 +559,13 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
       }
 
       onSuccess(
-        `Berhasil memasukkan ${groupsToSave.length} Surat Jalan (${allCreatedItems.length} baris produk) ke Daftar Tugas Picking! 🚀`,
+        `Berhasil menyimpan ${groupsToSave.length} Surat Jalan (${allCreatedItems.length} baris produk) ke Supabase & Daftar Tugas Picking! 🚀`,
         allCreatedItems
       );
       onClose();
     } catch (err: any) {
-      onNotify(`Gagal menyimpan ke database: ${err.message}`, 'error');
+      console.error('Gagal menyimpan Surat Jalan ke database:', err);
+      onNotify(`Gagal menyimpan ke database Supabase: ${err?.message || 'Error tidak diketahui'}`, 'error');
     } finally {
       setIsProcessing(false);
       hideGlobalLoading();

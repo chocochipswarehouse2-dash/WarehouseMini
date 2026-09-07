@@ -268,8 +268,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setLoading(true);
     try {
       const data = await fetchPickingListFromSupabase();
-      setRawItems(data || []);
-      localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(data || []));
+      setRawItems((prev) => {
+        const supabaseData = data || [];
+        // Ensure any freshly created items in the last 2 minutes are preserved during async DB sync
+        const remoteKeys = new Set(
+          supabaseData.map((d) => `${(d.no_sj || '').toUpperCase()}__${(d.sku || '').toUpperCase()}`)
+        );
+        const recentLocals = prev.filter((p) => {
+          const key = `${(p.no_sj || '').toUpperCase()}__${(p.sku || '').toUpperCase()}`;
+          if (remoteKeys.has(key)) return false;
+          const age = Date.now() - new Date(p.created_at || 0).getTime();
+          return age < 120000; // 2 minutes grace window
+        });
+        const merged = [...recentLocals, ...supabaseData];
+        try {
+          localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(merged));
+        } catch {}
+        return merged;
+      });
     } catch (e) {
       console.warn('Gagal memuat picking list, menggunakan cache offline:', e);
       try {
@@ -3562,10 +3578,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               const prevFiltered = prev.filter(
                 (p) => !newItems.some((n) => n.no_sj.toUpperCase() === p.no_sj?.toUpperCase() && n.sku.toUpperCase() === p.sku?.toUpperCase())
               );
-              return [...newItems, ...prevFiltered];
+              const updated = [...newItems, ...prevFiltered];
+              try {
+                localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+                localStorage.setItem('wms_picking_cache', JSON.stringify(updated));
+              } catch {}
+              return updated;
             });
           }
-          loadPickingList();
+          setTimeout(() => {
+            loadPickingList();
+          }, 500);
         }}
         onNotify={onNotify}
       />
