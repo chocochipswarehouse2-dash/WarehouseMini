@@ -24,6 +24,7 @@ import {
   BarChart3,
   Users,
   Scissors,
+  ClipboardCheck,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -80,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'peminjaman':
         return { title: 'Peminjaman (SPS)', subtitle: 'Log Pinjam Live & Studio', icon: FileText };
       case 'perbaikan':
-        return { title: 'Perbaikan & Defect', subtitle: 'Reject, Cuci, Permak & Defect', icon: Scissors };
+        return { title: 'Quality Control', subtitle: 'Laporan QC, Perbaikan & Defect', icon: ClipboardCheck };
       case 'karyawan':
         return { title: 'Data Karyawan', subtitle: 'Direktori & Profil Karyawan', icon: Users };
       case 'presensi':

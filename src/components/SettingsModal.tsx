@@ -432,8 +432,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
 
-    if (editingIndex === null && userList.some((u) => u.username.toLowerCase() === cleanU)) {
-      onNotify(`Username "${cleanU}" sudah terdaftar!`, 'warning');
+    const isConflict = userList.some((u, idx) => {
+      if (editingIndex !== null && idx === editingIndex) return false;
+      return u.username.toLowerCase() === cleanU;
+    });
+    if (isConflict) {
+      onNotify(`Username "${cleanU}" sudah digunakan oleh akun lain!`, 'warning');
       return;
     }
 
@@ -452,7 +456,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     let updated: LocalUserRecord[];
     if (editingIndex !== null) {
-      // Edit existing user
+      // Edit existing user in place
       updated = [...userList];
       updated[editingIndex] = userToSave;
       setEditingIndex(null);
@@ -471,7 +475,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       username: cleanU,
       name: cleanName,
       role: newRole,
-      password: userToSave.password,
+      password: cleanP ? cleanP : (originalTarget?.password || userToSave.password),
       permissions: newPermissions,
       nik: newNik.trim() || undefined,
       no_hp: newPhone.trim() || undefined,
@@ -481,13 +485,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     if (res.success) {
       if (originalTarget) {
-        onNotify(`User "${cleanU}" & izin akses berhasil disimpan di sistem & database!`, 'success');
+        onNotify(`User "${cleanU}" & izin akses berhasil disimpan dan diperbarui di database!`, 'success');
       } else {
         onNotify(`User "${cleanU}" berhasil ditambahkan ke sistem & database!`, 'success');
       }
     } else {
       onNotify(`Info: Gagal sinkronisasi ke database Supabase (${res.message}). Data disimpan lokal.`, 'warning');
     }
+
+    // Refresh user list from Supabase to guarantee IDs and state are completely aligned
+    await loadUsersFromSupabase();
 
     // If current logged-in user is updated, update active session
     if (session && session.username.toLowerCase() === cleanU) {
@@ -556,6 +563,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         } else {
           onNotify(`Peringatan: Gagal menghapus dari database Supabase (${res.message}).`, 'error');
         }
+        await loadUsersFromSupabase();
       }
     });
   };

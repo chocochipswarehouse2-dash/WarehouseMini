@@ -55,6 +55,7 @@ interface PerbaikanViewProps {
   session: UserSession | null;
   productCatalog?: ProductItem[];
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+  initialSearchQuery?: string;
 }
 
 // Initial Sample Mock Data (Disiapkan agar preview langsung bisa dicoba & dieksplorasi)
@@ -200,6 +201,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   session,
   productCatalog = [],
   onShowToast,
+  initialSearchQuery,
 }) => {
   // Role & Permission Checks
   const userIsAdmin = isSuperadmin(session);
@@ -275,9 +277,15 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   >('reject');
 
   // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const deferredSearch = useDeferredValue(searchQuery);
   const [filterKategori, setFilterKategori] = useState<string>('ALL');
+
+  useEffect(() => {
+    if (initialSearchQuery) {
+      setSearchQuery(initialSearchQuery);
+    }
+  }, [initialSearchQuery]);
 
   // Display Limit for Ticket Cards (24 items per batch for silky-smooth 60fps rendering)
   const [ticketDisplayLimit, setTicketDisplayLimit] = useState<number>(24);

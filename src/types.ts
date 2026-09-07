@@ -491,6 +491,37 @@ export interface PerbaikanTicket {
   acc_harga_tanggal?: string;
   acc_harga_catatan?: string;
   operator_input: string;
+  qc_report_no?: string;        // Referensi laporan QC jika berasal dari modul QC
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ------------------------------------------------------------
+// MODUL QUALITY CONTROL (QC) - LAPORAN INSPEKSI MUTU
+// ------------------------------------------------------------
+export type QcStatus = 'OKE' | 'REJECT';
+
+export interface QcReport {
+  id?: number | string;
+  report_no: string;            // e.g. QC-20260907-001
+  tanggal: string;              // YYYY-MM-DD atau ISO
+  sku: string;
+  nama_produk: string;
+  size?: string;
+  sumber_batch: string;         // 'Penerimaan CMT' | 'Produksi Baru' | 'Gudang Fisik' | 'Retur Marketplace' | 'Live/Studio' | 'Toko' | dll
+  status: QcStatus;             // 'OKE' | 'REJECT'
+  qty_diperiksa: number;
+  qty_oke: number;
+  qty_reject: number;
+  kategori_rusak?: string;      // 'Noda / Kotor' | 'Jahitan Rusak' | 'Kain Sobek / Bolong' | dll
+  detail_kerusakan?: string;
+  lokasi_barang?: string;       // Area inspeksi atau rak
+  target_penanganan?: 'REJECT' | 'CUCI' | 'PERMAK' | 'DEFECT'; // Target antrean perbaikan
+  foto_urls: string[];          // WebP compressed data / URLs
+  gdrive_link?: string;         // Opsional link Google Drive (folder/file arsip)
+  catatan?: string;
+  pic_qc: string;               // Nama PIC pemeriksa QC
+  perbaikan_ticket_no?: string; // No tiket perbaikan jika reject
   created_at?: string;
   updated_at?: string;
 }

@@ -134,10 +134,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'perbaikan' as ActivePage,
-      label: 'Perbaikan & Defect',
-      shortLabel: 'Perbaikan',
-      icon: Scissors,
-      description: 'Reject, Cuci, Permak & Defect',
+      label: 'Quality Control',
+      shortLabel: 'QC',
+      icon: ClipboardCheck,
+      description: 'Laporan QC, Perbaikan & Defect',
       access: canPerbaikan,
     },
   ].filter((item) => item.access);

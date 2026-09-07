@@ -38,7 +38,7 @@ import {
 
 // Lazy load large components
 const PeminjamanView = React.lazy(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
-const PerbaikanView = React.lazy(() => import('./components/PerbaikanView').then(m => ({ default: m.PerbaikanView })));
+const QualityControlView = React.lazy(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
 const PickingTasksView = React.lazy(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
 const StockOpnameView = React.lazy(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
 const MutasiLogView = React.lazy(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
@@ -1176,7 +1176,7 @@ export default function App() {
             )}
 
             {activePage === 'perbaikan' && (
-                <PerbaikanView
+                <QualityControlView
                   session={session}
                   productCatalog={productDatabase}
                   onShowToast={showToast}
