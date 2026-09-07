@@ -106,7 +106,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
 
             return (
               <div
-                key={item.id}
+                key={item.id ? `scan-${item.id}` : `scan-idx-${index}`}
                 id={`scanned-item-${item.id}`}
                 className={`border rounded-xl p-3.5 flex justify-between items-start transition-all ${
                   item.isInvalidSku

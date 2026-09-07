@@ -440,7 +440,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           const isActive = idx === activeComboIndex;
           return (
             <div
-              key={s.sku}
+              key={`${s.sku}_${s.size || ''}_${idx}`}
               data-index={idx}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -1534,7 +1534,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </tr>
                 ) : (
                   <>
-                  {filteredStocks.slice(0, displayLimit).map((stk) => {
+                  {filteredStocks.slice(0, displayLimit).map((stk, idx) => {
                     const displayQty =
                       selectedChannel === 'STUDIO'
                         ? stk.studioQty
@@ -1547,7 +1547,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     if (selectedChannel === 'ALL') {
                       return (
                         <tr
-                          key={stk.sku}
+                          key={`${stk.sku}_${stk.size || ''}_all_${idx}`}
                           className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
                         >
                           <td className="p-2.5">
@@ -1591,7 +1591,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
                     return (
                       <tr
-                        key={stk.sku}
+                        key={`${stk.sku}_${stk.size || ''}_${idx}`}
                         className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
                       >
                         <td className="p-2.5">

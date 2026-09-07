@@ -15,7 +15,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
       id="toastContainer"
       className="fixed top-4 right-4 left-4 md:left-auto md:w-96 z-[100] flex flex-col gap-2 pointer-events-none"
     >
-      {toasts.map((toast) => {
+      {toasts.map((toast, tIdx) => {
         let bgClass = 'bg-slate-900/95 border-slate-800 text-slate-100 shadow-2xl';
         let icon = <Info className="w-4 h-4 text-sky-400 flex-shrink-0" />;
 
@@ -32,7 +32,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
 
         return (
           <div
-            key={toast.id}
+            key={toast.id ? `toast-${toast.id}` : `toast-idx-${tIdx}`}
             id={`toast-${toast.id}`}
             className={`pointer-events-auto flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border backdrop-blur-md transition-all duration-300 transform translate-y-0 opacity-100 ${bgClass}`}
           >

@@ -500,13 +500,17 @@ export interface PerbaikanTicket {
 // MODUL QUALITY CONTROL (QC) - LAPORAN INSPEKSI MUTU
 // ------------------------------------------------------------
 export type QcStatus = 'OKE' | 'REJECT';
+export type ProductIdentifierType = 'sku' | 'kode_produksi';
 
 export interface QcReport {
   id?: number | string;
   report_no: string;            // e.g. QC-20260907-001
   tanggal: string;              // YYYY-MM-DD atau ISO
-  sku: string;
-  nama_produk: string;
+  tipe_identifikasi?: ProductIdentifierType; // 'sku' | 'kode_produksi'
+  sku: string;                  // SKU atau Kode Produksi
+  nama_produk: string;          // Nama Produk (atau gabungan Kode Produksi + Warna jika tipe kode produksi)
+  kode_produksi?: string;       // Kode Produksi jika tipe kode_produksi
+  warna?: string;               // Warna produk jika tipe kode_produksi
   size?: string;
   sumber_batch: string;         // 'Penerimaan CMT' | 'Produksi Baru' | 'Gudang Fisik' | 'Retur Marketplace' | 'Live/Studio' | 'Toko' | dll
   status: QcStatus;             // 'OKE' | 'REJECT'
@@ -515,12 +519,12 @@ export interface QcReport {
   qty_reject: number;
   kategori_rusak?: string;      // 'Noda / Kotor' | 'Jahitan Rusak' | 'Kain Sobek / Bolong' | dll
   detail_kerusakan?: string;
-  lokasi_barang?: string;       // Area inspeksi atau rak
+  lokasi_barang?: string;       // Area inspeksi atau rak (opsional)
   target_penanganan?: 'REJECT' | 'CUCI' | 'PERMAK' | 'DEFECT'; // Target antrean perbaikan
   foto_urls: string[];          // WebP compressed data / URLs
   gdrive_link?: string;         // Opsional link Google Drive (folder/file arsip)
   catatan?: string;
-  pic_qc: string;               // Nama PIC pemeriksa QC
+  pic_qc: string;               // Nama PIC pemeriksa QC (otomatis dari user login)
   perbaikan_ticket_no?: string; // No tiket perbaikan jika reject
   created_at?: string;
   updated_at?: string;

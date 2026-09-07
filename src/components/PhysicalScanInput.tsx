@@ -49,9 +49,9 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
 
     return (
       <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 max-h-60 overflow-y-auto">
-        {suggestions.map((s) => (
+        {suggestions.map((s, sIdx) => (
           <div
-            key={s.k}
+            key={`${s.k}_${s.s || ''}_${sIdx}`}
             onMouseDown={(e) => {
               e.preventDefault();
               onScan(s.k);

@@ -1576,9 +1576,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 {/* SKU Suggestions Dropdown */}
                 {skuSuggestions.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-20 overflow-hidden">
-                    {skuSuggestions.map((prod) => (
+                    {skuSuggestions.map((prod, pIdx) => (
                       <div
-                        key={prod.k}
+                        key={`${prod.k || (prod as any).sku || 'sku'}-${prod.s || ''}-${pIdx}`}
                         onClick={() => {
                           setFormSku(prod.k);
                           setFormNama(prod.p);
@@ -2144,9 +2144,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           {filteredTickets.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {filteredTickets.slice(0, ticketDisplayLimit).map((item) => (
+              {filteredTickets.slice(0, ticketDisplayLimit).map((item, itemIdx) => (
                 <div
-                  key={item.id}
+                  key={item.id ? `ticket-id-${item.id}` : (item.ticket_no ? `ticket-no-${item.ticket_no}` : `ticket-idx-${itemIdx}`)}
                   className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow relative overflow-hidden"
                 >
                   {/* Badge Tahap Warna */}
@@ -2220,7 +2220,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                       <div className="flex items-center gap-1.5 overflow-hidden">
                         {item.foto_urls.map((imgUrl, i) => (
                           <div
-                            key={i}
+                            key={`ticket-img-${i}-${imgUrl.slice(0, 20)}`}
                             onClick={() => setLightboxImages(item.foto_urls)}
                             className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                           >
@@ -2855,7 +2855,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <div className="grid grid-cols-3 gap-2 pt-1">
                     {editPhotos.map((p, idx) => (
                       <div
-                        key={idx}
+                        key={`edit-photo-${idx}-${p.dataUrl.slice(0, 20)}`}
                         className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-black aspect-video flex items-center justify-center"
                       >
                         <img src={p.dataUrl} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
@@ -3023,7 +3023,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             </button>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full overflow-y-auto max-h-[80vh] p-2">
               {lightboxImages.map((src, i) => (
-                <div key={i} className="rounded-xl overflow-hidden border border-white/20 bg-black">
+                <div key={`lightbox-img-${i}-${src.slice(0, 20)}`} className="rounded-xl overflow-hidden border border-white/20 bg-black">
                   <img src={src} alt="Foto Kerusakan" className="w-full h-auto object-contain" />
                 </div>
               ))}

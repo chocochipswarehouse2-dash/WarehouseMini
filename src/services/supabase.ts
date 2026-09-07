@@ -4482,6 +4482,48 @@ export async function saveQcReportToSupabase(report: QcReport): Promise<QcReport
   return savedReport;
 }
 
+export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise<QcReport[]> {
+  if (!reports || reports.length === 0) return [];
+
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const timestamp = Date.now().toString().slice(-4);
+
+  const preparedReports: QcReport[] = reports.map((r, idx) => {
+    const reportCopy = { ...r };
+    if (!reportCopy.report_no) {
+      const rand = Math.floor(100 + Math.random() * 900);
+      reportCopy.report_no = `QC-${dateStr}-${timestamp}-${idx + 1}-${rand}`;
+    }
+    reportCopy.created_at = reportCopy.created_at || new Date().toISOString();
+    reportCopy.updated_at = new Date().toISOString();
+    return reportCopy;
+  });
+
+  let savedBatch: QcReport[] = [...preparedReports];
+
+  // Try batch insertion to Supabase
+  try {
+    const res = await supabaseFetch<QcReport[]>('qc_reports', 'POST', preparedReports);
+    if (res && Array.isArray(res) && res.length > 0) {
+      savedBatch = res;
+    }
+  } catch (err) {
+    console.warn('Gagal batch insert QC reports ke Supabase (disimpan di cache lokal):', err);
+  }
+
+  // Update local cache
+  try {
+    const cachedStr = localStorage.getItem('wms_local_qc_reports');
+    let list: QcReport[] = cachedStr ? JSON.parse(cachedStr) : [];
+    const reportNos = new Set(savedBatch.map((s) => s.report_no));
+    list = list.filter((item) => !reportNos.has(item.report_no));
+    list.unshift(...savedBatch);
+    localStorage.setItem('wms_local_qc_reports', JSON.stringify(list));
+  } catch {}
+
+  return savedBatch;
+}
+
 export async function deleteQcReportFromSupabase(reportNoOrId: string | number): Promise<boolean> {
   try {
     const query = typeof reportNoOrId === 'number'

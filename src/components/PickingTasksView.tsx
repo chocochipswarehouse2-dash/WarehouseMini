@@ -2013,9 +2013,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                     <div className="px-2 py-1 text-[10px] font-black uppercase text-emerald-600 bg-emerald-500/10 rounded">
                                       Dari Surat Jalan Ini ({sjMatches.length})
                                     </div>
-                                    {sjMatches.map((m) => (
+                                    {sjMatches.map((m, mIdx) => (
                                       <button
-                                        key={m.sku}
+                                        key={`${m.sku}_${m.lokasi || ''}_${mIdx}`}
                                         type="button"
                                         onClick={() => {
                                           setSearchQuery(m.sku);
@@ -2042,9 +2042,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                     <div className="px-2 py-1 text-[10px] font-black uppercase text-blue-500 bg-blue-500/10 rounded mt-1">
                                       Katalog Global Master Produk ({catMatches.length})
                                     </div>
-                                    {catMatches.map((m) => (
+                                    {catMatches.map((m, mIdx) => (
                                       <button
-                                        key={m.k}
+                                        key={`${m.k}_${m.s || ''}_${mIdx}`}
                                         type="button"
                                         onClick={() => handleSelectSearchProduct(m)}
                                         className="w-full text-left p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs flex justify-between items-center transition-colors cursor-pointer"
