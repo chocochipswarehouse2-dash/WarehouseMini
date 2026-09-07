@@ -353,9 +353,9 @@ export default function App() {
       }
 
       // 2. Fetch fresh master products directly from Supabase (Stale-While-Revalidate pattern)
-      const fetchFromSupabase = async () => {
+      const fetchFromSupabase = async (doForceRefresh = forceRefresh) => {
         try {
-          const supabaseProducts = await fetchMasterProductsFromSupabase(50000, forceRefresh);
+          const supabaseProducts = await fetchMasterProductsFromSupabase(50000, doForceRefresh);
           if (supabaseProducts && supabaseProducts.length > 0) {
             const finalList = supabaseProducts.filter((it) => !isDummyProduct(it));
             setProductDatabase(finalList);
@@ -374,10 +374,10 @@ export default function App() {
 
       if (!hasLocalData || forceRefresh) {
         // Blocking fetch if no local data or manual refresh requested
-        await fetchFromSupabase();
+        await fetchFromSupabase(forceRefresh);
       } else {
         // Non-blocking background sync (SWR) to ensure data is correct & fresh
-        fetchFromSupabase().catch((err) => {
+        fetchFromSupabase(true).catch((err) => {
           console.warn('Background sync error:', err);
         });
       }

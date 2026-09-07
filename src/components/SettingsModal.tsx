@@ -421,7 +421,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanU = newUsername.trim().toLowerCase();
     const cleanName = newName.trim() || cleanU;
@@ -432,11 +432,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
 
-    let updated: LocalUserRecord[];
+    if (editingIndex === null && userList.some((u) => u.username.toLowerCase() === cleanU)) {
+      onNotify(`Username "${cleanU}" sudah terdaftar!`, 'warning');
+      return;
+    }
+
+    const originalTarget = editingIndex !== null ? userList[editingIndex] : null;
     const userToSave: LocalUserRecord = {
+      id: originalTarget?.id,
       username: cleanU,
       name: cleanName,
-      password: cleanP || (editingIndex !== null ? userList[editingIndex].password : '123456'),
+      password: cleanP || (originalTarget ? originalTarget.password : '123456'),
       role: newRole,
       permissions: { ...newPermissions },
       nik: newNik.trim() || undefined,
@@ -444,27 +450,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       email: newEmail.trim() || undefined,
     };
 
+    let updated: LocalUserRecord[];
     if (editingIndex !== null) {
       // Edit existing user
       updated = [...userList];
       updated[editingIndex] = userToSave;
       setEditingIndex(null);
-      onNotify(`User "${cleanU}" & izin akses berhasil diperbarui!`, 'success');
     } else {
       // Add new user
-      if (userList.some((u) => u.username.toLowerCase() === cleanU)) {
-        onNotify(`Username "${cleanU}" sudah terdaftar!`, 'warning');
-        return;
-      }
       updated = [...userList, userToSave];
-      onNotify(`User "${cleanU}" berhasil ditambahkan dengan role ${newRole}!`, 'success');
     }
 
     setUserList(updated);
     saveLocalUsersList(updated);
 
-    // Also sync to Database table if available
-    saveWmsUserToSupabase({
+    // Sync to Database table in background
+    setIsLoadingUsers(true);
+    const res = await saveWmsUserToSupabase({
+      id: userToSave.id,
       username: cleanU,
       name: cleanName,
       role: newRole,
@@ -473,7 +476,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       nik: newNik.trim() || undefined,
       no_hp: newPhone.trim() || undefined,
       email: newEmail.trim() || undefined,
-    });
+    }, originalTarget?.username);
+    setIsLoadingUsers(false);
+
+    if (res.success) {
+      if (originalTarget) {
+        onNotify(`User "${cleanU}" & izin akses berhasil disimpan di sistem & database!`, 'success');
+      } else {
+        onNotify(`User "${cleanU}" berhasil ditambahkan ke sistem & database!`, 'success');
+      }
+    } else {
+      onNotify(`Info: Gagal sinkronisasi ke database Supabase (${res.message}). Data disimpan lokal.`, 'warning');
+    }
 
     // If current logged-in user is updated, update active session
     if (session && session.username.toLowerCase() === cleanU) {
@@ -526,14 +540,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSettingsConfirmDialog({
       isOpen: true,
       title: 'Hapus Pengguna',
-      message: `Hapus pengguna "${target.name || target.username}" (${target.role})?`,
-      onConfirm: () => {
+      message: `Hapus pengguna "${target.name || target.username}" (${target.role})? Data akan dihapus permanen dari sistem dan database Supabase.`,
+      onConfirm: async () => {
+        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        
         const updated = userList.filter((_, i) => i !== idx);
         setUserList(updated);
         saveLocalUsersList(updated);
-        deleteWmsUserFromSupabase(target.username);
-        onNotify(`User "${target.username}" berhasil dihapus.`, 'info');
-        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+
+        setIsLoadingUsers(true);
+        const res = await deleteWmsUserFromSupabase(target.username, target.id);
+        setIsLoadingUsers(false);
+        if (res.success) {
+          onNotify(`User "${target.name || target.username}" berhasil dihapus permanen dari sistem & database.`, 'success');
+        } else {
+          onNotify(`Peringatan: Gagal menghapus dari database Supabase (${res.message}).`, 'error');
+        }
       }
     });
   };

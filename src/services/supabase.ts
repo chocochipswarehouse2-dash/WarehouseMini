@@ -312,7 +312,7 @@ export async function supabaseFetch<T = unknown>(
     'Content-Type': 'application/json',
   };
 
-  if (method === 'POST' || method === 'PATCH') {
+  if (method === 'POST' || method === 'PATCH' || method === 'DELETE') {
     if (queryParams && queryParams.includes('on_conflict')) {
       headers['Prefer'] = preferRepresentation
         ? 'return=representation,resolution=merge-duplicates'
@@ -938,7 +938,10 @@ export async function deleteLogProdukItem(
   id: string | number
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await supabaseFetch('log_produk', 'DELETE', null, `id=eq.${encodeURIComponent(String(id))}`);
+    const res = await supabaseFetch<any[]>('log_produk', 'DELETE', null, `id=eq.${encodeURIComponent(String(id))}`, true);
+    if (res && Array.isArray(res) && res.length === 0) {
+      throw new Error("Data tidak ditemukan atau akses ditolak (RLS).");
+    }
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting log_produk item:', err);
@@ -954,7 +957,10 @@ export async function deleteLogProdukInvoice(
 ): Promise<{ success: boolean; error?: string }> {
   if (!invoice) return { success: false, error: 'Invoice tidak valid' };
   try {
-    await supabaseFetch('log_produk', 'DELETE', null, `invoice=eq.${encodeURIComponent(invoice)}`);
+    const res = await supabaseFetch<any[]>('log_produk', 'DELETE', null, `invoice=eq.${encodeURIComponent(invoice)}`, true);
+    if (res && Array.isArray(res) && res.length === 0) {
+      throw new Error("Data tidak ditemukan atau akses ditolak (RLS).");
+    }
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting log_produk invoice:', err);
@@ -978,7 +984,10 @@ export async function deleteLogProdukBatch(
     for (let i = 0; i < ids.length; i += chunkSize) {
       const chunk = ids.slice(i, i + chunkSize);
       const inClause = chunk.map(id => encodeURIComponent(String(id))).join(',');
-      await supabaseFetch('log_produk', 'DELETE', null, `id=in.(${inClause})`);
+      const res = await supabaseFetch<any[]>('log_produk', 'DELETE', null, `id=in.(${inClause})`, true);
+      if (res && Array.isArray(res) && res.length === 0) {
+        throw new Error("Beberapa data tidak ditemukan atau akses ditolak (RLS).");
+      }
       deletedCount += chunk.length;
     }
     
@@ -1004,12 +1013,16 @@ export async function deleteLogProdukByDateRange(
     const endObj = new Date(endDate);
     endObj.setHours(23, 59, 59, 999);
     
-    await supabaseFetch(
+    const res = await supabaseFetch<any[]>(
       'log_produk', 
       'DELETE', 
       null, 
-      `created_at=gte.${encodeURIComponent(startObj.toISOString())}&created_at=lte.${encodeURIComponent(endObj.toISOString())}`
+      `created_at=gte.${encodeURIComponent(startObj.toISOString())}&created_at=lte.${encodeURIComponent(endObj.toISOString())}`,
+      true
     );
+    if (res && Array.isArray(res) && res.length === 0) {
+      throw new Error("Data tidak ditemukan pada rentang tanggal tersebut atau akses ditolak (RLS).");
+    }
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting log_produk by date range:', err);
@@ -1060,7 +1073,7 @@ export async function approveStockOpnameQueueItems(
     for (let i = 0; i < validIds.length; i += chunkSize) {
       const chunk = validIds.slice(i, i + chunkSize);
       const inClause = chunk.map((id) => `"${id}"`).join(',');
-      await supabaseFetch(
+      const res = await supabaseFetch<any[]>(
         'stock_opname_queue',
         'PATCH',
         {
@@ -1068,8 +1081,12 @@ export async function approveStockOpnameQueueItems(
           approved_by: approvedBy || 'Admin',
           tanggal_approve: nowIso,
         },
-        `id=in.(${encodeURIComponent(inClause)})`
+        `id=in.(${encodeURIComponent(inClause)})`,
+        true
       );
+      if (res && Array.isArray(res) && res.length === 0) {
+        throw new Error("Akses ditolak (RLS) atau gagal update.");
+      }
     }
 
     // 2. Create ADJ_IN or ADJ_OUT in log_produk ONLY if selisih != 0
@@ -1125,7 +1142,7 @@ export async function rejectStockOpnameQueueItems(
     for (let i = 0; i < validIds.length; i += chunkSize) {
       const chunk = validIds.slice(i, i + chunkSize);
       const inClause = chunk.map((id) => `"${id}"`).join(',');
-      await supabaseFetch(
+      const res = await supabaseFetch<any[]>(
         'stock_opname_queue',
         'PATCH',
         {
@@ -1133,8 +1150,12 @@ export async function rejectStockOpnameQueueItems(
           approved_by: rejectedBy || 'Admin',
           tanggal_approve: nowIso,
         },
-        `id=in.(${encodeURIComponent(inClause)})`
+        `id=in.(${encodeURIComponent(inClause)})`,
+        true
       );
+      if (res && Array.isArray(res) && res.length === 0) {
+        throw new Error("Akses ditolak (RLS) atau gagal update.");
+      }
     }
     return { success: true, count: items.length };
   } catch (err: any) {
@@ -1159,11 +1180,17 @@ export async function deleteStockOpnameQueueItems(
       const chunk = validIds.slice(i, i + chunkSize);
       const inClause = chunk.map((id) => encodeURIComponent(id)).join(',');
       try {
-        await supabaseFetch('stock_opname_queue', 'DELETE', null, `id=in.(${inClause})`);
+        const res = await supabaseFetch<any[]>('stock_opname_queue', 'DELETE', null, `id=in.(${inClause})`, true);
+        if (res && Array.isArray(res) && res.length === 0) {
+          throw new Error("Empty representation");
+        }
       } catch {
         // Fallback to individual deletes if in.() is not accepted
         for (const singleId of chunk) {
-          await supabaseFetch('stock_opname_queue', 'DELETE', null, `id=eq.${encodeURIComponent(singleId)}`);
+          const resSingle = await supabaseFetch<any[]>('stock_opname_queue', 'DELETE', null, `id=eq.${encodeURIComponent(singleId)}`, true);
+          if (resSingle && Array.isArray(resSingle) && resSingle.length === 0) {
+            throw new Error("Akses ditolak (RLS) atau data tidak ditemukan.");
+          }
         }
       }
     }
@@ -1496,12 +1523,12 @@ export async function fetchSupabaseUsers(): Promise<WmsUser[]> {
   return fetchWmsUsersFromSupabase();
 }
 
-export async function saveSupabaseUser(user: WmsUser): Promise<boolean> {
-  return saveWmsUserToSupabase(user);
+export async function saveSupabaseUser(user: WmsUser, originalUsername?: string): Promise<{ success: boolean; message?: string }> {
+  return saveWmsUserToSupabase(user, originalUsername);
 }
 
-export async function deleteSupabaseUser(username: string): Promise<boolean> {
-  return deleteWmsUserFromSupabase(username);
+export async function deleteSupabaseUser(username: string, id?: string): Promise<{ success: boolean; message?: string }> {
+  return deleteWmsUserFromSupabase(username, id);
 }
 
 /**
@@ -1625,11 +1652,11 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
       'wms_users',
       'GET',
       null,
-      'select=username,name,role,permissions,nik,created_at,updated_at&order=created_at.asc'
+      'select=id,username,name,role,permissions,nik,created_at,updated_at&order=created_at.asc'
     );
     if (data && Array.isArray(data) && data.length > 0) {
       try {
-        localStorage.setItem('wms_custom_users', JSON.stringify(data));
+        localStorage.setItem('wms_local_users', JSON.stringify(data));
       } catch {}
       return data;
     }
@@ -1639,7 +1666,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
 
   // Fallback to local cache
   try {
-    const local = localStorage.getItem('wms_custom_users');
+    const local = localStorage.getItem('wms_local_users');
     if (local) {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -1662,8 +1689,12 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
 /**
  * Save / Upsert WMS user into Supabase wms_users table (Database = Frontend)
  */
-export async function saveWmsUserToSupabase(user: WmsUser): Promise<boolean> {
-  const cleanU = user.username.trim().toLowerCase();
+export async function saveWmsUserToSupabase(
+  user: WmsUser,
+  originalUsername?: string
+): Promise<{ success: boolean; message?: string }> {
+  const cleanU = user.username.trim();
+  const lowerU = cleanU.toLowerCase();
   
   let processedPassword = user.password || '123456';
   // If the password is not already a SHA-256 hash (64 hex characters) and crypto is available
@@ -1693,50 +1724,143 @@ export async function saveWmsUserToSupabase(user: WmsUser): Promise<boolean> {
   }
 
   try {
-    await supabaseFetch('wms_users', 'POST', payload, 'on_conflict=username');
-  } catch (err) {
+    let saved = false;
+
+    // 1. If valid UUID id is present, try updating via PATCH by ID
+    if (user.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id)) {
+      try {
+        const patchRes = await supabaseFetch<any[]>(
+          'wms_users',
+          'PATCH',
+          payload,
+          `id=eq.${encodeURIComponent(user.id)}`,
+          true
+        );
+        if (patchRes && Array.isArray(patchRes) && patchRes.length > 0) {
+          saved = true;
+        }
+      } catch (errPatchId) {
+        console.warn('Could not update user by ID:', errPatchId);
+      }
+    }
+
+    // 2. If not saved by ID, check if user exists by case-insensitive username and PATCH
+    if (!saved) {
+      const targetQuery = originalUsername || cleanU;
+      try {
+        const patchRes = await supabaseFetch<any[]>(
+          'wms_users',
+          'PATCH',
+          payload,
+          `username=ilike.${encodeURIComponent(targetQuery)}`,
+          true
+        );
+        if (patchRes && Array.isArray(patchRes) && patchRes.length > 0) {
+          saved = true;
+        }
+      } catch (errPatchUser) {
+        console.warn('Could not update user by username ilike:', errPatchUser);
+      }
+    }
+
+    // 3. If still not updated (new user), INSERT via POST
+    if (!saved) {
+      const res = await supabaseFetch<any[]>('wms_users', 'POST', payload, 'on_conflict=username', true);
+      if (res && Array.isArray(res) && res.length === 0) {
+        throw new Error("Gagal menyimpan pengguna ke database Supabase (RLS atau batasan tabel).");
+      }
+    }
+
+    // Also sync to local cache
+    try {
+      const local = localStorage.getItem('wms_local_users');
+      const list: WmsUser[] = local ? JSON.parse(local) : [];
+      const updated = list.filter((u) => 
+        u.username.toLowerCase() !== lowerU && 
+        (!user.id || u.id !== user.id) &&
+        (!originalUsername || u.username.toLowerCase() !== originalUsername.toLowerCase())
+      );
+      updated.push({ ...payload, id: user.id });
+      localStorage.setItem('wms_local_users', JSON.stringify(updated));
+    } catch {}
+    return { success: true };
+  } catch (err: any) {
     console.warn('Could not save wms_user to Supabase table:', err);
+    return { success: false, message: err?.message || 'Gagal menyimpan data pengguna ke Supabase.' };
   }
-
-  // Also sync to local cache
-  try {
-    const local = localStorage.getItem('wms_custom_users');
-    const list: WmsUser[] = local ? JSON.parse(local) : [];
-    const updated = list.filter((u) => u.username.toLowerCase() !== cleanU);
-    updated.push(payload);
-    localStorage.setItem('wms_custom_users', JSON.stringify(updated));
-  } catch {}
-
-  return true;
 }
 
 /**
- * Delete WMS user from Supabase wms_users table
+ * Delete WMS user from Supabase wms_users table (permanently, by ID and case-insensitive username)
  */
-export async function deleteWmsUserFromSupabase(username: string): Promise<boolean> {
-  const cleanU = username.trim().toLowerCase();
+export async function deleteWmsUserFromSupabase(
+  username: string,
+  id?: string
+): Promise<{ success: boolean; message?: string }> {
+  const trimmed = username.trim();
+  const cleanU = trimmed.toLowerCase();
   try {
-    await supabaseFetch(
-      'wms_users',
-      'DELETE',
-      null,
-      `username=eq.${encodeURIComponent(cleanU)}`
-    );
-  } catch (err) {
-    console.warn('Could not delete wms_user from Supabase table:', err);
-  }
-
-  // Also remove from local cache
-  try {
-    const local = localStorage.getItem('wms_custom_users');
-    if (local) {
-      const list: WmsUser[] = JSON.parse(local);
-      const updated = list.filter((u) => u.username.toLowerCase() !== cleanU);
-      localStorage.setItem('wms_custom_users', JSON.stringify(updated));
+    // 1. If valid UUID id is present, delete by ID primary key
+    if (id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      try {
+        await supabaseFetch<any[]>(
+          'wms_users',
+          'DELETE',
+          null,
+          `id=eq.${encodeURIComponent(id)}`,
+          true
+        );
+      } catch (errId) {
+        console.warn('Error deleting user by ID:', errId);
+      }
     }
-  } catch {}
 
-  return true;
+    // 2. Also delete by case-insensitive username (ilike) to catch any uppercase/lowercase records
+    try {
+      await supabaseFetch<any[]>(
+        'wms_users',
+        'DELETE',
+        null,
+        `username=ilike.${encodeURIComponent(trimmed)}`,
+        true
+      );
+    } catch (errIlike) {
+      console.warn('Error deleting user by username ilike:', errIlike);
+    }
+
+    // 3. Fallback exact match if cleanU is different from trimmed
+    if (cleanU !== trimmed) {
+      try {
+        await supabaseFetch<any[]>(
+          'wms_users',
+          'DELETE',
+          null,
+          `username=eq.${encodeURIComponent(cleanU)}`,
+          true
+        );
+      } catch {}
+    }
+
+    // Clean up local storage cache as well
+    try {
+      const local = localStorage.getItem('wms_local_users');
+      if (local) {
+        const list: WmsUser[] = JSON.parse(local);
+        const updated = list.filter(
+          (u) =>
+            u.username.toLowerCase() !== cleanU &&
+            (!id || u.id !== id) &&
+            u.username.toLowerCase() !== trimmed.toLowerCase()
+        );
+        localStorage.setItem('wms_local_users', JSON.stringify(updated));
+      }
+    } catch {}
+
+    return { success: true };
+  } catch (err: any) {
+    console.warn('Could not delete wms_user from Supabase table:', err);
+    return { success: false, message: err?.message || 'Gagal menghapus pengguna dari Supabase.' };
+  }
 }
 
 /**
@@ -3750,7 +3874,10 @@ export async function upsertKaryawanRecord(karyawan: Partial<KaryawanRecord>): P
       ...karyawan,
       updated_at: new Date().toISOString(),
     };
-    await supabaseFetch<any>('karyawan', 'POST', payload, 'on_conflict=nik');
+    const res = await supabaseFetch<any[]>('karyawan', 'POST', payload, 'on_conflict=nik', true);
+    if (res && Array.isArray(res) && res.length === 0) {
+      throw new Error("Akses ditolak (RLS) atau gagal menyimpan data.");
+    }
     return { success: true };
   } catch (err: any) {
     console.error('upsertKaryawanRecord error:', err);
@@ -3764,7 +3891,10 @@ export async function upsertKaryawanRecord(karyawan: Partial<KaryawanRecord>): P
 export async function deleteKaryawanRecord(nik: string): Promise<{ success: boolean; message?: string }> {
   try {
     if (!nik) return { success: false, message: 'NIK wajib ditentukan' };
-    await supabaseFetch<any>('karyawan', 'DELETE', null, `nik=eq.${encodeURIComponent(nik)}`);
+    const res = await supabaseFetch<any[]>('karyawan', 'DELETE', null, `nik=eq.${encodeURIComponent(nik)}`, true);
+    if (res && Array.isArray(res) && res.length === 0) {
+      throw new Error("Data karyawan tidak ditemukan atau akses ditolak (RLS).");
+    }
     return { success: true };
   } catch (err: any) {
     console.error('deleteKaryawanRecord error:', err);
