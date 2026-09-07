@@ -30,6 +30,8 @@ import {
   Check,
   PackageCheck,
   Factory,
+  Database,
+  CloudCheck,
 } from 'lucide-react';
 import {
   QcReport,
@@ -47,6 +49,7 @@ import {
   saveQcReportsBatchToSupabase,
   deleteQcReportFromSupabase,
   savePerbaikanTicketToSupabase,
+  QC_REPORTS_SUPABASE_DDL_SQL,
 } from '../services/supabase';
 import { getAllProductsFromLocalDb } from '../services/localDb';
 
@@ -227,7 +230,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   // Lightbox Modal
   const [lightboxImages, setLightboxImages] = useState<string[] | null>(null);
 
-  // Load from Supabase on mount
+  // Supabase SQL DDL Modal
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [isCopiedSql, setIsCopiedSql] = useState(false);
+
+  // Load from Supabase on mount & listen to realtime custom updates
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -244,8 +251,20 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       }
     };
     load();
+
+    // Listen to updates from other tabs or background sync
+    const handleRemoteUpdate = () => {
+      fetchQcReportsFromSupabase().then((data) => {
+        if (mounted && data) {
+          setReports(data);
+        }
+      });
+    };
+    window.addEventListener('wms_qc_reports_updated', handleRemoteUpdate);
+
     return () => {
       mounted = false;
+      window.removeEventListener('wms_qc_reports_updated', handleRemoteUpdate);
     };
   }, []);
 
@@ -720,15 +739,18 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         reportsToSave.push(reportRecord);
       }
 
-      // Batch Insert Reports
+      // Batch Insert Reports to Supabase (Dual-Layer Sync)
       const savedBatch = await saveQcReportsBatchToSupabase(reportsToSave);
-      setReports((prev) => [...savedBatch, ...prev]);
+      setReports((prev) => {
+        const savedNos = new Set(savedBatch.map((s) => s.report_no));
+        return [...savedBatch, ...prev.filter((p) => !savedNos.has(p.report_no))];
+      });
 
       playSuccessBeep();
       vibrateDevice([40, 60, 40]);
 
       onShowToast(
-        `Berhasil menyimpan ${savedBatch.length} laporan QC! (${totalOkeCreated} Pcs OKE, ${totalRejectCreated} Pcs REJECT diteruskan ke Perbaikan)`,
+        `Berhasil menyimpan & mensinkronkan ${savedBatch.length} laporan QC ke Supabase Cloud! (${totalOkeCreated} Pcs OKE, ${totalRejectCreated} Pcs REJECT) - kini dapat dilihat oleh admin & user lain.`,
         'success'
       );
 
@@ -891,6 +913,66 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* 0. Cloud Sync & Supabase Status Banner */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-emerald-500/10 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-emerald-900/20 border border-blue-200/80 dark:border-blue-800/60 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-blue-600 dark:bg-blue-500 text-white shadow-xs">
+            <CloudCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                Supabase Cloud Sync Aktif
+              </span>
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60">
+                Terhubung Cloud
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Laporan inspeksi QC otomatis tersinkronisasi realtime & langsung dapat dilihat oleh seluruh admin / staf di perangkat lain.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <button
+            type="button"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const data = await fetchQcReportsFromSupabase();
+                if (data) setReports(data);
+                onShowToast('Laporan QC berhasil disinkronkan dengan Supabase Cloud!', 'success');
+              } catch (err: any) {
+                onShowToast('Gagal sinkronisasi: ' + (err.message || 'Kendala koneksi'), 'error');
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors shadow-xs disabled:opacity-50"
+            title="Tarik data terbaru dari Supabase"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
+            <span>{isLoading ? 'Sinkronisasi...' : 'Sinkronkan'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSqlModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs"
+            title="Lihat & Salin Script SQL Tabel qc_reports Supabase"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Script SQL</span>
+          </button>
+        </div>
+      </div>
+
       {/* 1. Stat Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
@@ -2147,6 +2229,89 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                   <img src={src} alt={`Foto ${i + 1}`} className="max-w-full max-h-[70vh] object-contain" />
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Supabase SQL DDL Schema Modal */}
+      {isSqlModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setIsSqlModalOpen(false)}
+        >
+          <div
+            className="relative max-w-2xl w-full bg-white dark:bg-slate-900 rounded-2xl p-5 sm:p-6 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                    Script SQL Supabase: Tabel qc_reports
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Skrip DDL PostgreSQL untuk membuat tabel dedicated di database Supabase Anda
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-xs text-blue-900 dark:text-blue-300 leading-relaxed">
+              <strong>Info Arsitektur:</strong> Sistem saat ini telah menerapkan <em>Dual-Layer Cloud Persistence</em>. Laporan QC Anda sudah tersimpan otomatis di Supabase dan langsung tersinkronisasi. Jika Anda ingin membuat tabel dedicated <code className="font-mono bg-blue-100 dark:bg-blue-900 px-1 py-0.5 rounded">public.qc_reports</code>, salin skrip di bawah dan jalankan di <strong>SQL Editor</strong> dashboard Supabase Anda.
+            </div>
+
+            <div className="relative">
+              <pre className="p-4 rounded-xl bg-slate-950 text-slate-200 font-mono text-xs overflow-x-auto max-h-60 border border-slate-800 leading-relaxed">
+                {QC_REPORTS_SUPABASE_DDL_SQL.trim()}
+              </pre>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <span className="text-[11px] text-slate-500">
+                Mencakup tabel, index pencarian, policy RLS, dan relasi tabel perbaikan.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSqlModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(QC_REPORTS_SUPABASE_DDL_SQL.trim());
+                    setIsCopiedSql(true);
+                    onShowToast('Script SQL berhasil disalin ke clipboard!', 'success');
+                    setTimeout(() => setIsCopiedSql(false), 2500);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors"
+                >
+                  {isCopiedSql ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Salin Script SQL</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
