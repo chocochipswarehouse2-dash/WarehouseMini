@@ -592,12 +592,45 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const seenSkus = new Set<string>();
 
     const normalizeRow = (row: any, sku: string, mapped?: any): NormalizedInventoryItem => {
-      // 1. Physical stock: mapped.f is from live Supabase view_stok_realtime; row.f is from catalog
-      // Must merge correctly so that mapped.f takes precedence without being overwritten by empty {}
-      const f = {
-        ...(typeof row?.f === 'object' ? row.f : {}),
-        ...(typeof mapped?.f === 'object' ? mapped.f : {}),
-      } as Record<string, number>;
+      // 1. Physical stock: Strictly derived from live Supabase view_stok_realtime (mapped / skuStockMap)
+      // When stockList has loaded, mapped is the sole authority. If mapped is undefined, physical warehouse stock is 0.
+      const hasRealtimeData = stockList.length > 0;
+
+      let mapFisik = 0;
+      let liveFisik = 0;
+      let studioFisik = 0;
+      let permakFisik = 0;
+      let defectFisik = 0;
+      let shpFisik = 0;
+      let ttkFisik = 0;
+      let locList: any[] = [];
+
+      if (mapped) {
+        // Authoritative physical stock from Supabase view_stok_realtime
+        mapFisik = Number(mapped.f?.['Gudang Utama'] ?? mapped.f?.['MAP'] ?? mapped.f?.['Warehouse'] ?? 0);
+        liveFisik = Number(mapped.f?.['Barang Live'] ?? mapped.f?.['LIVE'] ?? 0);
+        studioFisik = Number(mapped.stokStudio ?? mapped.f?.['Sample Studio'] ?? mapped.f?.['STUDIO'] ?? 0);
+        permakFisik = Number(mapped.f?.['Permak / Cuci'] ?? mapped.f?.['PERMAK'] ?? 0);
+        defectFisik = Number(mapped.f?.['Barang Cacat'] ?? mapped.f?.['DEFECT'] ?? 0);
+        shpFisik = Number(mapped.stokShp ?? 0);
+        ttkFisik = Number(mapped.stokTtk ?? 0);
+        locList = Array.isArray(mapped.l) ? mapped.l : [];
+      } else if (!hasRealtimeData && row?.f && typeof row.f === 'object') {
+        // Temporary offline/cold-boot preview ONLY if stockList has not finished loading yet
+        mapFisik = Number(row.f['Gudang Utama'] ?? row.f['MAP'] ?? 0);
+        liveFisik = Number(row.f['Barang Live'] ?? row.f['LIVE'] ?? 0);
+        studioFisik = Number(row.f['Sample Studio'] ?? 0);
+        permakFisik = Number(row.f['Permak / Cuci'] ?? 0);
+        defectFisik = Number(row.f['Barang Cacat'] ?? 0);
+        locList = Array.isArray(row.l) ? row.l : (Array.isArray(row.locList) ? row.locList : []);
+      }
+
+      // Ensure liveFisik accurately covers sub-channels shpFisik and ttkFisik
+      if (shpFisik + ttkFisik > liveFisik) {
+        liveFisik = shpFisik + ttkFisik;
+      }
+
+      const locStr = formatLocationString(locList);
 
       // 2. DealPOS channels: merge from row, mapped, and dealposDeltaMap
       const dpDelta = dealposDeltaMap[sku];
@@ -619,7 +652,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         ...(typeof dpDelta?.b === 'object' ? dpDelta.b : {}),
       } as Record<string, number>;
 
-      let mapFisik = Number(f['MAP'] ?? f['Gudang Utama'] ?? f['Warehouse'] ?? 0);
       const mapDp = Number(
         d['MAP'] ??
         d['Gudang Utama'] ??
@@ -629,12 +661,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         dpRaw?.Marketplace ??
         dpRaw?.d?.MAP ??
         dpRaw?.d?.['Gudang Utama'] ??
-        row?.stokMap ??
         row?.q ??
         0
       );
 
-      let liveFisik = Number(f['LIVE'] ?? f['Barang Live'] ?? f['Sample Live'] ?? 0);
       const liveDp = Number(
         d['LIVE'] ??
         d['Barang Live'] ??
@@ -646,22 +676,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         0
       );
 
-      let studioFisik = Number(f['STUDIO'] ?? f['Sample Studio'] ?? 0);
       const studioDp = Number(
         d['STUDIO'] ??
         d['Sample Studio'] ??
         dpRaw?.STUDIO ??
         dpRaw?.['Sample Studio'] ??
         dpRaw?.d?.STUDIO ??
-        row?.stokStudio ??
         0
       );
 
-      let shpFisik = Number(mapped?.stokShp || row?.stokShp || 0);
-      let ttkFisik = Number(mapped?.stokTtk || row?.stokTtk || 0);
-      if (mapped?.stokStudio) studioFisik = Math.max(studioFisik, Number(mapped.stokStudio));
-
-      let permakFisik = Number(f['PERMAK'] ?? f['Permak / Cuci'] ?? f['Permak'] ?? 0);
       const permakDp = Number(
         d['PERMAK'] ??
         d['Permak / Cuci'] ??
@@ -673,7 +696,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         0
       );
 
-      let defectFisik = Number(f['DEFECT'] ?? f['Barang Cacat'] ?? f['Cacat'] ?? 0);
       const defectDp = Number(
         d['DEFECT'] ??
         d['Barang Cacat'] ??
@@ -687,109 +709,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         0
       );
 
-      const locList = Array.isArray(mapped?.l) && mapped.l.length > 0
-        ? mapped.l
-        : Array.isArray(row?.locList) && row.locList.length > 0
-        ? row.locList
-        : Array.isArray(row?.l) && row.l.length > 0
-        ? row.l
-        : [];
-      const locStr = formatLocationString(locList);
-
-      // Always inspect locList directly to extract sub-channel quantities (Shopee, TikTok, Studio)
-      if (locList && locList.length > 0) {
-        let locStudio = 0;
-        let locShp = 0;
-        let locTtk = 0;
-        for (const itemLoc of locList) {
-          let locName = '';
-          let locQty = 0;
-          if (typeof itemLoc === 'string') {
-            const parts = itemLoc.split(':');
-            locName = parts[0] || '';
-            locQty = Number(parts[1]) || 0;
-          } else if (typeof itemLoc === 'object' && itemLoc !== null) {
-            locName = (itemLoc as any).lokasi || '';
-            locQty = Number((itemLoc as any).qty) || 0;
-          }
-          const lU = locName.toUpperCase().trim();
-          if (lU.includes('STUDIO') || lU.includes('SAMPLE')) {
-            locStudio += locQty;
-          } else if (lU.includes('SHOPEE') || lU.includes('SHP')) {
-            locShp += locQty;
-          } else if (lU.includes('TIKTOK') || lU.includes('TTK') || lU === 'TT') {
-            locTtk += locQty;
-          }
-        }
-        if (locStudio > 0) studioFisik = Math.max(studioFisik, locStudio);
-        if (locShp > 0) shpFisik = Math.max(shpFisik, locShp);
-        if (locTtk > 0) ttkFisik = Math.max(ttkFisik, locTtk);
-      }
-
-      // Ensure liveFisik accurately covers shpFisik and ttkFisik
-      if (shpFisik + ttkFisik > liveFisik) {
-        liveFisik = shpFisik + ttkFisik;
-      }
-
-      // 3. Fallback: If physical counts are all 0 but locations are detected, derive quantities directly from locations!
-      if (mapFisik === 0 && liveFisik === 0 && studioFisik === 0 && permakFisik === 0 && defectFisik === 0) {
-        if (row?.stokMap) mapFisik = Number(row.stokMap);
-        if (row?.stokStudio) studioFisik = Number(row.stokStudio);
-        const liveTot = (Number(row?.stokShp) || 0) + (Number(row?.stokTtk) || 0);
-        if (liveTot > 0) liveFisik = liveTot;
-
-        if (locList.length > 0) {
-          for (const itemLoc of locList) {
-            let locName = '';
-            let locQty = 0;
-            if (typeof itemLoc === 'string') {
-              const parts = itemLoc.split(':');
-              locName = parts[0] || '';
-              locQty = Number(parts[1]) || 0;
-            } else if (typeof itemLoc === 'object' && itemLoc !== null) {
-              locName = (itemLoc as any).lokasi || '';
-              locQty = Number((itemLoc as any).qty) || 0;
-            }
-            const lU = locName.toUpperCase().trim();
-            if (lU.includes('STUDIO') || lU.includes('SAMPLE')) {
-              studioFisik += locQty;
-            } else if (
-              lU.includes('SHOPEE') ||
-              lU.includes('TIKTOK') ||
-              lU.includes('LIVE') ||
-              lU.includes('SHP') ||
-              lU.includes('TTK') ||
-              lU.includes('TIK') ||
-              lU.includes('TOK')
-            ) {
-              liveFisik += locQty;
-            } else if (lU.startsWith('PMK') || lU.startsWith('CC') || lU.includes('PERMAK') || lU.includes('CUCI')) {
-              permakFisik += locQty;
-            } else if (lU.startsWith('DF') || lU.includes('DEFECT') || lU.includes('CACAT')) {
-              defectFisik += locQty;
-            } else if (locQty > 0) {
-              mapFisik += locQty;
-            }
-          }
-        }
-      }
-
       const singleVals: { [key: string]: number } = {};
       [...OFFLINE_COLS, ...STORE_COLS, ...ONLINE_COLS].forEach((code) => {
         singleVals[code] = Number(
           b[code] ??
           d[code] ??
-          f[code] ??
           dpRaw?.[code] ??
           dpRaw?.cabang?.[code] ??
           dpRaw?.b?.[code] ??
           0
         );
       });
-
-      // Also fallback if DealPOS singleVals has SHP or TTK and physical was 0
-      if (shpFisik === 0 && singleVals['SHP'] > 0) shpFisik = singleVals['SHP'];
-      if (ttkFisik === 0 && singleVals['TTK'] > 0) ttkFisik = singleVals['TTK'];
 
       const produk = String(row?.p || row?.produk || row?.nama_produk || mapped?.nama_produk || sku);
       const size = String(row?.s || row?.size || mapped?.size || '-');

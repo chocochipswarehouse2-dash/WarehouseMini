@@ -304,18 +304,52 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
   };
 
-  // Helper: Extract all locations for a given item / SKU (strictly warehouse area locations)
+  // Helper: Extract all locations for a given item / SKU (strictly warehouse area locations that actually have stock > 0)
   const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
-    const map = new Map<string, ProductLocationInfo>();
     const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) return [];
+    const map = new Map<string, ProductLocationInfo>();
 
-    // 1. Primary from item.lokasi in Surat Jalan (if warehouse location)
+    // 1. Authoritative check: live Supabase view_stok_realtime data
+    const isRealtimeChecked = cleanSku in realtimeSkuStocks;
+    if (isRealtimeChecked) {
+      const realtimeList = realtimeSkuStocks[cleanSku] || [];
+      // ONLY recommend warehouse locations that currently have physical stock (sisa_stok > 0)!
+      realtimeList.forEach((stk) => {
+        const loc = String(stk.lokasi || '').trim().toUpperCase();
+        const qty = Number(stk.sisa_stok) || 0;
+        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+          const existing = map.get(loc);
+          if (existing) {
+            existing.qty = (existing.qty || 0) + qty;
+          } else {
+            map.set(loc, {
+              lokasi: loc,
+              qty: qty,
+              isPrimary: false,
+              source: 'REALTIME_STOCK',
+              area: stk.area || 'Warehouse',
+            });
+          }
+        }
+      });
+
+      // If checked against realtime DB and all warehouse locations have 0 stock:
+      // Return empty list so we DO NOT recommend empty racks to the picker!
+      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
+      if (sorted.length > 0) {
+        sorted[0].isPrimary = true;
+      }
+      return sorted;
+    }
+
+    // 2. Fallback only while realtime data is still loading
     const strItemLokasi = String(itemLokasi || '').trim();
-    if (strItemLokasi) {
+    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--') {
       const parts = strItemLokasi
         .split(/[,/;\n|]+/)
         .map((s) => String(s || '').trim().toUpperCase())
-        .filter((loc) => loc && isWarehouseLocation(loc));
+        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
       parts.forEach((loc, idx) => {
         map.set(loc, {
           lokasi: loc,
@@ -325,99 +359,70 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       });
     }
 
-    // 2. From productCatalog (only valid warehouse locations)
-    if (cleanSku) {
-      const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
-      if (catMatch) {
-        if (catMatch.lokasi) {
-          const parts = String(catMatch.lokasi)
-            .split(/[,/;\n|]+/)
-            .map((s) => String(s || '').trim().toUpperCase())
-            .filter((loc) => loc && isWarehouseLocation(loc));
-          parts.forEach((loc, idx) => {
+    const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+    if (catMatch && Array.isArray(catMatch.locList)) {
+      catMatch.locList.forEach((itemLoc) => {
+        if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
+          const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
+          const qty = Number(itemLoc.qty) || 0;
+          if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
             if (!map.has(loc)) {
               map.set(loc, {
                 lokasi: loc,
-                isPrimary: map.size === 0 && idx === 0,
+                qty: qty,
+                isPrimary: map.size === 0,
                 source: 'CATALOG',
               });
             }
-          });
-        }
-
-        if (Array.isArray(catMatch.locList)) {
-          catMatch.locList.forEach((itemLoc, idx) => {
-            if (typeof itemLoc === 'string') {
-              const loc = String(itemLoc || '').trim().toUpperCase();
-              if (loc && isWarehouseLocation(loc) && !map.has(loc)) {
-                map.set(loc, {
-                  lokasi: loc,
-                  isPrimary: map.size === 0 && idx === 0,
-                  source: 'CATALOG',
-                });
-              }
-            } else if (itemLoc && typeof itemLoc === 'object' && itemLoc.lokasi) {
-              const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
-              if (loc && isWarehouseLocation(loc)) {
-                const existing = map.get(loc);
-                map.set(loc, {
-                  lokasi: loc,
-                  qty: itemLoc.qty !== undefined ? itemLoc.qty : existing?.qty,
-                  isPrimary: existing?.isPrimary ?? (map.size === 0 && idx === 0),
-                  source: 'CATALOG',
-                });
-              }
-            }
-          });
-        }
-      }
-    }
-
-    // 3. From Realtime Supabase Stock (strictly only warehouse area and locations with available stock)
-    if (cleanSku) {
-      const realtimeList = realtimeSkuStocks[cleanSku] || [];
-      realtimeList.forEach((stk) => {
-        const loc = String(stk.lokasi || '').trim().toUpperCase();
-        if (loc && isWarehouseLocation(loc, stk.area)) {
-          const existing = map.get(loc);
-          if (existing) {
-            if (stk.sisa_stok !== undefined) existing.qty = stk.sisa_stok;
-          } else {
-            map.set(loc, {
-              lokasi: loc,
-              qty: stk.sisa_stok,
-              isPrimary: map.size === 0,
-              source: 'REALTIME_STOCK',
-              area: stk.area
-            });
           }
         }
       });
     }
 
-    if (map.size === 0) {
-      map.set('A-01', { lokasi: 'A-01', isPrimary: true, source: 'SJ' });
-    }
-
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi));
-
-    // Sort to prioritize primary location, then descending stock qty
-    allLocs.sort((a, b) => {
-      if (a.isPrimary && !b.isPrimary) return -1;
-      if (!a.isPrimary && b.isPrimary) return 1;
-      return (b.qty || 0) - (a.qty || 0);
-    });
-
-    return allLocs.length > 0 ? allLocs : [{ lokasi: 'A-01', isPrimary: true, source: 'SJ' }];
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
+    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    return allLocs;
   };
+
+  // Helper: Retrieve all recorded warehouse locations that currently have 0 stock (for informative warnings)
+  const getRecordedEmptyLocations = (sku: string): string[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku || !(cleanSku in realtimeSkuStocks)) return [];
+    const list = realtimeSkuStocks[cleanSku] || [];
+    const emptyLocs: string[] = [];
+    list.forEach((stk) => {
+      const loc = String(stk.lokasi || '').trim().toUpperCase();
+      const qty = Number(stk.sisa_stok) || 0;
+      if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty <= 0) {
+        if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
+      }
+    });
+    return emptyLocs;
+  };
+
+  // Key to track unique SKUs in active items for reactive realtime stock fetching
+  const activeSkusKey = React.useMemo(() => {
+    return (activeItems || [])
+      .map((it) => (it.sku || '').trim().toUpperCase())
+      .filter(Boolean)
+      .sort()
+      .join(',');
+  }, [activeItems]);
 
   // Fetch realtime inventory by SKUs across warehouse locations whenever active SJ items change
   useEffect(() => {
     if (activeItems.length > 0) {
-      const skus = activeItems.map((it) => it.sku).filter(Boolean);
-      fetchStockForSkus(skus)
+      const skus = activeItems.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean);
+      const uniqueSkus = Array.from(new Set(skus));
+      if (!uniqueSkus.length) return;
+
+      fetchStockForSkus(uniqueSkus)
         .then((stocks) => {
           const map: Record<string, StockRealtimeItem[]> = {};
+          // Pre-initialize all requested SKUs so we know they were checked
+          uniqueSkus.forEach((s) => {
+            map[s] = [];
+          });
           stocks.forEach((stk) => {
             const key = stk.sku.toUpperCase().trim();
             if (!map[key]) map[key] = [];
@@ -427,7 +432,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         })
         .catch((err) => console.warn('Gagal memuat stok lokasi realtime:', err));
     }
-  }, [activeItems.length, activeSJ?.no_sj]);
+  }, [activeSkusKey, activeSJ?.no_sj]);
 
   // Group items by no_sj
   const sjGroups: PickingSuratJalanGroup[] = React.useMemo(() => {
@@ -2279,12 +2284,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             const itemSku = String(item.sku || '').trim().toUpperCase();
 
             const productLocs = getProductLocations(itemSku, item.lokasi);
-            const primaryLoc = productLocs.find((l) => l.isPrimary) || productLocs[0];
-            const allWarehouseLocs = productLocs.filter(l => l && l.lokasi && isWarehouseLocation(l.lokasi));
-            const displayLokasi = allWarehouseLocs.length > 0 ? allWarehouseLocs.map(l => l.lokasi).join(', ') : (item.lokasi || 'A-01');
+            const isRealtimeLoaded = itemSku in realtimeSkuStocks;
+            const emptyRecordedRacks = getRecordedEmptyLocations(itemSku);
 
             const isCurrentShelf = activeLocation && (
-              allWarehouseLocs.some(l => l && l.lokasi && l.lokasi.toUpperCase() === activeLocation.toUpperCase())
+              productLocs.some(l => l && l.lokasi && l.lokasi.toUpperCase() === activeLocation.toUpperCase())
             );
 
             let cardBorder = 'border-slate-200 dark:border-slate-800';
@@ -2317,8 +2321,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               );
             }
 
-            const isWarehouse = isWarehouseLocation(primaryLoc?.lokasi || item.lokasi || '');
-
             const catMatch = productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === itemSku);
             const displaySize = (item.size && item.size !== '-') 
               ? item.size 
@@ -2335,29 +2337,70 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <div className="flex-1 space-y-2">
                   {/* TOP ROW: LOKASI WAREHOUSE (BIG) + SIZE (BIG) + SKU + STATUS */}
                   <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-                    {/* BIG LOKASI RAK BADGE */}
-                    <button
-                      type="button"
-                      onClick={() => handleBarcodeScanned(`#LOK ${primaryLoc?.lokasi || item.lokasi}`)}
-                      className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 max-w-[65%] sm:max-w-none ${
-                        isCurrentShelf
-                          ? 'bg-[#ff7a00] text-white shadow-md ring-2 ring-[#ff7a00]/50'
-                          : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100'
-                      }`}
-                      title="Klik untuk jadikan rak aktif ini"
-                    >
-                      <MapPin className="w-4 h-4 text-inherit shrink-0" />
-                      <span className="truncate">{displayLokasi}</span>
-                      {isWarehouse ? (
-                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 uppercase tracking-wider font-sans shrink-0">
-                          Warehouse
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 uppercase tracking-wider font-sans shrink-0">
-                          Non-WH
-                        </span>
-                      )}
-                    </button>
+                    {/* BIG LOKASI RAK BADGES (HANYA RAK DENGAN STOK > 0) */}
+                    {productLocs.length > 0 ? (
+                      productLocs.map((locInfo, locIdx) => {
+                        const loc = locInfo.lokasi;
+                        const isLocWarehouse = isWarehouseLocation(loc, locInfo.area);
+                        const isThisCurrentShelf = activeLocation && loc.toUpperCase() === activeLocation.toUpperCase();
+                        const hasQty = locInfo.qty !== undefined && locInfo.qty !== null;
+                        return (
+                          <button
+                            key={locIdx}
+                            type="button"
+                            onClick={() => handleBarcodeScanned(`#LOK ${loc}`)}
+                            className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 transition-all shadow-xs cursor-pointer active:scale-95 max-w-[85%] sm:max-w-none ${
+                              isThisCurrentShelf
+                                ? 'bg-[#ff7a00] text-white shadow-md ring-2 ring-[#ff7a00]/50'
+                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                            }`}
+                            title={`Klik untuk jadikan rak aktif: ${loc} (Sisa stok: ${locInfo.qty ?? 0} pcs)`}
+                          >
+                            <MapPin className="w-4 h-4 text-inherit shrink-0" />
+                            <span className="truncate">{loc}</span>
+                            {hasQty && (
+                              <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
+                                isThisCurrentShelf
+                                  ? 'bg-black/20 text-white'
+                                  : 'bg-emerald-600/20 text-emerald-900 dark:text-emerald-200'
+                              }`}>
+                                {locInfo.qty} pcs
+                              </span>
+                            )}
+                            {isLocWarehouse ? (
+                              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                                isThisCurrentShelf
+                                  ? 'bg-black/20 text-white'
+                                  : 'bg-black/10 dark:bg-white/10 text-emerald-900 dark:text-emerald-200'
+                              } uppercase tracking-wider font-sans shrink-0`}>
+                                Warehouse
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 uppercase tracking-wider font-sans shrink-0">
+                                Non-WH
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    ) : isRealtimeLoaded ? (
+                      /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
+                      <div className="px-3 py-1.5 rounded-xl font-mono font-bold text-xs sm:text-sm flex flex-wrap items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-2 border-rose-500/30 shadow-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <span className="font-black">STOK GUDANG KOSONG (0 pcs)</span>
+                        {emptyRecordedRacks.length > 0 && (
+                          <span className="text-[11px] font-medium text-rose-600/90 dark:text-rose-400/80">
+                            • Rak tercatat: {Array.from(new Set(emptyRecordedRacks)).join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      /* MEMUAT STOK / CEK LOKASI */
+                      <div className="px-3 py-1.5 rounded-xl font-mono font-bold text-xs sm:text-sm flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700">
+                        <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>Cek Stok Rak...</span>
+                      </div>
+                    )}
 
                     {/* BIG SIZE BADGE */}
                     {displaySize && displaySize !== '-' && (
@@ -3478,6 +3521,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             }`}
                           >
                             <span>📍 {locInfo.lokasi}</span>
+                            {locInfo.qty !== undefined && (
+                              <span className="text-[10px] px-1 bg-black/10 dark:bg-white/10 rounded font-sans font-bold">
+                                {locInfo.qty} pcs
+                              </span>
+                            )}
                             {locInfo.isPrimary && (
                               <span className="text-[9px] px-1 bg-black/10 rounded font-sans uppercase font-extrabold">
                                 Utama

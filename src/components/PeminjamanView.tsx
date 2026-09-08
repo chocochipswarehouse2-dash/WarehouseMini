@@ -354,10 +354,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       const effectiveSize = (p.s && p.s !== 'ALL' && p.s !== '-') ? p.s : extractSizeFromSku(p.k || '');
       const existing = skuMap.get(skuUpper);
       if (existing) {
-        // If existing has 0 stok but p has stokMap or channel stock
-        if (existing.stok === 0 && p.stokMap !== undefined && p.stokMap > 0) {
-          existing.stok = p.stokMap;
-        }
         if (existing.produk === skuUpper && p.p && p.p !== skuUpper) {
           existing.produk = p.p;
         }
@@ -367,9 +363,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         return;
       }
 
-      const stok = p.stokMap !== undefined
-        ? Number(p.stokMap)
-        : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0));
+      // If channelStocks has loaded and SKU is not in channelStocks, physical stock is 0
+      const stok = channelStocks.length > 0
+        ? 0
+        : (p.stokMap !== undefined
+            ? Number(p.stokMap)
+            : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0)));
 
       const itemData = {
         sku: p.k || '',

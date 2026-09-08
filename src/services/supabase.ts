@@ -257,7 +257,9 @@ export function isWarehouseLocation(lokasi: string, area?: string): boolean {
   }
 
   const lok = String(lokasi || '').trim().toUpperCase();
-  if (!lok) return true; // Default fallback to warehouse
+  if (!lok || lok === '-' || lok === '--' || lok === 'NONE' || lok === 'DEFAULT' || lok === 'NULL' || lok === 'UNDEFINED') {
+    return false;
+  }
 
   // Non-warehouse location keywords to exclude from warehouse picking
   if (
@@ -785,14 +787,14 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
     let data: StockRealtimeItem[] | null = null;
     try {
       data = await supabaseFetch<StockRealtimeItem[]>(
-        'stok_realtime',
+        'view_stok_realtime',
         'GET',
         null,
         `sku=in.(${skuParam})&order=sku.asc,lokasi.asc`
       );
     } catch {
       data = await supabaseFetch<StockRealtimeItem[]>(
-        'view_stok_realtime',
+        'stok_realtime',
         'GET',
         null,
         `sku=in.(${skuParam})&order=sku.asc,lokasi.asc`
@@ -2133,11 +2135,13 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
   const d: Record<string, number> = {};
   const b: Record<string, number> = {};
 
+  let dealposMapQty = 0;
   if (row.dealpos_channels && typeof row.dealpos_channels === 'object') {
     const dp = row.dealpos_channels;
 
     // 1. DealPOS 5-Komparasi (MAP, LIVE, STUDIO, PERMAK, DEFECT)
     const mapVal = Number(dp.MAP ?? dp['Gudang Utama'] ?? dp.Marketplace ?? dp.GUDANG ?? dp.TOTAL ?? 0) || 0;
+    dealposMapQty = mapVal;
     const liveVal = Number(dp.LIVE ?? dp['Barang Live'] ?? dp['Sample Live'] ?? 0) || 0;
     const studioVal = Number(dp.STUDIO ?? dp['Sample Studio'] ?? 0) || 0;
     const permakVal = Number(dp.PERMAK ?? dp['Permak / Cuci'] ?? dp.Permak ?? 0) || 0;
@@ -2154,8 +2158,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     d['DEFECT'] = defectVal;
     d['Barang Cacat'] = defectVal;
 
-    stokMap = mapVal;
-    stokStudio = studioVal;
+    // Note: DealPOS system quantities belong in d and dealpos_channels, NOT in physical stock fields
 
     // 2. Offline singles (WH, QC, GA, LOG)
     b['WH'] = Number(dp.WH ?? dp.Warehouse ?? 0) || 0;
@@ -2170,9 +2173,6 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     b['TTK'] = Number(dp.TTK ?? dp.TikTok ?? dp.cabang?.TTK ?? 0) || 0;
     b['LZD'] = Number(dp.LZD ?? dp.Lazada ?? dp.cabang?.LZD ?? 0) || 0;
     b['WOO'] = Number(dp.WOO ?? dp.WooCommerce ?? dp.cabang?.WOO ?? 0) || 0;
-
-    stokShp = b['SHP'];
-    stokTtk = b['TTK'];
 
     // 4. Store Outlets (LMP, MKG, BTS, CPJ, CWS, LWS, DPM, PHB, PMS, NSJ, PIM, SPM, GAIA, GST, LVL, SMS, PVJ, TP, etc.)
     const STORE_CODES = ['LMP', 'MKG', 'BTS', 'CPJ', 'CWS', 'LWS', 'DPM', 'PHB', 'PMS', 'NSJ', 'PIM', 'SPM', 'GAIA', 'GST', 'LVL', 'SMS', 'PVJ', 'TP'];
@@ -2219,12 +2219,8 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     Object.assign(b, row.b);
   }
 
-  if (stokMap === undefined) {
-    const rawDp = row.sisa_stok ?? row.stok_dealpos ?? row.dealpos_stock ?? row.stock_dealpos ?? row.stok_sistem ?? row.dealpos_stok ?? row.stok_map ?? row.qty;
-    if (rawDp !== undefined && rawDp !== null && rawDp !== '') {
-      stokMap = Number(rawDp);
-      if (!d['MAP']) d['MAP'] = stokMap;
-    }
+  if (stokMap === undefined && row.sisa_stok !== undefined && row.sisa_stok !== null && row.sisa_stok !== '') {
+    stokMap = Number(row.sisa_stok);
   }
 
   // If row has location indicating live channels
@@ -2270,7 +2266,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     f: (row.f && typeof row.f === 'object') ? row.f : {},
     l: Array.isArray(row.l) ? row.l : [],
     dealpos_channels: row.dealpos_channels || row.dealpos,
-    q: stokMap ?? Number(row.q || 0),
+    q: dealposMapQty || Number(row.q || 0),
   };
 }
 
