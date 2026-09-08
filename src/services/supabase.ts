@@ -24,6 +24,7 @@ import {
   PerijinanCutiRecord,
   PerbaikanTicket,
   QcReport,
+  SimpanPenerimaanPayload,
 } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
 
@@ -5184,6 +5185,369 @@ export async function deleteQcReportFromSupabase(
       window.dispatchEvent(
         new CustomEvent('wms_perbaikan_tickets_updated', {
           detail: { deletedReportNo: sReportNo, deletedTicketNo: linkedTicketNo },
+        })
+      );
+    } catch {}
+  }
+
+  return true;
+}
+
+// ========================================================
+// PENERIMAAN PRODUKSI & KEDATANGAN BARANG (LOKAL CMT & KARGO)
+// ========================================================
+
+/**
+ * Fetch list data Penerimaan Produksi dari Supabase dengan sinkronisasi local storage
+ */
+export async function fetchPenerimaanProduksiFromSupabase(filters?: {
+  kategori?: string;
+  startDate?: string;
+  endDate?: string;
+  keyword?: string;
+  limit?: number;
+}): Promise<PenerimaanProduksiItem[]> {
+  let localData: PenerimaanProduksiItem[] = [];
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      localData = JSON.parse(cached);
+    }
+  } catch {}
+
+  try {
+    const queryParts: string[] = ['order=created_at.desc'];
+    const limit = filters?.limit || 1000;
+    queryParts.push(`limit=${limit}`);
+
+    if (filters?.kategori && filters.kategori !== 'Semua') {
+      queryParts.push(`kategori=eq.${encodeURIComponent(filters.kategori)}`);
+    }
+    if (filters?.startDate) {
+      queryParts.push(`tanggal_penerimaan=gte.${encodeURIComponent(filters.startDate)}`);
+    }
+    if (filters?.endDate) {
+      queryParts.push(`tanggal_penerimaan=lte.${encodeURIComponent(filters.endDate)}`);
+    }
+
+    const query = queryParts.join('&');
+    const remoteData = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'GET', undefined, query);
+
+    if (remoteData && Array.isArray(remoteData)) {
+      // Supabase is authoritative.
+      const remoteIds = new Set(remoteData.map((d) => String(d.id || '')).filter(Boolean));
+      // Keep offline pending items (temporary numeric id or un-synced)
+      const offlinePending = localData.filter((d) => {
+        const sid = String(d.id || '');
+        return (typeof d.id === 'number' && d.id > 1000000000) || (!remoteIds.has(sid) && sid.startsWith('local_'));
+      });
+
+      const merged = [...remoteData, ...offlinePending].sort((a, b) => {
+        const dateA = new Date(a.tanggal_penerimaan || a.created_at || 0).getTime();
+        const dateB = new Date(b.tanggal_penerimaan || b.created_at || 0).getTime();
+        return dateB - dateA;
+      });
+
+      localData = merged;
+      try {
+        localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(localData));
+      } catch {}
+
+      // Apply keyword filter client-side if provided
+      if (filters?.keyword && filters.keyword.trim()) {
+        const kw = filters.keyword.trim().toLowerCase();
+        return localData.filter((it) =>
+          (it.kode_produksi || '').toLowerCase().includes(kw) ||
+          (it.no_surat_jalan || '').toLowerCase().includes(kw) ||
+          (it.warna || '').toLowerCase().includes(kw) ||
+          (it.keterangan || '').toLowerCase().includes(kw) ||
+          (it.operator || '').toLowerCase().includes(kw)
+        );
+      }
+
+      return localData;
+    }
+  } catch (err) {
+    console.warn('Gagal memuat penerimaan_produksi dari Supabase, memuat dari local cache:', err);
+  }
+
+  // Filter cached data if keyword provided
+  if (filters?.keyword && filters.keyword.trim()) {
+    const kw = filters.keyword.trim().toLowerCase();
+    return localData.filter((it) =>
+      (it.kode_produksi || '').toLowerCase().includes(kw) ||
+      (it.no_surat_jalan || '').toLowerCase().includes(kw) ||
+      (it.warna || '').toLowerCase().includes(kw) ||
+      (it.keterangan || '').toLowerCase().includes(kw) ||
+      (it.operator || '').toLowerCase().includes(kw)
+    );
+  }
+
+  return localData;
+}
+
+/**
+ * Simpan Batch Penerimaan Produksi ke Supabase & Google Apps Script mirror
+ */
+export async function simpanBatchPenerimaanProduksiToSupabase(
+  payload: SimpanPenerimaanPayload,
+  operatorName?: string
+): Promise<PenerimaanProduksiItem[]> {
+  const rowsToInsert: any[] = [];
+  const nowStr = new Date().toISOString();
+  const targetOperator = (operatorName || 'Operator').trim();
+
+  // If payload contains produk_list (compact format)
+  if (payload.produk_list && payload.produk_list.length > 0) {
+    for (const prod of payload.produk_list) {
+      const kode = (prod.kode_produksi || '').trim().toUpperCase();
+      const fotoUrl = prod.foto_url || payload.foto_url || '';
+      const catatanProd = (prod.catatan || payload.keterangan || '').trim();
+
+      for (const v of prod.variants) {
+        const qty = Math.max(1, Number(v.qty) || 1);
+        rowsToInsert.push({
+          tanggal_penerimaan: payload.tanggal,
+          kategori: payload.kategori || 'Lokal CMT',
+          no_surat_jalan: (payload.no_surat_jalan || '').trim().toUpperCase(),
+          kode_produksi: kode,
+          warna: (v.warna || '').trim().toUpperCase(),
+          size: (v.size || 'Default').trim(),
+          qty: qty,
+          foto_url: fotoUrl,
+          keterangan: catatanProd,
+          operator: targetOperator,
+          created_at: nowStr,
+        });
+      }
+    }
+  } else if (payload.items && payload.items.length > 0) {
+    for (const it of payload.items) {
+      rowsToInsert.push({
+        tanggal_penerimaan: it.tanggal_penerimaan || payload.tanggal,
+        kategori: it.kategori || payload.kategori || 'Lokal CMT',
+        no_surat_jalan: (it.no_surat_jalan || payload.no_surat_jalan || '').trim().toUpperCase(),
+        kode_produksi: (it.kode_produksi || '').trim().toUpperCase(),
+        warna: (it.warna || '').trim().toUpperCase(),
+        size: (it.size || 'Default').trim(),
+        qty: Math.max(1, Number(it.qty) || 1),
+        foto_url: it.foto_url || payload.foto_url || '',
+        keterangan: (it.keterangan || payload.keterangan || '').trim(),
+        operator: it.operator || targetOperator,
+        created_at: it.created_at || nowStr,
+      });
+    }
+  }
+
+  if (rowsToInsert.length === 0) {
+    throw new Error('Tidak ada baris data barang untuk disimpan.');
+  }
+
+  let savedItems: PenerimaanProduksiItem[] = [];
+
+  // Attempt 1: Direct Supabase insert
+  try {
+    const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', rowsToInsert);
+    if (res && Array.isArray(res) && res.length > 0) {
+      savedItems = res;
+    } else {
+      savedItems = rowsToInsert.map((r, idx) => ({ ...r, id: `local_${Date.now()}_${idx}` }));
+    }
+  } catch (err) {
+    console.warn('Gagal insert penerimaan_produksi ke Supabase, simpan ke local cache:', err);
+    savedItems = rowsToInsert.map((r, idx) => ({ ...r, id: `local_${Date.now()}_${idx}` }));
+  }
+
+  // Update local cache
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    let localList: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
+    localList = [...savedItems, ...localList];
+    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(localList));
+  } catch {}
+
+  // Google Apps Script Mirror (if configured)
+  const gasUrl = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+  if (gasUrl && gasUrl.startsWith('http')) {
+    try {
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'simpanPenerimaanProduksi',
+          payload: {
+            tanggal: payload.tanggal,
+            kategori: payload.kategori,
+            no_surat_jalan: payload.no_surat_jalan,
+            keterangan: payload.keterangan || '',
+            produk_list: payload.produk_list || [],
+            operator: targetOperator,
+          },
+        }),
+      }).catch((e) => console.warn('GAS mirror penerimaan failed:', e));
+    } catch {}
+  }
+
+  // Dispatch window event for realtime UI update
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('wms_penerimaan_produksi_updated', {
+          detail: { action: 'insert', no_surat_jalan: payload.no_surat_jalan },
+        })
+      );
+    } catch {}
+  }
+
+  return savedItems;
+}
+
+/**
+ * Update Batch Penerimaan Produksi (per Surat Jalan)
+ */
+export async function updateBatchPenerimaanProduksiInSupabase(
+  origNoSuratJalan: string,
+  payload: SimpanPenerimaanPayload,
+  operatorName?: string
+): Promise<PenerimaanProduksiItem[]> {
+  const cleanOrigSJ = origNoSuratJalan.trim().toUpperCase();
+
+  // 1. Hapus baris lama berdasarkan no_surat_jalan di Supabase
+  try {
+    await supabaseFetch(
+      'penerimaan_produksi',
+      'DELETE',
+      undefined,
+      `no_surat_jalan=eq.${encodeURIComponent(cleanOrigSJ)}`
+    );
+  } catch (err) {
+    console.warn('Gagal delete baris lama penerimaan_produksi:', err);
+  }
+
+  // 2. Hapus baris lama dari local cache
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      const list: PenerimaanProduksiItem[] = JSON.parse(cached);
+      const filtered = list.filter((it) => (it.no_surat_jalan || '').trim().toUpperCase() !== cleanOrigSJ);
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(filtered));
+    }
+  } catch {}
+
+  // 3. Simpan baris baru
+  const newItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
+
+  // 4. GAS Mirror Update if configured
+  const gasUrl = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+  if (gasUrl && gasUrl.startsWith('http')) {
+    try {
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'updateBatchPenerimaanProduksi',
+          payload: {
+            orig_no_surat_jalan: cleanOrigSJ,
+            tanggal: payload.tanggal,
+            kategori: payload.kategori,
+            no_surat_jalan: payload.no_surat_jalan,
+            keterangan: payload.keterangan || '',
+            items: newItems,
+          },
+        }),
+      }).catch((e) => console.warn('GAS mirror update penerimaan failed:', e));
+    } catch {}
+  }
+
+  return newItems;
+}
+
+/**
+ * Hapus seluruh data penerimaan berdasarkan No Surat Jalan
+ */
+export async function hapusBatchPenerimaanProduksiFromSupabase(noSuratJalan: string): Promise<boolean> {
+  const cleanSJ = noSuratJalan.trim().toUpperCase();
+
+  // 1. Supabase DELETE
+  try {
+    await supabaseFetch(
+      'penerimaan_produksi',
+      'DELETE',
+      undefined,
+      `no_surat_jalan=eq.${encodeURIComponent(cleanSJ)}`
+    );
+  } catch (err) {
+    console.warn('Gagal hapus batch penerimaan_produksi dari Supabase:', err);
+  }
+
+  // 2. Local Storage Clean
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      const list: PenerimaanProduksiItem[] = JSON.parse(cached);
+      const filtered = list.filter((it) => (it.no_surat_jalan || '').trim().toUpperCase() !== cleanSJ);
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(filtered));
+    }
+  } catch {}
+
+  // 3. GAS Mirror Delete
+  const gasUrl = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+  if (gasUrl && gasUrl.startsWith('http')) {
+    try {
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'hapusBatchPenerimaanProduksi',
+          no_surat_jalan: cleanSJ,
+        }),
+      }).catch((e) => console.warn('GAS mirror hapus penerimaan failed:', e));
+    } catch {}
+  }
+
+  // 4. Dispatch event
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('wms_penerimaan_produksi_updated', {
+          detail: { action: 'delete_batch', no_surat_jalan: cleanSJ },
+        })
+      );
+    } catch {}
+  }
+
+  return true;
+}
+
+/**
+ * Hapus 1 baris item penerimaan spesifik
+ */
+export async function hapusPenerimaanProduksiSingleRowFromSupabase(id: string | number): Promise<boolean> {
+  const sid = String(id);
+
+  try {
+    await supabaseFetch('penerimaan_produksi', 'DELETE', undefined, `id=eq.${encodeURIComponent(sid)}`);
+  } catch (err) {
+    console.warn('Gagal hapus single row penerimaan_produksi dari Supabase:', err);
+  }
+
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      const list: PenerimaanProduksiItem[] = JSON.parse(cached);
+      const filtered = list.filter((it) => String(it.id) !== sid);
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(filtered));
+    }
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('wms_penerimaan_produksi_updated', {
+          detail: { action: 'delete_single', id: sid },
         })
       );
     } catch {}

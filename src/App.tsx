@@ -37,6 +37,7 @@ import {
 } from './services/localDb';
 
 // Lazy load large components
+const PenerimaanProduksiView = React.lazy(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
 const PeminjamanView = React.lazy(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
 const QualityControlView = React.lazy(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
 const PickingTasksView = React.lazy(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
@@ -1130,6 +1131,14 @@ export default function App() {
           )}
 
           <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
+            {activePage === 'penerimaan' && (
+                <PenerimaanProduksiView
+                  session={session}
+                  productCatalog={productDatabase}
+                  onShowToast={showToast}
+                />
+            )}
+
             {activePage === 'inventory' && (
                 <InventoryView
                   session={session}

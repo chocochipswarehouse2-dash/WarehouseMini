@@ -17,7 +17,7 @@ export interface PermissionGroup {
   permissions: PermissionItem[];
 }
 
-export const TOTAL_PERMISSIONS_COUNT = 19;
+export const TOTAL_PERMISSIONS_COUNT = 20;
 
 export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
@@ -30,6 +30,11 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         key: 'can_scan',
         label: 'Scanner Barcode (IN / OUT / SO)',
         description: 'Scan lokasi rak, SKU, multi-scan dan submit mutasi fisik barang',
+      },
+      {
+        key: 'can_penerimaan',
+        label: 'Penerimaan Produksi & Kedatangan Barang',
+        description: 'Input & monitor kedatangan barang Lokal CMT dan Kargo ekspedisi',
       },
       {
         key: 'can_picking',
@@ -162,7 +167,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
   Superadmin: {
-    can_scan: true, can_picking: true, can_peminjaman: true,
+    can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
     can_manage_settings: true, can_edit_data: true, can_delete_data: true,
@@ -172,7 +177,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: true,
   },
   'All': {
-    can_scan: true, can_picking: true, can_peminjaman: true,
+    can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
     can_manage_settings: true, can_edit_data: true, can_delete_data: true,
@@ -182,7 +187,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: true,
   },
   'Perbaikan': {
-    can_scan: true, can_picking: false, can_peminjaman: false,
+    can_scan: true, can_penerimaan: true, can_picking: false, can_peminjaman: false,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: false,
     can_export_data: true, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: true, can_delete_data: false,
@@ -192,7 +197,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: true,
   },
   'HR & Admin': {
-    can_scan: false, can_picking: false, can_peminjaman: false,
+    can_scan: false, can_penerimaan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: true, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: true, can_delete_data: false,
@@ -202,7 +207,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Scanner Barcode': {
-    can_scan: true, can_picking: false, can_peminjaman: false,
+    can_scan: true, can_penerimaan: true, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -212,7 +217,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Inventory': {
-    can_scan: false, can_picking: false, can_peminjaman: false,
+    can_scan: false, can_penerimaan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: true, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -222,7 +227,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Stock Opname': {
-    can_scan: false, can_picking: false, can_peminjaman: false,
+    can_scan: false, can_penerimaan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: true,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -232,7 +237,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Mutasi': {
-    can_scan: false, can_picking: false, can_peminjaman: false,
+    can_scan: false, can_penerimaan: false, can_picking: false, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: true, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -242,7 +247,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Tugas Picking': {
-    can_scan: false, can_picking: true, can_peminjaman: false,
+    can_scan: false, can_penerimaan: false, can_picking: true, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -252,7 +257,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Peminjaman': {
-    can_scan: false, can_picking: false, can_peminjaman: true,
+    can_scan: false, can_penerimaan: false, can_picking: false, can_peminjaman: true,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -262,7 +267,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Operator': {
-    can_scan: true, can_picking: true, can_peminjaman: false,
+    can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
     can_manage_settings: false, can_edit_data: false, can_delete_data: false,
@@ -342,6 +347,8 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
   switch (page) {
     case 'scanner':
       return hasPermission(session, 'can_scan');
+    case 'penerimaan':
+      return hasPermission(session, 'can_penerimaan') || hasPermission(session, 'can_scan');
     case 'inventory':
       return hasPermission(session, 'can_view_inventory');
     case 'stock_opname':

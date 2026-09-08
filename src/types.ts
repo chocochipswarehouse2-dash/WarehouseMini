@@ -4,6 +4,7 @@ export type CategoryType = 'IN' | 'OUT' | 'SO';
 
 export type ActivePage =
   | 'scanner'
+  | 'penerimaan'
   | 'picking_tasks'
   | 'peminjaman'
   | 'stock_opname'
@@ -33,6 +34,7 @@ export type UserRole =
 
 export type UserPermissionKey =
   | 'can_scan'
+  | 'can_penerimaan'
   | 'can_picking'
   | 'can_peminjaman'
   | 'can_view_inventory'
@@ -54,6 +56,7 @@ export type UserPermissionKey =
 
 export interface UserPermissions {
   can_scan: boolean;
+  can_penerimaan?: boolean;
   can_picking: boolean;
   can_peminjaman: boolean;
   can_view_inventory: boolean;
@@ -376,8 +379,22 @@ export interface StockOpnameQueueItem {
   created_at?: string;
 }
 
+export interface PenerimaanVariantItem {
+  warna: string;
+  size: string;
+  qty: number;
+}
+
+export interface PenerimaanProdukBlock {
+  id: string | number;
+  kode_produksi: string;
+  catatan?: string;
+  foto_url?: string;
+  variants: PenerimaanVariantItem[];
+}
+
 export interface PenerimaanProduksiItem {
-  id?: string;
+  id?: string | number;
   sheet_row?: number;
   tanggal_penerimaan: string;
   kategori: string; // 'Lokal CMT' | 'Kargo'
@@ -390,6 +407,16 @@ export interface PenerimaanProduksiItem {
   keterangan?: string;
   operator: string;
   created_at?: string;
+}
+
+export interface SimpanPenerimaanPayload {
+  tanggal: string;
+  kategori: 'Lokal CMT' | 'Kargo' | string;
+  no_surat_jalan: string;
+  keterangan?: string;
+  foto_url?: string;
+  produk_list?: PenerimaanProdukBlock[];
+  items?: Partial<PenerimaanProduksiItem>[];
 }
 
 export type PickingStatus = 'PENDING' | 'SEDANG PICKING' | 'TERCETAK' | 'SELESAI';

@@ -28,6 +28,7 @@ import {
   BarChart3,
   Users,
   Scissors,
+  Truck,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -75,6 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const userIsAdmin = isSuperadmin(session);
   const canScan = userIsAdmin || hasPermission(session, 'can_scan');
+  const canPenerimaan = userIsAdmin || hasPermission(session, 'can_penerimaan') || hasPermission(session, 'can_scan');
   const canPicking = userIsAdmin || hasPermission(session, 'can_picking');
   const canPeminjaman = userIsAdmin || hasPermission(session, 'can_peminjaman');
   const canViewInventory = userIsAdmin || hasPermission(session, 'can_view_inventory');
@@ -84,6 +86,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
+    {
+      id: 'penerimaan' as ActivePage,
+      label: 'Penerimaan Barang',
+      shortLabel: 'Penerimaan',
+      icon: Truck,
+      description: 'Kedatangan Lokal CMT & Kargo',
+      access: canPenerimaan,
+    },
     {
       id: 'scanner' as ActivePage,
       label: 'Scanner Barcode',
