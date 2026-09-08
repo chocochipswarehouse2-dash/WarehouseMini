@@ -19,8 +19,9 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  MapPin,
 } from 'lucide-react';
-import { ProductItem, PickingListItem } from '../types';
+import { ProductItem, PickingListItem, StockRealtimeItem } from '../types';
 import { createPickingSuratJalanSupabase, isWarehouseLocation, fetchStockForSkus } from '../services/supabase';
 
 interface ParsedSJItem {
@@ -31,6 +32,14 @@ interface ParsedSJItem {
   lokasi: string;
   category?: string;
   price?: string | number;
+}
+
+interface ProductLocationInfo {
+  lokasi: string;
+  qty?: number;
+  isPrimary?: boolean;
+  source?: 'REALTIME_STOCK' | 'CATALOG' | 'SJ';
+  area?: string;
 }
 
 interface ParsedSJGroup {
@@ -67,6 +76,101 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
   const [parsedGroups, setParsedGroups] = useState<ParsedSJGroup[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
+
+  // Helper: Extract warehouse locations that actually have physical stock > 0
+  const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) return [];
+    const map = new Map<string, ProductLocationInfo>();
+
+    // 1. Authoritative check: live Supabase view_stok_realtime data
+    const isRealtimeChecked = cleanSku in realtimeSkuStocks;
+    if (isRealtimeChecked) {
+      const realtimeList = realtimeSkuStocks[cleanSku] || [];
+      // ONLY recommend warehouse locations that currently have physical stock (sisa_stok > 0)!
+      realtimeList.forEach((stk) => {
+        const loc = String(stk.lokasi || '').trim().toUpperCase();
+        const qty = Number(stk.sisa_stok) || 0;
+        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+          const existing = map.get(loc);
+          if (existing) {
+            existing.qty = (existing.qty || 0) + qty;
+          } else {
+            map.set(loc, {
+              lokasi: loc,
+              qty: qty,
+              isPrimary: false,
+              source: 'REALTIME_STOCK',
+              area: stk.area || 'Warehouse',
+            });
+          }
+        }
+      });
+
+      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
+      if (sorted.length > 0) {
+        sorted[0].isPrimary = true;
+      }
+      return sorted;
+    }
+
+    // 2. Fallback only while realtime data is still loading
+    const strItemLokasi = String(itemLokasi || '').trim();
+    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--') {
+      const parts = strItemLokasi
+        .split(/[,/;\n|]+/)
+        .map((s) => String(s || '').trim().toUpperCase())
+        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
+      parts.forEach((loc) => {
+        map.set(loc, {
+          lokasi: loc,
+          isPrimary: map.size === 0,
+          source: 'SJ',
+        });
+      });
+    }
+
+    const catMatch = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
+    if (catMatch && Array.isArray(catMatch.locList)) {
+      catMatch.locList.forEach((itemLoc) => {
+        if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
+          const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
+          const qty = Number(itemLoc.qty) || 0;
+          if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
+            if (!map.has(loc)) {
+              map.set(loc, {
+                lokasi: loc,
+                qty: qty,
+                isPrimary: map.size === 0,
+                source: 'CATALOG',
+              });
+            }
+          }
+        }
+      });
+    }
+
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
+    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    return allLocs;
+  };
+
+  // Helper: Retrieve all recorded warehouse locations that currently have 0 stock
+  const getRecordedEmptyLocations = (sku: string): string[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku || !(cleanSku in realtimeSkuStocks)) return [];
+    const list = realtimeSkuStocks[cleanSku] || [];
+    const emptyLocs: string[] = [];
+    list.forEach((stk) => {
+      const loc = String(stk.lokasi || '').trim().toUpperCase();
+      const qty = Number(stk.sisa_stok) || 0;
+      if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty <= 0) {
+        if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
+      }
+    });
+    return emptyLocs;
+  };
 
   // Manual Form State
   const [manualSJ, setManualSJ] = useState('');
@@ -343,33 +447,30 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
           try {
             const realtimeStocks = await fetchStockForSkus(allSkusToFetch);
             
-            // Map SKUs to their primary warehouse location
-            const skuLocMap = new Map<string, string>();
-            realtimeStocks.forEach(stk => {
-              const sku = stk.sku.toUpperCase();
-              const loc = (stk.lokasi || '').trim().toUpperCase();
-              // Keep the first warehouse location encountered or aggregate them
-              if (loc && isWarehouseLocation(loc, stk.area)) {
-                if (!skuLocMap.has(sku)) {
-                  skuLocMap.set(sku, loc);
-                } else {
-                  // If we want to append other locations as well
-                  const existing = skuLocMap.get(sku)!;
-                  if (!existing.includes(loc)) {
-                    skuLocMap.set(sku, `${existing}, ${loc}`);
-                  }
-                }
-              }
+            const map: Record<string, StockRealtimeItem[]> = {};
+            allSkusToFetch.forEach(s => {
+              map[s.toUpperCase().trim()] = [];
             });
+            realtimeStocks.forEach(stk => {
+              const key = stk.sku.toUpperCase().trim();
+              if (!map[key]) map[key] = [];
+              map[key].push(stk);
+            });
+            setRealtimeSkuStocks(map);
 
-            // Update parsed list with real locations
+            // Update parsed list with real warehouse locations that have stock > 0
             parsedList.forEach(g => {
               g.items.forEach(it => {
-                if (it.lokasi === '-' || !it.lokasi) {
-                  const fetchedLoc = skuLocMap.get(it.sku);
-                  if (fetchedLoc) {
-                    it.lokasi = fetchedLoc;
-                  }
+                const skuUpper = it.sku.toUpperCase().trim();
+                const stockList = map[skuUpper] || [];
+                const validStockLocs = stockList
+                  .filter(stk => stk.lokasi && stk.lokasi !== '-' && stk.lokasi !== '--' && isWarehouseLocation(stk.lokasi, stk.area) && (Number(stk.sisa_stok) || 0) > 0)
+                  .sort((a, b) => (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0));
+                
+                if (validStockLocs.length > 0) {
+                  it.lokasi = validStockLocs.map(l => `${l.lokasi} (${l.sisa_stok} pcs)`).join(', ');
+                } else if (skuUpper in map) {
+                  it.lokasi = 'KOSONG';
                 }
               });
             });
@@ -398,6 +499,20 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     groups.forEach((g) => {
       let rowsHtml = '';
       g.items.forEach((it, idx) => {
+        const cleanSku = it.sku.toUpperCase().trim();
+        const locs = getProductLocations(cleanSku, it.lokasi);
+        let locText = '-';
+        let isKosong = false;
+        if (locs.length > 0) {
+          locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        } else if (cleanSku in realtimeSkuStocks) {
+          const empty = getRecordedEmptyLocations(cleanSku);
+          locText = empty.length > 0 ? `KOSONG (Rak: ${empty.join(', ')})` : 'KOSONG (0 pcs)';
+          isKosong = true;
+        } else if (it.lokasi && it.lokasi !== '-' && it.lokasi !== 'KOSONG') {
+          locText = it.lokasi;
+        }
+
         rowsHtml += `
           <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
             <td style="padding: 6px 8px; text-align: center; color: #64748b;">${idx + 1}</td>
@@ -405,7 +520,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             <td style="padding: 6px 8px; color: #1e293b; font-weight: 600;">${it.nama}</td>
             <td style="padding: 6px 8px; text-align: center; font-weight: 700;">${it.size || '-'}</td>
             <td style="padding: 6px 8px; text-align: center; font-weight: 800; color: #ff7a00; font-size: 12px;">${it.qty}</td>
-            <td style="padding: 6px 8px; text-align: center; font-weight: 700; background: #f8fafc;">${it.lokasi || '-'}</td>
+            <td style="padding: 6px 8px; text-align: center; font-weight: 700; background: #f8fafc; color: ${isKosong ? '#e11d48' : '#047857'};">${locText}</td>
             <td style="padding: 6px 8px; text-align: center; width: 40px;"><div style="width: 14px; height: 14px; border: 1.5px solid #94a3b8; border-radius: 3px; margin: 0 auto;"></div></td>
           </tr>
         `;
@@ -540,13 +655,20 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     try {
       const allCreatedItems: PickingListItem[] = [];
       for (const group of groupsToSave) {
-        const formattedItems = group.items.map((it) => ({
-          sku: it.sku,
-          nama_produk: it.nama,
-          size: it.size || '-',
-          lokasi: it.lokasi || 'A-01',
-          qty_req: it.qty,
-        }));
+        const formattedItems = group.items.map((it) => {
+          const cleanSku = it.sku.toUpperCase().trim();
+          const locs = getProductLocations(cleanSku, it.lokasi);
+          const primaryLoc = locs.length > 0 
+            ? locs[0].lokasi 
+            : (it.lokasi && it.lokasi !== 'KOSONG' && it.lokasi !== '-' ? it.lokasi : 'A-01');
+          return {
+            sku: it.sku,
+            nama_produk: it.nama,
+            size: it.size || '-',
+            lokasi: primaryLoc,
+            qty_req: it.qty,
+          };
+        });
 
         const res = await createPickingSuratJalanSupabase(group.noSJ, group.tujuan, formattedItems);
         if (res && res.createdItems) {
@@ -586,20 +708,47 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     const next = [...manualRows];
     next[index] = { ...next[index], [field]: value };
 
-    if (field === 'sku' && productCatalog.length > 0) {
+    if (field === 'sku') {
       const cleanSku = String(value).trim().toUpperCase();
-      const found = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
-      if (found) {
-        next[index].nama_produk = found.p || found.n || '';
-        next[index].size = found.s || '-';
-        if (found.lokasi) {
-          const parts = found.lokasi
-            .split(/[,/;\n|]+/)
-            .map((s) => s.trim().toUpperCase())
-            .filter((loc) => loc && isWarehouseLocation(loc));
-          next[index].lokasi = parts.length > 0 ? parts.join(', ') : '-';
-        } else {
-          next[index].lokasi = '-';
+      if (cleanSku) {
+        fetchStockForSkus([cleanSku])
+          .then((stocks) => {
+            setRealtimeSkuStocks((prev) => ({
+              ...prev,
+              [cleanSku]: stocks.filter((s) => (s.sku || '').toUpperCase().trim() === cleanSku),
+            }));
+            const validStockLocs = stocks
+              .filter(
+                (stk) =>
+                  stk.lokasi &&
+                  stk.lokasi !== '-' &&
+                  stk.lokasi !== '--' &&
+                  isWarehouseLocation(stk.lokasi, stk.area) &&
+                  (Number(stk.sisa_stok) || 0) > 0
+              )
+              .sort((a, b) => (Number(b.sisa_stok) || 0) - (Number(a.sisa_stok) || 0));
+
+            setManualRows((currentRows) => {
+              if (currentRows[index]?.sku?.trim().toUpperCase() === cleanSku) {
+                const updated = [...currentRows];
+                if (validStockLocs.length > 0) {
+                  updated[index].lokasi = validStockLocs.map((l) => `${l.lokasi} (${l.sisa_stok} pcs)`).join(', ');
+                } else {
+                  updated[index].lokasi = 'KOSONG (0 pcs)';
+                }
+                return updated;
+              }
+              return currentRows;
+            });
+          })
+          .catch((err) => console.warn('Gagal memuat stok:', err));
+      }
+
+      if (productCatalog.length > 0) {
+        const found = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
+        if (found) {
+          next[index].nama_produk = found.p || found.n || '';
+          next[index].size = found.s || '-';
         }
       }
     }
@@ -847,30 +996,70 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                             <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
                               <div className="grid grid-cols-12 text-[10px] font-extrabold uppercase text-slate-400 px-2">
                                 <span className="col-span-3">SKU</span>
-                                <span className="col-span-5">Nama Produk</span>
-                                <span className="col-span-2 text-center">Rak Lokasi</span>
+                                <span className="col-span-4">Nama Produk</span>
+                                <span className="col-span-3 text-center">Lokasi & Sisa Stok</span>
                                 <span className="col-span-2 text-right">Target Qty</span>
                               </div>
-                              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                                {group.items.map((item, itIdx) => (
-                                  <div
-                                    key={itIdx}
-                                    className="grid grid-cols-12 text-xs py-1.5 px-2 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200/60 dark:border-slate-800/80 items-center font-medium"
-                                  >
-                                    <span className="col-span-3 font-mono font-bold text-slate-800 dark:text-slate-200 text-[11px] truncate">
-                                      {item.sku}
-                                    </span>
-                                    <span className="col-span-5 text-slate-700 dark:text-slate-300 text-[11px] truncate">
-                                      {item.nama}
-                                    </span>
-                                    <span className="col-span-2 text-center font-extrabold text-[11px] text-[#ff7a00]">
-                                      {item.lokasi || '-'}
-                                    </span>
-                                    <span className="col-span-2 text-right font-black text-xs text-slate-900 dark:text-white">
-                                      {item.qty} pcs
-                                    </span>
-                                  </div>
-                                ))}
+                              <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                                {group.items.map((item, itIdx) => {
+                                  const cleanSku = item.sku.toUpperCase().trim();
+                                  const locs = getProductLocations(cleanSku, item.lokasi);
+                                  const isLoaded = cleanSku in realtimeSkuStocks;
+                                  const emptyRacks = getRecordedEmptyLocations(cleanSku);
+
+                                  return (
+                                    <div
+                                      key={itIdx}
+                                      className="grid grid-cols-12 text-xs py-1.5 px-2 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200/60 dark:border-slate-800/80 items-center font-medium gap-1"
+                                    >
+                                      <span className="col-span-3 font-mono font-bold text-slate-800 dark:text-slate-200 text-[11px] truncate">
+                                        {item.sku}
+                                      </span>
+                                      <span className="col-span-4 text-slate-700 dark:text-slate-300 text-[11px] truncate" title={item.nama}>
+                                        {item.nama}
+                                      </span>
+                                      <div className="col-span-3 flex flex-wrap items-center justify-center gap-1">
+                                        {locs.length > 0 ? (
+                                          locs.map((l, lIdx) => (
+                                            <span
+                                              key={lIdx}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-mono font-bold text-[10px] border border-emerald-500/30"
+                                              title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
+                                            >
+                                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                              <span>{l.lokasi}</span>
+                                              <span className="text-[9px] font-black bg-emerald-600/20 px-1 rounded text-emerald-900 dark:text-emerald-100">
+                                                {l.qty}
+                                              </span>
+                                            </span>
+                                          ))
+                                        ) : isLoaded ? (
+                                          <span
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                            title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
+                                          >
+                                            <AlertTriangle className="w-2.5 h-2.5 text-rose-500 shrink-0" />
+                                            <span>KOSONG (0)</span>
+                                            {emptyRacks.length > 0 && (
+                                              <span className="text-[8px] text-rose-500/80 font-mono">
+                                                ({emptyRacks.join(',')})
+                                              </span>
+                                            )}
+                                          </span>
+                                        ) : item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? (
+                                          <span className="font-mono font-bold text-[10px] text-[#ff7a00]">
+                                            {item.lokasi}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 italic">-</span>
+                                        )}
+                                      </div>
+                                      <span className="col-span-2 text-right font-black text-xs text-slate-900 dark:text-white">
+                                        {item.qty} pcs
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}

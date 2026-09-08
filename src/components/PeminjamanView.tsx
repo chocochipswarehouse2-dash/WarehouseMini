@@ -30,6 +30,7 @@ import {
   ExternalLink,
   MessageSquare,
   Loader2,
+  MapPin,
 } from 'lucide-react';
 import {
   sendPeminjamanAutoWhatsApp,
@@ -40,7 +41,7 @@ import {
   getFonnteConfig,
   normalizeWhatsAppNumber,
 } from '../services/whatsapp';
-import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem } from '../types';
+import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem, StockRealtimeItem } from '../types';
 import {
   fetchPeminjamanFromSupabase,
   savePeminjamanToSupabase,
@@ -49,6 +50,8 @@ import {
   getSupabaseClient,
   fetchRealtimeChannelStocksSupabase,
   fetchChannelStocksBySkus,
+  fetchStockForSkus,
+  isWarehouseLocation,
   supabaseFetch,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
@@ -58,6 +61,14 @@ import {
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
+
+interface ProductLocationInfo {
+  lokasi: string;
+  qty?: number;
+  isPrimary?: boolean;
+  source?: 'REALTIME_STOCK' | 'CATALOG' | 'SJ';
+  area?: string;
+}
 
 interface PeminjamanViewProps {
   session: UserSession | null;
@@ -124,6 +135,147 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const [activeComboIndex, setActiveComboIndex] = useState<number>(-1);
   const [inputSearchTerm, setInputSearchTerm] = useState<{ [id: string]: string }>({});
+  const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
+
+  // Helper to extract warehouse locations with stock > 0
+  const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) return [];
+    const map = new Map<string, ProductLocationInfo>();
+
+    // 1. Authoritative check: live Supabase view_stok_realtime data
+    const isRealtimeChecked = cleanSku in realtimeSkuStocks;
+    if (isRealtimeChecked) {
+      const realtimeList = realtimeSkuStocks[cleanSku] || [];
+      // ONLY recommend warehouse locations that currently have physical stock (sisa_stok > 0)!
+      realtimeList.forEach((stk) => {
+        const loc = String(stk.lokasi || '').trim().toUpperCase();
+        const qty = Number(stk.sisa_stok) || 0;
+        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+          const existing = map.get(loc);
+          if (existing) {
+            existing.qty = (existing.qty || 0) + qty;
+          } else {
+            map.set(loc, {
+              lokasi: loc,
+              qty: qty,
+              isPrimary: false,
+              source: 'REALTIME_STOCK',
+              area: stk.area || 'Warehouse',
+            });
+          }
+        }
+      });
+
+      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
+      if (sorted.length > 0) {
+        sorted[0].isPrimary = true;
+      }
+      return sorted;
+    }
+
+    // 2. Check channelStocks if available
+    const csMatch = channelStocks.find((cs) => (cs.sku || '').toUpperCase().trim() === cleanSku);
+    if (csMatch && (csMatch.whQty || 0) > 0 && csMatch.whLocStr) {
+      const parts = csMatch.whLocStr
+        .split(/[,/;\n|]+/)
+        .map((s) => String(s || '').trim().toUpperCase())
+        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
+      parts.forEach((loc) => {
+        map.set(loc, {
+          lokasi: loc,
+          qty: csMatch.whQty,
+          isPrimary: map.size === 0,
+          source: 'REALTIME_STOCK',
+        });
+      });
+      if (map.size > 0) return Array.from(map.values());
+    }
+
+    // 3. Fallback only while realtime data is still loading
+    const strItemLokasi = String(itemLokasi || '').trim();
+    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--' && !strItemLokasi.toUpperCase().includes('BLOK F')) {
+      const parts = strItemLokasi
+        .split(/[,/;\n|]+/)
+        .map((s) => String(s || '').trim().toUpperCase())
+        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
+      parts.forEach((loc) => {
+        map.set(loc, {
+          lokasi: loc,
+          isPrimary: map.size === 0,
+          source: 'SJ',
+        });
+      });
+    }
+
+    const catMatch = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
+    if (catMatch && Array.isArray(catMatch.locList)) {
+      catMatch.locList.forEach((itemLoc) => {
+        if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
+          const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
+          const qty = Number(itemLoc.qty) || 0;
+          if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
+            if (!map.has(loc)) {
+              map.set(loc, {
+                lokasi: loc,
+                qty: qty,
+                isPrimary: map.size === 0,
+                source: 'CATALOG',
+              });
+            }
+          }
+        }
+      });
+    }
+
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
+    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    return allLocs;
+  };
+
+  // Helper to get recorded rack locations that have 0 stock
+  const getRecordedEmptyLocations = (sku: string): string[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku || !(cleanSku in realtimeSkuStocks)) return [];
+    const list = realtimeSkuStocks[cleanSku] || [];
+    const emptyLocs: string[] = [];
+    list.forEach((stk) => {
+      const loc = String(stk.lokasi || '').trim().toUpperCase();
+      const qty = Number(stk.sisa_stok) || 0;
+      if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty <= 0) {
+        if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
+      }
+    });
+    return emptyLocs;
+  };
+
+  // Automatically fetch realtime warehouse stocks for all SKUs in the loan form
+  const formSkusKey = useMemo(() => {
+    return items
+      .map((it) => (it.sku || '').trim().toUpperCase())
+      .filter(Boolean)
+      .sort()
+      .join(',');
+  }, [items]);
+
+  useEffect(() => {
+    const skus = items.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean);
+    const uniqueSkus = Array.from(new Set(skus)).filter((s) => !(s in realtimeSkuStocks));
+    if (!uniqueSkus.length) return;
+
+    fetchStockForSkus(uniqueSkus)
+      .then((stocks) => {
+        const map: Record<string, StockRealtimeItem[]> = {};
+        uniqueSkus.forEach((s) => { map[s] = []; });
+        stocks.forEach((stk) => {
+          const key = (stk.sku || '').toUpperCase().trim();
+          if (!map[key]) map[key] = [];
+          map[key].push(stk);
+        });
+        setRealtimeSkuStocks((prev) => ({ ...prev, ...map }));
+      })
+      .catch((err) => console.warn('Gagal memuat stok lokasi realtime peminjaman:', err));
+  }, [formSkusKey]);
   
   // Load real channel stocks from Supabase
   const loadChannelStocks = async (showToast = false, keyword?: string) => {
@@ -664,12 +816,20 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             ? rawSize 
             : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
           const formattedNama = formatProductNameWithSize(it.produk, cleanSize);
+          const cleanSku = (it.sku || '').toUpperCase().trim();
+          const locs = getProductLocations(cleanSku, it.lokasi);
+          const emptyRacks = getRecordedEmptyLocations(cleanSku);
+          const primaryLoc = locs.length > 0 
+            ? locs[0].lokasi 
+            : (it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('BLOK F') 
+                ? it.lokasi 
+                : (emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'BLOK F'));
           return {
             produk: formattedNama,
             sku: it.sku || `SKU-${it.produk.slice(0, 4).toUpperCase()}`,
             size: cleanSize,
             qty: it.qty,
-            lokasi: it.lokasi || 'BLOK F',
+            lokasi: primaryLoc,
           };
         }),
         username: session?.username || 'Operator',
@@ -686,6 +846,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             ? rawSize 
             : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
           const formattedNama = formatProductNameWithSize(it.produk, cleanSize);
+          const cleanSku = (it.sku || '').toUpperCase().trim();
+          const locs = getProductLocations(cleanSku, it.lokasi);
+          const emptyRacks = getRecordedEmptyLocations(cleanSku);
+          const primaryLoc = locs.length > 0 
+            ? locs[0].lokasi 
+            : (it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('BLOK F') 
+                ? it.lokasi 
+                : (emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'BLOK F'));
           return {
             no_sj: noSps,
             tanggal: tglPinjam,
@@ -695,7 +863,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             size: cleanSize,
             qty_req: it.qty,
             qty_picked: 0,
-            lokasi: it.lokasi || 'BLOK F',
+            lokasi: primaryLoc,
             status: 'PENDING',
             created_at: nowIso,
           };
@@ -967,18 +1135,32 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
 
     const itemsRows = record.items
-      .map(
-        (it, idx) => `
+      .map((it, idx) => {
+        const cleanSku = (it.sku || '').toUpperCase().trim();
+        const locs = getProductLocations(cleanSku, it.lokasi);
+        let locText = it.lokasi || '-';
+        let isKosong = false;
+        if (locs.length > 0) {
+          locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        } else if (cleanSku in realtimeSkuStocks) {
+          const empty = getRecordedEmptyLocations(cleanSku);
+          locText = empty.length > 0 ? `KOSONG (Rak: ${empty.join(', ')})` : 'KOSONG (0 pcs)';
+          isKosong = true;
+        } else if (it.lokasi && it.lokasi.includes('KOSONG')) {
+          isKosong = true;
+        }
+
+        return `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.produk}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1;">${it.lokasi}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: 700; color: ${isKosong ? '#e11d48' : '#047857'};">${locText}</td>
       </tr>
-    `
-      )
+    `;
+      })
       .join('');
 
     const qrText = encodeURIComponent(`#OUT "Peminjaman Invoice ${record.noPeminjaman}"`);
@@ -1376,21 +1558,68 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
                           {/* Selected Item Detail preview card */}
                           {item.produk && item.sku && (
-                            <div className="mt-1.5 px-2.5 py-1.5 bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800 rounded-lg flex items-center justify-between text-xs">
-                              <div className="min-w-0 pr-2">
-                                <div className="font-bold text-slate-900 dark:text-slate-100 whitespace-normal break-words leading-tight text-[11px]">
-                                  {item.produk}
+                            <div className="mt-1.5 px-2.5 py-1.5 bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800 rounded-lg flex flex-col gap-1.5 text-xs">
+                              <div className="flex items-center justify-between min-w-0">
+                                <div className="min-w-0 pr-2">
+                                  <div className="font-bold text-slate-900 dark:text-slate-100 whitespace-normal break-words leading-tight text-[11px]">
+                                    {item.produk}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                    <span>SKU: <b className="text-slate-700 dark:text-slate-300">{item.sku}</b></span>
+                                    <span>&bull;</span>
+                                    <span>Size: <b className="text-emerald-600 dark:text-emerald-400">{item.size || 'ALL'}</b></span>
+                                  </div>
                                 </div>
-                                <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5">
-                                  <span>SKU: <b className="text-slate-700 dark:text-slate-300">{item.sku}</b></span>
-                                  <span>&bull;</span>
-                                  <span>Size: <b className="text-emerald-600 dark:text-emerald-400">{item.size || 'ALL'}</b></span>
+                                <div className="text-right shrink-0">
+                                  <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
+                                    {(item.stokMap || 0) > 0 ? `${item.stokMap} pcs` : 'Sold'}
+                                  </span>
                                 </div>
                               </div>
-                              <div className="text-right shrink-0">
-                                <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
-                                  {(item.stokMap || 0) > 0 ? `${item.stokMap} pcs` : 'Sold'}
-                                </span>
+                              
+                              {/* Stock Locations Detail Row */}
+                              <div className="flex flex-wrap items-center gap-1 mt-0.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
+                                {(() => {
+                                  const cleanSku = item.sku.toUpperCase().trim();
+                                  const locs = getProductLocations(cleanSku, item.lokasi);
+                                  const emptyRacks = getRecordedEmptyLocations(cleanSku);
+                                  const isLoaded = cleanSku in realtimeSkuStocks;
+                                  
+                                  if (locs.length > 0) {
+                                    return locs.map((l, lIdx) => (
+                                      <span
+                                        key={lIdx}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-mono font-bold text-[10px] border border-emerald-500/30"
+                                        title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
+                                      >
+                                        <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        <span>{l.lokasi}</span>
+                                        <span className="text-[9px] font-black bg-emerald-600/20 px-1 rounded text-emerald-900 dark:text-emerald-100">
+                                          {l.qty}
+                                        </span>
+                                      </span>
+                                    ));
+                                  } else if (isLoaded) {
+                                    return (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                        title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
+                                      >
+                                        <span>KOSONG (0)</span>
+                                        {emptyRacks.length > 0 && <span className="text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
+                                      </span>
+                                    );
+                                  } else if (item.lokasi && item.lokasi !== '-' && !item.lokasi.includes('KOSONG')) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 font-mono font-bold text-[10px] border border-amber-500/30">
+                                        <MapPin className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                        <span>{item.lokasi}</span>
+                                      </span>
+                                    );
+                                  } else {
+                                    return <span className="text-[10px] text-slate-400 italic">Mencari lokasi gudang...</span>;
+                                  }
+                                })()}
                               </div>
                             </div>
                           )}
@@ -2006,14 +2235,53 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
-                      {selectedRecordForModal.items.map((it, idx) => (
-                        <tr key={idx}>
-                          <td className="p-2 font-sans font-semibold text-slate-800 dark:text-slate-200">{it.produk}</td>
-                          <td className="p-2 text-center text-slate-400">{it.size}</td>
-                          <td className="p-2 text-center font-bold text-emerald-400">{it.qty}</td>
-                          <td className="p-2 text-slate-400">{it.lokasi}</td>
-                        </tr>
-                      ))}
+                      {selectedRecordForModal.items.map((it, idx) => {
+                        const cleanSku = (it.sku || '').toUpperCase().trim();
+                        const locs = getProductLocations(cleanSku, it.lokasi);
+                        const isLoaded = cleanSku in realtimeSkuStocks;
+                        const emptyRacks = getRecordedEmptyLocations(cleanSku);
+
+                        return (
+                          <tr key={idx}>
+                            <td className="p-2 font-sans font-semibold text-slate-800 dark:text-slate-200">{it.produk}</td>
+                            <td className="p-2 text-center text-slate-400">{it.size}</td>
+                            <td className="p-2 text-center font-bold text-emerald-400">{it.qty}</td>
+                            <td className="p-2 text-slate-400">
+                              <div className="flex flex-wrap items-center gap-1">
+                                {locs.length > 0 ? (
+                                  locs.map((l, lIdx) => (
+                                    <span
+                                      key={lIdx}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-mono font-bold text-[10px] border border-emerald-500/30"
+                                      title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
+                                    >
+                                      <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                      <span>{l.lokasi}</span>
+                                      <span className="text-[9px] font-black bg-emerald-600/20 px-1 rounded text-emerald-900 dark:text-emerald-100">
+                                        {l.qty}
+                                      </span>
+                                    </span>
+                                  ))
+                                ) : isLoaded ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                    title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
+                                  >
+                                    <span>KOSONG (0)</span>
+                                    {emptyRacks.length > 0 && <span className="text-[8px] text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
+                                  </span>
+                                ) : it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('KOSONG') ? (
+                                  <span className="font-mono font-bold text-[10px] text-amber-500">{it.lokasi}</span>
+                                ) : it.lokasi && it.lokasi.includes('KOSONG') ? (
+                                  <span className="font-mono font-bold text-[10px] text-rose-500">{it.lokasi}</span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">-</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
