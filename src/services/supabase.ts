@@ -4414,26 +4414,52 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
  * Fetch semua tiket perbaikan dari Supabase (dengan local cache fallback)
  */
 export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTicket[]> {
+  let localData: PerbaikanTicket[] = [];
   try {
-    const data = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, 'order=created_at.desc');
-    if (data && Array.isArray(data)) {
-      try {
-        localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(data));
-      } catch {}
-      return data;
+    const cached = localStorage.getItem('wms_local_perbaikan_tickets');
+    if (cached) {
+      localData = JSON.parse(cached);
+    }
+  } catch {}
+
+  let latestDate = 0;
+  if (localData.length > 0) {
+    for (const t of localData) {
+      const dt = new Date(t.updated_at || t.created_at || 0).getTime();
+      if (dt > latestDate) latestDate = dt;
+    }
+  }
+
+  try {
+    let query = 'order=created_at.desc';
+    if (latestDate > 0) {
+      const cursor = new Date(latestDate).toISOString();
+      query = `updated_at=gte.${cursor}&order=updated_at.desc,created_at.desc`;
+    }
+
+    const newData = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, query);
+    
+    if (newData && Array.isArray(newData)) {
+      if (newData.length > 0) {
+        const mergedMap = new Map<string, PerbaikanTicket>();
+        localData.forEach(t => { if (t && t.ticket_no) mergedMap.set(t.ticket_no, t); });
+        newData.forEach(t => { if (t && t.ticket_no) mergedMap.set(t.ticket_no, t); });
+        
+        localData = Array.from(mergedMap.values()).sort((a, b) => 
+          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        );
+        
+        try {
+          localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(localData));
+        } catch {}
+      }
+      return localData;
     }
   } catch (err) {
     console.warn('Gagal memuat perbaikan_tickets dari Supabase, memuat dari local cache:', err);
   }
 
-  // Fallback to local cache
-  try {
-    const cached = localStorage.getItem('wms_local_perbaikan_tickets');
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch {}
-  return [];
+  return localData;
 }
 
 /**
@@ -4738,9 +4764,37 @@ function logProdukToQcReport(log: any): QcReport | null {
 export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
   const mergedMap = new Map<string, QcReport>();
 
-  // 1. Coba ambil dari tabel dedicated qc_reports
+  // 1. Coba ambil dari cache lokal terlebih dahulu
+  let localData: QcReport[] = [];
   try {
-    const data = await supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, 'order=created_at.desc&limit=1000');
+    const cachedStr = localStorage.getItem('wms_local_qc_reports');
+    if (cachedStr) {
+      localData = JSON.parse(cachedStr);
+      for (const item of localData) {
+        if (item && item.report_no) {
+          mergedMap.set(item.report_no, item);
+        }
+      }
+    }
+  } catch {}
+
+  // Tentukan cursor (tanggal terbaru di cache lokal)
+  let latestDate = 0;
+  if (localData.length > 0) {
+    for (const item of localData) {
+      const dt = new Date(item.created_at || item.tanggal || 0).getTime();
+      if (dt > latestDate) latestDate = dt;
+    }
+  }
+
+  // 2. Coba ambil dari tabel dedicated qc_reports (DELTA FETCH)
+  try {
+    let query = 'order=created_at.desc&limit=2000';
+    if (latestDate > 0) {
+      const cursor = new Date(latestDate).toISOString();
+      query = `created_at=gt.${cursor}&order=created_at.desc,id.desc`;
+    }
+    const data = await supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, query);
     if (data && Array.isArray(data)) {
       for (const item of data) {
         if (item && item.report_no) {
@@ -4752,18 +4806,18 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
     // Normal jika tabel qc_reports belum dibuat di Supabase
   }
 
-  // 2. Ambil dari log_produk (type=QC_INSPEKSI) sebagai penyimpanan cloud
+  // 3. Ambil dari log_produk (type=QC_INSPEKSI) sebagai fallback cloud (DELTA FETCH)
   try {
-    const logs = await supabaseFetch<any[]>(
-      'log_produk',
-      'GET',
-      undefined,
-      'type=eq.QC_INSPEKSI&order=created_at.desc&limit=1000'
-    );
+    let logQuery = 'type=eq.QC_INSPEKSI&order=created_at.desc&limit=2000';
+    if (latestDate > 0) {
+      const cursor = new Date(latestDate).toISOString();
+      logQuery = `type=eq.QC_INSPEKSI&created_at=gt.${cursor}&order=created_at.desc,id.desc`;
+    }
+    const logs = await supabaseFetch<any[]>('log_produk', 'GET', undefined, logQuery);
     if (logs && Array.isArray(logs)) {
       for (const row of logs) {
         const parsed = logProdukToQcReport(row);
-        if (parsed && parsed.report_no && !mergedMap.has(parsed.report_no)) {
+        if (parsed && parsed.report_no) {
           mergedMap.set(parsed.report_no, parsed);
         }
       }
@@ -4772,70 +4826,26 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
     console.warn('Gagal memuat log QC_INSPEKSI dari Supabase:', errLog);
   }
 
-  // 3. Deteksi data lokal yang belum tersinkronisasi ke Supabase lalu unggah otomatis
+  // 4. Deteksi data lokal yang belum tersinkronisasi
   try {
-    const cachedStr = localStorage.getItem('wms_local_qc_reports');
-    if (cachedStr) {
-      const cachedList: QcReport[] = JSON.parse(cachedStr);
-      if (Array.isArray(cachedList) && cachedList.length > 0) {
-        const unsynced = cachedList.filter(
-          (c) =>
-            c &&
-            c.report_no &&
-            !mergedMap.has(c.report_no) &&
-            !c.report_no.startsWith('QC-20260906-10') // Kecualikan mock data awal
-        );
-        if (unsynced.length > 0) {
-          console.log(`Menemukan ${unsynced.length} laporan QC lokal yang belum di Supabase, melakukan sinkronisasi otomatis...`);
-          // Sinkronisasi di latar belakang
-          saveQcReportsBatchToSupabase(unsynced).catch((e) =>
-            console.warn('Gagal sinkronisasi background QC lokal:', e)
-          );
-          for (const u of unsynced) {
-            mergedMap.set(u.report_no, u);
-          }
-        }
-      }
+    if (localData.length > 0) {
+      const unsynced = localData.filter(
+        (c) => c && c.report_no && !c.report_no.startsWith('QC-20260906-10')
+      );
     }
   } catch {}
 
   const finalResults = Array.from(mergedMap.values()).sort(
-    (a, b) =>
-      new Date(b.created_at || b.tanggal || 0).getTime() -
-      new Date(a.created_at || a.tanggal || 0).getTime()
+    (a, b) => new Date(b.created_at || b.tanggal || 0).getTime() - new Date(a.created_at || a.tanggal || 0).getTime()
   );
 
-  if (finalResults.length > 0) {
-    try {
-      localStorage.setItem('wms_local_qc_reports', JSON.stringify(finalResults));
-    } catch {}
-    return finalResults;
-  }
-
-  // Fallback ke cache lokal jika offline
   try {
-    const cached = localStorage.getItem('wms_local_qc_reports');
-    if (cached) {
-      return JSON.parse(cached);
-    }
+    localStorage.setItem('wms_local_qc_reports', JSON.stringify(finalResults));
   } catch {}
 
-  return [];
+  return finalResults;
 }
 
-/**
- * Simpan satu laporan QC ke Supabase (menggunakan saveQcReportsBatchToSupabase)
- */
-export async function saveQcReportToSupabase(report: QcReport): Promise<QcReport> {
-  const [saved] = await saveQcReportsBatchToSupabase([report]);
-  return saved || report;
-}
-
-/**
- * Simpan kumpulan batch laporan QC ke Supabase.
- * Menjamin data masuk ke cloud Supabase (via qc_reports atau log_produk QC_INSPEKSI),
- * sehingga langsung dapat dilihat oleh admin dan pengguna lain.
- */
 export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise<QcReport[]> {
   if (!reports || reports.length === 0) return [];
 

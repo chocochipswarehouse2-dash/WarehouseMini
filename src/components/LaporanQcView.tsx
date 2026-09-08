@@ -45,7 +45,6 @@ import { compressImage, formatBytes } from '../utils/imageCompressor';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
 import {
   fetchQcReportsFromSupabase,
-  saveQcReportToSupabase,
   saveQcReportsBatchToSupabase,
   deleteQcReportFromSupabase,
   savePerbaikanTicketToSupabase,
