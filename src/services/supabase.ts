@@ -4763,38 +4763,20 @@ function logProdukToQcReport(log: any): QcReport | null {
  * sehingga laporan dapat langsung terlihat oleh semua user/admin di seluruh perangkat.
  */
 export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
-  const mergedMap = new Map<string, QcReport>();
-
-  // 1. Coba ambil dari cache lokal terlebih dahulu
+  // 1. Ambil dari cache lokal terlebih dahulu
   let localData: QcReport[] = [];
   try {
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
     if (cachedStr) {
       localData = JSON.parse(cachedStr);
-      for (const item of localData) {
-        if (item && item.report_no) {
-          mergedMap.set(item.report_no, item);
-        }
-      }
     }
   } catch {}
 
-  // Tentukan cursor (tanggal terbaru di cache lokal)
-  let latestDate = 0;
-  if (localData.length > 0) {
-    for (const item of localData) {
-      const dt = new Date(item.created_at || item.tanggal || 0).getTime();
-      if (dt > latestDate) latestDate = dt;
-    }
-  }
+  const mergedMap = new Map<string, QcReport>();
 
-  // 2. Coba ambil dari tabel dedicated qc_reports (DELTA FETCH)
+  // 2. Coba ambil dari tabel dedicated qc_reports
   try {
-    let query = 'order=created_at.desc&limit=2000';
-    if (latestDate > 0) {
-      const cursor = new Date(latestDate).toISOString();
-      query = `created_at=gt.${cursor}&order=created_at.desc,id.desc`;
-    }
+    const query = 'order=created_at.desc&limit=2000';
     const data = await supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, query);
     if (data && Array.isArray(data)) {
       for (const item of data) {
@@ -4807,19 +4789,18 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
     // Normal jika tabel qc_reports belum dibuat di Supabase
   }
 
-  // 3. Ambil dari log_produk (type=QC_INSPEKSI) sebagai fallback cloud (DELTA FETCH)
+  // 3. Ambil dari log_produk (type=QC_INSPEKSI) sebagai fallback cloud
   try {
-    let logQuery = 'type=eq.QC_INSPEKSI&order=created_at.desc&limit=2000';
-    if (latestDate > 0) {
-      const cursor = new Date(latestDate).toISOString();
-      logQuery = `type=eq.QC_INSPEKSI&created_at=gt.${cursor}&order=created_at.desc,id.desc`;
-    }
+    const logQuery = 'type=eq.QC_INSPEKSI&order=created_at.desc&limit=2000';
     const logs = await supabaseFetch<any[]>('log_produk', 'GET', undefined, logQuery);
     if (logs && Array.isArray(logs)) {
       for (const row of logs) {
         const parsed = logProdukToQcReport(row);
         if (parsed && parsed.report_no) {
-          mergedMap.set(parsed.report_no, parsed);
+          // Jangan overwrite jika sudah ada di qc_reports (qc_reports lebih update)
+          if (!mergedMap.has(parsed.report_no)) {
+            mergedMap.set(parsed.report_no, parsed);
+          }
         }
       }
     }
@@ -4827,14 +4808,18 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
     console.warn('Gagal memuat log QC_INSPEKSI dari Supabase:', errLog);
   }
 
-  // 4. Deteksi data lokal yang belum tersinkronisasi
-  try {
-    if (localData.length > 0) {
-      const unsynced = localData.filter(
-        (c) => c && c.report_no && !c.report_no.startsWith('QC-20260906-10')
-      );
+  // Jika berhasil mengambil data dari server, jadikan data server sebagai sumber kebenaran (authoritative)
+  // namun pertahankan data offline/pending (id > 1000000000)
+  if (mergedMap.size > 0 || (mergedMap.size === 0 && localData.length > 0)) {
+    const remoteReportNos = new Set(Array.from(mergedMap.keys()));
+    const offlinePending = localData.filter((r) => 
+      typeof r.id === 'number' && r.id > 1000000000 && !remoteReportNos.has(r.report_no)
+    );
+
+    for (const offline of offlinePending) {
+      mergedMap.set(offline.report_no, offline);
     }
-  } catch {}
+  }
 
   const finalResults = Array.from(mergedMap.values()).sort(
     (a, b) => new Date(b.created_at || b.tanggal || 0).getTime() - new Date(a.created_at || a.tanggal || 0).getTime()
