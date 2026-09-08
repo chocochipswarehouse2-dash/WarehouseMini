@@ -1385,50 +1385,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                 </button>
               </th>
 
-              {/* STOK REAL (TOTAL FISIK GUDANG) */}
-              <th
-                rowSpan={2}
-                className="p-2.5 w-[90px] min-w-[90px] text-center border-r border-slate-200 dark:border-slate-800 align-middle bg-amber-500/10 dark:bg-amber-500/20"
-              >
-                <button
-                  type="button"
-                  onClick={() => handleToggleColumnSort('STOCK')}
-                  className="w-full flex items-center justify-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-black text-[10.5px] text-amber-800 dark:text-amber-300 uppercase tracking-tight"
-                  title="Klik untuk mengurutkan berdasarkan Total Stok Real Fisik Gudang"
-                >
-                  <span>STOK REAL</span>
-                  {sortOption === 'STOCK_ASC' ? (
-                    <ArrowUp className="w-3 h-3 text-amber-500" />
-                  ) : sortOption === 'STOCK_DESC' ? (
-                    <ArrowDown className="w-3 h-3 text-amber-500" />
-                  ) : (
-                    <ArrowUpDown className="w-3 h-3 opacity-40" />
-                  )}
-                </button>
-              </th>
-
-              {/* SELISIH REAL VS MAP DP */}
-              <th
-                rowSpan={2}
-                className="p-2 w-[75px] min-w-[75px] text-center border-r border-slate-200 dark:border-slate-800 align-middle"
-              >
-                <button
-                  type="button"
-                  onClick={() => handleToggleColumnSort('DIFF')}
-                  className="w-full flex items-center justify-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-black text-[10px] text-slate-700 dark:text-slate-300 uppercase tracking-tight"
-                  title="Klik untuk mengurutkan berdasarkan Selisih (Total Stok Real Fisik vs DP MAP)"
-                >
-                  <span>SELISIH</span>
-                  {sortOption === 'DIFF_ASC' ? (
-                    <ArrowUp className="w-3 h-3 text-amber-500" />
-                  ) : sortOption === 'DIFF_DESC' ? (
-                    <ArrowDown className="w-3 h-3 text-amber-500" />
-                  ) : (
-                    <ArrowUpDown className="w-3 h-3 opacity-40" />
-                  )}
-                </button>
-              </th>
-
               {showGudang &&
                 KOMPARASI_5.map((k) => (
                   <th
@@ -1544,47 +1500,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                     <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/70 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
                       {item.sku}
                     </span>
-                  </td>
-
-                  {/* Total Stok Real Fisik Gudang */}
-                  <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 bg-amber-500/5 dark:bg-amber-500/10">
-                    {item.totalFisikGudang > 0 ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-black font-mono bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                        {item.totalFisikGudang.toLocaleString('id-ID')}
-                      </span>
-                    ) : (
-                      <span className="text-slate-300 dark:text-slate-600 text-[10px]">0</span>
-                    )}
-                  </td>
-
-                  {/* Selisih: Total Fisik vs MAP DealPOS */}
-                  <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
-                    {(() => {
-                      const mapDp = item.komparasi.MAP.dp || 0;
-                      const diff = item.totalFisikGudang - mapDp;
-                      if (item.totalFisikGudang === 0 && mapDp === 0) {
-                        return <span className="text-slate-300 dark:text-slate-600 text-[10px]">0</span>;
-                      }
-                      if (diff === 0) {
-                        return (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" title="Stok Fisik Sesuai dengan Sistem DealPOS">
-                            ✓ 0
-                          </span>
-                        );
-                      }
-                      if (diff > 0) {
-                        return (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" title={`Stok Fisik Lebih Banyak (+${diff})`}>
-                            +{diff}
-                          </span>
-                        );
-                      }
-                      return (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black text-rose-600 dark:text-rose-400 bg-rose-500/10" title={`Stok Fisik Kurang (${diff})`}>
-                          {diff}
-                        </span>
-                      );
-                    })()}
                   </td>
 
                   {/* 5 Komparasi: MAP, LIVE, STUDIO, PERMAK, DEFECT */}
