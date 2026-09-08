@@ -4943,23 +4943,161 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
 }
 
 /**
+ * Update data laporan QC di Supabase (baik di tabel qc_reports maupun log_produk)
+ */
+export async function updateQcReportInSupabase(updatedReport: QcReport): Promise<boolean> {
+  const reportNo = updatedReport.report_no;
+  if (!reportNo) return false;
+
+  let updatedInSupabase = false;
+
+  // 1. Coba update ke tabel dedicated qc_reports
+  try {
+    const payload: any = {
+      tanggal: updatedReport.tanggal,
+      tipe_identifikasi: updatedReport.tipe_identifikasi || 'sku',
+      sku: updatedReport.sku,
+      nama_produk: updatedReport.nama_produk,
+      kode_produksi: updatedReport.kode_produksi || '',
+      warna: updatedReport.warna || '',
+      size: updatedReport.size || '-',
+      sumber_batch: updatedReport.sumber_batch,
+      status: updatedReport.status,
+      qty_diperiksa: Number(updatedReport.qty_diperiksa) || 1,
+      qty_oke: Number(updatedReport.qty_oke) || 0,
+      qty_reject: Number(updatedReport.qty_reject) || 0,
+      kategori_rusak: updatedReport.kategori_rusak || '',
+      detail_kerusakan: updatedReport.detail_kerusakan || '',
+      lokasi_barang: updatedReport.lokasi_barang || '',
+      target_penanganan: updatedReport.target_penanganan || 'REJECT',
+      foto_urls: updatedReport.foto_urls || [],
+      gdrive_link: updatedReport.gdrive_link || '',
+      catatan: updatedReport.catatan || '',
+      pic_qc: updatedReport.pic_qc,
+      perbaikan_ticket_no: updatedReport.perbaikan_ticket_no || '',
+      updated_at: new Date().toISOString(),
+    };
+
+    const res = await supabaseFetch(
+      'qc_reports',
+      'PATCH',
+      payload,
+      `report_no=eq.${encodeURIComponent(reportNo)}`
+    );
+    if (res !== null) {
+      updatedInSupabase = true;
+    }
+  } catch (err: any) {
+    const errMsg = String(err?.message || err);
+    if (!errMsg.includes('404') && !errMsg.includes('PGRST205')) {
+      try {
+        const sanitized: any = {
+          tanggal: updatedReport.tanggal,
+          sku: updatedReport.sku || updatedReport.kode_produksi,
+          nama_produk: updatedReport.nama_produk,
+          size: updatedReport.size || '-',
+          sumber_batch: updatedReport.sumber_batch,
+          status: updatedReport.status,
+          qty_diperiksa: Number(updatedReport.qty_diperiksa) || 1,
+          qty_oke: Number(updatedReport.qty_oke) || 0,
+          qty_reject: Number(updatedReport.qty_reject) || 0,
+          kategori_rusak: updatedReport.kategori_rusak || '',
+          detail_kerusakan: updatedReport.detail_kerusakan || '',
+          lokasi_barang: updatedReport.lokasi_barang || '',
+          target_penanganan: updatedReport.target_penanganan || 'REJECT',
+          foto_urls: updatedReport.foto_urls || [],
+          gdrive_link: updatedReport.gdrive_link || '',
+          catatan: updatedReport.catatan || '',
+          pic_qc: updatedReport.pic_qc,
+          perbaikan_ticket_no: updatedReport.perbaikan_ticket_no || '',
+          updated_at: new Date().toISOString(),
+        };
+        await supabaseFetch(
+          'qc_reports',
+          'PATCH',
+          sanitized,
+          `report_no=eq.${encodeURIComponent(reportNo)}`
+        );
+        updatedInSupabase = true;
+      } catch (errSanitize) {}
+    }
+  }
+
+  // 2. Update juga di log_produk jika tersimpan via fallback QC_INSPEKSI
+  try {
+    const logPayload = qcReportToLogProduk(updatedReport);
+    await supabaseFetch(
+      'log_produk',
+      'PATCH',
+      logPayload,
+      `type=eq.QC_INSPEKSI&invoice=eq.${encodeURIComponent(reportNo)}`
+    );
+  } catch (errLog) {}
+
+  // 3. Update cache lokal
+  try {
+    const cachedStr = localStorage.getItem('wms_local_qc_reports');
+    if (cachedStr) {
+      const list: QcReport[] = JSON.parse(cachedStr);
+      const idx = list.findIndex((r) => r.report_no === reportNo);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...updatedReport, updated_at: new Date().toISOString() };
+      } else {
+        list.unshift(updatedReport);
+      }
+      localStorage.setItem('wms_local_qc_reports', JSON.stringify(list));
+    }
+  } catch {}
+
+  // 4. Dispatch update event
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('wms_qc_reports_updated', { detail: { updated: updatedReport } })
+      );
+    } catch {}
+  }
+
+  return true;
+}
+
+/**
  * Hapus laporan QC dari Supabase (baik di tabel qc_reports maupun log_produk)
  */
-export async function deleteQcReportFromSupabase(reportNoOrId: string | number): Promise<boolean> {
-  const sId = String(reportNoOrId);
-  const isNum = typeof reportNoOrId === 'number' && reportNoOrId < 1000000000;
+export async function deleteQcReportFromSupabase(
+  reportNoOrId: string | number,
+  optionalId?: number | string
+): Promise<boolean> {
+  const sReportNo = String(reportNoOrId);
+  const targetId =
+    optionalId !== undefined
+      ? optionalId
+      : typeof reportNoOrId === 'number' && reportNoOrId < 1000000000
+      ? reportNoOrId
+      : undefined;
 
   // 1. Coba hapus dari tabel qc_reports
   try {
-    const query = isNum ? `id=eq.${reportNoOrId}` : `report_no=eq.${encodeURIComponent(sId)}`;
-    await supabaseFetch('qc_reports', 'DELETE', undefined, query);
-  } catch (err) {}
+    await supabaseFetch(
+      'qc_reports',
+      'DELETE',
+      undefined,
+      `report_no=eq.${encodeURIComponent(sReportNo)}`
+    );
+  } catch (err) {
+    console.warn('Delete from qc_reports by report_no failed:', err);
+  }
+
+  // Jika ada targetId numerik, coba hapus juga by id
+  if (targetId) {
+    try {
+      await supabaseFetch('qc_reports', 'DELETE', undefined, `id=eq.${targetId}`);
+    } catch (err) {}
+  }
 
   // 2. Hapus juga dari log_produk jika tersimpan via fallback QC_INSPEKSI
   try {
-    const logQuery = isNum
-      ? `type=eq.QC_INSPEKSI&id=eq.${reportNoOrId}`
-      : `type=eq.QC_INSPEKSI&invoice=eq.${encodeURIComponent(sId)}`;
+    const logQuery = `type=eq.QC_INSPEKSI&invoice=eq.${encodeURIComponent(sReportNo)}`;
     await supabaseFetch('log_produk', 'DELETE', undefined, logQuery);
   } catch (err) {}
 
@@ -4968,16 +5106,21 @@ export async function deleteQcReportFromSupabase(reportNoOrId: string | number):
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
     if (cachedStr) {
       const list: QcReport[] = JSON.parse(cachedStr);
-      const filtered = list.filter(
-        (r) => r.id !== reportNoOrId && r.report_no !== sId
-      );
+      const filtered = list.filter((r) => {
+        if (r.report_no && r.report_no === sReportNo) return false;
+        if (targetId && r.id === targetId) return false;
+        if (r.id && String(r.id) === sReportNo) return false;
+        return true;
+      });
       localStorage.setItem('wms_local_qc_reports', JSON.stringify(filtered));
     }
   } catch {}
 
   if (typeof window !== 'undefined') {
     try {
-      window.dispatchEvent(new CustomEvent('wms_qc_reports_updated', { detail: { deleted: sId } }));
+      window.dispatchEvent(
+        new CustomEvent('wms_qc_reports_updated', { detail: { deleted: sReportNo } })
+      );
     } catch {}
   }
 

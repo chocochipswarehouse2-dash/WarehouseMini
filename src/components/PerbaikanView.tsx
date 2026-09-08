@@ -50,6 +50,7 @@ import {
   recordPerbaikanStockMutation,
   getSupabaseClient,
 } from '../services/supabase';
+import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 
 interface PerbaikanViewProps {
   session: UserSession | null;
@@ -659,7 +660,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   };
 
   // Simpan Perubahan Edit Tiket (Live Supabase & Log Perpindahan Rak)
-  const handleSaveEditTicket = (e: React.FormEvent) => {
+  const handleSaveEditTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModalTicket) return;
 
@@ -667,6 +668,20 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       playErrorBeep();
       onShowToast('Akses ditolak: Anda tidak memiliki izin edit data!', 'error');
       return;
+    }
+
+    let uploadedUrls: string[] = [];
+    if (editPhotos && editPhotos.length > 0) {
+      const rawPhotos = editPhotos.map((p) => p.dataUrl);
+      try {
+        uploadedUrls = await uploadMultipleImagesToGdrive(
+          rawPhotos,
+          `EDIT_${editModalTicket.ticket_no}`
+        );
+      } catch (err) {
+        console.warn('Gagal upload ke GDrive, fallback ke lokal:', err);
+        uploadedUrls = rawPhotos;
+      }
     }
 
     const newTargetLokasi = editLokasiSekarang.trim().toUpperCase() || editModalTicket.lokasi_sekarang;
@@ -679,7 +694,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       petugas_reparasi: editPetugasReparasi.trim() || undefined,
       reparasi_catatan: editReparasiCatatan.trim() || undefined,
       biaya_reparasi: Number(editBiayaReparasi) || 0,
-      foto_urls: editPhotos.map((p) => p.dataUrl),
+      foto_urls: uploadedUrls,
       updated_at: new Date().toISOString(),
     };
 
@@ -764,7 +779,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   };
 
   // Submit Form Input Reject Baru (Pendataan & Sortir Sekaligus)
-  const handleCreateTicket = (e: React.FormEvent) => {
+  const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSku.trim()) {
       playErrorBeep();
@@ -783,6 +798,18 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         ? 'DF'
         : 'RJC';
     const newTicketNo = `${prefix}-${todayStr}-${randomSuffix}`;
+
+    // Upload foto ke Google Drive via GAS untuk menghemat 99% Egress Supabase
+    let uploadedPhotoUrls: string[] = [];
+    if (formPhotos && formPhotos.length > 0) {
+      const rawPhotos = formPhotos.map((p) => p.dataUrl);
+      try {
+        uploadedPhotoUrls = await uploadMultipleImagesToGdrive(rawPhotos, `RJC_${newTicketNo}`);
+      } catch (ePhoto) {
+        console.warn('Gagal upload ke Google Drive, fallback ke dataUrl:', ePhoto);
+        uploadedPhotoUrls = rawPhotos;
+      }
+    }
 
     const targetTahap: PerbaikanTahap =
       formTindakanSortir === 'CUCI'
@@ -830,7 +857,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       sumber_barang: formSumber,
       kategori_rusak: formKategoriRusak,
       detail_kerusakan: formDetailKerusakan.trim() || 'Produk reject baru didata',
-      foto_urls: formPhotos.map((p) => p.dataUrl),
+      foto_urls: uploadedPhotoUrls,
       tahap: targetTahap,
       status_pengerjaan: targetStatus,
       qc_pic: session?.name || session?.username || 'Kepala QC',
@@ -2224,7 +2251,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                             onClick={() => setLightboxImages(item.foto_urls)}
                             className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                           >
-                            <img src={imgUrl} alt="Foto" className="w-full h-full object-cover" />
+                            <img src={imgUrl} alt="Foto" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                           </div>
                         ))}
                       </div>
@@ -3024,7 +3051,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full overflow-y-auto max-h-[80vh] p-2">
               {lightboxImages.map((src, i) => (
                 <div key={`lightbox-img-${i}-${src.slice(0, 20)}`} className="rounded-xl overflow-hidden border border-white/20 bg-black">
-                  <img src={src} alt="Foto Kerusakan" className="w-full h-auto object-contain" />
+                  <img src={src} alt="Foto Kerusakan" referrerPolicy="no-referrer" className="w-full h-auto object-contain" />
                 </div>
               ))}
             </div>

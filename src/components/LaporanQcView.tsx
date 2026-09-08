@@ -32,6 +32,9 @@ import {
   Factory,
   Database,
   CloudCheck,
+  Pencil,
+  Edit3,
+  Lock,
 } from 'lucide-react';
 import {
   QcReport,
@@ -47,10 +50,13 @@ import {
   fetchQcReportsFromSupabase,
   saveQcReportsBatchToSupabase,
   deleteQcReportFromSupabase,
+  updateQcReportInSupabase,
   savePerbaikanTicketToSupabase,
   QC_REPORTS_SUPABASE_DDL_SQL,
 } from '../services/supabase';
 import { getAllProductsFromLocalDb } from '../services/localDb';
+import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
+import { hasPermission, isSuperadmin } from '../services/permissions';
 
 interface LaporanQcViewProps {
   session: UserSession | null;
@@ -232,6 +238,42 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   // Supabase SQL DDL Modal
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [isCopiedSql, setIsCopiedSql] = useState(false);
+
+  // Role & Permission Checks
+  const userIsAdmin =
+    isSuperadmin(session) ||
+    session?.role === 'Admin' ||
+    session?.role === 'HR & Admin' ||
+    session?.role === 'Kepala Gudang';
+  const canEditData = userIsAdmin || hasPermission(session, 'can_edit_data');
+  const canDeleteData = userIsAdmin || hasPermission(session, 'can_delete_data');
+
+  // Delete Confirmation Modal State
+  const [deleteConfirmReport, setDeleteConfirmReport] = useState<QcReport | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Edit QC Report Modal State (Akses Admin)
+  const [editingReport, setEditingReport] = useState<QcReport | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+
+  // Edit Form Fields
+  const [editNamaProduk, setEditNamaProduk] = useState<string>('');
+  const [editSku, setEditSku] = useState<string>('');
+  const [editWarna, setEditWarna] = useState<string>('');
+  const [editSize, setEditSize] = useState<string>('');
+  const [editSumberBatch, setEditSumberBatch] = useState<string>('Penerimaan CMT');
+  const [editStatus, setEditStatus] = useState<QcStatus>('OKE');
+  const [editQtyDiperiksa, setEditQtyDiperiksa] = useState<number>(1);
+  const [editQtyOke, setEditQtyOke] = useState<number>(1);
+  const [editQtyReject, setEditQtyReject] = useState<number>(0);
+  const [editKategoriRusak, setEditKategoriRusak] = useState<string>('Noda / Kotor');
+  const [editDetailKerusakan, setEditDetailKerusakan] = useState<string>('');
+  const [editLokasiBarang, setEditLokasiBarang] = useState<string>('');
+  const [editTargetPenanganan, setEditTargetPenanganan] = useState<'REJECT' | 'CUCI' | 'PERMAK' | 'DEFECT'>('REJECT');
+  const [editCatatan, setEditCatatan] = useState<string>('');
+  const [editGdriveLink, setEditGdriveLink] = useState<string>('');
+  const [editPicQc, setEditPicQc] = useState<string>('');
+  const [editPhotos, setEditPhotos] = useState<PhotoItem[]>([]);
 
   // Load from Supabase on mount & listen to realtime custom updates
   useEffect(() => {
@@ -646,6 +688,21 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         const qtyOke = v.status === 'OKE' ? qtyChecked : 0;
         const qtyReject = v.status === 'REJECT' ? qtyChecked : 0;
 
+        // Upload foto ke Google Drive via GAS untuk menghemat 99% Egress Supabase
+        let uploadedPhotoUrls: string[] = [];
+        if (v.photos && v.photos.length > 0) {
+          const rawPhotos = v.photos.map((p) => p.dataUrl);
+          try {
+            uploadedPhotoUrls = await uploadMultipleImagesToGdrive(
+              rawPhotos,
+              `QC_${reportNo}`
+            );
+          } catch (ePhoto) {
+            console.warn('Gagal upload ke Google Drive, fallback ke dataUrl:', ePhoto);
+            uploadedPhotoUrls = rawPhotos;
+          }
+        }
+
         let perbaikanTicketNo: string | undefined = undefined;
 
         // Auto-create ticket if status is REJECT or qtyReject > 0
@@ -686,7 +743,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             sumber_barang: mappedSumber,
             kategori_rusak: (v.kategori_rusak as any) || 'Noda / Kotor',
             detail_kerusakan: defectDetail,
-            foto_urls: v.photos.map((p) => p.dataUrl),
+            foto_urls: uploadedPhotoUrls,
             tahap: v.target_penanganan,
             status_pengerjaan: 'PENDING',
             qc_pic: currentPicName,
@@ -727,8 +784,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           kategori_rusak: v.status === 'REJECT' ? v.kategori_rusak : undefined,
           detail_kerusakan: v.status === 'REJECT' ? v.detail_kerusakan.trim() : undefined,
           target_penanganan: v.status === 'REJECT' ? v.target_penanganan : undefined,
-          foto_urls: v.photos.map((p) => p.dataUrl),
-          gdrive_link: batchGdriveLink.trim() || undefined,
+          foto_urls: uploadedPhotoUrls,
+          gdrive_link:
+            batchGdriveLink.trim() ||
+            uploadedPhotoUrls.find((u) => u.includes('googleusercontent') || u.includes('drive.google')) ||
+            undefined,
           catatan: [batchCatatan.trim(), v.catatan.trim()].filter(Boolean).join(' | ') || undefined,
           pic_qc: currentPicName,
           perbaikan_ticket_no: perbaikanTicketNo,
@@ -766,16 +826,151 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     }
   };
 
-  // Delete Single Report
-  const handleDeleteReport = async (rep: QcReport) => {
-    if (!confirm(`Hapus laporan QC #${rep.report_no} (${rep.nama_produk})?`)) return;
+  // Delete Handlers with Custom Confirmation Modal (No iframe window.confirm block)
+  const handleRequestDelete = (rep: QcReport) => {
+    if (!canDeleteData) {
+      playErrorBeep();
+      onShowToast('Akses ditolak: Hanya Admin / Kepala Gudang yang dapat menghapus laporan QC', 'error');
+      return;
+    }
+    setDeleteConfirmReport(rep);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmReport) return;
+    setIsDeleting(true);
     try {
-      await deleteQcReportFromSupabase(rep.id || rep.report_no);
-      setReports((prev) => prev.filter((r) => r.report_no !== rep.report_no));
-      onShowToast(`Laporan QC #${rep.report_no} berhasil dihapus`, 'info');
-    } catch (err) {
-      onShowToast('Gagal menghapus laporan QC', 'error');
+      await deleteQcReportFromSupabase(deleteConfirmReport.report_no, deleteConfirmReport.id);
+      setReports((prev) => prev.filter((r) => r.report_no !== deleteConfirmReport.report_no));
+      playSuccessBeep();
+      onShowToast(`Laporan QC #${deleteConfirmReport.report_no} berhasil dihapus`, 'info');
+      setDeleteConfirmReport(null);
+    } catch (err: any) {
+      playErrorBeep();
+      onShowToast('Gagal menghapus laporan QC: ' + (err?.message || 'Terjadi kesalahan'), 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Edit Handlers (Akses Admin)
+  const handleOpenEdit = (rep: QcReport) => {
+    if (!canEditData) {
+      playErrorBeep();
+      onShowToast('Akses ditolak: Hanya Admin / Kepala Gudang yang memiliki akses untuk mengedit laporan QC', 'error');
+      return;
+    }
+    setEditingReport(rep);
+    setEditNamaProduk(rep.nama_produk || '');
+    setEditSku(rep.sku || '');
+    setEditWarna(rep.warna || '');
+    setEditSize(rep.size || '-');
+    setEditSumberBatch(rep.sumber_batch || 'Penerimaan CMT');
+    setEditStatus(rep.status);
+    setEditQtyDiperiksa(Number(rep.qty_diperiksa) || 1);
+    setEditQtyOke(Number(rep.qty_oke) ?? (rep.status === 'OKE' ? Number(rep.qty_diperiksa) : 0));
+    setEditQtyReject(Number(rep.qty_reject) ?? (rep.status === 'REJECT' ? Number(rep.qty_diperiksa) : 0));
+    setEditKategoriRusak(rep.kategori_rusak || 'Noda / Kotor');
+    setEditDetailKerusakan(rep.detail_kerusakan || '');
+    setEditLokasiBarang(rep.lokasi_barang || '');
+    setEditTargetPenanganan(rep.target_penanganan || 'REJECT');
+    setEditCatatan(rep.catatan || '');
+    setEditGdriveLink(rep.gdrive_link || '');
+    setEditPicQc(rep.pic_qc || session?.name || session?.username || 'Admin QC');
+    setEditPhotos(
+      (rep.foto_urls || []).map((url) => ({
+        dataUrl: url,
+        originalSize: 0,
+        compressedSize: 0,
+        savedPercent: 0,
+      }))
+    );
+  };
+
+  const handleEditPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    for (const file of fileList) {
+      try {
+        const res = await compressImage(file, 1200, 0.75);
+        setEditPhotos((prev) => [
+          ...prev,
+          {
+            dataUrl: res.dataUrl,
+            originalSize: res.originalSize,
+            compressedSize: res.compressedSize,
+            savedPercent: res.savedPercentage,
+          },
+        ]);
+      } catch (err) {
+        console.warn('Gagal kompres foto edit:', err);
+      }
+    }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReport) return;
+    if (!editNamaProduk.trim()) {
+      onShowToast('Nama produk tidak boleh kosong', 'warning');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      let finalPhotoUrls: string[] = [];
+      if (editPhotos && editPhotos.length > 0) {
+        const rawPhotos = editPhotos.map((p) => p.dataUrl);
+        try {
+          finalPhotoUrls = await uploadMultipleImagesToGdrive(
+            rawPhotos,
+            `QC_EDIT_${editingReport.report_no}`
+          );
+        } catch (err) {
+          console.warn('Upload GDrive edit fallback:', err);
+          finalPhotoUrls = rawPhotos;
+        }
+      }
+
+      const updated: QcReport = {
+        ...editingReport,
+        nama_produk: editNamaProduk.trim(),
+        sku: editSku.trim() || editingReport.sku,
+        warna: editWarna.trim() || undefined,
+        size: editSize.trim() || '-',
+        sumber_batch: editSumberBatch,
+        status: editStatus,
+        qty_diperiksa: Number(editQtyDiperiksa) || 1,
+        qty_oke: editStatus === 'OKE' ? (Number(editQtyOke) || Number(editQtyDiperiksa) || 1) : 0,
+        qty_reject: editStatus === 'REJECT' ? (Number(editQtyReject) || Number(editQtyDiperiksa) || 1) : 0,
+        kategori_rusak: editStatus === 'REJECT' ? editKategoriRusak : undefined,
+        detail_kerusakan: editStatus === 'REJECT' ? editDetailKerusakan.trim() : undefined,
+        lokasi_barang: editLokasiBarang.trim() || undefined,
+        target_penanganan: editStatus === 'REJECT' ? editTargetPenanganan : undefined,
+        foto_urls: finalPhotoUrls,
+        gdrive_link: editGdriveLink.trim() || undefined,
+        catatan: editCatatan.trim() || undefined,
+        pic_qc: editPicQc.trim() || editingReport.pic_qc,
+        updated_at: new Date().toISOString(),
+      };
+
+      await updateQcReportInSupabase(updated);
+
+      setReports((prev) =>
+        prev.map((r) => (r.report_no === updated.report_no ? updated : r))
+      );
+
+      playSuccessBeep();
+      onShowToast(`Laporan QC #${updated.report_no} berhasil diperbarui!`, 'success');
+      setEditingReport(null);
+    } catch (err: any) {
+      playErrorBeep();
+      console.error('Gagal update laporan QC:', err);
+      onShowToast('Gagal menyimpan perubahan: ' + (err?.message || 'Terjadi kesalahan'), 'error');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -2122,6 +2317,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                               <img
                                 src={r.foto_urls[0]}
                                 alt="Foto"
+                                referrerPolicy="no-referrer"
                                 className="w-full h-full object-cover group-hover:scale-110 transition-transform"
                               />
                               {r.foto_urls.length > 1 && (
@@ -2182,14 +2378,43 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
                       {/* Aksi */}
                       <td className="py-3.5 px-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteReport(r)}
-                          className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 transition-colors"
-                          title="Hapus laporan QC"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          {/* Edit Action (Akses Admin) */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(r)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                              canEditData
+                                ? 'hover:bg-blue-50 dark:hover:bg-blue-950/40 text-slate-400 hover:text-blue-600'
+                                : 'hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-300 dark:text-slate-600 hover:text-amber-600'
+                            }`}
+                            title={
+                              canEditData
+                                ? 'Edit Laporan QC (Akses Admin)'
+                                : 'Edit Laporan QC (Diperlukan hak akses Admin)'
+                            }
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+
+                          {/* Delete Action */}
+                          <button
+                            type="button"
+                            onClick={() => handleRequestDelete(r)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                              canDeleteData
+                                ? 'hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600'
+                                : 'hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-300 dark:text-slate-600 hover:text-amber-600'
+                            }`}
+                            title={
+                              canDeleteData
+                                ? 'Hapus Laporan QC'
+                                : 'Hapus Laporan QC (Diperlukan hak akses Admin)'
+                            }
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2225,7 +2450,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             <div className="mt-4 space-y-4 overflow-y-auto max-h-[75vh]">
               {lightboxImages.map((src, i) => (
                 <div key={`qc-lightbox-${i}-${src.slice(0, 20)}`} className="rounded-xl overflow-hidden bg-black/50 flex items-center justify-center">
-                  <img src={src} alt={`Foto ${i + 1}`} className="max-w-full max-h-[70vh] object-contain" />
+                  <img src={src} alt={`Foto ${i + 1}`} referrerPolicy="no-referrer" className="max-w-full max-h-[70vh] object-contain" />
                 </div>
               ))}
             </div>
@@ -2312,6 +2537,491 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* 6. Custom Delete Confirmation Modal (Bypass iframe confirm block) */}
+      {deleteConfirmReport && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => !isDeleting && setDeleteConfirmReport(null)}
+        >
+          <div
+            className="relative max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3.5 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-900">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Hapus Laporan QC #{deleteConfirmReport.report_no}?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Konfirmasi penghapusan data inspeksi QC
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-2 mb-5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Produk:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 text-right truncate max-w-[200px]" title={deleteConfirmReport.nama_produk}>
+                  {deleteConfirmReport.nama_produk}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">SKU / Kode:</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">
+                  {deleteConfirmReport.sku || '-'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Status &amp; Qty:</span>
+                <span className={`font-bold ${deleteConfirmReport.status === 'REJECT' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  {deleteConfirmReport.status} ({deleteConfirmReport.qty_diperiksa} pcs)
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">PIC QC:</span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {deleteConfirmReport.pic_qc || '-'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+              Data laporan QC ini akan dihapus secara permanen dari Supabase dan cache lokal sistem. Tindakan ini tidak dapat dibatalkan.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmReport(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all flex items-center gap-1.5 shadow-sm shadow-rose-600/30 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ya, Hapus Sekarang</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Edit QC Report Modal (Akses Admin) */}
+      {editingReport && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in"
+          onClick={() => !isSavingEdit && setEditingReport(null)}
+        >
+          <div
+            className="relative max-w-2xl w-full bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <Pencil className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-white">Edit Laporan QC</h3>
+                    <span className="font-mono text-xs bg-white/20 px-2 py-0.5 rounded-md font-bold">
+                      #{editingReport.report_no}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-100 mt-0.5">
+                    Perbarui data hasil inspeksi QC produk (Khusus Hak Akses Admin)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingReport(null)}
+                disabled={isSavingEdit}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form Input */}
+            <form onSubmit={handleSaveEdit} className="p-4 sm:p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+              {/* Identifikasi Produk */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Nama Produk *
+                  </label>
+                  <input
+                    type="text"
+                    value={editNamaProduk}
+                    onChange={(e) => setEditNamaProduk(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    SKU / Barcode / Kode Produksi
+                  </label>
+                  <input
+                    type="text"
+                    value={editSku}
+                    onChange={(e) => setEditSku(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Warna, Ukuran, Sumber Batch */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Warna
+                  </label>
+                  <input
+                    type="text"
+                    value={editWarna}
+                    onChange={(e) => setEditWarna(e.target.value)}
+                    placeholder="e.g. Navy / Mocca"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Ukuran (Size)
+                  </label>
+                  <select
+                    value={editSize}
+                    onChange={(e) => setEditSize(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="-">- Tidak Ada -</option>
+                    {SIZE_PRESETS.map((sz) => (
+                      <option key={sz} value={sz}>{sz}</option>
+                    ))}
+                    {!SIZE_PRESETS.includes(editSize) && editSize && editSize !== '-' && (
+                      <option value={editSize}>{editSize}</option>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Sumber Batch
+                  </label>
+                  <select
+                    value={editSumberBatch}
+                    onChange={(e) => setEditSumberBatch(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  >
+                    {SUMBER_BATCH_OPTIONS.map((sb) => (
+                      <option key={sb} value={sb}>{sb}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Status QC & Kuantitas */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                  Status Kelayakan &amp; Kuantitas
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditStatus('OKE');
+                      setEditQtyOke(editQtyDiperiksa);
+                      setEditQtyReject(0);
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      editStatus === 'OKE'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>OKE (Lolos QC)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditStatus('REJECT');
+                      setEditQtyReject(editQtyDiperiksa);
+                      setEditQtyOke(0);
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      editStatus === 'REJECT'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>REJECT (Cacat / Rusak)</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2.5 pt-1">
+                  <div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
+                      Qty Diperiksa
+                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editQtyDiperiksa}
+                      onChange={(e) => {
+                        const val = Math.max(1, Number(e.target.value) || 1);
+                        setEditQtyDiperiksa(val);
+                        if (editStatus === 'OKE') {
+                          setEditQtyOke(val);
+                          setEditQtyReject(0);
+                        } else {
+                          setEditQtyReject(val);
+                          setEditQtyOke(0);
+                        }
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
+                      Qty OKE
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editQtyOke}
+                      onChange={(e) => setEditQtyOke(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
+                      Qty Reject
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editQtyReject}
+                      onChange={(e) => setEditQtyReject(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-rose-300 dark:border-rose-700 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Jika REJECT: Kategori, Target, & Detail Kerusakan */}
+              {editStatus === 'REJECT' && (
+                <div className="p-3.5 bg-rose-50/60 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-800/60 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-rose-900 dark:text-rose-200 mb-1 block">
+                        Kategori Kerusakan
+                      </label>
+                      <select
+                        value={editKategoriRusak}
+                        onChange={(e) => setEditKategoriRusak(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
+                      >
+                        {KATEGORI_RUSAK_OPTIONS.map((kr) => (
+                          <option key={kr} value={kr}>{kr}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-rose-900 dark:text-rose-200 mb-1 block">
+                        Target Penanganan
+                      </label>
+                      <select
+                        value={editTargetPenanganan}
+                        onChange={(e) => setEditTargetPenanganan(e.target.value as any)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
+                      >
+                        <option value="REJECT">REJECT (Gudang Reject)</option>
+                        <option value="CUCI">CUCI (Laundry / Bersihkan Noda)</option>
+                        <option value="PERMAK">PERMAK (Jahit Ulang / Vermak)</option>
+                        <option value="DEFECT">DEFECT (Obral / Reject Minor)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-rose-900 dark:text-rose-200 mb-1 block">
+                      Detail Kerusakan Produk
+                    </label>
+                    <textarea
+                      value={editDetailKerusakan}
+                      onChange={(e) => setEditDetailKerusakan(e.target.value)}
+                      rows={2}
+                      placeholder="Deskripsi letak noda, bagian jahitan sobek, kancing patah, dll..."
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Lokasi & PIC Pemeriksa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Lokasi Rak / Area Barang
+                  </label>
+                  <input
+                    type="text"
+                    value={editLokasiBarang}
+                    onChange={(e) => setEditLokasiBarang(e.target.value)}
+                    placeholder="e.g. QC-01 / Rak R01"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    PIC Pemeriksa QC
+                  </label>
+                  <input
+                    type="text"
+                    value={editPicQc}
+                    onChange={(e) => setEditPicQc(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Catatan & Link GDrive */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Catatan Inspeksi
+                  </label>
+                  <input
+                    type="text"
+                    value={editCatatan}
+                    onChange={(e) => setEditCatatan(e.target.value)}
+                    placeholder="Catatan tambahan..."
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Link Arsip Google Drive (Opsional)
+                  </label>
+                  <input
+                    type="url"
+                    value={editGdriveLink}
+                    onChange={(e) => setEditGdriveLink(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Foto Bukti */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    Dokumentasi Foto Bukti ({editPhotos.length})
+                  </label>
+                  <label className="px-2.5 py-1 text-[11px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/60 flex items-center gap-1">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Tambah Foto</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleEditPhotoUpload}
+                    />
+                  </label>
+                </div>
+
+                {editPhotos.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {editPhotos.map((photo, pIdx) => (
+                      <div
+                        key={`edit-photo-${pIdx}`}
+                        className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 aspect-square bg-slate-100 dark:bg-slate-800"
+                      >
+                        <img
+                          src={photo.dataUrl}
+                          alt={`Foto ${pIdx + 1}`}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEditPhotos((prev) => prev.filter((_, idx) => idx !== pIdx))}
+                          className="absolute top-1 right-1 w-6 h-6 bg-rose-600 text-white rounded-full flex items-center justify-center opacity-85 hover:opacity-100 transition-opacity shadow cursor-pointer"
+                          title="Hapus foto ini"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 text-center text-[11px] text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                    Belum ada foto bukti tersimpan.
+                  </div>
+                )}
+              </div>
+
+              {/* Tombol Simpan & Batal */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  disabled={isSavingEdit}
+                  onClick={() => setEditingReport(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Simpan Perubahan</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

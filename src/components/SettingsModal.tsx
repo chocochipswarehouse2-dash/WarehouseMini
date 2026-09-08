@@ -66,6 +66,12 @@ import {
   fetchKaryawanDirectory,
 } from '../services/supabase';
 import {
+  DEFAULT_GDRIVE_FOLDER_URL,
+  DEFAULT_GDRIVE_GAS_URL,
+  testGdriveConnection,
+  saveGdriveConfig,
+} from '../services/gdriveUpload';
+import {
   hasPermission,
   isSuperadmin,
   ROLE_DETAILS,
@@ -131,6 +137,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTestingDatabase, setIsTestingDatabase] = useState<boolean>(false);
   const [databaseStatus, setDatabaseStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [databaseStatusMsg, setDatabaseStatusMsg] = useState<string>('');
+  const [gdriveFolderUrl, setGdriveFolderUrl] = useState<string>('');
+  const [gdriveGasUrl, setGdriveGasUrl] = useState<string>('');
+  const [isTestingGdrive, setIsTestingGdrive] = useState<boolean>(false);
+  const [gdriveStatus, setGdriveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [gdriveStatusMsg, setGdriveStatusMsg] = useState<string>('');
 
   // GAS Config State
   const [gasEndpoint, setGasEndpoint] = useState<string>('');
@@ -206,6 +217,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const storedSupabase = getStoredSupabaseConfig();
       setSupabaseUrl(storedSupabase.url);
       setSupabaseKey(storedSupabase.key);
+      setGdriveFolderUrl(
+        localStorage.getItem('wms_gdrive_folder_url') || DEFAULT_GDRIVE_FOLDER_URL
+      );
+      setGdriveGasUrl(
+        localStorage.getItem('wms_gdrive_gas_url') || DEFAULT_GDRIVE_GAS_URL
+      );
 
       const storedGas =
         session?.endpointUrl ||
@@ -219,6 +236,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       loadUsersFromSupabase();
       setDatabaseStatus('idle');
       setGasStatus('idle');
+      setGdriveStatus('idle');
     }
   }, [isOpen, session]);
 
@@ -231,10 +249,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  // --- SUPABASE ACTIONS ---
+  // --- SUPABASE & GDRIVE ACTIONS ---
   const handleSaveDatabase = () => {
     const cleanUrl = supabaseUrl.trim();
     const cleanKey = supabaseKey.trim();
+    const cleanGdrive = gdriveFolderUrl.trim();
+    const cleanGas = gdriveGasUrl.trim();
 
     if (!cleanUrl || !cleanKey) {
       onNotify('URL dan Anon Key Supabase tidak boleh kosong!', 'warning');
@@ -242,8 +262,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     saveSupabaseConfig(cleanUrl, cleanKey);
-    onNotify('Konfigurasi Supabase berhasil disimpan!', 'success');
+    saveGdriveConfig(cleanGdrive, cleanGas);
+    onNotify('Konfigurasi Supabase & Google Drive berhasil disimpan!', 'success');
     playSuccessBeep();
+  };
+
+  const handleTestGdrive = async () => {
+    setIsTestingGdrive(true);
+    setGdriveStatus('idle');
+    setGdriveStatusMsg('');
+    try {
+      saveGdriveConfig(gdriveFolderUrl, gdriveGasUrl);
+      const res = await testGdriveConnection(gdriveGasUrl, gdriveFolderUrl);
+      if (res.success) {
+        setGdriveStatus('success');
+        setGdriveStatusMsg(res.message);
+        playSuccessBeep();
+      } else {
+        setGdriveStatus('error');
+        setGdriveStatusMsg(res.message);
+        playErrorBeep();
+      }
+    } catch (err: any) {
+      setGdriveStatus('error');
+      setGdriveStatusMsg(err?.message || 'Gagal mengetes Google Drive.');
+      playErrorBeep();
+    } finally {
+      setIsTestingGdrive(false);
+    }
   };
 
   const handleResetDatabase = () => {
@@ -1565,6 +1611,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                     className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
                   />
+                </div>
+                
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current text-[#ff7a00]"><path d="M7.71,9.79l-4,6.93h12.56l4-6.93H7.71z M10.49,11.39h6.98l-2.26,3.93h-6.98L10.49,11.39z M13.71,8.39l-4,6.93L5.71,15.3l4-6.93H13.71z M16.49,10l-2.26,3.93l-4-6.93l2.26-3.93L16.49,10z"/></svg>
+                        Google Drive Storage (Foto Reject QC)
+                      </label>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Foto reject otomatis diunggah ke Google Drive melalui perantara GAS Web App, menghemat 99% Egress Supabase.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleTestGdrive}
+                      disabled={isTestingGdrive}
+                      className="px-3 py-1.5 bg-[#ff7a00]/10 hover:bg-[#ff7a00]/20 text-[#ff7a00] rounded-xl text-xs font-bold transition-all border border-[#ff7a00]/30 flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isTestingGdrive ? 'animate-spin' : ''}`} />
+                      <span>{isTestingGdrive ? 'Mengetes...' : 'Tes Koneksi GDrive'}</span>
+                    </button>
+                  </div>
+
+                  {gdriveStatus === 'success' && (
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <span>{gdriveStatusMsg}</span>
+                    </div>
+                  )}
+
+                  {gdriveStatus === 'error' && (
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-300 space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        <span>{gdriveStatusMsg}</span>
+                      </div>
+                      {gdriveStatusMsg.includes('DriveApp') && (
+                        <div className="text-[11px] text-rose-700 dark:text-rose-300 bg-rose-100/60 dark:bg-rose-900/40 p-2 rounded-lg leading-relaxed">
+                          <b>Solusi Otorisasi:</b> Buka editor skrip di <code>script.google.com</code>, buat fungsi <code>function testAuth() &#123; DriveApp.getRootFolder(); &#125;</code>, lalu klik <b>Run (Jalankan)</b> sekali agar Google memunculkan popup izin akses <i>"Allow / Izinkan"</i> akun Google Anda. Pastikan juga deploy Web App diatur ke <b>"Execute as: Me"</b> dan <b>"Who has access: Anyone"</b>.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          1. Google Drive Folder URL / ID
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={gdriveFolderUrl}
+                        onChange={(e) => setGdriveFolderUrl(e.target.value)}
+                        placeholder="https://drive.google.com/drive/folders/14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          2. Google Apps Script (GAS) Web App URL
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={gdriveGasUrl}
+                        onChange={(e) => setGdriveGasUrl(e.target.value)}
+                        placeholder="https://script.google.com/macros/s/.../exec"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
