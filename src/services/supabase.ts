@@ -2942,11 +2942,15 @@ export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]>
       
       for (const row of data) {
         const no = row.no_peminjaman;
+        const waMatch = (row.keterangan || '').match(/WA:([0-9+\s-]+)/);
+        const waFound = waMatch ? waMatch[1].trim() : (row.no_wa || row.no_wa_peminjam || '');
         if (!groups.has(no)) {
           groups.set(no, {
              id: no,
              noPeminjaman: no,
              namaPeminjam: row.pic || '',
+             noWaPeminjam: waFound,
+             no_wa_peminjam: waFound,
              keperluan: row.keperluan || '',
              tglPinjam: row.tanggal_pinjam || '',
              timestamp: row.created_at || new Date().toISOString(),
@@ -3032,7 +3036,7 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
         lokasi: it.lokasi || 'BLOK F',
         status: record.status || 'Dipinjam',
         operator: record.username || 'System',
-        keterangan: ''
+        keterangan: (record.noWaPeminjam || record.no_wa_peminjam) ? `WA:${record.noWaPeminjam || record.no_wa_peminjam}` : (record.keterangan || '')
       };
     });
 

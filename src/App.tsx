@@ -148,7 +148,20 @@ export default function App() {
     }
   }, [session, activePage]);
 
-  // Sinkronisasi hak akses sesi user secara background dari Supabase tabel wms_users
+  // Add generic settings loader
+  useEffect(() => {
+    import('./services/settings').then(({ fetchWmsSettings }) => {
+      fetchWmsSettings().then((settings) => {
+        if (settings) {
+          if (settings.fonnte_token) localStorage.setItem('wms_fonnte_token', settings.fonnte_token);
+          if (settings.fonnte_group_target) localStorage.setItem('wms_fonnte_group_target', settings.fonnte_group_target);
+          if (settings.fonnte_auto_send !== undefined) localStorage.setItem('wms_fonnte_auto_send', String(settings.fonnte_auto_send));
+        }
+      });
+    }).catch(err => console.warn('Failed to load global settings', err));
+  }, []);
+
+  // Sync permissions logic...
   useEffect(() => {
     if (!session || !session.username) return;
     let isMounted = true;

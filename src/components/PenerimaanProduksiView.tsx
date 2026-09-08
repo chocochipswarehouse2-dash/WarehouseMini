@@ -64,7 +64,15 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [activeTab, setActiveTab] = useState<TabMode>('riwayat');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [dataList, setDataList] = useState<PenerimaanProduksiItem[]>([]);
+  // Initial load from local cache to save network roundtrips & egress
+  const [dataList, setDataList] = useState<PenerimaanProduksiItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -575,12 +583,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
     setIsUpdatingBatch(true);
     try {
+      // Offload any new base64 photos to Google Drive to save 99% Supabase Egress
+      const processedItems = [...editingBatch.items];
+      for (const it of processedItems) {
+        if (it.foto_url && it.foto_url.startsWith('data:')) {
+          try {
+            const uploadedUrls = await uploadMultipleImagesToGdrive(
+              [it.foto_url],
+              `PENERIMAAN_EDIT_${editingBatch.no_surat_jalan.replace(/[^a-zA-Z0-9]/g, '_')}_${it.kode_produksi}`
+            );
+            if (uploadedUrls && uploadedUrls.length > 0) {
+              it.foto_url = uploadedUrls[0];
+            }
+          } catch (ePhoto) {
+            console.warn('Gagal upload foto edit ke GDrive, fallback:', ePhoto);
+          }
+        }
+      }
+
       const payload: SimpanPenerimaanPayload = {
         tanggal: editingBatch.tanggal,
         kategori: editingBatch.kategori,
         no_surat_jalan: editingBatch.no_surat_jalan.trim().toUpperCase(),
         keterangan: editingBatch.keterangan,
-        items: editingBatch.items.map((it) => ({
+        items: processedItems.map((it) => ({
           tanggal_penerimaan: editingBatch.tanggal,
           kategori: editingBatch.kategori,
           no_surat_jalan: editingBatch.no_surat_jalan.trim().toUpperCase(),

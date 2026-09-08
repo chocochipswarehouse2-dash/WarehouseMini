@@ -153,6 +153,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // WhatsApp Config State
   const [fonnteToken, setFonnteToken] = useState<string>('');
   const [fonnteGroupTarget, setFonnteGroupTarget] = useState<string>('');
+  const [fonnteAutoSend, setFonnteAutoSend] = useState<boolean>(true);
   const [isTestingWa, setIsTestingWa] = useState<boolean>(false);
 
   // Users Management State
@@ -230,8 +231,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         '';
       setGasEndpoint(storedGas);
 
-      setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
-      setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
+      // Load WMS settings from Supabase
+      import('../services/settings').then(({ fetchWmsSettings }) => {
+        fetchWmsSettings().then((settings) => {
+          if (settings) {
+            setFonnteToken(settings.fonnte_token || localStorage.getItem('wms_fonnte_token') || '');
+            setFonnteGroupTarget(settings.fonnte_group_target || localStorage.getItem('wms_fonnte_group_target') || '');
+            setFonnteAutoSend(settings.fonnte_auto_send !== undefined ? settings.fonnte_auto_send : localStorage.getItem('wms_fonnte_auto_send') !== 'false');
+            
+            // Sync to local storage for quick access elsewhere
+            if (settings.fonnte_token) localStorage.setItem('wms_fonnte_token', settings.fonnte_token);
+            if (settings.fonnte_group_target) localStorage.setItem('wms_fonnte_group_target', settings.fonnte_group_target);
+            if (settings.fonnte_auto_send !== undefined) localStorage.setItem('wms_fonnte_auto_send', String(settings.fonnte_auto_send));
+          } else {
+            setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
+            setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
+            setFonnteAutoSend(localStorage.getItem('wms_fonnte_auto_send') !== 'false');
+          }
+        });
+      });
 
       loadUsersFromSupabase();
       setDatabaseStatus('idle');
@@ -331,11 +349,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   // --- WHATSAPP FONNTE ACTIONS ---
-  const handleSaveWa = () => {
+  const handleSaveWa = async () => {
+    // Save to local storage first for immediate availability
     localStorage.setItem('wms_fonnte_token', fonnteToken.trim());
     localStorage.setItem('wms_fonnte_group_target', fonnteGroupTarget.trim());
-    onNotify('Konfigurasi WhatsApp Fonnte berhasil disimpan!', 'success');
-    playSuccessBeep();
+    localStorage.setItem('wms_fonnte_auto_send', fonnteAutoSend ? 'true' : 'false');
+    
+    try {
+      const { saveWmsSettings } = await import('../services/settings');
+      const success = await saveWmsSettings({
+        fonnte_token: fonnteToken.trim(),
+        fonnte_group_target: fonnteGroupTarget.trim(),
+        fonnte_auto_send: fonnteAutoSend
+      });
+      
+      if (success) {
+        onNotify('Konfigurasi WhatsApp Fonnte berhasil disimpan global!', 'success');
+        playSuccessBeep();
+      } else {
+        onNotify('Tersimpan di lokal, tapi gagal sinkron ke database.', 'warning');
+      }
+    } catch (e) {
+      onNotify('Tersimpan di lokal. Gagal menyimpan ke cloud.', 'warning');
+    }
   };
 
   const handleTestWa = async () => {
@@ -2157,6 +2193,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <p className="text-[10px] text-slate-500 mt-1">
                     Nomor WhatsApp grup gudang untuk notifikasi Peminjaman/Picking List (Gunakan ID Grup jika mengirim ke grup Fonnte).
                   </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <label className="flex items-start gap-3 p-3 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fonnteAutoSend}
+                      onChange={(e) => setFonnteAutoSend(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                        Kirim Otomatis Saat Submit Peminjaman
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 leading-relaxed">
+                        Setiap kali peminjaman disubmit, otomatis mengirimkan Picking List ke WA Grup Gudang dan pesan konfirmasi ke nomor pribadi peminjam.
+                      </span>
+                    </div>
+                  </label>
                 </div>
 
                 <div className="flex gap-3 pt-4">

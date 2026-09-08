@@ -26,7 +26,20 @@ import {
   ShieldCheck,
   Building,
   Smartphone,
+  Phone,
+  ExternalLink,
+  MessageSquare,
+  Loader2,
 } from 'lucide-react';
+import {
+  sendPeminjamanAutoWhatsApp,
+  sendFonnteMessage,
+  generatePeminjamanGroupMessage,
+  generatePeminjamanPersonalMessage,
+  getWhatsAppWebUrl,
+  getFonnteConfig,
+  normalizeWhatsAppNumber,
+} from '../services/whatsapp';
 import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, UserSession, PickingListItem } from '../types';
 import {
   fetchPeminjamanFromSupabase,
@@ -65,8 +78,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Form State
   const [namaPeminjam, setNamaPeminjam] = useState<string>('');
+  const [noWaPeminjam, setNoWaPeminjam] = useState<string>('');
   const [keperluan, setKeperluan] = useState<string>('');
   const [tglPinjam, setTglPinjam] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [autoSendWa, setAutoSendWa] = useState<boolean>(() => getFonnteConfig().autoSendEnabled);
   const [items, setItems] = useState<PeminjamanItemForm[]>([
     {
       id: 'item-1',
@@ -82,6 +97,23 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     },
   ]);
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // Local users list for auto-complete/suggestions
+  const localUsers = useMemo(() => getLocalUsers(), []);
+
+  // Handle borrower name input change with auto-fill phone if available
+  const handleNamaPeminjamChange = (val: string) => {
+    setNamaPeminjam(val);
+    if (!noWaPeminjam.trim()) {
+      const match = localUsers.find(
+        (u) => (u.name && u.name.toLowerCase() === val.toLowerCase()) ||
+               (u.username && u.username.toLowerCase() === val.toLowerCase())
+      );
+      if (match?.phone) {
+        setNoWaPeminjam(match.phone);
+      }
+    }
+  };
 
   // Channel stock state - Loaded directly from Supabase realtime
   const [selectedChannel, setSelectedChannel] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('STUDIO');
@@ -174,6 +206,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   // Modal State for Surat Jalan (PDF / Print / WhatsApp)
   const [selectedRecordForModal, setSelectedRecordForModal] = useState<PeminjamanRecord | null>(null);
   const [copiedWaType, setCopiedWaType] = useState<'personal' | 'grup' | null>(null);
+  const [isSendingWaType, setIsSendingWaType] = useState<'personal' | 'grup' | null>(null);
+  const [modalWaPeminjam, setModalWaPeminjam] = useState<string>('');
+
+  useEffect(() => {
+    if (selectedRecordForModal) {
+      setModalWaPeminjam(selectedRecordForModal.noWaPeminjam || selectedRecordForModal.no_wa_peminjam || '');
+    }
+  }, [selectedRecordForModal]);
 
   // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
   useEffect(() => {
@@ -613,6 +653,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         id: noSps,
         noPeminjaman: noSps,
         namaPeminjam: namaPeminjam.trim(),
+        noWaPeminjam: noWaPeminjam.trim(),
+        no_wa_peminjam: noWaPeminjam.trim(),
         keperluan: keperluan.trim(),
         tglPinjam,
         timestamp: nowIso,
@@ -676,7 +718,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       setSelectedRecordForModal(newRecord);
 
       // Reset form
+      const submittedBorrowerName = namaPeminjam.trim();
+      const submittedPhone = noWaPeminjam.trim();
       setNamaPeminjam('');
+      setNoWaPeminjam('');
       setKeperluan('');
       setItems([
         {
@@ -693,21 +738,49 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         },
       ]);
 
-      onShowToast(`Peminjaman ${noSps} berhasil disimpan ke Database!`, 'success');
+      // 3. Automatic WhatsApp Notifications (Picking List ke Grup Gudang & Notif Personal ke Peminjam)
+      if (autoSendWa) {
+        const fonnteConfig = getFonnteConfig();
+        if (!fonnteConfig.token) {
+          onShowToast(`Peminjaman ${noSps} disimpan! (Token Fonnte belum diatur di Pengaturan)`, 'warning');
+        } else {
+          onShowToast(`Peminjaman ${noSps} tersimpan! Mengirim WhatsApp otomatis...`, 'info');
+          sendPeminjamanAutoWhatsApp(newRecord, {
+            noWaPeminjam: submittedPhone,
+            operatorName: session?.name || session?.username || 'Petugas WMS',
+            sendGroup: Boolean(fonnteConfig.groupTarget),
+            sendPersonal: Boolean(submittedPhone),
+          }).then((res) => {
+            const successParts: string[] = [];
+            const failParts: string[] = [];
 
-      // Auto-send WhatsApp notification via Fonnte to the logged in user
-      const users = getLocalUsers();
-      const currentUser = users.find(u => u.username === session?.username);
-      const targetPhone = currentUser?.phone;
-      const token = localStorage.getItem('wms_fonnte_token');
-      
-      if (token && targetPhone) {
-        const textMsg = generateWaMessage(newRecord, 'personal');
-        fetch('https://api.fonnte.com/send', {
-          method: 'POST',
-          headers: { 'Authorization': token.trim() },
-          body: new URLSearchParams({ target: targetPhone, message: textMsg }),
-        }).catch(err => console.warn('Failed auto WA', err));
+            if (res.group.attempted) {
+              if (res.group.success) successParts.push('Grup Gudang (Picking List)');
+              else failParts.push(`Grup gagal: ${res.group.message}`);
+            } else if (!fonnteConfig.groupTarget) {
+              failParts.push('Target grup gudang belum diatur');
+            }
+
+            if (res.personal.attempted) {
+              if (res.personal.success) successParts.push(`Peminjam (${submittedBorrowerName})`);
+              else failParts.push(`Pribadi gagal: ${res.personal.message}`);
+            } else if (!submittedPhone) {
+              failParts.push('No WA peminjam kosong');
+            }
+
+            if (successParts.length > 0) {
+              onShowToast(`✅ WA Otomatis terkirim: ${successParts.join(' & ')}!`, 'success');
+            }
+            if (failParts.length > 0) {
+              onShowToast(`Catatan WA: ${failParts.join(', ')}`, 'info');
+            }
+          }).catch((err) => {
+            console.error('Failed auto-send WA', err);
+            onShowToast('Gagal memproses pengiriman WhatsApp otomatis', 'error');
+          });
+        }
+      } else {
+        onShowToast(`Peminjaman ${noSps} berhasil disimpan ke Database!`, 'success');
       }
 
     } catch (err: unknown) {
@@ -817,78 +890,72 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   }, 0);
 
   // WhatsApp Message Generator
-  const generateWaMessage = (record: PeminjamanRecord, type: 'personal' | 'grup') => {
+  const generateWaMessage = (record: PeminjamanRecord, type: 'personal' | 'grup', customPhone?: string) => {
     if (type === 'personal') {
-      const itemsList = record.items.map((it) => `- ${it.produk} (Size: ${it.size}) (Qty: ${it.qty})`).join('\n');
-      return (
-        `Halo Ka ${record.namaPeminjam},\n` +
-        `Pengajuan peminjaman produk kamu telah kami terima:\n\n` +
-        `No Invoice : ${record.noPeminjaman}\n` +
-        `Keperluan  : ${record.keperluan}\n` +
-        `Tanggal    : ${record.tglPinjam}\n\n` +
-        `Daftar Produk:\n` +
-        `${itemsList}\n\n` +
-        `Telah kami terima dan akan segera diproses di gudang ya.`
-      );
+      return generatePeminjamanPersonalMessage(record, session?.name || session?.username);
     } else {
-      const itemsList = record.items
-        .map((it) => `📦 ${it.produk} (Size: ${it.size})\n🔢 Qty: ${it.qty} pcs | 📍 Lokasi: ${it.lokasi}`)
-        .join('\n\n');
-      return (
-        `@vina @yesi @novi @ria @nur\n` +
-        `@eka Cetak SJ Peminjamannya ya\n\n` +
-        `*PEMINJAMAN BARU (SPS)*\n` +
-        `PIC: ${record.namaPeminjam}\n` +
-        `No Invoice: ${record.noPeminjaman}\n` +
-        `Keperluan: ${record.keperluan}\n` +
-        `Tanggal: ${record.tglPinjam}\n\n` +
-        `${itemsList}`
-      );
+      const phone = customPhone || record.noWaPeminjam || record.no_wa_peminjam;
+      return generatePeminjamanGroupMessage(record, session?.name || session?.username, phone);
     }
   };
 
-  // Send WhatsApp Text via Fonnte
-  const handleSendWa = async (record: PeminjamanRecord, type: 'personal' | 'grup') => {
-    const text = generateWaMessage(record, type);
-    const token = localStorage.getItem('wms_fonnte_token');
-    
-    // As fallback, still copy to clipboard
-    navigator.clipboard.writeText(text);
+  // Send WhatsApp Text via Fonnte with Web fallback & clipboard copy
+  const handleSendWa = async (record: PeminjamanRecord, type: 'personal' | 'grup', customTargetPhone?: string) => {
+    const config = getFonnteConfig();
+    const isPersonal = type === 'personal';
+    let target = isPersonal
+      ? (customTargetPhone || modalWaPeminjam || record.noWaPeminjam || record.no_wa_peminjam || '')
+      : config.groupTarget;
 
-    if (!token) {
-      onShowToast(`Pesan disalin! (Token Fonnte belum diatur di Pengaturan)`, 'warning');
+    if (isPersonal && !target.trim()) {
+      const prompted = prompt('Masukkan nomor WhatsApp PIC Peminjam (Cth: 0812... / 628...):', '');
+      if (prompted && prompted.trim()) {
+        target = prompted.trim();
+        record.noWaPeminjam = target;
+        record.no_wa_peminjam = target;
+        setModalWaPeminjam(target);
+      }
+    }
+
+    const text = generateWaMessage(record, type, target);
+
+    // Always copy text to clipboard as safety net
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {}
+
+    if (!config.token) {
+      onShowToast(`Pesan disalin ke clipboard! (Token Fonnte belum diatur di Pengaturan)`, 'warning');
+      if (target) {
+        window.open(getWhatsAppWebUrl(target, text), '_blank');
+      }
       return;
     }
 
-    // Default to group target if personal number is unknown, or you can prompt for it
-    const groupTarget = localStorage.getItem('wms_fonnte_group_target') || '';
-    
-    // Ideally we should ask for personal number, but for now we just use the group target or a placeholder
-    const target = type === 'grup' ? groupTarget : (prompt("Masukkan nomor tujuan PIC (Cth: 628...):", "") || "");
-    
     if (!target) {
-       onShowToast('Nomor tujuan tidak ada. Pesan hanya disalin ke clipboard.', 'warning');
-       return;
+      if (isPersonal) {
+        onShowToast('Nomor tujuan PIC belum diisi. Pesan disalin ke clipboard.', 'warning');
+      } else {
+        onShowToast('Nomor target grup gudang belum diatur di Pengaturan. Pesan disalin ke clipboard.', 'warning');
+      }
+      return;
     }
 
+    setIsSendingWaType(type);
     try {
-      const res = await fetch('https://api.fonnte.com/send', {
-        method: 'POST',
-        headers: { 'Authorization': token.trim() },
-        body: new URLSearchParams({ target: target, message: text }),
-      });
-      const data = await res.json();
-      
-      if (data.status) {
+      const res = await sendFonnteMessage(target, text, config.token);
+      if (res.success) {
         setCopiedWaType(type);
-        onShowToast(`Pesan WA (${type === 'personal' ? 'Personal' : 'Grup'}) berhasil dikirim!`, 'success');
-        setTimeout(() => setCopiedWaType(null), 2500);
+        onShowToast(`✅ Pesan WhatsApp (${isPersonal ? 'Notif Peminjam' : 'Picking List Grup'}) berhasil dikirim via Fonnte!`, 'success');
+        setTimeout(() => setCopiedWaType(null), 3000);
       } else {
-        throw new Error(data.reason || 'Gagal mengirim pesan');
+        throw new Error(res.message);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error menghubungi API Fonnte';
-      onShowToast(`Gagal kirim via Fonnte: ${msg}`, 'error');
+      onShowToast(`Gagal kirim via Fonnte: ${msg}. (Pesan telah disalin)`, 'error');
+    } finally {
+      setIsSendingWaType(null);
     }
   };
 
@@ -1122,21 +1189,66 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               1. INFORMASI PEMINJAM (DIVISI LIVE / STUDIO)
             </div>
 
-            {/* PIC & Keperluan 2-Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* PIC, No WA & Keperluan Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider">
-                  NAMA / PIC PEMINJAM <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    NAMA / PIC PEMINJAM <span className="text-rose-500">*</span>
+                  </label>
+                  {session && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const myName = session.name || session.username;
+                        setNamaPeminjam(myName);
+                        const match = localUsers.find((u) => u.username === session.username);
+                        if (match?.phone) {
+                          setNoWaPeminjam(match.phone);
+                        } else if (session.no_hp) {
+                          setNoWaPeminjam(session.no_hp);
+                        }
+                      }}
+                      className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
+                    >
+                      Saya Sendiri
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
                   <input
                     type="text"
                     required
+                    list="pic-peminjam-datalist"
                     value={namaPeminjam}
-                    onChange={(e) => setNamaPeminjam(e.target.value)}
+                    onChange={(e) => handleNamaPeminjamChange(e.target.value)}
                     placeholder="Contoh: Sarah / Host Live"
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <datalist id="pic-peminjam-datalist">
+                    {localUsers.map((u, idx) => (
+                      <option key={idx} value={u.name || u.username}>
+                        {u.role ? `(${u.role})` : ''} {u.phone ? `- WA: ${u.phone}` : ''}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider flex items-center justify-between">
+                  <span>NO. WHATSAPP PEMINJAM</span>
+                  <span className="text-[10px] text-emerald-500 font-normal lowercase">(notif otomatis)</span>
+                </label>
+                <div className="relative">
+                  <Smartphone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="tel"
+                    value={noWaPeminjam}
+                    onChange={(e) => setNoWaPeminjam(e.target.value)}
+                    placeholder="Contoh: 081234567890"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
               </div>
@@ -1341,6 +1453,32 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   );
                 })}
               </div>
+            </div>
+
+            {/* Automatic WhatsApp Notification Banner */}
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                    <span>Notifikasi Otomatis WhatsApp (Fonnte)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
+                    Mengirimkan <b>Picking List</b> ke Grup Gudang & <b>Notifikasi Penerimaan</b> ke WA Ka {namaPeminjam.trim() || 'Peminjam'}.
+                  </p>
+                </div>
+              </div>
+              <label className="inline-flex items-center gap-2 cursor-pointer self-start sm:self-auto px-2.5 py-1.5 bg-white dark:bg-[#0F0F12] border border-emerald-500/30 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={autoSendWa}
+                  onChange={(e) => setAutoSendWa(e.target.checked)}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>Kirim WA Otomatis</span>
+              </label>
             </div>
 
             {/* Action Submit Buttons */}
@@ -1812,23 +1950,43 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             {/* Content */}
+            {(() => {
+              const modalFonnteConfig = getFonnteConfig();
+              return (
             <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
               {/* Document Summary Card */}
               <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 font-mono">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">No Invoice:</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-sans">No Invoice:</span>
                   <span className="font-bold text-emerald-400">{selectedRecordForModal.noPeminjaman}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">PIC Peminjam:</span>
-                  <span className="text-slate-200">{selectedRecordForModal.namaPeminjam}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-sans">PIC Peminjam:</span>
+                  <span className="text-slate-200 font-sans font-bold">{selectedRecordForModal.namaPeminjam}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Keperluan:</span>
-                  <span className="text-slate-200">{selectedRecordForModal.keperluan}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-sans">No. WhatsApp PIC:</span>
+                  <div className="flex items-center gap-1.5 font-sans">
+                    <input
+                      type="tel"
+                      value={modalWaPeminjam}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setModalWaPeminjam(val);
+                        selectedRecordForModal.noWaPeminjam = val;
+                        selectedRecordForModal.no_wa_peminjam = val;
+                      }}
+                      placeholder="0812... / 628..."
+                      className="px-2 py-1 bg-white dark:bg-black border border-slate-300 dark:border-slate-700 rounded text-xs font-mono text-emerald-400 w-36 outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Tanggal:</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-sans">Keperluan:</span>
+                  <span className="text-slate-200 font-sans">{selectedRecordForModal.keperluan}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-sans">Tanggal:</span>
                   <span className="text-slate-200">{selectedRecordForModal.tglPinjam}</span>
                 </div>
               </div>
@@ -1862,56 +2020,123 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 </div>
               </div>
 
-              {/* WhatsApp Fonnte Templates */}
-              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                <div className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Kirim Notifikasi WhatsApp (Fonnte):</span>
+              {/* WhatsApp Notification Center */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Notifikasi WhatsApp (Fonnte):</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Token: {modalFonnteConfig.token ? 'Aktif' : 'Belum diatur'}
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSendWa(selectedRecordForModal, 'personal')}
-                    className="p-3 bg-slate-50 dark:bg-[#0F0F12] hover:bg-slate-100 dark:hover:bg-[#16161a] border border-slate-200 dark:border-slate-800 rounded-xl text-left transition-all group"
-                  >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Card 1: Grup Gudang (Picking List) */}
+                  <div className="p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-400">
-                        1. Pesan Personal PIC
+                      <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                        📦 1. Picking List ke Grup Gudang
                       </span>
-                      {copiedWaType === 'personal' ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      {copiedWaType === 'grup' && (
+                        <span className="text-[10px] text-emerald-500 font-bold">Terkirim!</span>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Kirim konfirmasi pengajuan langsung ke WhatsApp peminjam.
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Target Grup: <code className="text-emerald-500 font-mono">{modalFonnteConfig.groupTarget || '(Belum diset di Pengaturan)'}</code>
                     </p>
-                  </button>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        disabled={isSendingWaType === 'grup'}
+                        onClick={() => handleSendWa(selectedRecordForModal, 'grup')}
+                        className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSendingWaType === 'grup' ? (
+                          <RefreshCw className="w-3 h-3 animate-spin text-black" />
+                        ) : (
+                          <Send className="w-3 h-3" />
+                        )}
+                        <span>Kirim Fonnte</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const text = generateWaMessage(selectedRecordForModal, 'grup');
+                          navigator.clipboard.writeText(text);
+                          onShowToast('Teks pesan grup berhasil disalin!', 'success');
+                        }}
+                        title="Salin Teks Pesan"
+                        className="p-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleSendWa(selectedRecordForModal, 'grup')}
-                    className="p-3 bg-slate-50 dark:bg-[#0F0F12] hover:bg-slate-100 dark:hover:bg-[#16161a] border border-slate-200 dark:border-slate-800 rounded-xl text-left transition-all group"
-                  >
+                  {/* Card 2: Personal Peminjam */}
+                  <div className="p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-400">
-                        2. Pesan Grup Gudang
+                      <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                        📱 2. Notif Diterima ke Ka {selectedRecordForModal.namaPeminjam}
                       </span>
-                      {copiedWaType === 'grup' ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      {copiedWaType === 'personal' && (
+                        <span className="text-[10px] text-emerald-500 font-bold">Terkirim!</span>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Kirim perintah cetak Surat Jalan ke grup WhatsApp gudang.
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      No WA: <code className="text-emerald-500 font-mono">{modalWaPeminjam || selectedRecordForModal.noWaPeminjam || '(Belum diisi)'}</code>
                     </p>
-                  </button>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        disabled={isSendingWaType === 'personal'}
+                        onClick={() => handleSendWa(selectedRecordForModal, 'personal', modalWaPeminjam)}
+                        className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSendingWaType === 'personal' ? (
+                          <RefreshCw className="w-3 h-3 animate-spin text-black" />
+                        ) : (
+                          <Send className="w-3 h-3" />
+                        )}
+                        <span>Kirim Fonnte</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = modalWaPeminjam || selectedRecordForModal.noWaPeminjam;
+                          const text = generateWaMessage(selectedRecordForModal, 'personal', target);
+                          if (target) {
+                            window.open(getWhatsAppWebUrl(target, text), '_blank');
+                          } else {
+                            onShowToast('Isi nomor WA terlebih dahulu', 'warning');
+                          }
+                        }}
+                        title="Buka via WhatsApp Web"
+                        className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-lg text-xs transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const text = generateWaMessage(selectedRecordForModal, 'personal');
+                          navigator.clipboard.writeText(text);
+                          onShowToast('Teks notifikasi personal berhasil disalin!', 'success');
+                        }}
+                        title="Salin Teks Pesan"
+                        className="p-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+              );
+            })()}
 
             {/* Footer Buttons */}
             <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">

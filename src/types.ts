@@ -292,6 +292,8 @@ export interface PeminjamanRecord {
   channel?: string;
   nama_peminjam?: string;
   namaPeminjam?: string;
+  no_wa_peminjam?: string;
+  noWaPeminjam?: string;
   keperluan?: string;
   sku?: string;
   nama_produk?: string;
@@ -557,3 +559,11 @@ export interface QcReport {
   updated_at?: string;
 }
 
+
+export interface WmsSettings {
+  id?: number;
+  fonnte_token?: string;
+  fonnte_group_target?: string;
+  fonnte_auto_send?: boolean;
+  updated_at?: string;
+}
