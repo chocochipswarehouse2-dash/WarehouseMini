@@ -4422,37 +4422,25 @@ export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTick
     }
   } catch {}
 
-  let latestDate = 0;
-  if (localData.length > 0) {
-    for (const t of localData) {
-      const dt = new Date(t.updated_at || t.created_at || 0).getTime();
-      if (dt > latestDate) latestDate = dt;
-    }
-  }
-
   try {
-    let query = 'order=created_at.desc';
-    if (latestDate > 0) {
-      const cursor = new Date(latestDate).toISOString();
-      query = `updated_at=gte.${cursor}&order=updated_at.desc,created_at.desc`;
-    }
-
+    const query = 'order=created_at.desc&limit=500';
     const newData = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, query);
-    
+
     if (newData && Array.isArray(newData)) {
-      if (newData.length > 0) {
-        const mergedMap = new Map<string, PerbaikanTicket>();
-        localData.forEach(t => { if (t && t.ticket_no) mergedMap.set(t.ticket_no, t); });
-        newData.forEach(t => { if (t && t.ticket_no) mergedMap.set(t.ticket_no, t); });
-        
-        localData = Array.from(mergedMap.values()).sort((a, b) => 
-          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-        );
-        
-        try {
-          localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(localData));
-        } catch {}
-      }
+      // Supabase is authoritative. Keep localData in sync with authoritative Supabase list
+      const remoteTicketNos = new Set(newData.map(t => t.ticket_no).filter(Boolean));
+      const offlinePending = localData.filter(t => 
+        typeof t.id === 'number' && t.id > 1000000000 && !remoteTicketNos.has(t.ticket_no)
+      );
+
+      const merged = [...newData, ...offlinePending].sort((a, b) => 
+        new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      );
+
+      localData = merged;
+      try {
+        localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(localData));
+      } catch {}
       return localData;
     }
   } catch (err) {
@@ -4585,9 +4573,11 @@ export async function updatePerbaikanTicketInSupabase(
  * Hapus tiket perbaikan dari Supabase & local cache
  */
 export async function deletePerbaikanTicketFromSupabase(ticketNoOrId: string | number): Promise<boolean> {
-  const query = typeof ticketNoOrId === 'number' && ticketNoOrId < 1000000000
+  const sTicketNo = String(ticketNoOrId);
+  const isNumeric = typeof ticketNoOrId === 'number' && ticketNoOrId < 1000000000;
+  const query = isNumeric
     ? `id=eq.${ticketNoOrId}`
-    : `ticket_no=eq.${encodeURIComponent(String(ticketNoOrId))}`;
+    : `ticket_no=eq.${encodeURIComponent(sTicketNo)}`;
 
   try {
     await supabaseFetch('perbaikan_tickets', 'DELETE', undefined, query);
@@ -4600,10 +4590,21 @@ export async function deletePerbaikanTicketFromSupabase(ticketNoOrId: string | n
     const cachedStr = localStorage.getItem('wms_local_perbaikan_tickets');
     if (cachedStr) {
       const list: PerbaikanTicket[] = JSON.parse(cachedStr);
-      const filtered = list.filter(t => t.id !== ticketNoOrId && t.ticket_no !== String(ticketNoOrId));
+      const filtered = list.filter(t => t.id !== ticketNoOrId && t.ticket_no !== sTicketNo);
       localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(filtered));
     }
   } catch {}
+
+  // Dispatch event agar PerbaikanView & modul terkait langsung update
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('wms_perbaikan_tickets_updated', {
+          detail: { deletedTicketNo: sTicketNo }
+        })
+      );
+    } catch {}
+  }
 
   return true;
 }
@@ -5063,10 +5064,12 @@ export async function updateQcReportInSupabase(updatedReport: QcReport): Promise
 
 /**
  * Hapus laporan QC dari Supabase (baik di tabel qc_reports maupun log_produk)
+ * Serta secara otomatis menghapus tiket perbaikan/defect terkait (Cascade Delete)
  */
 export async function deleteQcReportFromSupabase(
   reportNoOrId: string | number,
-  optionalId?: number | string
+  optionalId?: number | string,
+  optionalTicketNo?: string
 ): Promise<boolean> {
   const sReportNo = String(reportNoOrId);
   const targetId =
@@ -5076,7 +5079,36 @@ export async function deleteQcReportFromSupabase(
       ? reportNoOrId
       : undefined;
 
-  // 1. Coba hapus dari tabel qc_reports
+  // 1. Temukan nomor tiket perbaikan terkait (jika ada)
+  let linkedTicketNo = optionalTicketNo;
+  if (!linkedTicketNo) {
+    try {
+      const cachedQc = localStorage.getItem('wms_local_qc_reports');
+      if (cachedQc) {
+        const qcList: QcReport[] = JSON.parse(cachedQc);
+        const match = qcList.find(
+          (r) => r.report_no === sReportNo || (targetId && r.id === targetId)
+        );
+        if (match?.perbaikan_ticket_no) {
+          linkedTicketNo = match.perbaikan_ticket_no;
+        }
+      }
+    } catch {}
+  }
+  if (!linkedTicketNo) {
+    try {
+      const cachedTickets = localStorage.getItem('wms_local_perbaikan_tickets');
+      if (cachedTickets) {
+        const tList: PerbaikanTicket[] = JSON.parse(cachedTickets);
+        const match = tList.find((t) => t.qc_report_no === sReportNo);
+        if (match?.ticket_no) {
+          linkedTicketNo = match.ticket_no;
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Coba hapus dari tabel qc_reports
   try {
     await supabaseFetch(
       'qc_reports',
@@ -5095,13 +5127,53 @@ export async function deleteQcReportFromSupabase(
     } catch (err) {}
   }
 
-  // 2. Hapus juga dari log_produk jika tersimpan via fallback QC_INSPEKSI
+  // 3. Hapus juga dari log_produk jika tersimpan via fallback QC_INSPEKSI
   try {
     const logQuery = `type=eq.QC_INSPEKSI&invoice=eq.${encodeURIComponent(sReportNo)}`;
     await supabaseFetch('log_produk', 'DELETE', undefined, logQuery);
   } catch (err) {}
 
-  // 3. Hapus dari cache lokal
+  // 4. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari Supabase
+  try {
+    await supabaseFetch(
+      'perbaikan_tickets',
+      'DELETE',
+      undefined,
+      `qc_report_no=eq.${encodeURIComponent(sReportNo)}`
+    );
+  } catch (err) {
+    console.warn('Cascade delete perbaikan_tickets by qc_report_no failed:', err);
+  }
+
+  if (linkedTicketNo) {
+    try {
+      await supabaseFetch(
+        'perbaikan_tickets',
+        'DELETE',
+        undefined,
+        `ticket_no=eq.${encodeURIComponent(linkedTicketNo)}`
+      );
+    } catch (err) {
+      console.warn('Cascade delete perbaikan_tickets by ticket_no failed:', err);
+    }
+  }
+
+  // 5. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari local cache
+  try {
+    const cachedTickets = localStorage.getItem('wms_local_perbaikan_tickets');
+    if (cachedTickets) {
+      const tList: PerbaikanTicket[] = JSON.parse(cachedTickets);
+      const filteredTickets = tList.filter((t) => {
+        if (t.qc_report_no && t.qc_report_no === sReportNo) return false;
+        if (linkedTicketNo && t.ticket_no === linkedTicketNo) return false;
+        if (t.detail_kerusakan && t.detail_kerusakan.includes(sReportNo)) return false;
+        return true;
+      });
+      localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(filteredTickets));
+    }
+  } catch {}
+
+  // 6. Hapus dari cache lokal QC
   try {
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
     if (cachedStr) {
@@ -5116,10 +5188,18 @@ export async function deleteQcReportFromSupabase(
     }
   } catch {}
 
+  // 7. Dispatch event ke window agar LaporanQcView dan PerbaikanView ter-refresh seketika
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(
-        new CustomEvent('wms_qc_reports_updated', { detail: { deleted: sReportNo } })
+        new CustomEvent('wms_qc_reports_updated', {
+          detail: { deleted: sReportNo, deletedTicketNo: linkedTicketNo },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('wms_perbaikan_tickets_updated', {
+          detail: { deletedReportNo: sReportNo, deletedTicketNo: linkedTicketNo },
+        })
       );
     } catch {}
   }

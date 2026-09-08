@@ -840,10 +840,19 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     if (!deleteConfirmReport) return;
     setIsDeleting(true);
     try {
-      await deleteQcReportFromSupabase(deleteConfirmReport.report_no, deleteConfirmReport.id);
+      await deleteQcReportFromSupabase(
+        deleteConfirmReport.report_no,
+        deleteConfirmReport.id,
+        deleteConfirmReport.perbaikan_ticket_no
+      );
       setReports((prev) => prev.filter((r) => r.report_no !== deleteConfirmReport.report_no));
       playSuccessBeep();
-      onShowToast(`Laporan QC #${deleteConfirmReport.report_no} berhasil dihapus`, 'info');
+      onShowToast(
+        deleteConfirmReport.perbaikan_ticket_no
+          ? `Laporan QC #${deleteConfirmReport.report_no} dan tiket perbaikan #${deleteConfirmReport.perbaikan_ticket_no} berhasil dihapus`
+          : `Laporan QC #${deleteConfirmReport.report_no} berhasil dihapus`,
+        'info'
+      );
       setDeleteConfirmReport(null);
     } catch (err: any) {
       playErrorBeep();
@@ -2589,10 +2598,20 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                   {deleteConfirmReport.pic_qc || '-'}
                 </span>
               </div>
+              {deleteConfirmReport.perbaikan_ticket_no && (
+                <div className="flex justify-between items-center pt-1 border-t border-slate-200 dark:border-slate-800">
+                  <span className="text-rose-600 dark:text-rose-400 font-bold">Tiket Defect / Perbaikan:</span>
+                  <span className="font-mono text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-900">
+                    #{deleteConfirmReport.perbaikan_ticket_no} (Otomatis Dihapus)
+                  </span>
+                </div>
+              )}
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
-              Data laporan QC ini akan dihapus secara permanen dari Supabase dan cache lokal sistem. Tindakan ini tidak dapat dibatalkan.
+              {deleteConfirmReport.perbaikan_ticket_no
+                ? 'Laporan QC dan tiket defect/perbaikan terkait akan dihapus secara permanen dari Supabase dan modul Pengelolaan Defect & Perbaikan.'
+                : 'Data laporan QC ini akan dihapus secara permanen dari Supabase dan cache lokal sistem. Tindakan ini tidak dapat dibatalkan.'}
             </p>
 
             <div className="flex items-center justify-end gap-2.5">

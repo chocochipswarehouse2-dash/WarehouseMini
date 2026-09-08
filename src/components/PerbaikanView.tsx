@@ -205,7 +205,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   initialSearchQuery,
 }) => {
   // Role & Permission Checks
-  const userIsAdmin = isSuperadmin(session);
+  const userIsAdmin =
+    isSuperadmin(session) ||
+    session?.role === 'Admin' ||
+    session?.role === 'HR & Admin' ||
+    session?.role === 'Kepala Gudang';
   const canEditData = userIsAdmin || hasPermission(session, 'can_edit_data');
   const canDeleteData = userIsAdmin || hasPermission(session, 'can_delete_data');
   const canExport = userIsAdmin || hasPermission(session, 'can_export_data');
@@ -221,14 +225,38 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   });
   const [isLoadingDb, setIsLoadingDb] = useState(false);
 
-  // Sync from Supabase on mount + listen to Supabase Realtime changes
+  // Sync from Supabase on mount + listen to Supabase Realtime changes + window events
   useEffect(() => {
     let isMounted = true;
     const loadFromSupabase = async () => {
       setIsLoadingDb(true);
       try {
-        const data = await fetchPerbaikanTicketsFromSupabase();
-        if (isMounted && data && data.length > 0) {
+        let data = await fetchPerbaikanTicketsFromSupabase();
+
+        // Auto-reconcile orphan tickets: jika ada tiket perbaikan yang berasal dari laporan QC
+        // tetapi laporan QC tersebut sudah dihapus oleh user
+        try {
+          const cachedQcStr = localStorage.getItem('wms_local_qc_reports');
+          if (cachedQcStr) {
+            const qcList: any[] = JSON.parse(cachedQcStr);
+            const validQcNos = new Set(qcList.map((q) => q.report_no).filter(Boolean));
+            const orphanTickets = data.filter(
+              (t) => t.qc_report_no && !validQcNos.has(t.qc_report_no)
+            );
+            if (orphanTickets.length > 0) {
+              for (const orphan of orphanTickets) {
+                deletePerbaikanTicketFromSupabase(orphan.ticket_no);
+              }
+              data = data.filter(
+                (t) => !t.qc_report_no || validQcNos.has(t.qc_report_no)
+              );
+            }
+          }
+        } catch (cleanErr) {
+          console.warn('Orphan tickets reconcile warning:', cleanErr);
+        }
+
+        if (isMounted && data) {
           setTickets(data);
         }
       } catch (e) {
@@ -239,6 +267,28 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     };
     loadFromSupabase();
 
+    // Listen to window events from LaporanQcView or Supabase services
+    const handleTicketEvent = (e: any) => {
+      const deletedTicketNo = e?.detail?.deletedTicketNo;
+      const deletedReportNo = e?.detail?.deletedReportNo || e?.detail?.deleted;
+      if (deletedTicketNo || deletedReportNo) {
+        if (isMounted) {
+          setTickets((prev) =>
+            prev.filter(
+              (t) =>
+                (!deletedTicketNo || t.ticket_no !== deletedTicketNo) &&
+                (!deletedReportNo || t.qc_report_no !== deletedReportNo)
+            )
+          );
+        }
+      } else {
+        loadFromSupabase();
+      }
+    };
+
+    window.addEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
+    window.addEventListener('wms_qc_reports_updated', handleTicketEvent);
+
     const sb = getSupabaseClient();
     const channel = sb
       .channel('realtime_perbaikan_tickets')
@@ -247,7 +297,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         { event: '*', schema: 'public', table: 'perbaikan_tickets' },
         async () => {
           const fresh = await fetchPerbaikanTicketsFromSupabase();
-          if (isMounted && fresh && fresh.length > 0) {
+          if (isMounted && fresh) {
             setTickets(fresh);
           }
         }
@@ -256,6 +306,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
     return () => {
       isMounted = false;
+      window.removeEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
+      window.removeEventListener('wms_qc_reports_updated', handleTicketEvent);
       sb.removeChannel(channel);
     };
   }, []);
@@ -736,6 +788,36 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     playSuccessBeep();
     onShowToast(`Data & foto tiket #${editModalTicket.ticket_no} berhasil diperbarui!`, 'success');
     setEditModalTicket(null);
+  };
+
+  // State & Handlers Hapus Tiket Perbaikan
+  const [deleteConfirmTicket, setDeleteConfirmTicket] = useState<PerbaikanTicket | null>(null);
+  const [isDeletingTicket, setIsDeletingTicket] = useState(false);
+
+  const handleOpenDeleteTicket = (t: PerbaikanTicket) => {
+    if (!canDeleteData) {
+      playErrorBeep();
+      onShowToast('Akses dibatasi: Anda tidak memiliki hak akses untuk menghapus data tiket!', 'warning');
+      return;
+    }
+    setDeleteConfirmTicket(t);
+  };
+
+  const handleExecuteDeleteTicket = async () => {
+    if (!deleteConfirmTicket) return;
+    setIsDeletingTicket(true);
+    try {
+      await deletePerbaikanTicketFromSupabase(deleteConfirmTicket.ticket_no);
+      setTickets((prev) => prev.filter((t) => t.ticket_no !== deleteConfirmTicket.ticket_no));
+      playSuccessBeep();
+      onShowToast(`Tiket #${deleteConfirmTicket.ticket_no} berhasil dihapus dari sistem`, 'info');
+      setDeleteConfirmTicket(null);
+    } catch (err: any) {
+      playErrorBeep();
+      onShowToast('Gagal menghapus tiket: ' + (err?.message || 'Terjadi kesalahan'), 'error');
+    } finally {
+      setIsDeletingTicket(false);
+    }
   };
 
   // Handle Photo Selection & Canvas WebP Compression pada Form Input
@@ -2178,10 +2260,18 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 >
                   {/* Badge Tahap Warna */}
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400">
                         #{item.ticket_no}
                       </span>
+                      {item.qc_report_no && (
+                        <span
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900"
+                          title={`Berasal dari Laporan QC #${item.qc_report_no}`}
+                        >
+                          QC #{item.qc_report_no}
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400">• {item.tanggal}</span>
                     </div>
 
@@ -2284,6 +2374,17 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     >
                       <Edit3 className="w-4 h-4 text-amber-500" />
                     </button>
+
+                    {canDeleteData && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDeleteTicket(item)}
+                        className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
+                        title="Hapus Tiket Defect & Perbaikan"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-500" />
+                      </button>
+                    )}
 
                     {/* Aksi Tahap 1: Sortir Kepala QC */}
                     {item.tahap === 'REJECT' && (
@@ -3107,6 +3208,109 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600"
               >
                 Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 12. Modal Konfirmasi Hapus Tiket Defect & Perbaikan */}
+      {deleteConfirmTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 overflow-hidden">
+            <div className="flex items-start gap-3.5 mb-4">
+              <div className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Hapus Tiket Perbaikan?
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Konfirmasi penghapusan data pakaian perbaikan/defect berikut:
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isDeletingTicket}
+                onClick={() => setDeleteConfirmTicket(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3.5 text-xs space-y-2 mb-4 border border-slate-200 dark:border-slate-700/60">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Nomor Tiket:</span>
+                <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                  #{deleteConfirmTicket.ticket_no}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Produk:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 text-right truncate max-w-[200px]" title={deleteConfirmTicket.nama_produk}>
+                  {deleteConfirmTicket.nama_produk}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">SKU / Size:</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">
+                  {deleteConfirmTicket.sku} ({deleteConfirmTicket.size || '-'})
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Tahap / Kerusakan:</span>
+                <span className="font-bold text-rose-600 dark:text-rose-400">
+                  {deleteConfirmTicket.tahap} • {deleteConfirmTicket.kategori_rusak}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Lokasi Rak / Qty:</span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {deleteConfirmTicket.lokasi_sekarang} ({deleteConfirmTicket.qty} pcs)
+                </span>
+              </div>
+              {deleteConfirmTicket.qc_report_no && (
+                <div className="flex justify-between items-center pt-1 border-t border-slate-200 dark:border-slate-700/60">
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">Sumber Laporan QC:</span>
+                  <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-900">
+                    #{deleteConfirmTicket.qc_report_no}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+              Tiket ini akan dihapus secara permanen dari Supabase dan antrean kerja perbaikan. Tindakan ini tidak dapat dibatalkan.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeletingTicket}
+                onClick={() => setDeleteConfirmTicket(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingTicket}
+                onClick={handleExecuteDeleteTicket}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all flex items-center gap-1.5 shadow-sm shadow-rose-600/30 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingTicket ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ya, Hapus Sekarang</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
