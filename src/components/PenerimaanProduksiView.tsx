@@ -584,9 +584,26 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     
     if (targetType === 'wa') {
       const totalQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-      let waText = `*DATA PENERIMAAN BARANG*\nNo. Surat Jalan: *${noSuratJalan}*\nTotal Item: ${items.length}\nTotal Qty: ${totalQty} pcs\n\n*Daftar Barang:*\n`;
-      items.forEach((item, idx) => {
-        waText += `${idx + 1}. ${item.kode_produksi} | ${item.warna} | ${item.size} | *${item.qty} pcs*\n`;
+      
+      // Group items by kode_produksi
+      const groupedItems: Record<string, typeof items> = {};
+      items.forEach(item => {
+        const kode = (item.kode_produksi || 'Tanpa Kode').trim();
+        if (!groupedItems[kode]) {
+          groupedItems[kode] = [];
+        }
+        groupedItems[kode].push(item);
+      });
+
+      let waText = `*DATA PENERIMAAN BARANG*\nNo. Surat Jalan: *${noSuratJalan}*\nTotal Qty: ${totalQty} pcs\n\n*Daftar Barang:*\n`;
+      
+      Object.keys(groupedItems).forEach(kode => {
+        const group = groupedItems[kode];
+        const groupTotalQty = group.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+        waText += `\n📦 *${kode}* (Total: ${groupTotalQty} pcs)\n`;
+        group.forEach(item => {
+          waText += `   - ${item.warna} | Size ${item.size}: *${item.qty} pcs*\n`;
+        });
       });
       
       const cleanPhone = normalizeWhatsAppNumber(targetValue) || targetValue;
