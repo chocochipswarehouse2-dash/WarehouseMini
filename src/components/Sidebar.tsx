@@ -29,6 +29,7 @@ import {
   Users,
   Scissors,
   Truck,
+  Printer,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -141,6 +142,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: FileText,
       description: 'Log pinjam live TikTok/Shopee',
       access: canPeminjaman,
+    },
+    {
+      id: 'cetak_label' as ActivePage,
+      label: 'Cetak Label A6',
+      shortLabel: 'Label A6',
+      icon: Printer,
+      description: 'Cetak resi pengiriman manual',
+      access: true,
     },
     {
       id: 'perbaikan' as ActivePage,

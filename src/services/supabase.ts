@@ -5290,6 +5290,58 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
 }
 
 /**
+ * Sync offline Penerimaan Produksi items to Supabase
+ */
+export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number, failed: number }> {
+  let localData: PenerimaanProduksiItem[] = [];
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) localData = JSON.parse(cached);
+  } catch {
+    return { synced: 0, failed: 0 };
+  }
+
+  const offlineItems = localData.filter((d) => {
+    const sid = String(d.id || '');
+    return (typeof d.id === 'number' && d.id > 1000000000) || sid.startsWith('local_');
+  });
+
+  if (offlineItems.length === 0) return { synced: 0, failed: 0 };
+
+  let synced = 0;
+  let failed = 0;
+  const remainingOffline: PenerimaanProduksiItem[] = [];
+
+  for (const item of offlineItems) {
+    try {
+      const rowToInsert = { ...item };
+      delete rowToInsert.id; // Let Supabase generate a new ID
+      delete (rowToInsert as any).sheet_row;
+      
+      const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert]);
+      if (res && res.length > 0) {
+        synced++;
+      } else {
+        failed++;
+        remainingOffline.push(item);
+      }
+    } catch (err) {
+      console.warn('Failed to sync offline item:', err);
+      failed++;
+      remainingOffline.push(item);
+    }
+  }
+
+  try {
+    // Keep only the remaining offline items and the ones that were NOT offline
+    const updatedLocal = localData.filter(d => !offlineItems.includes(d)).concat(remainingOffline);
+    localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(updatedLocal));
+  } catch {}
+
+  return { synced, failed };
+}
+
+/**
  * Simpan Batch Penerimaan Produksi ke Supabase & Google Apps Script mirror
  */
 export async function simpanBatchPenerimaanProduksiToSupabase(

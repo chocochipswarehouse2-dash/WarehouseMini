@@ -16,7 +16,8 @@ export type ActivePage =
   | 'roster_shift'
   | 'lembur_cuti'
   | 'hr_approval'
-  | 'hr_rekap';
+  | 'hr_rekap'
+  | 'cetak_label';
 
 export type UserRole =
   | 'Superadmin'

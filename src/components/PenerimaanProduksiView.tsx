@@ -43,6 +43,7 @@ import {
   hapusBatchPenerimaanProduksiFromSupabase,
   hapusPenerimaanProduksiSingleRowFromSupabase,
   getSupabaseClient,
+  syncOfflinePenerimaanProduksi,
 } from '../services/supabase';
 import { compressImage } from '../utils/imageCompressor';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
@@ -162,6 +163,28 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       onShowToast('Gagal memuat riwayat penerimaan barang', 'error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const handleSyncOffline = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await syncOfflinePenerimaanProduksi();
+      if (result.synced > 0) {
+        onShowToast(`Berhasil menyinkronkan ${result.synced} data offline ke Supabase.`, 'success');
+      }
+      if (result.failed > 0) {
+        onShowToast(`Gagal menyinkronkan ${result.failed} data. Coba lagi nanti.`, 'warning');
+      }
+      if (result.synced === 0 && result.failed === 0) {
+        onShowToast(`Tidak ada data offline yang perlu disinkronkan.`, 'info');
+      }
+      await loadData();
+    } catch (err: any) {
+      onShowToast(`Terjadi kesalahan saat sync: ${err.message}`, 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -1408,7 +1431,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
               {/* Search Bar */}
-              <div className="lg:col-span-4 relative">
+              <div className="lg:col-span-3 relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -1480,6 +1503,24 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   className="w-full py-2 px-3 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-center"
                 >
                   Reset
+                </button>
+              </div>
+
+              {/* Sync Offline Button */}
+              <div className="lg:col-span-1 flex items-center">
+                <button
+                  type="button"
+                  onClick={handleSyncOffline}
+                  disabled={isSyncing}
+                  className="w-full py-2 px-3 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 transition flex justify-center items-center gap-1.5 disabled:opacity-50"
+                  title="Sinkronisasi Data Offline yang belum masuk ke database"
+                >
+                  {isSyncing ? (
+                    <span className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  Sync Offline
                 </button>
               </div>
             </div>

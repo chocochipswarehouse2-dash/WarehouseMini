@@ -50,6 +50,7 @@ const RosterShiftView = React.lazy(() => import('./components/hr/RosterShiftView
 const LemburCutiView = React.lazy(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
 const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
 const HrRekapView = React.lazy(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
+const CetakLabelView = React.lazy(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
 
 import {
   fetchStockForLocations,
@@ -1187,6 +1188,10 @@ export default function App() {
                   onShowToast={showToast}
                   onRefreshCatalog={loadProducts}
                 />
+            )}
+
+            {activePage === 'cetak_label' && (
+                <CetakLabelView />
             )}
 
             {activePage === 'picking_tasks' && (

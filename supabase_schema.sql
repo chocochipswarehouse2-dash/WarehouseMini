@@ -195,7 +195,18 @@ CREATE TABLE IF NOT EXISTS public.qc_reports (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 10. TABEL MODUL SDM / HR & KARYAWAN
+-- 10. TABEL ADDRESS BOOK (AUTO-FILL CETAK LABEL)
+CREATE TABLE IF NOT EXISTS public.address_book (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nama_penerima TEXT NOT NULL,
+  no_telp TEXT,
+  alamat TEXT NOT NULL,
+  keterangan TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_address_book_nama ON public.address_book(nama_penerima);
+
+-- 11. TABEL MODUL SDM / HR & KARYAWAN
 CREATE TABLE IF NOT EXISTS public.karyawan (
   nik VARCHAR(50) PRIMARY KEY,
   nama VARCHAR(150) NOT NULL,
@@ -340,7 +351,7 @@ DECLARE
     'wms_users', 'master_produk', 'log_produk', 'stock_opname_queue',
     'penerimaan_produksi', 'picking_list', 'peminjaman', 'perbaikan_tickets',
     'qc_reports', 'karyawan', 'master_shift', 'roster_shift', 'presensi',
-    'lembur', 'perijinan_cuti'
+    'lembur', 'perijinan_cuti', 'address_book'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
