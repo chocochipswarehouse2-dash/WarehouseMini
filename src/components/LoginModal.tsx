@@ -101,10 +101,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           <button
             type="button"
             onClick={onOpenThemePicker}
-            title={darkMode ? 'Beralih ke Tema Terang (Light Mode)' : 'Beralih ke Tema Gelap (Dark Mode)'}
+            title="Pilih Tema"
             className="absolute top-4 right-4 p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-lg transition-colors cursor-pointer"
           >
-            {darkMode ? <Palette className="w-4 h-4 text-primary-500" /> : <Moon className="w-4 h-4 text-slate-600" />}
+            <Palette className="w-4 h-4 text-slate-600" />
           </button>
         </div>
 

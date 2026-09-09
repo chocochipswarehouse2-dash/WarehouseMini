@@ -758,20 +758,42 @@ export default function App() {
     const now = new Date();
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-    const newItem: ScannedItem = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-      text: found ? found.k : text,
-      time: timeStr,
-      isCategory: false,
-      isLocation: false,
-      isInvalidSku,
-      productName,
-      size,
-      category: currentCategory,
-      location: currentLocation || (found ? found.lokasi || '' : ''),
-    };
+    const textToMatch = found ? found.k : text;
+    const catToMatch = currentCategory;
+    const locToMatch = currentLocation || (found ? found.lokasi || '' : '');
 
-    setScannedData((prev) => [...prev, newItem]);
+    setScannedData((prev) => {
+      const existingIdx = prev.findIndex(
+        (item) => item.text === textToMatch && item.category === catToMatch && item.location === locToMatch
+      );
+      
+      if (existingIdx >= 0) {
+        const updatedItem = {
+          ...prev[existingIdx],
+          qty: (prev[existingIdx].qty || 1) + 1,
+          time: timeStr
+        };
+        const newArr = [...prev];
+        newArr.splice(existingIdx, 1);
+        newArr.push(updatedItem);
+        return newArr;
+      } else {
+        const newItem: ScannedItem = {
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+          text: textToMatch,
+          time: timeStr,
+          isCategory: false,
+          isLocation: false,
+          isInvalidSku,
+          productName,
+          size,
+          category: catToMatch,
+          location: locToMatch,
+          qty: 1,
+        };
+        return [...prev, newItem];
+      }
+    });
   };
 
   const handleRemoveItem = (id: string) => {
@@ -840,14 +862,14 @@ export default function App() {
             size: item.size || (pData ? pData.s : ''),
             area: getAreaFromLokasi(cLokasi),
             lokasi: cLokasi,
-            qty: 1,
+            qty: item.qty || 1,
             operator: operatorName,
             keterangan: ketText || `${cType} Staging Scan`,
             created_at: waktuPesan.toISOString(),
           });
         } else if (cType === 'SO') {
           if (!soFisik[cLokasi]) soFisik[cLokasi] = {};
-          soFisik[cLokasi][line] = (soFisik[cLokasi][line] || 0) + 1;
+          soFisik[cLokasi][line] = (soFisik[cLokasi][line] || 0) + (item.qty || 1);
 
           // Add to log_produk for SO scan as well
           const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
@@ -859,7 +881,7 @@ export default function App() {
             size: item.size || (pData ? pData.s : ''),
             area: getAreaFromLokasi(cLokasi),
             lokasi: cLokasi,
-            qty: 1,
+            qty: item.qty || 1,
             operator: operatorName,
             keterangan: ketText || 'Stock Opname Scan',
             created_at: waktuPesan.toISOString(),

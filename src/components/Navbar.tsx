@@ -38,8 +38,7 @@ interface NavbarProps {
   onOpenMobileSidebar: () => void;
   onToggleSidebarCollapse: () => void;
   isSidebarCollapsed: boolean;
-  darkMode: boolean;
-  onOpenThemePicker: () => void;
+    onOpenThemePicker: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
@@ -57,8 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMobileSidebar,
   onToggleSidebarCollapse,
   isSidebarCollapsed,
-  darkMode,
-  onOpenThemePicker,
+    onOpenThemePicker,
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
@@ -205,20 +203,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           id="btnToggleDarkMode"
           onClick={onOpenThemePicker}
-          title={darkMode ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
+          title="Pilih Tema"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-[#0f172a] dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
         >
-          {darkMode ? (
-            <>
-              <Palette className="w-4 h-4 text-primary-500" />
-              <span className="hidden md:inline font-bold text-amber-400">Terang</span>
+          <>
+              <Palette className="w-4 h-4 text-slate-500" />
+              <span className="hidden md:inline font-bold text-slate-500">Tema</span>
             </>
-          ) : (
-            <>
-              <Moon className="w-4 h-4 text-slate-700 fill-slate-700" />
-              <span className="hidden md:inline font-bold text-slate-700">Gelap</span>
-            </>
-          )}
         </button>
 
         {/* Settings Button - Hanya untuk Superadmin atau user dengan izin Konfigurasi Sistem / Manajemen User */}

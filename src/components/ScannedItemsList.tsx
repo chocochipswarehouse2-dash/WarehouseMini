@@ -25,6 +25,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
   onRemoveItem,
   onClearAll,
 }) => {
+  const totalScannedQty = items.reduce((sum, item) => sum + (item.qty || 1), 0);
   const listBottomRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = React.useState(false);
 
@@ -52,7 +53,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
               id="scanCount"
               className="bg-emerald-500 text-black font-extrabold px-2 py-0.5 rounded-full text-xs shadow-[0_0_8px_rgba(16,185,129,0.35)]"
             >
-              {items.length}
+              {totalScannedQty}
             </span>
           </h3>
         </div>
@@ -176,6 +177,10 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                         Size: {item.size}
                       </span>
                     )}
+                    {/* Qty Label */}
+                    <span className="text-[11px] font-black bg-primary-500/20 text-primary-700 dark:text-primary-300 border border-primary-500/40 px-2 py-0.5 rounded-md uppercase">
+                      x{item.qty || 1}
+                    </span>
 
                     {/* Catalog Verified Status */}
                     {!item.isInvalidSku && (

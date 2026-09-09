@@ -43,8 +43,7 @@ interface SidebarProps {
   onCloseMobile: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  darkMode: boolean;
-  onOpenThemePicker: () => void;
+    onOpenThemePicker: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
@@ -64,8 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   isCollapsed,
   onToggleCollapse,
-  darkMode,
-  onOpenThemePicker,
+    onOpenThemePicker,
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
@@ -500,23 +498,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <button
         type="button"
         onClick={onOpenThemePicker}
-        title={darkMode ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
+        title="Pilih Tema"
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
           collapsed ? 'justify-center px-2' : ''
         }`}
       >
         <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-          {darkMode ? (
-            <Palette className="w-4 h-4 text-primary-500" />
-          ) : (
-            <Moon className="w-4 h-4 text-slate-700 fill-slate-700" />
-          )}
+          <Palette className="w-4 h-4 text-slate-500" />
         </div>
         {!collapsed && (
           <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span>{darkMode ? 'Mode Terang' : 'Mode Gelap'}</span>
+            <span>Pilih Tema</span>
             <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-              {darkMode ? 'DARK' : 'LIGHT'}
+              'TEMA'
             </span>
           </div>
         )}
