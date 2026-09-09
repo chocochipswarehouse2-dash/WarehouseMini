@@ -148,3 +148,19 @@ export function formatProductNameWithSize(name: string, size?: string): string {
 
   return `${cleanName} - ${cleanSize}`;
 }
+/**
+ * Cleans up duplicated product names often found in bad legacy data 
+ * e.g., "Narcissa Top Brown (S) - NARCISSA TOP BROWN (S) - NARCISSA..."
+ */
+export function cleanProductName(name: string): string {
+  if (!name) return '';
+  const parts = name.split(' - ');
+  if (parts.length > 1) {
+    const first = parts[0].trim().toLowerCase();
+    const second = parts[1].trim().toLowerCase();
+    if (first === second || second.startsWith(first) || first.startsWith(second)) {
+      return parts[0].trim();
+    }
+  }
+  return name.trim();
+}

@@ -49,7 +49,7 @@ import {
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
-import { partialSearchMatch, sortAlphabeticalAndSize } from '../utils/sortUtils';
+import { partialSearchMatch, sortAlphabeticalAndSize , cleanProductName } from '../utils/sortUtils';
 
 // ========================================================
 // DEFINISI KONSTANTA KOLOM AREA SESUAI SPESIFIKASI WMS

@@ -815,7 +815,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           const cleanSize = (rawSize && rawSize !== '-') 
             ? rawSize 
             : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
-          const formattedNama = formatProductNameWithSize(it.produk, cleanSize);
+          const formattedNama = it.produk;
           const cleanSku = (it.sku || '').toUpperCase().trim();
           const locs = getProductLocations(cleanSku, it.lokasi);
           const emptyRacks = getRecordedEmptyLocations(cleanSku);
@@ -845,7 +845,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           const cleanSize = (rawSize && rawSize !== '-') 
             ? rawSize 
             : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : 'ALL');
-          const formattedNama = formatProductNameWithSize(it.produk, cleanSize);
+          const formattedNama = it.produk;
           const cleanSku = (it.sku || '').toUpperCase().trim();
           const locs = getProductLocations(cleanSku, it.lokasi);
           const emptyRacks = getRecordedEmptyLocations(cleanSku);

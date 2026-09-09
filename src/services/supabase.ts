@@ -27,7 +27,7 @@ import {
   QcReport,
   SimpanPenerimaanPayload,
 } from '../types';
-import { extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
+import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
 
 
 export const DEFAULT_SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
@@ -2089,7 +2089,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
   if (sku.startsWith('#') || sku.includes('#')) return null;
   if (sku.toUpperCase() === 'KOLI' || sku.toUpperCase() === 'BOX' || sku.toUpperCase().startsWith('LOK ') || sku.toUpperCase().startsWith('RAK ')) return null;
 
-  const nama = String(
+  let rawNama = String(
     row.nama_produk ||
     row.nama_barang ||
     row.nama ||
@@ -2099,6 +2099,8 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     row.deskripsi ||
     sku
   ).trim();
+
+  const nama = cleanProductName(rawNama);
 
   const size = String(
     row.size ||
@@ -3019,7 +3021,7 @@ export async function savePeminjamanToSupabase(record: PeminjamanRecord): Promis
         ? rawSize 
         : (extractSizeFromSku(it.sku || '') !== '-' ? extractSizeFromSku(it.sku || '') : 'ALL');
       const rawNama = it.produk || it.sku || 'Unknown';
-      const formattedNama = formatProductNameWithSize(rawNama, cleanSize);
+      const formattedNama = rawNama;
       return {
         id: baseId + idx,
         no_peminjaman: record.noPeminjaman,
@@ -3096,7 +3098,7 @@ function extractPickingItemFromRow(row: any): PickingListItem | null {
 
   let nama_produk = String(row.nama_produk || row.produk || row.product || row.item_name || sku).trim();
   if (rawSize && rawSize !== '-' && rawSize !== 'ALL') {
-    nama_produk = formatProductNameWithSize(nama_produk, rawSize);
+    // nama_produk = nama_produk;
   }
 
   return {
@@ -3155,7 +3157,7 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
         }
         let pNama = String(p.nama_produk || sku).trim();
         if (pSize && pSize !== '-' && pSize !== 'ALL') {
-          pNama = formatProductNameWithSize(pNama, pSize);
+          // pNama = pNama;
         }
 
         const newItem = {
@@ -3436,7 +3438,7 @@ export async function insertPickingListRowsToSupabase(
     const cleanSize = (it.size || '').trim();
     let nama = it.nama_produk || it.sku;
     if (cleanSize && cleanSize !== '-' && cleanSize !== 'ALL') {
-      nama = formatProductNameWithSize(nama, cleanSize);
+      // nama = nama;
     }
     return {
       no_sj: String(it.no_sj || '').trim().toUpperCase(),
@@ -3525,7 +3527,7 @@ export async function createPickingSuratJalanSupabase(
       ? rawSize 
       : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : '-');
     const rawNama = it.nama_produk.trim() || it.sku.trim().toUpperCase();
-    const formattedNama = formatProductNameWithSize(rawNama, cleanSize);
+    const formattedNama = rawNama;
     return {
       id: `pick_${cleanNoSj}_${it.sku.trim().toUpperCase()}_${Date.now()}_${idx}`,
       no_sj: cleanNoSj,

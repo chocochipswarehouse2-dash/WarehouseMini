@@ -46,7 +46,7 @@ import {
 import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
-import { partialSearchMatch } from '../utils/sortUtils';
+import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 
 interface MutasiLogViewProps {
   session?: UserSession | null;
@@ -905,7 +905,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                             )}
                           </div>
                           <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 leading-snug line-clamp-2">
-                            {item.nama_produk || '-'}
+                            {cleanProductName(productCatalog?.find(p => p.k.toUpperCase() === item.sku.toUpperCase())?.p || item.nama_produk || '-')}
                           </p>
                         </div>
 
@@ -1053,7 +1053,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               )}
                             </div>
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                              {item.nama_produk || '-'}
+                              {cleanProductName(productCatalog?.find(p => p.k.toUpperCase() === item.sku.toUpperCase())?.p || item.nama_produk || '-')}
                             </div>
                           </td>
 

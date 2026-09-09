@@ -29,7 +29,7 @@ import {
   getSupabaseClient,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
-import { partialSearchMatch } from '../utils/sortUtils';
+import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 
 interface StockOpnameViewProps {
@@ -416,7 +416,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       `"${(it.invoice || '').replace(/"/g, '""')}"`,
       `"${(it.sesi_id || '').replace(/"/g, '""')}"`,
       `"${(it.sku || '').replace(/"/g, '""')}"`,
-      `"${(it.nama_produk || '').replace(/"/g, '""')}"`,
+      `"${((productCatalog?.find(p => p.k.toUpperCase() === it.sku.toUpperCase())?.p || it.nama_produk) || '').replace(/"/g, '""')}"`,
       `"${(it.size || '').replace(/"/g, '""')}"`,
       `"${(it.lokasi || '').replace(/"/g, '""')}"`,
       `"${(it.area || '').replace(/"/g, '""')}"`,
@@ -732,7 +732,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                             )}
                           </div>
                           <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                            {item.nama_produk || '-'}
+                            {cleanProductName(productCatalog?.find(p => p.k.toUpperCase() === item.sku.toUpperCase())?.p || item.nama_produk || '-')}
                           </div>
                         </td>
 

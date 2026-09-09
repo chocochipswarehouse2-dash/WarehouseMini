@@ -79,7 +79,7 @@ import {
   playSaveSuccessChime,
   vibrateDevice,
 } from '../services/audio';
-import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
+import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize , cleanProductName } from '../utils/sortUtils';
 
 
 interface PickingTasksViewProps {
@@ -461,7 +461,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const effectiveSize = (item.size && item.size !== '-') 
         ? item.size 
         : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
-      const effectiveName = formatProductNameWithSize(item.nama_produk, effectiveSize);
+      const effectiveName = item.nama_produk;
       const enhancedItem: PickingListItem = {
         ...item,
         size: effectiveSize,
@@ -919,7 +919,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const effectiveSize = (it.size && it.size !== '-') 
           ? it.size 
           : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
-        const effectiveName = formatProductNameWithSize(it.nama_produk || cleanSku, effectiveSize);
+        const effectiveName = it.nama_produk || cleanSku;
         return {
           ...it,
           sku: cleanSku,
@@ -1388,7 +1388,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       ? newSjSkuSize.trim()
       : (catProd?.s && catProd.s !== '-' ? catProd.s : extractSizeFromSku(cleanSku));
     const cleanNama = newSjSkuNama.trim() || catProd?.p || `Produk ${cleanSku}`;
-    const formattedNama = formatProductNameWithSize(cleanNama, cleanSize);
+    const formattedNama = cleanNama;
 
     const newRow: PickingListItem = {
       id: `pick_new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1445,7 +1445,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           const effectiveSize = (r.size && r.size !== '-') 
             ? r.size 
             : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
-          const effectiveName = formatProductNameWithSize(r.nama_produk || cleanSku, effectiveSize);
+          const effectiveName = r.nama_produk || cleanSku;
           return {
             ...r,
             id: r.id || `pick_new_${Date.now()}_${idx}`,
@@ -2325,7 +2325,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             const displaySize = (item.size && item.size !== '-') 
               ? item.size 
               : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(itemSku));
-            const displayName = formatProductNameWithSize(item.nama_produk || itemSku, displaySize);
+            const displayName = item.nama_produk || itemSku;
 
             return (
               <div
