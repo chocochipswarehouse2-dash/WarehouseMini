@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Moon,
   Sun,
+  Palette,
   Settings,
   LogOut,
   BellRing,
@@ -38,7 +39,7 @@ interface NavbarProps {
   onToggleSidebarCollapse: () => void;
   isSidebarCollapsed: boolean;
   darkMode: boolean;
-  onToggleDarkMode: () => void;
+  onOpenThemePicker: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
@@ -57,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebarCollapse,
   isSidebarCollapsed,
   darkMode,
-  onToggleDarkMode,
+  onOpenThemePicker,
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
@@ -117,9 +118,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           type="button"
           onClick={onOpenMobileSidebar}
           title="Buka Menu Navigasi"
-          className="lg:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-[#ff7a00] hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors cursor-pointer active:scale-95 border border-slate-200 dark:border-slate-700"
+          className="lg:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors cursor-pointer active:scale-95 border border-slate-200 dark:border-slate-700"
         >
-          <Menu className="w-5 h-5 text-[#ff7a00]" />
+          <Menu className="w-5 h-5 text-primary-500" />
         </button>
 
         {/* Desktop Sidebar Toggle Button */}
@@ -127,14 +128,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           type="button"
           onClick={onToggleSidebarCollapse}
           title={isSidebarCollapsed ? 'Buka Sidebar' : 'Sembunyikan Sidebar'}
-          className="hidden lg:flex p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-[#ff7a00] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+          className="hidden lg:flex p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
         >
           <PanelLeft className="w-4 h-4" />
         </button>
 
         {/* Active Page Indicator / Breadcrumb */}
         <div className="flex items-center gap-2.5">
-          <div className="hidden sm:flex w-8 h-8 rounded-xl bg-[#ff7a00]/10 border border-[#ff7a00]/20 items-center justify-center text-[#ff7a00]">
+          <div className="hidden sm:flex w-8 h-8 rounded-xl bg-primary-500/10 border border-primary-500/20 items-center justify-center text-primary-500">
             <PageIcon className="w-4 h-4" />
           </div>
           <div>
@@ -158,8 +159,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           {isRealtimeConnected ? (
             <>
-              <div className="w-2 h-2 rounded-full bg-[#ff7a00] shadow-[0_0_8px_#ff7a00]"></div>
-              <span className="text-[10px] uppercase tracking-wider font-extrabold text-[#ff7a00]">
+              <div className="w-2 h-2 rounded-full bg-primary-500 shadow-[0_0_8px_var(--theme-500)]"></div>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-primary-500">
                 Live
               </span>
             </>
@@ -181,7 +182,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={() => onSelectPage('picking_tasks')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-xs font-black shadow-md shadow-rose-500/30 animate-bounce cursor-pointer transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-black shadow-md shadow-primary-500/30 animate-bounce cursor-pointer transition-all active:scale-95"
             title="Ada tugas picking baru! Klik untuk buka."
           >
             <Package className="w-3.5 h-3.5" />
@@ -194,22 +195,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           id="btnOpenApkModal"
           onClick={onOpenApkModal}
           title="Download APK / Install ke Android"
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 hover:text-[#ff7a00] hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all text-xs font-bold border border-slate-200 dark:border-slate-800 cursor-pointer shadow-xs"
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 hover:text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all text-xs font-bold border border-slate-200 dark:border-slate-800 cursor-pointer shadow-xs"
         >
-          <Smartphone className="w-3.5 h-3.5 text-[#ff7a00]" />
+          <Smartphone className="w-3.5 h-3.5 text-primary-500" />
           <span>APK</span>
         </button>
 
         {/* Dark / Light Mode Toggle */}
         <button
           id="btnToggleDarkMode"
-          onClick={onToggleDarkMode}
+          onClick={onOpenThemePicker}
           title={darkMode ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-[#0f172a] dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
         >
           {darkMode ? (
             <>
-              <Sun className="w-4 h-4 text-amber-400 fill-amber-400" />
+              <Palette className="w-4 h-4 text-primary-500" />
               <span className="hidden md:inline font-bold text-amber-400">Terang</span>
             </>
           ) : (
@@ -226,7 +227,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="btnSettings"
             onClick={onOpenSettings}
             title="Pengaturan Sistem"
-            className="p-2 text-slate-600 dark:text-slate-400 hover:text-[#ff7a00] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
+            className="p-2 text-slate-600 dark:text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -236,7 +237,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {session && (
           <div className="hidden md:flex items-center gap-1.5 pl-1.5 border-l border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
-              <span className="px-2 py-0.5 rounded-lg bg-[#ff7a00]/10 text-[#ff7a00] font-extrabold border border-[#ff7a00]/20 text-[10px] uppercase">
+              <span className="px-2 py-0.5 rounded-lg bg-primary-500/10 text-primary-500 font-extrabold border border-primary-500/20 text-[10px] uppercase">
                 {session.role}
               </span>
             </div>

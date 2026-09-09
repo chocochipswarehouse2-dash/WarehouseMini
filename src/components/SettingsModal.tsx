@@ -94,8 +94,6 @@ interface SettingsModalProps {
   session: UserSession | null;
   onUpdateSession: (newSession: UserSession) => void;
   onRefreshCatalog: (endpoint?: string, token?: string) => Promise<void>;
-  darkMode: boolean;
-  onToggleDarkMode: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
@@ -111,8 +109,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   session,
   onUpdateSession,
   onRefreshCatalog,
-  darkMode,
-  onToggleDarkMode,
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
@@ -678,7 +674,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           onClick={(e) => e.stopPropagation()}
           className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 text-center space-y-4"
         >
-          <div className="w-12 h-12 bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center mx-auto">
+          <div className="w-12 h-12 bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 rounded-xl flex items-center justify-center mx-auto">
             <ShieldAlert className="w-6 h-6" />
           </div>
           <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Akses Pengaturan Dibatasi</h3>
@@ -688,7 +684,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-full py-2.5 px-4 bg-[#ff7a00] hover:bg-[#e06b00] text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
+            className="w-full py-2.5 px-4 bg-primary-500 hover:bg-primary-600 text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
           >
             Tutup
           </button>
@@ -716,7 +712,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Header */}
         <div className="px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#ff7a00]/10 border border-[#ff7a00]/30 flex items-center justify-center text-[#ff7a00]">
+            <div className="w-10 h-10 rounded-xl bg-primary-500/10 border border-primary-500/30 flex items-center justify-center text-primary-500">
               <Settings className="w-5 h-5" />
             </div>
             <div>
@@ -752,7 +748,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onClick={() => setActiveTab('database')}
               className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'database'
-                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
@@ -770,7 +766,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onClick={() => setActiveTab('users')}
               className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'users'
-                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
@@ -784,7 +780,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setActiveTab('device')}
             className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'device'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
@@ -798,7 +794,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onClick={() => setActiveTab('deploy_apk')}
               className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'deploy_apk'
-                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
@@ -813,7 +809,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onClick={() => setActiveTab('whatsapp')}
               className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'whatsapp'
-                  ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
@@ -832,15 +828,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="space-y-6">
               {/* Quick Role Simulation Switcher for Superadmin Testing */}
               {session && userIsSuperadmin && (
-                <div className="p-4 bg-gradient-to-r from-[#ff7a00]/10 via-[#ff7a00]/5 to-transparent border border-[#ff7a00]/30 rounded-2xl space-y-2.5">
+                <div className="p-4 bg-gradient-to-r from-primary-500/10 via-primary-500/5 to-transparent border border-primary-500/30 rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-[#ff7a00]" />
+                      <Shield className="w-4 h-4 text-primary-500" />
                       <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                        Sesi Login Aktif: <b className="text-[#ff7a00]">{session.name || session.username}</b>
+                        Sesi Login Aktif: <b className="text-primary-500">{session.name || session.username}</b>
                       </span>
                     </div>
-                    <span className="px-2.5 py-0.5 bg-[#ff7a00] text-white rounded-lg text-[11px] font-black uppercase">
+                    <span className="px-2.5 py-0.5 bg-primary-500 text-white rounded-lg text-[11px] font-black uppercase">
                       {session.role}
                     </span>
                   </div>
@@ -860,8 +856,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           onClick={() => handleSwitchActiveRole(r)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                             isCurrent
-                              ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/20'
-                              : 'bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-[#ff7a00]'
+                              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
+                              : 'bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-primary-500'
                           }`}
                         >
                           <span className="text-sm">{details?.icon}</span>
@@ -877,7 +873,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-[#0f172a]/50">
                 <div className="p-4 bg-white dark:bg-[#101726] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-[#ff7a00]" />
+                    <Plus className="w-4 h-4 text-primary-500" />
                     <span className="text-xs font-extrabold text-slate-800 dark:text-white">
                       Tambah Pengguna & Pengaturan Role Baru
                     </span>
@@ -901,7 +897,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         setIsPermissionFormOpen(true);
                       }
                     }}
-                    className="text-xs text-[#ff7a00] font-bold hover:underline cursor-pointer flex items-center gap-1"
+                    className="text-xs text-primary-500 font-bold hover:underline cursor-pointer flex items-center gap-1"
                   >
                     {isPermissionFormOpen && editingIndex === null ? 'Tutup Form' : '+ Buka Form Tambah User'}
                   </button>
@@ -913,7 +909,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                          Username / ID Login <span className="text-rose-500">*</span>
+                          Username / ID Login <span className="text-primary-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -921,7 +917,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newUsername}
                           onChange={(e) => setNewUsername(e.target.value)}
                           placeholder="e.g. gudang1"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
 
@@ -934,7 +930,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newName}
                           onChange={(e) => setNewName(e.target.value)}
                           placeholder="e.g. Budi Santoso"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
 
@@ -953,7 +949,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 setNewName(match.nama);
                               }
                             }}
-                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                           >
                             <option value="">-- Tanpa NIK --</option>
                             {karyawanDirectory.map((k) => (
@@ -968,7 +964,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={newNik}
                             onChange={(e) => setNewNik(e.target.value)}
                             placeholder="e.g. WH0001"
-                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                           />
                         )}
                       </div>
@@ -982,7 +978,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="Default: 123456"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
                       <div>
@@ -994,7 +990,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newPhone}
                           onChange={(e) => setNewPhone(e.target.value)}
                           placeholder="e.g. 628123456"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
                       <div>
@@ -1006,7 +1002,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newEmail}
                           onChange={(e) => setNewEmail(e.target.value)}
                           placeholder="e.g. user@email.com"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
                     </div>
@@ -1027,7 +1023,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               onClick={() => handleRolePresetSelect(r)}
                               className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
                                 isSelected
-                                  ? 'bg-[#ff7a00]/10 border-[#ff7a00] text-[#ff7a00] shadow-sm'
+                                  ? 'bg-primary-500/10 border-primary-500 text-primary-500 shadow-sm'
                                   : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
                               }`}
                             >
@@ -1047,7 +1043,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
                         <div>
                           <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
-                            <SlidersHorizontal className="w-3.5 h-3.5 text-[#ff7a00]" />
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-primary-500" />
                             <span>Pengaturan Hak Akses Spesifik (Granular Permissions)</span>
                           </h4>
                           <p className="text-[10px] text-slate-400">
@@ -1086,7 +1082,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   onClick={() =>
                                     handleSelectAllGroupPermissions(groupKeys, !isAllGroupSelected)
                                   }
-                                  className="text-[10px] font-bold text-[#ff7a00] hover:underline cursor-pointer"
+                                  className="text-[10px] font-bold text-primary-500 hover:underline cursor-pointer"
                                 >
                                   {isAllGroupSelected ? 'Batal' : 'Pilih Semua'}
                                 </button>
@@ -1108,7 +1104,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         type="checkbox"
                                         checked={isChecked}
                                         onChange={() => handleTogglePermission(perm.key)}
-                                        className="mt-0.5 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+                                        className="mt-0.5 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
                                       />
                                       <div className="flex-1 min-w-0">
                                         <div className="text-xs font-bold flex items-center gap-1">
@@ -1148,7 +1144,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <button
                         type="submit"
-                        className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                        className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                       >
                         <Save className="w-3.5 h-3.5" />
                         <span>Simpan User Baru</span>
@@ -1178,7 +1174,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                          Username / ID Login <span className="text-rose-500">*</span>
+                          Username / ID Login <span className="text-primary-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -1186,7 +1182,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newUsername}
                           onChange={(e) => setNewUsername(e.target.value)}
                           placeholder="e.g. gudang1"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
 
@@ -1199,7 +1195,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newName}
                           onChange={(e) => setNewName(e.target.value)}
                           placeholder="e.g. Budi Santoso"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
 
@@ -1218,7 +1214,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 setNewName(match.nama);
                               }
                             }}
-                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                           >
                             <option value="">-- Tanpa NIK --</option>
                             {karyawanDirectory.map((k) => (
@@ -1233,7 +1229,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={newNik}
                             onChange={(e) => setNewNik(e.target.value)}
                             placeholder="e.g. WH0001"
-                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                           />
                         )}
                       </div>
@@ -1247,7 +1243,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="Default: 123456"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
                       <div>
@@ -1259,7 +1255,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newPhone}
                           onChange={(e) => setNewPhone(e.target.value)}
                           placeholder="e.g. 628123456"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
                       <div>
@@ -1271,7 +1267,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           value={newEmail}
                           onChange={(e) => setNewEmail(e.target.value)}
                           placeholder="e.g. user@email.com"
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                         />
                       </div>
                     </div>
@@ -1292,7 +1288,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               onClick={() => handleRolePresetSelect(r)}
                               className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
                                 isSelected
-                                  ? 'bg-[#ff7a00]/10 border-[#ff7a00] text-[#ff7a00] shadow-sm'
+                                  ? 'bg-primary-500/10 border-primary-500 text-primary-500 shadow-sm'
                                   : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
                               }`}
                             >
@@ -1312,7 +1308,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
                         <div>
                           <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
-                            <SlidersHorizontal className="w-3.5 h-3.5 text-[#ff7a00]" />
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-primary-500" />
                             <span>Pengaturan Hak Akses Spesifik (Granular Permissions)</span>
                           </h4>
                           <p className="text-[10px] text-slate-400">
@@ -1351,7 +1347,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   onClick={() =>
                                     handleSelectAllGroupPermissions(groupKeys, !isAllGroupSelected)
                                   }
-                                  className="text-[10px] font-bold text-[#ff7a00] hover:underline cursor-pointer"
+                                  className="text-[10px] font-bold text-primary-500 hover:underline cursor-pointer"
                                 >
                                   {isAllGroupSelected ? 'Batal' : 'Pilih Semua'}
                                 </button>
@@ -1373,7 +1369,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         type="checkbox"
                                         checked={isChecked}
                                         onChange={() => handleTogglePermission(perm.key)}
-                                        className="mt-0.5 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+                                        className="mt-0.5 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
                                       />
                                       <div className="flex-1 min-w-0">
                                         <div className="text-xs font-bold flex items-center gap-1">
@@ -1413,7 +1409,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <button
                         type="submit"
-                        className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                        className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                       >
                         <Save className="w-3.5 h-3.5" />
                         <span>Simpan Perubahan User</span>
@@ -1431,7 +1427,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
-                      <UserCheck className="w-4 h-4 text-[#ff7a00]" />
+                      <UserCheck className="w-4 h-4 text-primary-500" />
                       <span>Daftar Pengguna Supabase ({userList.length})</span>
                     </h4>
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
@@ -1445,7 +1441,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() => setShowPasswords((prev) => !prev)}
                       className="px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-700"
                     >
-                      <Key className="w-3 h-3 text-[#ff7a00]" />
+                      <Key className="w-3 h-3 text-primary-500" />
                       <span>{showPasswords ? 'Sembunyikan Password' : 'Lihat Password'}</span>
                     </button>
 
@@ -1502,7 +1498,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <span>•</span>
                               <span className="font-mono text-slate-600 dark:text-slate-300">
                                 Pass:{' '}
-                                <b className="font-mono text-[#ff7a00]">
+                                <b className="font-mono text-primary-500">
                                   {showPasswords ? (usr.password || '123456') : '••••••'}
                                 </b>
                               </span>
@@ -1540,7 +1536,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             onClick={() => handleDeleteUser(idx)}
                             title="Hapus User"
                             disabled={usr.username.toLowerCase() === 'admin' || usr.username.toLowerCase() === 'superadmin'}
-                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg disabled:opacity-20 cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg disabled:opacity-20 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1596,8 +1592,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
 
               {databaseStatus === 'error' && (
-                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <div className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800/60 rounded-xl text-xs text-primary-800 dark:text-primary-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-primary-600 flex-shrink-0" />
                   <span>{databaseStatusMsg}</span>
                 </div>
               )}
@@ -1611,7 +1607,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCopy(supabaseUrl, 'Database URL')}
-                      className="text-[11px] text-slate-500 hover:text-[#ff7a00] flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
                     >
                       {copiedKey === 'Database URL' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                       <span>Salin</span>
@@ -1622,7 +1618,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={supabaseUrl}
                     onChange={(e) => setSupabaseUrl(e.target.value)}
                     placeholder="https://xyz.database.co"
-                    className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -1634,7 +1630,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCopy(supabaseKey, 'Database Key')}
-                      className="text-[11px] text-slate-500 hover:text-[#ff7a00] flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
                     >
                       {copiedKey === 'Database Key' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                       <span>Salin</span>
@@ -1645,7 +1641,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={supabaseKey}
                     onChange={(e) => setSupabaseKey(e.target.value)}
                     placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
                 
@@ -1653,7 +1649,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current text-[#ff7a00]"><path d="M7.71,9.79l-4,6.93h12.56l4-6.93H7.71z M10.49,11.39h6.98l-2.26,3.93h-6.98L10.49,11.39z M13.71,8.39l-4,6.93L5.71,15.3l4-6.93H13.71z M16.49,10l-2.26,3.93l-4-6.93l2.26-3.93L16.49,10z"/></svg>
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current text-primary-500"><path d="M7.71,9.79l-4,6.93h12.56l4-6.93H7.71z M10.49,11.39h6.98l-2.26,3.93h-6.98L10.49,11.39z M13.71,8.39l-4,6.93L5.71,15.3l4-6.93H13.71z M16.49,10l-2.26,3.93l-4-6.93l2.26-3.93L16.49,10z"/></svg>
                         Google Drive Storage (Foto Reject QC)
                       </label>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -1665,7 +1661,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleTestGdrive}
                       disabled={isTestingGdrive}
-                      className="px-3 py-1.5 bg-[#ff7a00]/10 hover:bg-[#ff7a00]/20 text-[#ff7a00] rounded-xl text-xs font-bold transition-all border border-[#ff7a00]/30 flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+                      className="px-3 py-1.5 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 rounded-xl text-xs font-bold transition-all border border-primary-500/30 flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isTestingGdrive ? 'animate-spin' : ''}`} />
                       <span>{isTestingGdrive ? 'Mengetes...' : 'Tes Koneksi GDrive'}</span>
@@ -1680,13 +1676,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
 
                   {gdriveStatus === 'error' && (
-                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-300 space-y-1.5">
+                    <div className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800/60 rounded-xl text-xs text-primary-800 dark:text-primary-300 space-y-1.5">
                       <div className="flex items-center gap-2 font-bold">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        <AlertTriangle className="w-4 h-4 text-primary-600 flex-shrink-0" />
                         <span>{gdriveStatusMsg}</span>
                       </div>
                       {gdriveStatusMsg.includes('DriveApp') && (
-                        <div className="text-[11px] text-rose-700 dark:text-rose-300 bg-rose-100/60 dark:bg-rose-900/40 p-2 rounded-lg leading-relaxed">
+                        <div className="text-[11px] text-primary-700 dark:text-primary-300 bg-primary-100/60 dark:bg-primary-900/40 p-2 rounded-lg leading-relaxed">
                           <b>Solusi Otorisasi:</b> Buka editor skrip di <code>script.google.com</code>, buat fungsi <code>function testAuth() &#123; DriveApp.getRootFolder(); &#125;</code>, lalu klik <b>Run (Jalankan)</b> sekali agar Google memunculkan popup izin akses <i>"Allow / Izinkan"</i> akun Google Anda. Pastikan juga deploy Web App diatur ke <b>"Execute as: Me"</b> dan <b>"Who has access: Anyone"</b>.
                         </div>
                       )}
@@ -1705,7 +1701,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={gdriveFolderUrl}
                         onChange={(e) => setGdriveFolderUrl(e.target.value)}
                         placeholder="https://drive.google.com/drive/folders/14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB"
-                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>
 
@@ -1720,7 +1716,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={gdriveGasUrl}
                         onChange={(e) => setGdriveGasUrl(e.target.value)}
                         placeholder="https://script.google.com/macros/s/.../exec"
-                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>
                   </div>
@@ -1729,9 +1725,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Master Database CSV Update Box (Superadmin Only) */}
               {userIsSuperadmin && onOpenUpdateDatabase && (
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-primary-500/10 via-primary-500/5 to-transparent border border-primary-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-rose-600 text-white font-black shrink-0">
+                    <div className="p-2.5 rounded-xl bg-primary-600 text-white font-black shrink-0">
                       <Database className="w-5 h-5" />
                     </div>
                     <div>
@@ -1739,7 +1735,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <h4 className="text-xs font-black text-slate-800 dark:text-white">
                           Update Database Master (2 File CSV)
                         </h4>
-                        <span className="text-[9px] px-1.5 py-0.2 bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-extrabold rounded">
+                        <span className="text-[9px] px-1.5 py-0.2 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 font-extrabold rounded">
                           SUPERADMIN
                         </span>
                       </div>
@@ -1755,7 +1751,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClose();
                       onOpenUpdateDatabase();
                     }}
-                    className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                    className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-primary-600/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
                   >
                     <UploadCloud className="w-4 h-4" />
                     <span>Buka Update Database</span>
@@ -1776,7 +1772,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveDatabase}
-                  className="px-4 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>Simpan Konfigurasi Database</span>
@@ -1826,8 +1822,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
 
               {gasStatus === 'error' && (
-                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <div className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800/60 rounded-xl text-xs text-primary-800 dark:text-primary-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-primary-600 flex-shrink-0" />
                   <span>{gasStatusMsg}</span>
                 </div>
               )}
@@ -1840,7 +1836,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleCopy(gasEndpoint, 'GAS Endpoint')}
-                    className="text-[11px] text-slate-500 hover:text-[#ff7a00] flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
                   >
                     {copiedKey === 'GAS Endpoint' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                     <span>Salin</span>
@@ -1851,7 +1847,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   value={gasEndpoint}
                   onChange={(e) => setGasEndpoint(e.target.value)}
                   placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00] focus:ring-1 focus:ring-[#ff7a00]"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                 />
               </div>
 
@@ -1879,7 +1875,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveGas}
-                  className="px-4 py-2 bg-[#ff7a00] hover:bg-[#e66e00] text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>Simpan Endpoint GAS</span>
@@ -1893,35 +1889,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ========================================================================= */}
           {activeTab === 'device' && (
             <div className="space-y-4">
-              {/* Dark mode */}
-              <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                    {darkMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800 dark:text-white">
-                      Tema Tampilan Aplikasi
-                    </h4>
-                    <p className="text-[11px] text-slate-500">
-                      Pilih antara Light Mode (Terang) atau Dark Mode (Gelap)
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onToggleDarkMode}
-                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-[#ff7a00] cursor-pointer"
-                >
-                  {darkMode ? '🌙 Dark Mode' : '☀️ Light Mode'}
-                </button>
-              </div>
-
               {/* Audio & Vibration Test */}
               <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#ff7a00]/10 text-[#ff7a00] flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-primary-500/10 text-primary-500 flex items-center justify-center">
                     <Volume2 className="w-4 h-4" />
                   </div>
                   <div>
@@ -1962,7 +1933,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClick={() => {
                       playErrorBeep();
                     }}
-                    className="px-3 py-1.5 bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 rounded-xl text-xs font-bold hover:bg-rose-200 cursor-pointer"
+                    className="px-3 py-1.5 bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-800 rounded-xl text-xs font-bold hover:bg-primary-200 cursor-pointer"
                   >
                     🔊 Test Beep Error (Keras)
                   </button>
@@ -1998,16 +1969,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={onRequestNotification}
-                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-[#ff7a00] cursor-pointer"
+                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary-500 cursor-pointer"
                 >
                   {notificationPermission === 'granted' ? '🔔 Aktif' : 'Minta Izin'}
                 </button>
               </div>
 
               {/* Clear Cache */}
-              <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-2xl border border-rose-200 dark:border-rose-900/40 flex items-center justify-between">
+              <div className="p-3.5 bg-primary-50/50 dark:bg-primary-950/20 rounded-2xl border border-primary-200 dark:border-primary-900/40 flex items-center justify-between">
                 <div>
-                  <h4 className="text-xs font-bold text-rose-800 dark:text-rose-300">
+                  <h4 className="text-xs font-bold text-primary-800 dark:text-primary-300">
                     Bersihkan Cache & Reset Data Lokal
                   </h4>
                   <p className="text-[11px] text-slate-500">
@@ -2024,7 +1995,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     localStorage.removeItem('wms_inventory_stock_cache');
                     onNotify('Database & cache katalog lokal berhasil dibersihkan.', 'info');
                   }}
-                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
                 >
                   Bersihkan Cache & Reset DB Lokal
                 </button>
@@ -2096,13 +2067,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Update & Bug Fixes */}
               <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Workflow className="w-5 h-5 text-[#ff7a00]" />
+                  <Workflow className="w-5 h-5 text-primary-500" />
                   <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
                     3. Tata Cara Update / Revisi (Tanpa Perlu Install APK Ulang)
                   </h3>
                 </div>
 
-                <div className="p-3 bg-[#ff7a00]/5 border border-[#ff7a00]/20 rounded-xl">
+                <div className="p-3 bg-primary-500/5 border border-primary-500/20 rounded-xl">
                   <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
                     Keunggulan menggunakan PWABuilder (Webview) adalah Anda <strong>tidak perlu meminta operator install ulang APK</strong> setiap kali ada revisi bug atau fitur baru.
                   </p>
@@ -2132,11 +2103,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <ArrowRight className="w-4 h-4 text-slate-300 dark:text-slate-600 rotate-90 sm:rotate-0" />
                     </div>
 
-                    <div className="flex items-center gap-3 bg-[#ff7a00]/10 border border-[#ff7a00]/30 p-2.5 rounded-lg">
-                      <Sparkles className="w-6 h-6 text-[#ff7a00]" />
+                    <div className="flex items-center gap-3 bg-primary-500/10 border border-primary-500/30 p-2.5 rounded-lg">
+                      <Sparkles className="w-6 h-6 text-primary-500" />
                       <div className="flex-1">
-                        <h5 className="text-[11px] font-bold text-[#ff7a00]">C. Update Otomatis!</h5>
-                        <p className="text-[10px] text-[#ff7a00]/80">APK di HP akan otomatis merefresh & memuat fitur baru saat dibuka.</p>
+                        <h5 className="text-[11px] font-bold text-primary-500">C. Update Otomatis!</h5>
+                        <p className="text-[10px] text-primary-500/80">APK di HP akan otomatis merefresh & memuat fitur baru saat dibuka.</p>
                       </div>
                     </div>
                   </div>
@@ -2150,10 +2121,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ========================================================================= */}
           {activeTab === 'whatsapp' && (
             <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#ff7a00]/10 border border-[#ff7a00]/30 rounded-2xl p-4 sm:p-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-primary-500/10 border border-primary-500/30 rounded-2xl p-4 sm:p-5">
                 <div>
                   <h3 className="text-[13px] font-black text-slate-800 dark:text-white flex items-center gap-2">
-                    <Share2 className="w-5 h-5 text-[#ff7a00]" />
+                    <Share2 className="w-5 h-5 text-primary-500" />
                     WhatsApp API (Fonnte)
                   </h3>
                   <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 max-w-lg leading-relaxed">
@@ -2172,7 +2143,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={fonnteToken}
                     onChange={(e) => setFonnteToken(e.target.value)}
                     placeholder="Masukkan Token dari device Fonnte Anda"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#ff7a00]/50"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">
                     Dapatkan token dari dashboard Fonnte. Jangan bagikan token ini.
@@ -2188,7 +2159,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={fonnteGroupTarget}
                     onChange={(e) => setFonnteGroupTarget(e.target.value)}
                     placeholder="Contoh: 6281234567890 (Tanpa tanda +)"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#ff7a00]/50"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">
                     Nomor WhatsApp grup gudang untuk notifikasi Peminjaman/Picking List (Gunakan ID Grup jika mengirim ke grup Fonnte).
@@ -2217,7 +2188,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex gap-3 pt-4">
                   <button
                     onClick={handleSaveWa}
-                    className="flex-1 px-4 py-3 bg-[#ff7a00] hover:bg-[#e06c00] text-white rounded-xl text-xs font-black shadow-[0_4px_12px_rgba(255,122,0,0.3)] transition-all flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-black shadow-[0_4px_12px_rgba(255,122,0,0.3)] transition-all flex items-center justify-center gap-2"
                   >
                     <Save className="w-4 h-4" />
                     <span>Simpan Pengaturan</span>
@@ -2239,7 +2210,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Footer */}
         <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-between items-center text-xs text-slate-500">
           <div className="flex items-center gap-1.5">
-            <Smartphone className="w-3.5 h-3.5 text-[#ff7a00]" />
+            <Smartphone className="w-3.5 h-3.5 text-primary-500" />
             <span className="font-mono">WMS v2.4 Chocochips • RBAC Engine</span>
           </div>
           <button
@@ -2268,7 +2239,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
             <button
               onClick={settingsConfirmDialog.onConfirm}
-              className="px-4 py-2 text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-sm shadow-rose-500/20 transition-all active:scale-95"
+              className="px-4 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
             >
               Ya, Lanjutkan
             </button>

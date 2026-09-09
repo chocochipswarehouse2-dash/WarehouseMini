@@ -7,6 +7,7 @@ import {
   Sparkles,
   Moon,
   Sun,
+  Palette,
   ShieldCheck,
   ChevronDown,
   ChevronUp,
@@ -17,15 +18,13 @@ import {
 interface LoginModalProps {
   isOpen: boolean;
   onLogin: (user: string, pass: string) => Promise<void>;
-  darkMode: boolean;
-  onToggleDarkMode: () => void;
+    onOpenThemePicker: () => void;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
   onLogin,
-  darkMode,
-  onToggleDarkMode,
+    onOpenThemePicker,
 }) => {
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -85,12 +84,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         {/* Header Style (Orange Brand Accent) */}
         <div className="pt-7 pb-3 text-center px-6 relative">
           <div className="flex justify-center mb-2.5">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#ff7a00] to-[#ff9e40] text-white flex items-center justify-center font-extrabold text-xl shadow-[0_4px_16px_rgba(255,122,0,0.4)]">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-[#ff9e40] text-white flex items-center justify-center font-extrabold text-xl shadow-[0_4px_16px_rgba(255,122,0,0.4)]">
               W
             </div>
           </div>
           <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center justify-center gap-1.5">
-            <span className="text-[#ff7a00]">WMS</span>
+            <span className="text-primary-500">WMS</span>
             <span className="text-slate-300 dark:text-slate-700 font-normal">&bull;</span>
             <span>CHOCOCHIPS</span>
           </h2>
@@ -101,11 +100,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           {/* Dark / Light Mode toggle in login */}
           <button
             type="button"
-            onClick={onToggleDarkMode}
+            onClick={onOpenThemePicker}
             title={darkMode ? 'Beralih ke Tema Terang (Light Mode)' : 'Beralih ke Tema Gelap (Dark Mode)'}
             className="absolute top-4 right-4 p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-lg transition-colors cursor-pointer"
           >
-            {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+            {darkMode ? <Palette className="w-4 h-4 text-primary-500" /> : <Moon className="w-4 h-4 text-slate-600" />}
           </button>
         </div>
 
@@ -118,7 +117,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Username / Email */}
             <div>
               <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
-                <User className="w-3.5 h-3.5 text-[#ff7a00]" /> Email / Username
+                <User className="w-3.5 h-3.5 text-primary-500" /> Email / Username
               </label>
               <input
                 id="loginUsername"
@@ -127,14 +126,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="email@example.com / admin / operator..."
                 required
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-1 focus:ring-[#ff7a00] focus:border-[#ff7a00] outline-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 transition-all placeholder-slate-400 font-medium"
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 transition-all placeholder-slate-400 font-medium"
               />
             </div>
 
             {/* Password */}
             <div>
               <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1 uppercase tracking-wider">
-                <Lock className="w-3.5 h-3.5 text-[#ff7a00]" /> Password
+                <Lock className="w-3.5 h-3.5 text-primary-500" /> Password
               </label>
               <input
                 id="loginPassword"
@@ -143,7 +142,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Masukkan password..."
                 required
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-1 focus:ring-[#ff7a00] focus:border-[#ff7a00] outline-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 transition-all placeholder-slate-400 font-medium"
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 transition-all placeholder-slate-400 font-medium"
               />
             </div>
 
@@ -153,7 +152,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {error && (
               <div
                 id="loginError"
-                className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-xs rounded-xl font-medium"
+                className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-900/50 text-primary-600 dark:text-primary-400 text-xs rounded-xl font-medium"
               >
                 {error}
               </div>
@@ -165,7 +164,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 type="submit"
                 id="btnLogin"
                 disabled={loading}
-                className="w-full bg-[#ff7a00] hover:bg-[#e06c00] active:bg-[#c95f00] text-white font-extrabold py-3 rounded-xl transition-all shadow-[0_4px_14px_rgba(255,122,0,0.3)] flex justify-center items-center gap-2 tracking-wider uppercase text-xs disabled:opacity-60 cursor-pointer"
+                className="w-full bg-primary-500 hover:bg-primary-600 active:bg-[#c95f00] text-white font-extrabold py-3 rounded-xl transition-all shadow-[0_4px_14px_rgba(255,122,0,0.3)] flex justify-center items-center gap-2 tracking-wider uppercase text-xs disabled:opacity-60 cursor-pointer"
               >
                 {loading ? (
                   <>

@@ -600,7 +600,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                   type="button"
                   onClick={handleDeleteSelected}
                   disabled={isActionLoading}
-                  className="px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-3 py-1.5 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Hapus Terpilih</span>
@@ -622,7 +622,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           </div>
         ) : fetchError ? (
           <div className="py-16 px-6 text-center space-y-3">
-            <AlertTriangle className="w-10 h-10 text-rose-500 mx-auto" />
+            <AlertTriangle className="w-10 h-10 text-primary-500 mx-auto" />
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Gagal Mengambil Data</div>
             <p className="text-xs text-slate-500 max-w-md mx-auto">{fetchError}</p>
             <button
@@ -763,7 +763,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                               selisih > 0
                                 ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
                                 : selisih < 0
-                                ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                                ? 'bg-primary-100 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300'
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                             }`}
                           >
@@ -779,7 +779,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                               Approved
                             </span>
                           ) : isRejected ? (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 inline-flex items-center gap-1">
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-primary-500/10 text-primary-600 dark:text-primary-400 border border-primary-500/20 inline-flex items-center gap-1">
                               <XCircle className="w-3 h-3" />
                               Rejected
                             </span>
@@ -814,7 +814,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                               </div>
                             ) : isRejected ? (
                               <div className="flex items-center gap-1">
-                                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">
+                                <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-500/10 px-2 py-0.5 rounded-md border border-primary-500/20">
                                   Rejected
                                 </span>
                                 <button
@@ -860,7 +860,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                               disabled={isActionLoading}
                               onClick={() => item.id && handleSingleDelete(item.id, item.sku)}
                               title="Hapus baris SO ini secara permanen"
-                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50 ml-0.5"
+                              className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50 ml-0.5"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -903,7 +903,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
               <div
                 className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                   confirmModal.isDanger
-                    ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                    ? 'bg-primary-500/10 text-primary-500 border border-primary-500/20'
                     : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
                 }`}
               >
@@ -940,7 +940,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                 onClick={confirmModal.onConfirm}
                 className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                   confirmModal.isDanger
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                    ? 'bg-primary-600 hover:bg-primary-500 text-white'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                 }`}
               >

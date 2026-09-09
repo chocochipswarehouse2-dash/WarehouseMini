@@ -74,7 +74,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
             <button
               type="button"
               onClick={onClearAll}
-              className="text-[11px] text-rose-500 hover:text-rose-400 font-bold hover:bg-rose-500/10 px-2.5 py-1 rounded-lg transition-colors uppercase tracking-wider cursor-pointer"
+              className="text-[11px] text-primary-500 hover:text-primary-400 font-bold hover:bg-primary-500/10 px-2.5 py-1 rounded-lg transition-colors uppercase tracking-wider cursor-pointer"
             >
               Kosongkan
             </button>
@@ -110,7 +110,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                 id={`scanned-item-${item.id}`}
                 className={`border rounded-xl p-3.5 flex justify-between items-start transition-all ${
                   item.isInvalidSku
-                    ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40'
+                    ? 'bg-primary-50/40 dark:bg-primary-950/20 border-primary-200 dark:border-primary-900/40'
                     : 'bg-white dark:bg-[#0F0F12] border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
@@ -121,7 +121,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                     </span>
                     <div
                       className={`font-bold font-mono text-sm sm:text-base truncate ${
-                        item.isInvalidSku ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                        item.isInvalidSku ? 'text-primary-600 dark:text-primary-400' : 'text-slate-900 dark:text-white'
                       }`}
                     >
                       {item.text}
@@ -135,7 +135,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                   )}
 
                   {item.isInvalidSku && (
-                    <div className="text-xs text-rose-500 dark:text-rose-400 mt-1 font-semibold flex items-center gap-1">
+                    <div className="text-xs text-primary-500 dark:text-primary-400 mt-1 font-semibold flex items-center gap-1">
                       <AlertTriangle className="w-3.5 h-3.5" /> SKU tidak terdaftar di database Supabase
                     </div>
                   )}
@@ -195,7 +195,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                     type="button"
                     onClick={() => onRemoveItem(item.id)}
                     title="Hapus baris ini"
-                    className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    className="text-slate-400 hover:text-primary-500 dark:hover:text-primary-400 p-1.5 rounded-lg hover:bg-primary-500/10 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

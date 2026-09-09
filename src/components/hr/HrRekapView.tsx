@@ -296,7 +296,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-[#ff7a00]/10 text-[#ff7a00]">
+            <div className="p-3 rounded-2xl bg-primary-500/10 text-primary-500">
               <FileSpreadsheet className="w-6 h-6" />
             </div>
             <div>
@@ -321,7 +321,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           </button>
           <button
             onClick={exportToCSV}
-            className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl bg-[#ff7a00] hover:bg-[#e06c00] text-white shadow-md shadow-[#ff7a00]/20 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl bg-primary-500 hover:bg-primary-600 text-white shadow-md shadow-primary-500/20 transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>Export CSV</span>
@@ -332,7 +332,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       {/* FILTER BAR */}
       <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-3">
         <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-          <Filter className="w-4 h-4 text-[#ff7a00]" />
+          <Filter className="w-4 h-4 text-primary-500" />
           <span>Filter Periode & Karyawan</span>
         </div>
 
@@ -346,7 +346,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#ff7a00]"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
@@ -359,7 +359,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#ff7a00]"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
@@ -371,7 +371,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
             <select
               value={selectedDivisi}
               onChange={(e) => setSelectedDivisi(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#ff7a00]"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="ALL">Semua Divisi</option>
               {divisiList.map((d) => (
@@ -390,7 +390,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
             <select
               value={selectedNik}
               onChange={(e) => setSelectedNik(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#ff7a00] truncate"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 truncate"
             >
               <option value="ALL">Semua Karyawan ({karyawanList.length})</option>
               {karyawanList.map((k) => (
@@ -413,7 +413,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Cari nama / NIK..."
-                className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-[#ff7a00]"
+                className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
           </div>
@@ -446,10 +446,10 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
 
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-1">
-            <Clock className="w-4 h-4 text-rose-500" />
+            <Clock className="w-4 h-4 text-primary-500" />
             <span>Terlambat</span>
           </div>
-          <div className="text-2xl font-black text-rose-600 dark:text-rose-400">
+          <div className="text-2xl font-black text-primary-600 dark:text-primary-400">
             {grandTotals.terlambat}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">Kejadian terlambat</div>
@@ -468,10 +468,10 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
 
         <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl shadow-sm">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-1">
-            <Zap className="w-4 h-4 text-[#ff7a00]" />
+            <Zap className="w-4 h-4 text-primary-500" />
             <span>Lembur ACC</span>
           </div>
-          <div className="text-2xl font-black text-[#ff7a00]">
+          <div className="text-2xl font-black text-primary-500">
             {grandTotals.jamLembur} <span className="text-xs font-bold">Jam</span>
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">
@@ -497,7 +497,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           onClick={() => setActiveTab('ringkasan')}
           className={`px-4 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'ringkasan'
-              ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/20'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -507,7 +507,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           onClick={() => setActiveTab('lembur')}
           className={`px-4 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'lembur'
-              ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/20'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -517,7 +517,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           onClick={() => setActiveTab('cuti')}
           className={`px-4 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'cuti'
-              ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/20'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -527,7 +527,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           onClick={() => setActiveTab('absensi')}
           className={`px-4 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'absensi'
-              ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/20'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
@@ -551,10 +551,10 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                   <th className="py-4 px-3 text-center text-amber-600 dark:text-amber-400">
                     Tidak Masuk
                   </th>
-                  <th className="py-4 px-3 text-center text-rose-600 dark:text-rose-400">
+                  <th className="py-4 px-3 text-center text-primary-600 dark:text-primary-400">
                     Terlambat
                   </th>
-                  <th className="py-4 px-3 text-center text-[#ff7a00]">
+                  <th className="py-4 px-3 text-center text-primary-500">
                     Lembur (Jam)
                   </th>
                   <th className="py-4 px-3 text-right">Est. Upah Lembur</th>
@@ -610,14 +610,14 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                         <span
                           className={`inline-flex items-center justify-center font-black px-2.5 py-0.5 rounded-lg ${
                             s.totalTerlambat > 0
-                              ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
+                              ? 'bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400'
                               : 'text-slate-400'
                           }`}
                         >
                           {s.totalTerlambat}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3 text-center font-black text-[#ff7a00]">
+                      <td className="py-3.5 px-3 text-center font-black text-primary-500">
                         {s.totalJamLembur > 0 ? `${s.totalJamLembur} Jam` : '-'}
                       </td>
                       <td className="py-3.5 px-3 text-right font-bold text-slate-700 dark:text-slate-300 font-mono">
@@ -683,7 +683,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                       <td className="py-3 px-3 text-center whitespace-nowrap font-mono text-slate-600 dark:text-slate-300">
                         {l.jam_mulai} - {l.jam_selesai}
                       </td>
-                      <td className="py-3 px-3 text-center font-black text-[#ff7a00]">
+                      <td className="py-3 px-3 text-center font-black text-primary-500">
                         {l.durasi_jam} Jam
                       </td>
                       <td className="py-3 px-3 max-w-xs truncate text-slate-600 dark:text-slate-300">
@@ -695,7 +695,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                             l.status === 'Disetujui'
                               ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
                               : l.status === 'Ditolak'
-                              ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
+                              ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-400'
                               : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400'
                           }`}
                         >
@@ -785,7 +785,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                             c.status === 'Disetujui'
                               ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
                               : c.status === 'Ditolak'
-                              ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
+                              ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-400'
                               : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400'
                           }`}
                         >
@@ -861,7 +861,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                             p.status === 'Tepat Waktu' || p.status === 'Hadir'
                               ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
                               : p.status === 'Terlambat'
-                              ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
+                              ? 'bg-primary-50 text-primary-600 dark:bg-primary-950/40 dark:text-primary-400'
                               : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                           }`}
                         >

@@ -175,7 +175,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         onShowToast(`Berhasil menyinkronkan ${result.synced} data offline ke Supabase.`, 'success');
       }
       if (result.failed > 0) {
-        onShowToast(`Gagal menyinkronkan ${result.failed} data. Coba lagi nanti.`, 'warning');
+        onShowToast(`Gagal menyinkronkan ${result.failed} data: ${result.errors[0] || 'Unknown Error'}`, 'error');
       }
       if (result.synced === 0 && result.failed === 0) {
         onShowToast(`Tidak ada data offline yang perlu disinkronkan.`, 'info');
@@ -976,7 +976,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               {/* Kategori Toggle */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Kategori Kedatangan <span className="text-rose-500">*</span>
+                  Kategori Kedatangan <span className="text-primary-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                   <button
@@ -1009,7 +1009,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               {/* Tanggal Penerimaan */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Tanggal Penerimaan <span className="text-rose-500">*</span>
+                  Tanggal Penerimaan <span className="text-primary-500">*</span>
                 </label>
                 <input
                   type="date"
@@ -1023,7 +1023,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               {/* No. Surat Jalan / Resi */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  No. Surat Jalan / Resi <span className="text-rose-500">*</span>
+                  No. Surat Jalan / Resi <span className="text-primary-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1090,7 +1090,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                     <button
                       type="button"
                       onClick={() => removeProductBlock(blockIdx)}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2 py-1 rounded-lg transition"
+                      className="inline-flex items-center gap-1 text-xs font-bold text-primary-600 dark:text-primary-400 hover:text-primary-700 hover:bg-primary-50 dark:hover:bg-primary-950/40 px-2 py-1 rounded-lg transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Hapus Kode</span>
@@ -1138,7 +1138,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           <button
                             type="button"
                             onClick={() => updateProductBlockPhoto(blockIdx, '')}
-                            className="p-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 shadow"
+                            className="p-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow"
                             title="Hapus Foto"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1198,7 +1198,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Kode Produksi <span className="text-rose-500">*</span>
+                          Kode Produksi <span className="text-primary-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -1291,7 +1291,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => removeVariantFromBlock(blockIdx, vIdx)}
-                                className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition"
+                                className="p-1.5 text-primary-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:bg-primary-950/50 rounded-lg transition"
                                 title="Hapus Varian"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1676,7 +1676,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                             <button
                               type="button"
                               onClick={() => handleConfirmDeleteSingle(row)}
-                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                              className="p-1.5 text-primary-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg transition"
                               title="Hapus Baris Ini"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1739,7 +1739,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition"
+                className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2066,7 +2066,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                   const updated = editingBatch.items.filter((_, i) => i !== idx);
                                   setEditingBatch({ ...editingBatch, items: updated });
                                 }}
-                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                                className="p-1 text-primary-500 hover:text-primary-700 hover:bg-primary-50 rounded"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -2085,7 +2085,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleConfirmDeleteBatch(editingBatch.orig_no_surat_jalan)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 transition"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Hapus Seluruh Surat Jalan Ini</span>
@@ -2131,7 +2131,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-start gap-3.5">
-              <div className="p-3 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+              <div className="p-3 rounded-2xl bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400">
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div className="flex-1">
@@ -2162,7 +2162,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 type="button"
                 onClick={handleExecuteDelete}
                 disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/30 transition disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-primary-600 hover:bg-primary-700 shadow-md shadow-primary-600/30 transition disabled:opacity-50"
               >
                 {isDeleting ? (
                   <>

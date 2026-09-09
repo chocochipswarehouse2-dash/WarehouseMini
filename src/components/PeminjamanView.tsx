@@ -670,7 +670,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${s.stok > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-500/20' : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-500/20'}`}>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${s.stok > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-500/20' : 'bg-primary-100 text-primary-700 dark:bg-primary-500/20 dark:text-primary-400 border border-primary-500/20'}`}>
                     {s.stok > 0 ? `${s.stok} pcs` : 'Kosong'}
                   </span>
                 </div>
@@ -1375,7 +1375,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                    NAMA / PIC PEMINJAM <span className="text-rose-500">*</span>
+                    NAMA / PIC PEMINJAM <span className="text-primary-500">*</span>
                   </label>
                   {session && (
                     <button
@@ -1436,7 +1436,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider">
-                  KEPERLUAN PEMINJAMAN <span className="text-rose-500">*</span>
+                  KEPERLUAN PEMINJAMAN <span className="text-primary-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1452,7 +1452,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             {/* Tanggal Pinjam */}
             <div>
               <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider">
-                TANGGAL PINJAM <span className="text-rose-500">*</span>
+                TANGGAL PINJAM <span className="text-primary-500">*</span>
               </label>
               <div className="relative max-w-xs">
                 <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
@@ -1501,13 +1501,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] flex items-center justify-center font-black">
                             {index + 1}
                           </span>
-                          <span>PILIH PRODUK &amp; SIZE <span className="text-rose-500">*</span></span>
+                          <span>PILIH PRODUK &amp; SIZE <span className="text-primary-500">*</span></span>
                         </span>
                         {hasSelected && (
                           <span
                             className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded border ${
                               isKosong
-                                ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                                ? 'bg-primary-500/10 text-primary-500 border-primary-500/20'
                                 : isKurang
                                 ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                                 : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
@@ -1571,7 +1571,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
+                                  <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-primary-500/10 text-primary-500 border-primary-500/20'}`}>
                                     {(item.stokMap || 0) > 0 ? `${item.stokMap} pcs` : 'Sold'}
                                   </span>
                                 </div>
@@ -1602,11 +1602,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   } else if (isLoaded) {
                                     return (
                                       <span
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 font-bold text-[9px] border border-primary-500/30"
                                         title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
                                       >
                                         <span>KOSONG (0)</span>
-                                        {emptyRacks.length > 0 && <span className="text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
+                                        {emptyRacks.length > 0 && <span className="text-primary-500/80 font-mono">({emptyRacks.join(',')})</span>}
                                       </span>
                                     );
                                   } else if (item.lokasi && item.lokasi !== '-' && !item.lokasi.includes('KOSONG')) {
@@ -1628,7 +1628,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         {/* Qty Stepper (3 cols) */}
                         <div className="sm:col-span-3">
                           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                            QTY <span className="text-rose-500">*</span>
+                            QTY <span className="text-primary-500">*</span>
                           </label>
                           <div className="flex items-center border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-[#09090B] overflow-hidden">
                             <button
@@ -1670,7 +1670,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             type="button"
                             disabled={items.length <= 1}
                             onClick={() => handleRemoveItem(item.id)}
-                            className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border border-rose-500/20 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                            className="w-full py-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border border-primary-500/20 transition-all disabled:opacity-30 disabled:pointer-events-none"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>HAPUS</span>
@@ -1999,7 +1999,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               {displayQty}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary-100 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
                               Sold
                             </span>
                           )}
@@ -2264,16 +2264,16 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   ))
                                 ) : isLoaded ? (
                                   <span
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 font-bold text-[9px] border border-primary-500/30"
                                     title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
                                   >
                                     <span>KOSONG (0)</span>
-                                    {emptyRacks.length > 0 && <span className="text-[8px] text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
+                                    {emptyRacks.length > 0 && <span className="text-[8px] text-primary-500/80 font-mono">({emptyRacks.join(',')})</span>}
                                   </span>
                                 ) : it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('KOSONG') ? (
                                   <span className="font-mono font-bold text-[10px] text-amber-500">{it.lokasi}</span>
                                 ) : it.lokasi && it.lokasi.includes('KOSONG') ? (
-                                  <span className="font-mono font-bold text-[10px] text-rose-500">{it.lokasi}</span>
+                                  <span className="font-mono font-bold text-[10px] text-primary-500">{it.lokasi}</span>
                                 ) : (
                                   <span className="text-[10px] text-slate-400 italic">-</span>
                                 )}

@@ -206,18 +206,18 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-lg space-y-4">
-          <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/60 rounded-2xl flex items-center justify-center mx-auto text-rose-600 dark:text-rose-400">
+          <div className="w-16 h-16 bg-primary-100 dark:bg-primary-950/60 rounded-2xl flex items-center justify-center mx-auto text-primary-600 dark:text-primary-400">
             <ShieldAlert className="w-8 h-8" />
           </div>
           <h2 className="text-lg font-black text-slate-900 dark:text-white">
             Akses Presensi &amp; Shift Dibatasi
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-[#ff7a00]">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Presensi &amp; Shift</b>.
+            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-primary-500">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Presensi &amp; Shift</b>.
           </p>
           <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 text-left space-y-1">
             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-[#ff7a00]" />
+              <Shield className="w-3.5 h-3.5 text-primary-500" />
               <span>Pengaturan Hak Akses Role:</span>
             </div>
             <p>
@@ -235,13 +235,13 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       <div className="flex border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => setActiveTab('harian')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'harian' ? 'border-[#ff7a00] text-[#ff7a00]' : 'border-transparent text-slate-500'}`}
+          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'harian' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500'}`}
         >
           Presensi Harian
         </button>
         <button
           onClick={() => setActiveTab('log')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'log' ? 'border-[#ff7a00] text-[#ff7a00]' : 'border-transparent text-slate-500'}`}
+          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'log' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500'}`}
         >
           Log Presensi
         </button>
@@ -251,7 +251,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         <div className="space-y-6">
       {/* HEADER CLOCK & PROFILE BANNER */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1e293b] p-6 sm:p-8 text-white shadow-xl border border-slate-700/60">
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-[#ff7a00]/15 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-primary-500/15 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute top-0 right-0 p-6 opacity-10">
           <Clock className="w-44 h-44" />
         </div>
@@ -259,7 +259,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-3 py-1 bg-[#ff7a00]/20 border border-[#ff7a00]/40 text-[#ff7a00] rounded-full text-xs font-black tracking-wider uppercase flex items-center gap-1.5">
+              <span className="px-3 py-1 bg-primary-500/20 border border-primary-500/40 text-primary-500 rounded-full text-xs font-black tracking-wider uppercase flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
                 Live Digital Presensi WMS
               </span>
@@ -272,20 +272,20 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
               {currentTime || '--:--:--'}
             </h1>
             <p className="text-sm sm:text-base text-slate-300 mt-1 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-[#ff7a00]" />
+              <Calendar className="w-4 h-4 text-primary-500" />
               {currentDateStr || 'Memuat tanggal...'}
             </p>
           </div>
 
           {/* User Badge Info */}
           <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 shrink-0">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-[#ff7a00] to-amber-400 flex items-center justify-center text-white font-black text-lg shadow-md">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-primary-500 to-amber-400 flex items-center justify-center text-white font-black text-lg shadow-md">
               {session?.name ? session.name.charAt(0).toUpperCase() : session?.username.charAt(0).toUpperCase()}
             </div>
             <div>
               <div className="font-extrabold text-sm text-white">{session?.name || session?.username}</div>
               <div className="text-xs text-slate-300 font-mono">NIK: {userNik}</div>
-              <div className="text-[11px] font-semibold text-[#ff7a00]">{session?.role}</div>
+              <div className="text-[11px] font-semibold text-primary-500">{session?.role}</div>
             </div>
           </div>
         </div>
@@ -298,7 +298,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#ff7a00]/10 flex items-center justify-center text-[#ff7a00]">
+                <div className="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500">
                   <UserCheck className="w-5 h-5" />
                 </div>
                 <div>
@@ -386,7 +386,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 type="button"
                 onClick={handleAbsenPulang}
                 disabled={!todayPresensi?.jam_masuk || submitting || loading}
-                className="w-full py-3.5 px-5 rounded-2xl bg-[#ff7a00] hover:bg-[#e06c00] text-white font-extrabold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-[#ff7a00]/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3.5 px-5 rounded-2xl bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-primary-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <LogOut className="w-5 h-5" />
                 <span>{submitting ? 'Memproses...' : 'Presensi Pulang'}</span>
@@ -494,7 +494,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   key={r.id || r.tanggal}
                   className={`p-3.5 rounded-2xl text-center border transition-all ${
                     isToday
-                      ? 'border-[#ff7a00] bg-[#ff7a00]/10 ring-2 ring-[#ff7a00]/30 shadow-md'
+                      ? 'border-primary-500 bg-primary-500/10 ring-2 ring-primary-500/30 shadow-md'
                       : isLibur
                       ? 'border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-900/30 opacity-70'
                       : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40'
@@ -508,9 +508,9 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     <span
                       className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
                         isLibur
-                          ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                          ? 'bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400'
                           : isToday
-                          ? 'bg-[#ff7a00] text-white'
+                          ? 'bg-primary-500 text-white'
                           : 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300'
                       }`}
                     >

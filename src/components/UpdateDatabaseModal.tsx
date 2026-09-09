@@ -323,8 +323,8 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   if (!userIsSuperadmin) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-200 dark:border-rose-900 text-center">
-          <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-primary-200 dark:border-primary-900 text-center">
+          <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 flex items-center justify-center mx-auto mb-4">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2">
@@ -685,7 +685,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-xs overflow-y-auto">
       <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="px-6 py-4.5 bg-gradient-to-r from-rose-600 via-rose-700 to-amber-600 text-white flex items-center justify-between shadow-md shrink-0">
+        <div className="px-6 py-4.5 bg-gradient-to-r from-primary-600 via-primary-700 to-amber-600 text-white flex items-center justify-between shadow-md shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-white/15 rounded-xl backdrop-blur-md">
               <Database className="w-5 h-5 text-white" />
@@ -699,7 +699,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                   Superadmin
                 </span>
               </div>
-              <p className="text-xs text-rose-100 font-medium">
+              <p className="text-xs text-primary-100 font-medium">
                 Import CSV 2 file, hapus database lama, dan tulis data lengkap berikut inventory store ke Supabase
               </p>
             </div>
@@ -708,7 +708,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
             type="button"
             onClick={onClose}
             disabled={isUpdating}
-            className="p-2 text-rose-100 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+            className="p-2 text-primary-100 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -717,10 +717,10 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
         {/* Content Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 text-slate-800 dark:text-slate-200">
           {/* Warning Banner */}
-          <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl flex items-start gap-3 text-rose-900 dark:text-rose-200">
-            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+          <div className="p-3.5 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-900/60 rounded-xl flex items-start gap-3 text-primary-900 dark:text-primary-200">
+            <AlertTriangle className="w-5 h-5 text-primary-600 dark:text-primary-400 shrink-0 mt-0.5" />
             <div className="text-xs space-y-1">
-              <span className="font-extrabold block text-rose-700 dark:text-rose-300">
+              <span className="font-extrabold block text-primary-700 dark:text-primary-300">
                 Peringatan: Timpa Total Database Lama (Replace & Overwrite)
               </span>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -816,7 +816,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-[#ff7a00]" />
+                <FileSpreadsheet className="w-4 h-4 text-primary-500" />
                 Pilih 2 File CSV Master & Inventory
               </label>
               {selectedFiles.length > 0 && (
@@ -828,7 +828,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                     setParseError(null);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
-                  className="text-xs font-bold text-rose-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
+                  className="text-xs font-bold text-primary-500 hover:text-primary-600 flex items-center gap-1 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Hapus Pilihan File
@@ -843,7 +843,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
               className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all cursor-pointer ${
                 selectedFiles.length > 0
                   ? 'border-emerald-500/60 bg-emerald-50/20 dark:bg-emerald-950/10'
-                  : 'border-slate-300 dark:border-slate-700 hover:border-[#ff7a00] hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                  : 'border-slate-300 dark:border-slate-700 hover:border-primary-500 hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
               <input
@@ -855,7 +855,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                 className="hidden"
                 disabled={isUpdating}
               />
-              <div className="w-12 h-12 rounded-2xl bg-[#ff7a00]/10 text-[#ff7a00] flex items-center justify-center mx-auto mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center mx-auto mb-3">
                 <UploadCloud className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-extrabold text-slate-800 dark:text-white mb-1">
@@ -897,8 +897,8 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
 
           {/* Parse Error */}
           {parseError && (
-            <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl flex items-start gap-3 text-rose-800 dark:text-rose-300 text-xs">
-              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <div className="p-4 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-900 rounded-xl flex items-start gap-3 text-primary-800 dark:text-primary-300 text-xs">
+              <AlertTriangle className="w-4 h-4 text-primary-500 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold block">Gagal Memproses File:</span>
                 <p>{parseError}</p>
@@ -993,7 +993,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                         const cabangCount = Object.keys(dp.cabang || {}).length;
                         return (
                           <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                            <td className="p-2 font-mono font-bold text-rose-600 dark:text-rose-400">{item.sku}</td>
+                            <td className="p-2 font-mono font-bold text-primary-600 dark:text-primary-400">{item.sku}</td>
                             <td className="p-2 truncate max-w-[180px] font-medium">{item.nama_produk}</td>
                             <td className="p-2 text-slate-500">{item.kategori}</td>
                             <td className="p-2 font-mono">{item.size}</td>
@@ -1024,8 +1024,8 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
           {isUpdating && (
             <div className="p-5 bg-slate-900 text-white rounded-2xl space-y-3 shadow-xl border border-slate-700 animate-in fade-in duration-200">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-extrabold flex items-center gap-2 text-rose-400">
-                  <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                <span className="font-extrabold flex items-center gap-2 text-primary-400">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary-400" />
                   {updateStep === 'deleting' && 'MENGHAPUS DATABASE LAMA...'}
                   {updateStep === 'uploading' && `MENGUPLOAD KE SUPABASE (${progressPct}%)...`}
                   {updateStep === 'syncing' && 'MENYINKRONKAN KATALOG APLIKASI...'}
@@ -1038,7 +1038,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
               {/* Progress Track */}
               <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden p-0.5">
                 <div
-                  className="h-full bg-gradient-to-r from-rose-500 via-[#ff7a00] to-emerald-500 rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-primary-500 via-primary-500 to-emerald-500 rounded-full transition-all duration-300"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
@@ -1083,7 +1083,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
             disabled={parsedItems.length === 0 || isUpdating || isParsingFiles}
             className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-2 cursor-pointer ${
               parsedItems.length > 0 && !isUpdating
-                ? 'bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white shadow-rose-600/30'
+                ? 'bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-500 hover:to-primary-600 text-white shadow-primary-600/30'
                 : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
             }`}
           >
@@ -1105,8 +1105,8 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
       {/* Confirmation Dialog */}
       {isConfirmDialogOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-300 dark:border-rose-800 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-primary-300 dark:border-primary-800 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
 
@@ -1119,7 +1119,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
               </p>
             </div>
 
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl text-rose-900 dark:text-rose-200 text-xs font-semibold text-center">
+            <div className="p-3 bg-primary-50 dark:bg-primary-950/40 rounded-xl text-primary-900 dark:text-primary-200 text-xs font-semibold text-center">
               Apakah Anda yakin ingin melanjutkan?
             </div>
 
@@ -1134,7 +1134,7 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
               <button
                 type="button"
                 onClick={handleExecuteDatabaseUpdate}
-                className="py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow-lg shadow-rose-600/30 transition-all cursor-pointer"
+                className="py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-black shadow-lg shadow-primary-600/30 transition-all cursor-pointer"
               >
                 Ya, Hapus & Ganti
               </button>

@@ -92,7 +92,7 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
                 <button
                   type="button"
                   onClick={() => onSelectLocation('')}
-                  className="text-slate-400 hover:text-rose-500 ml-1 p-0.5 rounded cursor-pointer"
+                  className="text-slate-400 hover:text-primary-500 ml-1 p-0.5 rounded cursor-pointer"
                   title="Kosongkan Lokasi"
                 >
                   <X className="w-3 h-3" />

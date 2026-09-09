@@ -239,11 +239,11 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
             Akses Menu Karyawan Dibatasi
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-[#ff7a00]">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Data & Direktori Karyawan</b>.
+            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-primary-500">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Data & Direktori Karyawan</b>.
           </p>
           <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 text-left space-y-1">
             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-[#ff7a00]" />
+              <Shield className="w-3.5 h-3.5 text-primary-500" />
               <span>Pengaturan Hak Akses Role:</span>
             </div>
             <p>
@@ -287,7 +287,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               title="Refresh Data dari Supabase"
               className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#ff7a00]' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-primary-500' : ''}`} />
               <span>Refresh</span>
             </button>
 
@@ -304,7 +304,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               <button
                 type="button"
                 onClick={handleOpenAdd}
-                className="px-3.5 py-2 bg-[#ff7a00] hover:bg-[#e06b00] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#ff7a00]/20"
+                className="px-3.5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-primary-500/20"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Tambah Karyawan</span>
@@ -324,7 +324,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Cari NIK, nama, divisi, username..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
               />
               {searchQuery && (
                 <button
@@ -341,7 +341,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
             <select
               value={selectedDivisi}
               onChange={(e) => setSelectedDivisi(e.target.value)}
-              className="w-full sm:w-auto px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:border-[#ff7a00]"
+              className="w-full sm:w-auto px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:border-primary-500"
             >
               <option value="ALL">Semua Divisi ({karyawanList.length})</option>
               {divisions.map((div) => {
@@ -363,7 +363,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 onClick={() => setViewMode('grid')}
                 className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   viewMode === 'grid'
-                    ? 'bg-white dark:bg-[#101726] text-[#ff7a00] shadow-xs'
+                    ? 'bg-white dark:bg-[#101726] text-primary-500 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
@@ -374,7 +374,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 onClick={() => setViewMode('table')}
                 className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   viewMode === 'table'
-                    ? 'bg-white dark:bg-[#101726] text-[#ff7a00] shadow-xs'
+                    ? 'bg-white dark:bg-[#101726] text-primary-500 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
@@ -390,7 +390,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 className="px-2.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer"
                 title="Sembunyikan / Tampilkan Gaji & Rate"
               >
-                {showSalary ? <EyeOff className="w-3.5 h-3.5 text-[#ff7a00]" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
+                {showSalary ? <EyeOff className="w-3.5 h-3.5 text-primary-500" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
                 <span className="hidden md:inline">{showSalary ? 'Tutup Gaji' : 'Lihat Gaji'}</span>
               </button>
             )}
@@ -401,7 +401,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
       {/* Content Area */}
       {loading && karyawanList.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
-          <RefreshCw className="w-8 h-8 text-[#ff7a00] animate-spin mx-auto mb-3" />
+          <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mx-auto mb-3" />
           <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Memuat direktori data karyawan...</p>
           <p className="text-[11px] text-slate-400 mt-1">Mengambil dari database Supabase</p>
         </div>
@@ -423,7 +423,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 setSearchQuery('');
                 setSelectedDivisi('ALL');
               }}
-              className="text-xs text-[#ff7a00] font-bold hover:underline cursor-pointer"
+              className="text-xs text-primary-500 font-bold hover:underline cursor-pointer"
             >
               Reset Filter Pencarian
             </button>
@@ -437,7 +437,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
             return (
               <div
                 key={k.nik}
-                className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs hover:border-[#ff7a00]/50 hover:shadow-md transition-all flex flex-col justify-between group"
+                className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs hover:border-primary-500/50 hover:shadow-md transition-all flex flex-col justify-between group"
               >
                 <div>
                   {/* Card Header: Avatar, NIK & Divisi */}
@@ -736,7 +736,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     <button
                       type="button"
                       onClick={() => setShowSalary(!showSalary)}
-                      className="text-[#ff7a00] hover:underline cursor-pointer text-[10px]"
+                      className="text-primary-500 hover:underline cursor-pointer text-[10px]"
                     >
                       {showSalary ? 'Sembunyikan' : 'Buka'}
                     </button>
@@ -776,7 +776,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     setIsDetailOpen(false);
                     handleOpenEdit(selectedKaryawan);
                   }}
-                  className="px-4 py-2 bg-[#ff7a00] hover:bg-[#e06b00] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
                 >
                   Edit Data
                 </button>
@@ -821,7 +821,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.nik || ''}
                     onChange={(e) => setFormData({ ...formData, nik: e.target.value.toUpperCase() })}
                     placeholder="e.g. WH0011"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00] disabled:opacity-60"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 disabled:opacity-60"
                   />
                 </div>
 
@@ -835,7 +835,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.nama || ''}
                     onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
                     placeholder="e.g. Rian Pratama"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
@@ -850,7 +850,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.divisi || ''}
                     onChange={(e) => setFormData({ ...formData, divisi: e.target.value })}
                     placeholder="e.g. QC / Warehouse"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -863,7 +863,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.username || ''}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                     placeholder="e.g. UserQC10"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -876,7 +876,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.no_hp || ''}
                     onChange={(e) => setFormData({ ...formData, no_hp: e.target.value })}
                     placeholder="e.g. 08123456789"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
@@ -891,7 +891,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.email || ''}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="e.g. rian@example.com"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -904,7 +904,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     value={formData.kontak_darurat || ''}
                     onChange={(e) => setFormData({ ...formData, kontak_darurat: e.target.value })}
                     placeholder="e.g. Ibu Ani - Orang Tua - 0812345678"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
@@ -918,7 +918,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                   value={formData.alamat || ''}
                   onChange={(e) => setFormData({ ...formData, alamat: e.target.value })}
                   placeholder="Alamat domisili staf..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                 />
               </div>
 
@@ -938,7 +938,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                         type="number"
                         value={formData.gaji_pokok || 0}
                         onChange={(e) => setFormData({ ...formData, gaji_pokok: Number(e.target.value) })}
-                        className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>
                     <div>
@@ -949,7 +949,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                         type="number"
                         value={formData.rate_lembur || 10000}
                         onChange={(e) => setFormData({ ...formData, rate_lembur: Number(e.target.value) })}
-                        className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-[#ff7a00]"
+                        className="w-full px-3 py-1.5 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>
                   </div>
@@ -967,7 +967,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e06b00] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-[#ff7a00]/20 disabled:opacity-50 flex items-center gap-1.5"
+                  className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-primary-500/20 disabled:opacity-50 flex items-center gap-1.5"
                 >
                   {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                   <span>{isEditing ? 'Simpan Perubahan' : 'Tambah Karyawan'}</span>

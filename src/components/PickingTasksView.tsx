@@ -1659,7 +1659,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               particleCount: 70,
               spread: 70,
               origin: { y: 0.7 },
-              colors: ['#10b981', '#ff7a00', '#ffffff'],
+              colors: ['#10b981', 'var(--theme-500)', '#ffffff'],
             });
           } catch {}
           onNotify(`🎉 Surat Jalan ${activeSJ.no_sj} berhasil diselesaikan 100% LENGKAP!`, 'success');
@@ -1818,13 +1818,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 }}
                 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 mb-2 transition-colors"
               >
-                <ArrowLeft className="w-4 h-4 text-[#ff7a00]" /> Kembali ke Daftar Surat Jalan
+                <ArrowLeft className="w-4 h-4 text-primary-500" /> Kembali ke Daftar Surat Jalan
               </button>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
                   {activeSJ.no_sj}
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-[#ff7a00]/10 text-[#ff7a00] border border-[#ff7a00]/20">
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-primary-500/10 text-primary-500 border border-primary-500/20">
                   {activeSJ.status}
                 </span>
                 <button
@@ -1833,7 +1833,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] rounded-lg flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition-all active:scale-95 ml-1"
                   title="Ubah info SJ, tambah SKU baru atau ubah target SKU"
                 >
-                  <FileEdit className="w-3.5 h-3.5 text-[#ff7a00]" />
+                  <FileEdit className="w-3.5 h-3.5 text-primary-500" />
                   <span>Kelola Form SJ</span>
                 </button>
               </div>
@@ -1849,7 +1849,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             <div className="text-right">
               <div className="text-[10px] font-extrabold uppercase text-slate-400 mb-1">Status Progres</div>
               <div className="text-2xl font-black text-slate-800 dark:text-white flex items-baseline justify-end gap-1">
-                <span className={activeStats.percentage === 100 ? 'text-emerald-500' : 'text-[#ff7a00]'}>
+                <span className={activeStats.percentage === 100 ? 'text-emerald-500' : 'text-primary-500'}>
                   {activeStats.regularPicked}
                 </span>
                 <span className="text-sm text-slate-400 font-bold">/ {activeStats.totalReq} Pcs</span>
@@ -1877,7 +1877,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-300 ${
-                  activeStats.percentage === 100 ? 'bg-emerald-500' : 'bg-[#ff7a00]'
+                  activeStats.percentage === 100 ? 'bg-emerald-500' : 'bg-primary-500'
                 }`}
                 style={{ width: `${activeStats.percentage}%` }}
               />
@@ -1964,7 +1964,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             setActiveLocation('');
                             onNotify('Lokasi rak dikosongkan. Silakan tembak #LOK baru.', 'info');
                           }}
-                          className="text-slate-400 hover:text-rose-500 text-[10px] ml-0.5 cursor-pointer font-sans"
+                          className="text-slate-400 hover:text-primary-500 text-[10px] ml-0.5 cursor-pointer font-sans"
                           title="Ganti Rak"
                         >
                           ✕
@@ -2180,15 +2180,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
         {/* Warning Section for Unexpected / Wrong Items (Salah Ambil) */}
         {unexpectedItems && unexpectedItems.length > 0 && (
-          <div className="bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-400 dark:border-rose-700 p-4 rounded-2xl shadow-sm space-y-3">
+          <div className="bg-primary-50 dark:bg-primary-950/40 border-2 border-primary-400 dark:border-primary-700 p-4 rounded-2xl shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <AlertOctagon className="w-5 h-5 text-rose-600 dark:text-rose-400 animate-pulse" />
+                <AlertOctagon className="w-5 h-5 text-primary-600 dark:text-primary-400 animate-pulse" />
                 <div>
-                  <h3 className="text-xs font-black text-rose-800 dark:text-rose-300 uppercase">
+                  <h3 className="text-xs font-black text-primary-800 dark:text-primary-300 uppercase">
                     Barang Salah Ambil / Tidak Ada di SJ ({unexpectedItems.length} Item)
                   </h3>
-                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                  <p className="text-[11px] text-primary-600 dark:text-primary-400 font-medium">
                     Item berikut ter-scan tetapi TIDAK terdaftar di Surat Jalan ini. Anda dapat mengoreksi ke SKU SJ yang benar atau menghapusnya.
                   </p>
                 </div>
@@ -2199,11 +2199,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               {(unexpectedItems || []).map((unexp, idx) => (
                 <div
                   key={idx}
-                  className="bg-white dark:bg-[#131d31] p-3 rounded-xl border border-rose-200 dark:border-rose-900 flex flex-wrap justify-between items-center gap-2"
+                  className="bg-white dark:bg-[#131d31] p-3 rounded-xl border border-primary-200 dark:border-primary-900 flex flex-wrap justify-between items-center gap-2"
                 >
                   <div className="min-w-[180px]">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/50 px-2 py-0.5 rounded">
+                      <span className="text-[10px] font-extrabold text-primary-600 dark:text-primary-400 bg-primary-100 dark:bg-primary-900/50 px-2 py-0.5 rounded">
                         SALAH AMBIL
                       </span>
                       <span className="text-[10px] font-mono font-extrabold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
@@ -2217,7 +2217,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-rose-600 dark:text-rose-400 mr-2">
+                    <span className="text-sm font-black text-primary-600 dark:text-primary-400 mr-2">
                       +{unexp.qty_picked} Pcs
                     </span>
 
@@ -2225,14 +2225,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                       <button
                         onClick={() => handleAdjustUnexpectedQty(idx, -1)}
-                        className="w-7 h-7 flex items-center justify-center rounded bg-white dark:bg-[#131d31] text-slate-600 dark:text-slate-300 hover:text-rose-600 cursor-pointer"
+                        className="w-7 h-7 flex items-center justify-center rounded bg-white dark:bg-[#131d31] text-slate-600 dark:text-slate-300 hover:text-primary-600 cursor-pointer"
                         title="Kurangi 1"
                       >
                         <MinusCircle className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleAdjustUnexpectedQty(idx, 1)}
-                        className="w-7 h-7 flex items-center justify-center rounded bg-white dark:bg-[#131d31] text-slate-600 dark:text-slate-300 hover:text-rose-600 cursor-pointer"
+                        className="w-7 h-7 flex items-center justify-center rounded bg-white dark:bg-[#131d31] text-slate-600 dark:text-slate-300 hover:text-primary-600 cursor-pointer"
                         title="Tambah 1"
                       >
                         <PlusCircle className="w-4 h-4" />
@@ -2252,7 +2252,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     {/* Direct Delete Button */}
                     <button
                       onClick={() => handleDeleteUnexpected(idx)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
+                      className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/50 rounded-lg transition-colors cursor-pointer"
                       title="Hapus / Kembalikan ke rak"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -2331,7 +2331,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <div
                 key={item.id || index}
                 className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#131d31] border-2 ${cardBorder} shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-all ${
-                  isCurrentShelf ? 'ring-4 ring-[#ff7a00]/30 border-[#ff7a00]' : ''
+                  isCurrentShelf ? 'ring-4 ring-primary-500/30 border-primary-500' : ''
                 }`}
               >
                 <div className="flex-1 space-y-2">
@@ -2351,7 +2351,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             onClick={() => handleBarcodeScanned(`#LOK ${loc}`)}
                             className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 transition-all shadow-xs cursor-pointer active:scale-95 max-w-[85%] sm:max-w-none ${
                               isThisCurrentShelf
-                                ? 'bg-[#ff7a00] text-white shadow-md ring-2 ring-[#ff7a00]/50'
+                                ? 'bg-primary-500 text-white shadow-md ring-2 ring-primary-500/50'
                                 : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                             }`}
                             title={`Klik untuk jadikan rak aktif: ${loc} (Sisa stok: ${locInfo.qty ?? 0} pcs)`}
@@ -2385,11 +2385,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       })
                     ) : isRealtimeLoaded ? (
                       /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
-                      <div className="px-3 py-1.5 rounded-xl font-mono font-bold text-xs sm:text-sm flex flex-wrap items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-2 border-rose-500/30 shadow-xs">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                      <div className="px-3 py-1.5 rounded-xl font-mono font-bold text-xs sm:text-sm flex flex-wrap items-center gap-1.5 bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 border-2 border-primary-500/30 shadow-xs">
+                        <AlertTriangle className="w-4 h-4 text-primary-600 dark:text-primary-400 shrink-0" />
                         <span className="font-black">STOK GUDANG KOSONG (0 pcs)</span>
                         {emptyRecordedRacks.length > 0 && (
-                          <span className="text-[11px] font-medium text-rose-600/90 dark:text-rose-400/80">
+                          <span className="text-[11px] font-medium text-primary-600/90 dark:text-primary-400/80">
                             • Rak tercatat: {Array.from(new Set(emptyRecordedRacks)).join(', ')}
                           </span>
                         )}
@@ -2410,7 +2410,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     )}
 
                     {isCurrentShelf && (
-                      <span className="text-[11px] font-black text-[#ff7a00] bg-[#ff7a00]/15 border border-[#ff7a00]/30 px-2.5 py-1 rounded-xl uppercase tracking-wider">
+                      <span className="text-[11px] font-black text-primary-500 bg-primary-500/15 border border-primary-500/30 px-2.5 py-1 rounded-xl uppercase tracking-wider">
                         🎯 RAK AKTIF
                       </span>
                     )}
@@ -2442,7 +2442,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     <button
                       type="button"
                       onClick={() => handleAdjustQty(index, -1)}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-rose-600 active:scale-95 shadow-sm transition-all cursor-pointer"
+                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-primary-600 active:scale-95 shadow-sm transition-all cursor-pointer"
                       title="Kurangi 1"
                     >
                       <MinusCircle className="w-5 h-5" />
@@ -2464,7 +2464,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     <button
                       type="button"
                       onClick={() => handleAdjustQty(index, 1)}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-[#ff7a00] active:scale-95 shadow-sm transition-all cursor-pointer"
+                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-[#1e293b] text-slate-700 dark:text-slate-200 hover:text-primary-500 active:scale-95 shadow-sm transition-all cursor-pointer"
                       title="Tambah 1"
                     >
                       <PlusCircle className="w-5 h-5" />
@@ -2496,7 +2496,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <button
                     type="button"
                     onClick={() => handleOpenEditItem('REGULAR', index)}
-                    className="h-10 w-10 flex items-center justify-center text-[#ff7a00] hover:bg-[#ff7a00]/15 bg-[#ff7a00]/10 border border-[#ff7a00]/30 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
+                    className="h-10 w-10 flex items-center justify-center text-primary-500 hover:bg-primary-500/15 bg-primary-500/10 border border-primary-500/30 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
                     title="Edit Qty / Rak Tertentu"
                   >
                     <Edit3 className="w-4 h-4" />
@@ -2516,7 +2516,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 {activeStats.regularPicked} / {activeStats.totalReq} Pcs
               </span>
               {unexpectedItems.length > 0 && (
-                <span className="text-rose-500 font-extrabold text-[11px] ml-1">
+                <span className="text-primary-500 font-extrabold text-[11px] ml-1">
                   (+{activeStats.unexpectedPicked} Salah Ambil)
                 </span>
               )}
@@ -2528,7 +2528,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             className={`px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer ${
               activeStats.statusType === 'SEMUA_PAS'
                 ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
-                : 'bg-[#ff7a00] hover:bg-[#e06c00] text-white shadow-[#ff7a00]/20'
+                : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
             }`}
           >
             <ClipboardCheck className="w-4 h-4" />
@@ -2543,7 +2543,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               {/* Modal Header */}
               <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
                 <div>
-                  <span className="text-[10px] font-extrabold text-[#ff7a00] uppercase tracking-wider">
+                  <span className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
                     Konfirmasi Penyelesaian
                   </span>
                   <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase">
@@ -2604,13 +2604,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 )}
 
                 {(activeStats.statusType === 'SALAH_AMBIL' || activeStats.statusType === 'CAMPURAN') && (
-                  <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-2xl flex items-center gap-3">
-                    <AlertOctagon className="w-6 h-6 text-rose-500 flex-shrink-0" />
+                  <div className="p-3.5 bg-primary-50 dark:bg-primary-950/40 border border-primary-300 dark:border-primary-800 rounded-2xl flex items-center gap-3">
+                    <AlertOctagon className="w-6 h-6 text-primary-500 flex-shrink-0" />
                     <div>
-                      <div className="text-xs font-black text-rose-800 dark:text-rose-300 uppercase">
+                      <div className="text-xs font-black text-primary-800 dark:text-primary-300 uppercase">
                         PERHATIAN: TERDAPAT BARANG SALAH AMBIL
                       </div>
-                      <div className="text-[11px] text-rose-700 dark:text-rose-400 font-medium">
+                      <div className="text-[11px] text-primary-700 dark:text-primary-400 font-medium">
                         Terdapat {unexpectedItems.length} SKU tidak terdaftar yang ikut terambil.
                       </div>
                     </div>
@@ -2650,7 +2650,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                 </span>
                               )}
                               {selisih > 0 && (
-                                <span className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400">
+                                <span className="text-[10px] font-extrabold text-primary-600 dark:text-primary-400">
                                   Lebih +{selisih}
                                 </span>
                               )}
@@ -2662,15 +2662,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
                     {/* Unexpected Items */}
                     {unexpectedItems.map((it, idx) => (
-                      <div key={'unexp-' + idx} className="p-3 bg-rose-50/50 dark:bg-rose-950/20 flex justify-between items-center text-xs">
+                      <div key={'unexp-' + idx} className="p-3 bg-primary-50/50 dark:bg-primary-950/20 flex justify-between items-center text-xs">
                         <div>
-                          <div className="font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1">
-                            <span className="text-[9px] bg-rose-200 dark:bg-rose-900 px-1.5 py-0.5 rounded font-extrabold">SALAH</span>
+                          <div className="font-bold text-primary-700 dark:text-primary-300 flex items-center gap-1">
+                            <span className="text-[9px] bg-primary-200 dark:bg-primary-900 px-1.5 py-0.5 rounded font-extrabold">SALAH</span>
                             {it.nama_produk}
                           </div>
-                          <div className="text-[11px] font-mono text-rose-400">{it.sku}</div>
+                          <div className="text-[11px] font-mono text-primary-400">{it.sku}</div>
                         </div>
-                        <div className="text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                        <div className="text-right font-mono font-bold text-primary-600 dark:text-primary-400">
                           +{it.qty_picked} Pcs
                         </div>
                       </div>
@@ -2688,7 +2688,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     value={rekapCatatan}
                     onChange={(e) => setRekapCatatan(e.target.value)}
                     placeholder="Contoh: Stok di rak A-02 habis 1 pcs, selebihnya lengkap..."
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -2698,7 +2698,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     type="checkbox"
                     checked={syncOutLog}
                     onChange={(e) => setSyncOutLog(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00]"
+                    className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500"
                   />
                   <span>Otomatis catat mutasi keluar (OUT) di database log_produk</span>
                 </label>
@@ -2746,7 +2746,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       <div className="flex flex-wrap justify-between items-center gap-3 bg-white dark:bg-[#131d31] p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
           <h1 className="text-lg font-black text-slate-800 dark:text-white uppercase flex items-center gap-2">
-            <Package className="w-5 h-5 text-[#ff7a00]" /> Tugas Picking (Per Surat Jalan)
+            <Package className="w-5 h-5 text-primary-500" /> Tugas Picking (Per Surat Jalan)
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
             Pilih 1 Surat Jalan untuk memulai pengambilan barang secara terpandu.
@@ -2757,15 +2757,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           <button
             onClick={loadPickingList}
             disabled={loading}
-            className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-[#ff7a00] text-slate-600 dark:text-slate-300 transition-colors"
+            className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 text-slate-600 dark:text-slate-300 transition-colors"
             title="Muat Ulang / Sinkronisasi Database"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#ff7a00]' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-500' : ''}`} />
           </button>
 
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="px-3.5 py-2.5 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+            className="px-3.5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" /> Buat SJ Baru
           </button>
@@ -2780,7 +2780,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               type="checkbox"
               checked={selectedSJs.length === filteredSJs.length && filteredSJs.length > 0}
               onChange={handleSelectAllSJs}
-              className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+              className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
               title="Pilih Semua"
             />
           </div>
@@ -2790,7 +2790,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               onClick={() => setStatusFilter('ACTIVE')}
               className={`px-3 py-1.5 text-xs font-extrabold rounded-lg transition-all ${
                 statusFilter === 'ACTIVE'
-                  ? 'bg-white dark:bg-[#131d31] text-[#ff7a00] shadow-sm'
+                  ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
@@ -2800,7 +2800,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               onClick={() => setStatusFilter('ALL')}
               className={`px-3 py-1.5 text-xs font-extrabold rounded-lg transition-all ${
                 statusFilter === 'ALL'
-                  ? 'bg-white dark:bg-[#131d31] text-[#ff7a00] shadow-sm'
+                  ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
@@ -2810,7 +2810,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               onClick={() => setStatusFilter('SELESAI')}
               className={`px-3 py-1.5 text-xs font-extrabold rounded-lg transition-all ${
                 statusFilter === 'SELESAI'
-                  ? 'bg-white dark:bg-[#131d31] text-[#ff7a00] shadow-sm'
+                  ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
@@ -2833,7 +2833,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <button
                 onClick={handleDeleteSelected}
                 disabled={isBulkActionRunning}
-                className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1"
+                className="px-3 py-1.5 bg-primary-100 hover:bg-primary-200 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Hapus
               </button>
@@ -2848,7 +2848,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Cari Nomor SJ / Tujuan / SKU / Nama Produk..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-white focus:border-[#ff7a00] outline-none"
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-white focus:border-primary-500 outline-none"
           />
         </div>
       </div>
@@ -2857,7 +2857,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       <div className="space-y-3">
         {loading && sjGroups.length === 0 ? (
           <div className="text-center py-16 bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800">
-            <Loader2 className="w-8 h-8 text-[#ff7a00] animate-spin mx-auto mb-2" />
+            <Loader2 className="w-8 h-8 text-primary-500 animate-spin mx-auto mb-2" />
             <p className="text-xs font-bold text-slate-500">Memuat Surat Jalan dari Database...</p>
           </div>
         ) : filteredSJs.length === 0 ? (
@@ -2872,7 +2872,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             {sjGroups.length === 0 && (
               <button
                 onClick={handleSeedSampleSJ}
-                className="px-4 py-2.5 bg-[#ff7a00]/10 hover:bg-[#ff7a00]/20 text-[#ff7a00] font-extrabold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5"
+                className="px-4 py-2.5 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 font-extrabold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5"
               >
                 <Sparkles className="w-4 h-4" /> Buat Contoh Surat Jalan Picking
               </button>
@@ -2892,7 +2892,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#131d31] border transition-all shadow-sm ${
                   isDone
                     ? 'border-emerald-200 dark:border-emerald-950 bg-emerald-50/10'
-                    : 'border-slate-200 dark:border-slate-800 hover:border-[#ff7a00]'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-primary-500'
                 }`}
               >
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
@@ -2902,7 +2902,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         type="checkbox"
                         checked={selectedSJs.includes(group.no_sj)}
                         onChange={() => handleSelectSJCheckbox(group.no_sj)}
-                        className="w-4 h-4 rounded text-[#ff7a00] focus:ring-[#ff7a00] cursor-pointer"
+                        className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
                       />
                       <span className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">
                         {group.no_sj}
@@ -2913,7 +2913,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50'
                             : group.status === 'SEDANG PICKING'
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 border border-blue-200'
-                            : 'bg-[#ff7a00]/10 text-[#ff7a00] border border-[#ff7a00]/20'
+                            : 'bg-primary-500/10 text-primary-500 border border-primary-500/20'
                         }`}
                       >
                         {group.status}
@@ -2948,7 +2948,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         </button>
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteSingleSJ(group.no_sj); }}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-all"
+                          className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-all"
                           title="Hapus SJ"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -2978,7 +2978,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
                         isDone
                           ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                          : 'bg-[#ff7a00] hover:bg-[#e06c00] text-white shadow-[#ff7a00]/20'
+                          : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
                       }`}
                     >
                       {isDone ? (
@@ -3000,13 +3000,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     <span className="text-slate-500 dark:text-slate-400">
                       {group.total_items} SKU Produk • {group.total_qty_picked} / {group.total_qty_req} Pcs
                     </span>
-                    <span className={isDone ? 'text-emerald-600' : 'text-[#ff7a00]'}>{percent}%</span>
+                    <span className={isDone ? 'text-emerald-600' : 'text-primary-500'}>{percent}%</span>
                   </div>
 
                   <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-300 ${
-                        isDone ? 'bg-emerald-500' : 'bg-[#ff7a00]'
+                        isDone ? 'bg-emerald-500' : 'bg-primary-500'
                       }`}
                       style={{ width: `${percent}%` }}
                     />
@@ -3086,7 +3086,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                               <span className="text-[10px] font-extrabold text-amber-600">Kurang {Math.abs(selisih)}</span>
                             )}
                             {selisih > 0 && (
-                              <span className="text-[10px] font-extrabold text-rose-600">Lebih +{selisih}</span>
+                              <span className="text-[10px] font-extrabold text-primary-600">Lebih +{selisih}</span>
                             )}
                           </div>
                         </div>
@@ -3094,12 +3094,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     );
                   })}
                   {viewCompletedSJ.unexpected_items.map((it, idx) => (
-                    <div key={'unexp-' + idx} className="p-3 bg-rose-50/50 dark:bg-rose-950/20 flex justify-between items-center text-xs">
+                    <div key={'unexp-' + idx} className="p-3 bg-primary-50/50 dark:bg-primary-950/20 flex justify-between items-center text-xs">
                       <div>
-                        <div className="font-bold text-rose-700 dark:text-rose-300">[SALAH AMBIL] {it.nama_produk}</div>
-                        <div className="text-[11px] font-mono text-rose-400">{it.sku}</div>
+                        <div className="font-bold text-primary-700 dark:text-primary-300">[SALAH AMBIL] {it.nama_produk}</div>
+                        <div className="text-[11px] font-mono text-primary-400">{it.sku}</div>
                       </div>
-                      <div className="text-right font-mono font-bold text-rose-600">
+                      <div className="text-right font-mono font-bold text-primary-600">
                         +{it.qty_picked} Pcs
                       </div>
                     </div>
@@ -3135,7 +3135,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           <div className="bg-white dark:bg-[#131d31] w-full max-w-3xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
               <div>
-                <span className="text-[10px] font-extrabold text-[#ff7a00] uppercase tracking-wider">
+                <span className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
                   Kelola Form Surat Jalan
                 </span>
                 <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase">
@@ -3160,7 +3160,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     type="text"
                     value={editSjTujuan}
                     onChange={(e) => setEditSjTujuan(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -3173,14 +3173,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     value={editSjCatatan}
                     onChange={(e) => setEditSjCatatan(e.target.value)}
                     placeholder="Contoh: Tambahan order customer / revisi SKU"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
 
               {/* Add New SKU Quick Row */}
               <div className="p-3 bg-orange-50/50 dark:bg-orange-950/20 rounded-2xl border border-orange-200 dark:border-orange-900/50 space-y-2">
-                <div className="text-xs font-bold text-[#ff7a00] flex items-center gap-1">
+                <div className="text-xs font-bold text-primary-500 flex items-center gap-1">
                   <Plus className="w-4 h-4" /> Tambah SKU Baru ke Form SJ:
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
@@ -3234,7 +3234,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     <button
                       type="button"
                       onClick={handleAddRowToEditSJ}
-                      className="w-full py-2 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-bold text-xs rounded-lg flex items-center justify-center"
+                      className="w-full py-2 bg-primary-500 hover:bg-primary-600 text-white font-bold text-xs rounded-lg flex items-center justify-center"
                     >
                       +
                     </button>
@@ -3318,7 +3318,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => handleRemoveRowFromEditSJ(idx)}
-                          className="text-slate-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                          className="text-slate-400 hover:text-primary-500 p-1.5 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg transition-colors"
                           title="Hapus SKU ini dari SJ"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -3342,7 +3342,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 type="button"
                 onClick={handleSaveEditSJModal}
                 disabled={isSavingSjEdit}
-                className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-extrabold text-xs uppercase rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
+                className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-xs uppercase rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
               >
                 {isSavingSjEdit ? (
                   <>
@@ -3368,8 +3368,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <span
                   className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded ${
                     editingItemData.type === 'UNEXPECTED'
-                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
-                      : 'bg-[#ff7a00]/10 text-[#ff7a00]'
+                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
+                      : 'bg-primary-500/10 text-primary-500'
                   }`}
                 >
                   {editingItemData.type === 'UNEXPECTED' ? 'Koreksi Barang Salah Ambil' : 'Edit Item Picking'}
@@ -3377,7 +3377,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <h2 className="text-base font-black text-slate-800 dark:text-white mt-1">
                   {editingItemData.nama_produk}
                 </h2>
-                <div className="text-xs font-mono font-bold text-[#ff7a00]">{editingItemData.sku}</div>
+                <div className="text-xs font-mono font-bold text-primary-500">{editingItemData.sku}</div>
               </div>
               <button
                 onClick={() => {
@@ -3482,7 +3482,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       })
                     }
                     placeholder="Contoh: A-01"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
@@ -3516,7 +3516,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             }
                             className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
                               isSelected
-                                ? 'bg-[#ff7a00] text-white shadow-sm ring-2 ring-[#ff7a00]/30'
+                                ? 'bg-primary-500 text-white shadow-sm ring-2 ring-primary-500/30'
                                 : 'bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/70 text-slate-800 dark:text-slate-200 hover:bg-amber-100 dark:hover:bg-amber-900/40'
                             }`}
                           >
@@ -3558,7 +3558,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       setIsEditItemModalOpen(false);
                       setEditingItemData(null);
                     }}
-                    className="text-xs font-bold text-rose-600 hover:underline flex items-center gap-1"
+                    className="text-xs font-bold text-primary-600 hover:underline flex items-center gap-1"
                   >
                     <Trash2 className="w-3.5 h-3.5" /> Hapus Barang Ini
                   </button>
@@ -3578,7 +3578,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <button
                   type="button"
                   onClick={handleSaveEditItem}
-                  className="px-5 py-2 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-extrabold text-xs uppercase rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
+                  className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-xs uppercase rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Simpan Koreksi
                 </button>
@@ -3604,7 +3604,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </button>
               <button
                 onClick={confirmDialog.onConfirm}
-                className="px-4 py-2 text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-sm shadow-rose-500/20 transition-all active:scale-95"
+                className="px-4 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
               >
                 Ya, Lanjutkan
               </button>

@@ -7,6 +7,7 @@ import {
   LogOut,
   Moon,
   Sun,
+  Palette,
   Layers,
   Smartphone,
   Bell,
@@ -43,7 +44,7 @@ interface SidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   darkMode: boolean;
-  onToggleDarkMode: () => void;
+  onOpenThemePicker: () => void;
   notificationPermission: NotificationPermission;
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
@@ -64,7 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
   darkMode,
-  onToggleDarkMode,
+  onOpenThemePicker,
   notificationPermission,
   onRequestNotification,
   isRealtimeConnected,
@@ -252,7 +253,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title={collapsed ? `${item.label} - ${item.description}` : undefined}
                 className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
                   isActive
-                    ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/25 font-extrabold'
+                    ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25 font-extrabold'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
                 } ${collapsed ? 'justify-center px-2' : ''}`}
               >
@@ -260,12 +261,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className={`p-1.5 rounded-lg transition-colors shrink-0 relative ${
                     isActive
                       ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-[#ff7a00] group-hover:bg-[#ff7a00]/10'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-primary-500 group-hover:bg-primary-500/10'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
                   {showPickingBadge && (
-                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping" />
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-500 rounded-full animate-ping" />
                   )}
                 </div>
 
@@ -274,7 +275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="flex items-center justify-between gap-1">
                       <div className="text-xs truncate leading-snug">{item.label}</div>
                       {showPickingBadge && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-rose-500 text-white rounded-full animate-pulse shrink-0">
+                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-primary-500 text-white rounded-full animate-pulse shrink-0">
                           BARU
                         </span>
                       )}
@@ -325,7 +326,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title={collapsed ? `${item.label} - ${item.description}` : undefined}
                 className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer relative ${
                   isActive
-                    ? 'bg-[#ff7a00] text-white shadow-md shadow-[#ff7a00]/25 font-extrabold'
+                    ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25 font-extrabold'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-bold'
                 } ${collapsed ? 'justify-center px-2' : ''}`}
               >
@@ -333,7 +334,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className={`p-1.5 rounded-lg transition-colors shrink-0 ${
                     isActive
                       ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-[#ff7a00] group-hover:bg-[#ff7a00]/10'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-primary-500 group-hover:bg-primary-500/10'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -394,7 +395,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-          <Smartphone className="w-4 h-4 text-[#ff7a00]" />
+          <Smartphone className="w-4 h-4 text-primary-500" />
         </div>
         {!collapsed && <span className="truncate">Download APK Android</span>}
       </button>
@@ -414,7 +415,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
           {notificationPermission === 'granted' ? (
-            <BellRing className="w-4 h-4 text-[#ff7a00]" />
+            <BellRing className="w-4 h-4 text-primary-500" />
           ) : (
             <Bell className="w-4 h-4 text-slate-400" />
           )}
@@ -477,17 +478,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onCloseMobile();
           }}
           title="Update Database Master Produk (Import 2 CSV ke Supabase)"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer ${
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-primary-700 dark:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-950/50 transition-colors cursor-pointer ${
             collapsed ? 'justify-center px-2' : ''
           }`}
         >
-          <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 shrink-0">
-            <Database className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+          <div className="p-1.5 rounded-lg bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 shrink-0">
+            <Database className="w-4 h-4 text-primary-600 dark:text-primary-400" />
           </div>
           {!collapsed && (
             <div className="flex-1 text-left truncate flex items-center justify-between">
               <span className="truncate font-extrabold">Update Database</span>
-              <span className="text-[9px] px-1.5 py-0.2 bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200 rounded font-black">
+              <span className="text-[9px] px-1.5 py-0.2 bg-primary-200 dark:bg-primary-900 text-primary-800 dark:text-primary-200 rounded font-black">
                 SUPERADMIN
               </span>
             </div>
@@ -498,7 +499,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Dark Mode Switcher */}
       <button
         type="button"
-        onClick={onToggleDarkMode}
+        onClick={onOpenThemePicker}
         title={darkMode ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
           collapsed ? 'justify-center px-2' : ''
@@ -506,7 +507,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
           {darkMode ? (
-            <Sun className="w-4 h-4 text-amber-400 fill-amber-400" />
+            <Palette className="w-4 h-4 text-primary-500" />
           ) : (
             <Moon className="w-4 h-4 text-slate-700 fill-slate-700" />
           )}
@@ -550,12 +551,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Top Brand Header */}
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-[#ff7a00] to-[#ff9e40] rounded-xl flex items-center justify-center shadow-md shadow-[#ff7a00]/30 shrink-0">
+              <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-[#ff9e40] rounded-xl flex items-center justify-center shadow-md shadow-primary-500/30 shrink-0">
                 <span className="text-white font-extrabold text-sm">W</span>
               </div>
               <div>
                 <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                  WMS <span className="text-[#ff7a00]">CHOCOCHIPS</span>
+                  WMS <span className="text-primary-500">CHOCOCHIPS</span>
                 </h2>
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold mt-0.5">
                   <div
@@ -590,14 +591,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {session ? (
               <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-[#ff7a00]/10 border border-[#ff7a00]/20 flex items-center justify-center text-[#ff7a00] shrink-0 font-extrabold text-xs">
+                  <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500 shrink-0 font-extrabold text-xs">
                     <User className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                       {session.username}
                     </div>
-                    <div className="text-[10px] font-extrabold text-[#ff7a00] uppercase tracking-wider">
+                    <div className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
                       Role: {session.role}
                     </div>
                   </div>
@@ -610,7 +611,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onCloseMobile();
                   }}
                   title="Logout"
-                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-lg transition-colors cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -637,18 +638,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#ff7a00] to-[#ff9e40] rounded-xl flex items-center justify-center shadow-md shadow-[#ff7a00]/30 shrink-0">
+            <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-[#ff9e40] rounded-xl flex items-center justify-center shadow-md shadow-primary-500/30 shrink-0">
               <span className="text-white font-extrabold text-xs">W</span>
             </div>
             {!isCollapsed && (
               <div className="min-w-0">
                 <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
-                  WMS <span className="text-[#ff7a00]">CHOCOCHIPS</span>
+                  WMS <span className="text-primary-500">CHOCOCHIPS</span>
                 </h2>
                 <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-bold">
                   <div
                     className={`w-1.5 h-1.5 rounded-full ${
-                      isRealtimeConnected ? 'bg-[#ff7a00] shadow-[0_0_6px_#ff7a00]' : 'bg-amber-500'
+                      isRealtimeConnected ? 'bg-primary-500 shadow-[0_0_6px_var(--theme-500)]' : 'bg-amber-500'
                     }`}
                   />
                   <span>{isRealtimeConnected ? 'Live Database' : 'Syncing...'}</span>
@@ -686,14 +687,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title="Buka / Perlebar Sidebar"
                 className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
               >
-                <ChevronRight className="w-4 h-4 text-[#ff7a00]" />
+                <ChevronRight className="w-4 h-4 text-primary-500" />
               </button>
 
               <button
                 type="button"
                 onClick={onLogout}
                 title={`Logout (${session?.username || 'User'})`}
-                className="w-10 h-10 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-10 h-10 rounded-xl hover:bg-primary-50 dark:hover:bg-primary-950/40 text-slate-400 hover:text-primary-500 flex items-center justify-center transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -702,14 +703,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             session && (
               <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-[#ff7a00]/10 border border-[#ff7a00]/20 flex items-center justify-center text-[#ff7a00] shrink-0 font-extrabold text-xs">
+                  <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500 shrink-0 font-extrabold text-xs">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                       {session.username}
                     </div>
-                    <div className="text-[9px] font-extrabold text-[#ff7a00] uppercase tracking-wider">
+                    <div className="text-[9px] font-extrabold text-primary-500 uppercase tracking-wider">
                       {session.role}
                     </div>
                   </div>
@@ -719,7 +720,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   type="button"
                   onClick={onLogout}
                   title="Logout"
-                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-lg transition-colors cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>

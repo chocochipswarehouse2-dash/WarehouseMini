@@ -27,6 +27,7 @@ import { BottomSaveBar } from './components/BottomSaveBar';
 import { ApkInstallModal } from './components/ApkInstallModal';
 import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
+import { ThemePickerModal } from './components/ThemePickerModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 import { globalRealtimeStore } from './services/store';
 import {
@@ -114,6 +115,8 @@ export default function App() {
   });
 
   // Dark / Light Theme Mode
+  const [themeColor, setThemeColor] = useState<string>(() => localStorage.getItem("wms_theme_color") || "rose");
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('wms_dark_mode');
     if (saved !== null) return saved === 'true';
@@ -270,6 +273,7 @@ export default function App() {
 
   // Modals & Drawers & Sidebar
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isThemePickerOpen, setIsThemePickerOpen] = useState<boolean>(false);
   const [isUpdateDatabaseOpen, setIsUpdateDatabaseOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -309,7 +313,9 @@ export default function App() {
       document.documentElement.setAttribute('data-theme', 'light');
     }
     localStorage.setItem('wms_dark_mode', String(darkMode));
-  }, [darkMode]);
+    document.documentElement.setAttribute('data-theme-color', themeColor);
+    localStorage.setItem('wms_theme_color', themeColor);
+  }, [darkMode, themeColor]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => !prev);
@@ -929,7 +935,7 @@ export default function App() {
           particleCount: 50,
           spread: 60,
           origin: { y: 0.85 },
-          colors: ['#ff7a00', '#ffa726', '#ffffff'],
+          colors: ['var(--theme-500)', '#ffa726', '#ffffff'],
         });
       } catch {}
 
@@ -966,7 +972,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen flex flex-row bg-[#f4f6f8] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors font-sans selection:bg-[#ff7a00] selection:text-white">
+    <div className="min-h-screen flex flex-row bg-[#f4f6f8] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors font-sans selection:bg-primary-500 selection:text-white">
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
@@ -978,7 +984,7 @@ export default function App() {
           aria-label="Notifikasi Tugas Picking Baru"
           className="fixed bottom-20 sm:bottom-6 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-in fade-in slide-in-from-bottom-5 duration-300"
         >
-          <div className="bg-gradient-to-r from-[#ff7a00] to-amber-600 text-white p-3.5 rounded-2xl shadow-xl shadow-[#ff7a00]/30 border border-orange-300/40 flex items-center justify-between gap-3">
+          <div className="bg-gradient-to-r from-primary-500 to-amber-600 text-white p-3.5 rounded-2xl shadow-xl shadow-primary-500/30 border border-orange-300/40 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 animate-pulse">
                 <Package className="w-5 h-5 text-white" />
@@ -1003,7 +1009,7 @@ export default function App() {
                   handleSelectPage('picking_tasks');
                   setNewPickingTaskAlert(null);
                 }}
-                className="px-3 py-1.5 bg-white text-[#ff7a00] hover:bg-orange-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
+                className="px-3 py-1.5 bg-white text-primary-500 hover:bg-orange-50 rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
               >
                 Buka
               </button>
@@ -1022,14 +1028,14 @@ export default function App() {
 
       {/* Login Modal Overlay */}
       <LoginModal
+        onOpenThemePicker={() => setIsThemePickerOpen(true)}
         isOpen={!session}
         onLogin={handleLogin}
-        darkMode={darkMode}
-        onToggleDarkMode={toggleDarkMode}
       />
 
       {/* Modern Collapsible Sidebar (Mobile Drawer + Desktop Sidebar) */}
       <Sidebar
+        onOpenThemePicker={() => setIsThemePickerOpen(true)}
         session={session}
         activePage={activePage}
         onSelectPage={handleSelectPage}
@@ -1037,8 +1043,6 @@ export default function App() {
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapse}
-        darkMode={darkMode}
-        onToggleDarkMode={toggleDarkMode}
         notificationPermission={notificationPermission}
         onRequestNotification={handleRequestNotification}
         isRealtimeConnected={isRealtimeConnected}
@@ -1054,14 +1058,13 @@ export default function App() {
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Navigation Header with Hamburger Toggle & Quick Actions */}
         <Navbar
+          onOpenThemePicker={() => setIsThemePickerOpen(true)}
           session={session}
           activePage={activePage}
           onSelectPage={handleSelectPage}
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           onToggleSidebarCollapse={toggleSidebarCollapse}
           isSidebarCollapsed={isSidebarCollapsed}
-          darkMode={darkMode}
-          onToggleDarkMode={toggleDarkMode}
           notificationPermission={notificationPermission}
           onRequestNotification={handleRequestNotification}
           isRealtimeConnected={isRealtimeConnected}
@@ -1077,19 +1080,19 @@ export default function App() {
           {session && !canAccessPage(session, activePage) ? (
             <div className="min-h-[60vh] flex items-center justify-center p-4">
               <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
-                <div className="w-14 h-14 bg-rose-100 dark:bg-rose-950/60 rounded-2xl flex items-center justify-center mx-auto text-rose-600 dark:text-rose-400">
+                <div className="w-14 h-14 bg-primary-100 dark:bg-primary-950/60 rounded-2xl flex items-center justify-center mx-auto text-primary-600 dark:text-primary-400">
                   <ShieldAlert className="w-7 h-7" />
                 </div>
                 <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
                   Akses Halaman Dibatasi
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Akun Anda (<span className="font-bold text-slate-700 dark:text-slate-200">{session.name || session.username}</span> - Role: <span className="font-extrabold text-[#ff7a00]">{session.role}</span>) tidak memiliki izin untuk mengakses halaman ini.
+                  Akun Anda (<span className="font-bold text-slate-700 dark:text-slate-200">{session.name || session.username}</span> - Role: <span className="font-extrabold text-primary-500">{session.role}</span>) tidak memiliki izin untuk mengakses halaman ini.
                 </p>
                 <button
                   type="button"
                   onClick={() => setActivePage(getDefaultPageForSession(session))}
-                  className="px-4 py-2.5 bg-[#ff7a00] text-white rounded-xl text-xs font-extrabold hover:bg-[#e06b00] transition-colors cursor-pointer"
+                  className="px-4 py-2.5 bg-primary-500 text-white rounded-xl text-xs font-extrabold hover:bg-primary-600 transition-colors cursor-pointer"
                 >
                   Buka Modul Utama Anda
                 </button>
@@ -1265,6 +1268,14 @@ export default function App() {
       />
 
       {/* Settings Modal (Supabase, GAS, Users, Device) */}
+      <ThemePickerModal
+        isOpen={isThemePickerOpen}
+        onClose={() => setIsThemePickerOpen(false)}
+        darkMode={darkMode}
+        onToggleDarkMode={toggleDarkMode}
+        themeColor={themeColor}
+        setThemeColor={setThemeColor}
+      />
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -1281,8 +1292,6 @@ export default function App() {
           }
         }}
         onRefreshCatalog={() => loadProducts(true)}
-        darkMode={darkMode}
-        onToggleDarkMode={toggleDarkMode}
         notificationPermission={notificationPermission}
         onRequestNotification={handleRequestNotification}
         isRealtimeConnected={isRealtimeConnected}
@@ -1316,7 +1325,7 @@ export default function App() {
               </button>
               <button
                 onClick={confirmDialog.onConfirm}
-                className="px-4 py-2 text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-sm shadow-rose-500/20 transition-all active:scale-95"
+                className="px-4 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
               >
                 Ya, Lanjutkan
               </button>

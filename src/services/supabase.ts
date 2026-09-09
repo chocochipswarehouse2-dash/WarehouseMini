@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { uploadMultipleImagesToGdrive } from './gdriveUpload';
 import {
   getAllProductsFromLocalDb,
   saveProductsToLocalDb,
@@ -5245,9 +5246,27 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
       });
 
       const merged = [...remoteData, ...offlinePending].sort((a, b) => {
-        const dateA = new Date(a.tanggal_penerimaan || a.created_at || 0).getTime();
-        const dateB = new Date(b.tanggal_penerimaan || b.created_at || 0).getTime();
-        return dateB - dateA;
+        // 1. Sort by tanggal_penerimaan desc
+        const dateA = new Date(a.tanggal_penerimaan || 0).getTime();
+        const dateB = new Date(b.tanggal_penerimaan || 0).getTime();
+        if (dateB !== dateA) return dateB - dateA;
+        
+        // 2. Sort by no_surat_jalan asc
+        const sjA = (a.no_surat_jalan || '').toLowerCase();
+        const sjB = (b.no_surat_jalan || '').toLowerCase();
+        if (sjA < sjB) return -1;
+        if (sjA > sjB) return 1;
+
+        // 3. Sort by kode_produksi asc
+        const kpA = (a.kode_produksi || '').toLowerCase();
+        const kpB = (b.kode_produksi || '').toLowerCase();
+        if (kpA < kpB) return -1;
+        if (kpA > kpB) return 1;
+        
+        // 4. Sort by created_at desc
+        const ca = new Date(a.created_at || 0).getTime();
+        const cb = new Date(b.created_at || 0).getTime();
+        return cb - ca;
       });
 
       localData = merged;
@@ -5273,6 +5292,31 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
     console.warn('Gagal memuat penerimaan_produksi dari Supabase, memuat dari local cache:', err);
   }
 
+  // Ensure sorting is applied (useful if falling back to cache)
+  localData.sort((a, b) => {
+    // 1. Sort by tanggal_penerimaan desc
+    const dateA = new Date(a.tanggal_penerimaan || 0).getTime();
+    const dateB = new Date(b.tanggal_penerimaan || 0).getTime();
+    if (dateB !== dateA) return dateB - dateA;
+    
+    // 2. Sort by no_surat_jalan asc
+    const sjA = (a.no_surat_jalan || '').toLowerCase();
+    const sjB = (b.no_surat_jalan || '').toLowerCase();
+    if (sjA < sjB) return -1;
+    if (sjA > sjB) return 1;
+
+    // 3. Sort by kode_produksi asc
+    const kpA = (a.kode_produksi || '').toLowerCase();
+    const kpB = (b.kode_produksi || '').toLowerCase();
+    if (kpA < kpB) return -1;
+    if (kpA > kpB) return 1;
+    
+    // 4. Sort by created_at desc
+    const ca = new Date(a.created_at || 0).getTime();
+    const cb = new Date(b.created_at || 0).getTime();
+    return cb - ca;
+  });
+
   // Filter cached data if keyword provided
   if (filters?.keyword && filters.keyword.trim()) {
     const kw = filters.keyword.trim().toLowerCase();
@@ -5291,13 +5335,13 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
 /**
  * Sync offline Penerimaan Produksi items to Supabase
  */
-export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number, failed: number }> {
+export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number, failed: number, errors: string[] }> {
   let localData: PenerimaanProduksiItem[] = [];
   try {
     const cached = localStorage.getItem('wms_local_penerimaan_produksi');
     if (cached) localData = JSON.parse(cached);
   } catch {
-    return { synced: 0, failed: 0 };
+    return { synced: 0, failed: 0, errors: [] };
   }
 
   const offlineItems = localData.filter((d) => {
@@ -5305,15 +5349,32 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
     return (typeof d.id === 'number' && d.id > 1000000000) || sid.startsWith('local_');
   });
 
-  if (offlineItems.length === 0) return { synced: 0, failed: 0 };
+  if (offlineItems.length === 0) return { synced: 0, failed: 0, errors: [] };
 
   let synced = 0;
   let failed = 0;
+  const errors: string[] = [];
   const remainingOffline: PenerimaanProduksiItem[] = [];
 
   for (const item of offlineItems) {
     try {
       const rowToInsert = { ...item };
+      
+      // Upload image to Google Drive if it is a data URI
+      if (rowToInsert.foto_url && rowToInsert.foto_url.startsWith('data:')) {
+        try {
+          const uploadedUrls = await uploadMultipleImagesToGdrive(
+            [rowToInsert.foto_url],
+            `PENERIMAAN_OFFLINE_${(rowToInsert.no_surat_jalan || '').replace(/[^a-zA-Z0-9]/g, '_')}_${rowToInsert.kode_produksi || ''}`
+          );
+          if (uploadedUrls && uploadedUrls.length > 0) {
+            rowToInsert.foto_url = uploadedUrls[0];
+          }
+        } catch (ePhoto) {
+          console.warn('Gagal upload foto offline ke Cloud Storage, fallback simpan data uri:', ePhoto);
+        }
+      }
+
       delete rowToInsert.id; // Let Supabase generate a new ID
       delete (rowToInsert as any).sheet_row;
       
@@ -5322,12 +5383,16 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
         synced++;
       } else {
         failed++;
-        remainingOffline.push(item);
+        errors.push("Empty response from Supabase");
+        remainingOffline.push(rowToInsert as PenerimaanProduksiItem);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Failed to sync offline item:', err);
       failed++;
-      remainingOffline.push(item);
+      errors.push(err.message || String(err));
+      // Save the updated rowToInsert (potentially with uploaded photo) back to remainingOffline
+      const failedItem = { ...item };
+      remainingOffline.push(failedItem);
     }
   }
 
@@ -5337,7 +5402,7 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
     localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(updatedLocal));
   } catch {}
 
-  return { synced, failed };
+  return { synced, failed, errors };
 }
 
 /**

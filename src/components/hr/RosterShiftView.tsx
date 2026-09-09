@@ -88,7 +88,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       {/* HEADER BANNER */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#131d31] shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-[#ff7a00]/10 border border-[#ff7a00]/20 flex items-center justify-center text-[#ff7a00]">
+          <div className="w-12 h-12 rounded-2xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500">
             <Calendar className="w-6 h-6" />
           </div>
           <div>
@@ -96,7 +96,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               <h1 className="text-xl font-black text-slate-900 dark:text-white">
                 Jadwal Roster Shift Gudang
               </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#ff7a00]/15 text-[#ff7a00] border border-[#ff7a00]/30">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-primary-500/15 text-primary-500 border border-primary-500/30">
                 {rosterList.length} Jadwal
               </span>
             </div>
@@ -128,7 +128,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               placeholder="Cari NIK atau Nama Staf..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-[#ff7a00] dark:text-white"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 dark:text-white"
             />
           </div>
 
@@ -138,7 +138,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-[#ff7a00] dark:text-white font-mono"
+              className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 dark:text-white font-mono"
             />
           </div>
 
@@ -147,7 +147,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             <select
               value={selectedShift}
               onChange={(e) => setSelectedShift(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-[#ff7a00] dark:text-white font-extrabold"
+              className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 dark:text-white font-extrabold"
             >
               <option value="all">Semua Shift & Libur</option>
               <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
@@ -166,7 +166,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               const now = new Date();
               setSelectedDate(now.toISOString().slice(0, 10));
             }}
-            className="px-3 py-1.5 rounded-lg bg-[#ff7a00]/10 text-[#ff7a00] font-bold hover:bg-[#ff7a00]/20 cursor-pointer transition-all whitespace-nowrap"
+            className="px-3 py-1.5 rounded-lg bg-primary-500/10 text-primary-500 font-bold hover:bg-primary-500/20 cursor-pointer transition-all whitespace-nowrap"
           >
             Hari Ini
           </button>
@@ -195,7 +195,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       <div className="bg-white dark:bg-[#131d31] rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-[#ff7a00]" />
+            <Users className="w-4 h-4 text-primary-500" />
             <span className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
               Daftar Roster ({filteredRoster.length})
             </span>
@@ -250,7 +250,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                         <span
                           className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
                             isLibur
-                              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900'
+                              ? 'bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-900'
                               : r.shift === 'Shift 1'
                               ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900'
                               : r.shift === 'Shift 2'

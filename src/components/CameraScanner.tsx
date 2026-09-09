@@ -413,7 +413,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   type="button"
                   id="btnStopCamera"
                   onClick={stopCamera}
-                  className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer transition-all"
+                  className="bg-primary-500 hover:bg-primary-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer transition-all"
                   title="Stop Kamera"
                 >
                   <Square className="w-3 h-3 fill-white" />
@@ -493,7 +493,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
         {/* Error message */}
         {error && (
-          <div className="p-2 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2 border-b border-rose-200 dark:border-rose-900">
+          <div className="p-2 bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 text-xs flex items-center gap-2 border-b border-primary-200 dark:border-primary-900">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="text-[11px]">{error}</span>
           </div>

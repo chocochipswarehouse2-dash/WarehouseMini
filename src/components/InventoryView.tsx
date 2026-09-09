@@ -1027,7 +1027,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       sku.includes('sale');
 
     if (hasDLoc || isSaleOrSC) {
-      return { code: 'D', label: 'D. SALE / LOKASI D', short: 'D', icon: '🏷️', color: 'bg-rose-500 text-white' };
+      return { code: 'D', label: 'D. SALE / LOKASI D', short: 'D', icon: '🏷️', color: 'bg-primary-500 text-white' };
     }
 
     // 3. Belt & Aksesoris
@@ -1769,16 +1769,16 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         {/* KPI 4: STOK PERBAIKAN */}
         <div
           onClick={() => setKpiModal('PERBAIKAN')}
-          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-rose-300 group shadow-xs"
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-primary-300 group shadow-xs"
           title="Klik untuk melihat daftar antrean Permak & Defect"
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
             <span>STOK PERBAIKAN</span>
-            <div className="w-7 h-7 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <div className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-950/60 text-primary-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Wrench className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">
+          <div className="text-xl sm:text-2xl font-black text-primary-600 dark:text-primary-400 font-mono">
             {kpiStats.totalPerbaikan.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 truncate">
@@ -1997,7 +1997,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold'
                   : isLoading || isSyncingBackground
                   ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 animate-pulse'
-                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                  : 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
               }`}
             >
               <span>📦</span>
@@ -2020,7 +2020,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             </span>
             <span>&bull;</span>
             <span>
-              Perbaikan: <b className="text-rose-500 font-bold">{kpiStats.totalPerbaikan} pcs</b>
+              Perbaikan: <b className="text-primary-500 font-bold">{kpiStats.totalPerbaikan} pcs</b>
             </span>
           </div>
         </div>
@@ -2158,7 +2158,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                     'bg-amber-500 text-amber-500',
                     'bg-emerald-500 text-emerald-500',
                     'bg-blue-500 text-blue-500',
-                    'bg-rose-500 text-rose-500',
+                    'bg-primary-500 text-primary-500',
                     'bg-purple-500 text-purple-500',
                     'bg-pink-500 text-pink-500',
                     'bg-teal-500 text-teal-500',
@@ -2690,7 +2690,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                             {displayQty}
                                           </span>
                                         ) : (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary-100 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
                                             Sold
                                           </span>
                                         )}
@@ -2756,7 +2756,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           onClick={() => setKpiPerbaikanTab('ALL')}
                           className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
                             kpiPerbaikanTab === 'ALL'
-                              ? 'bg-rose-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-rose-500'
+                              ? 'bg-primary-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-primary-500'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
@@ -2787,7 +2787,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       </div>
 
                       {/* Guide Callout Box */}
-                      <div className="px-3 py-2 bg-rose-500/5 dark:bg-rose-950/20 border border-rose-500/20 rounded-xl text-[11px] text-rose-800 dark:text-rose-300 flex items-start gap-2">
+                      <div className="px-3 py-2 bg-primary-500/5 dark:bg-primary-950/20 border border-primary-500/20 rounded-xl text-[11px] text-primary-800 dark:text-primary-300 flex items-start gap-2">
                         <span className="shrink-0 mt-0.5">💡</span>
                         <p className="leading-snug">
                           <b>Acuan Stok Perbaikan:</b> Daftar barang yang sedang dalam antrean permak atau masuk sebagai barang defect.
@@ -2802,7 +2802,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             value={kpiModalSearch}
                             onChange={(e) => setKpiModalSearch(e.target.value)}
                             placeholder="Cari Produk / SKU..."
-                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium"
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
                           />
                           {kpiModalSearch && (
                             <button
@@ -2845,7 +2845,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                               <th className="p-2.5 text-center w-12">SIZE</th>
                               <th className="p-2.5 text-center w-14 text-blue-600 dark:text-blue-400">PERMAK</th>
                               <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">DEFECT</th>
-                              <th className="p-2.5 text-center w-14 text-rose-600 dark:text-rose-400">TOTAL</th>
+                              <th className="p-2.5 text-center w-14 text-primary-600 dark:text-primary-400">TOTAL</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -2892,7 +2892,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                       </span>
                                     </td>
                                     <td className="p-2.5 text-center">
-                                      <span className="font-mono text-xs font-extrabold text-rose-600 dark:text-rose-400">
+                                      <span className="font-mono text-xs font-extrabold text-primary-600 dark:text-primary-400">
                                         {it.totalPerbaikan}
                                       </span>
                                     </td>
@@ -3201,7 +3201,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                             {displayQty}
                                           </span>
                                         ) : (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary-100 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
                                             Sold
                                           </span>
                                         )}
@@ -3267,7 +3267,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           onClick={() => setKpiPerbaikanTab('ALL')}
                           className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
                             kpiPerbaikanTab === 'ALL'
-                              ? 'bg-rose-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-rose-500'
+                              ? 'bg-primary-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-primary-500'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
@@ -3298,7 +3298,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       </div>
 
                       {/* Guide Callout Box */}
-                      <div className="px-3 py-2 bg-rose-500/5 dark:bg-rose-950/20 border border-rose-500/20 rounded-xl text-[11px] text-rose-800 dark:text-rose-300 flex items-start gap-2">
+                      <div className="px-3 py-2 bg-primary-500/5 dark:bg-primary-950/20 border border-primary-500/20 rounded-xl text-[11px] text-primary-800 dark:text-primary-300 flex items-start gap-2">
                         <span className="shrink-0 mt-0.5">💡</span>
                         <p className="leading-snug">
                           <b>Acuan Stok Perbaikan:</b> Daftar barang yang sedang dalam antrean permak atau masuk sebagai barang defect.
@@ -3313,7 +3313,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                             value={kpiModalSearch}
                             onChange={(e) => setKpiModalSearch(e.target.value)}
                             placeholder="Cari Produk / SKU..."
-                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium"
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
                           />
                           {kpiModalSearch && (
                             <button
@@ -3373,7 +3373,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                       {it.sku}
                                     </span>
                                     {it.locStr && it.locStr !== '-' && (
-                                      <span className="text-rose-500 font-mono text-[10px] flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded border border-rose-200/50 dark:border-rose-800/40">
+                                      <span className="text-primary-500 font-mono text-[10px] flex items-center gap-1 bg-primary-50 dark:bg-primary-900/20 px-1.5 py-0.5 rounded border border-primary-200/50 dark:border-primary-800/40">
                                         📍 {it.locStr}
                                       </span>
                                     )}
@@ -3390,11 +3390,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                         </span>
                                       )}
                                       {it.defectQty > 0 && (
-                                        <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
+                                        <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-500/10 px-1.5 py-0.5 rounded border border-primary-500/20">
                                           Defect: {it.defectQty}
                                         </span>
                                       )}
-                                      <span className="text-[11px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                      <span className="text-[11px] font-extrabold text-primary-600 dark:text-primary-400 bg-primary-500/10 px-2 py-0.5 rounded-full border border-primary-500/30">
                                         Tot: {it.totalPerbaikan}
                                       </span>
                                     </div>
@@ -3412,7 +3412,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                     <th className="p-2.5 text-center">Size</th>
                                     <th className="p-2.5">SKU</th>
                                     <th className="p-2.5 text-center text-amber-600">Permak</th>
-                                    <th className="p-2.5 text-center text-rose-600">Defect</th>
+                                    <th className="p-2.5 text-center text-primary-600">Defect</th>
                                     <th className="p-2.5 text-right font-extrabold">Total</th>
                                   </tr>
                                 </thead>
@@ -3421,13 +3421,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                     <tr key={`${it.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                       <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
                                         {it.produk}
-                                        {it.locStr !== '-' && <div className="text-[10px] text-rose-500 font-mono font-normal">📍 {it.locStr}</div>}
+                                        {it.locStr !== '-' && <div className="text-[10px] text-primary-500 font-mono font-normal">📍 {it.locStr}</div>}
                                       </td>
                                       <td className="p-2.5 text-center font-mono font-bold text-xs">{it.size}</td>
                                       <td className="p-2.5 font-mono text-slate-500">{it.sku}</td>
                                       <td className="p-2.5 text-center font-mono font-bold text-amber-600">{it.permakQty}</td>
-                                      <td className="p-2.5 text-center font-mono font-bold text-rose-600">{it.defectQty}</td>
-                                      <td className="p-2.5 text-right font-mono font-black text-rose-600">{it.totalPerbaikan}</td>
+                                      <td className="p-2.5 text-center font-mono font-bold text-primary-600">{it.defectQty}</td>
+                                      <td className="p-2.5 text-right font-mono font-black text-primary-600">{it.totalPerbaikan}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -3451,7 +3451,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
                       <div className="text-right text-[11px] text-slate-500 font-mono">
                         Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
-                        <b className="text-rose-500">{totalPcs} Pcs</b> Antrean Perbaikan
+                        <b className="text-primary-500">{totalPcs} Pcs</b> Antrean Perbaikan
                       </div>
                     </div>
                   );

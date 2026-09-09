@@ -519,7 +519,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             <td style="padding: 6px 8px; font-family: monospace; font-weight: 700; color: #0f172a;">${it.sku}</td>
             <td style="padding: 6px 8px; color: #1e293b; font-weight: 600;">${it.nama}</td>
             <td style="padding: 6px 8px; text-align: center; font-weight: 700;">${it.size || '-'}</td>
-            <td style="padding: 6px 8px; text-align: center; font-weight: 800; color: #ff7a00; font-size: 12px;">${it.qty}</td>
+            <td style="padding: 6px 8px; text-align: center; font-weight: 800; color: var(--theme-500); font-size: 12px;">${it.qty}</td>
             <td style="padding: 6px 8px; text-align: center; font-weight: 700; background: #f8fafc; color: ${isKosong ? '#e11d48' : '#047857'};">${locText}</td>
             <td style="padding: 6px 8px; text-align: center; width: 40px;"><div style="width: 14px; height: 14px; border: 1.5px solid #94a3b8; border-radius: 3px; margin: 0 auto;"></div></td>
           </tr>
@@ -530,7 +530,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         <div style="page-break-after: always; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; max-width: 800px; margin: 0 auto;">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
             <div>
-              <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: #ff7a00;">CHOCOCHIPS WMS</div>
+              <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: var(--theme-500);">CHOCOCHIPS WMS</div>
               <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING REFILL</div>
               <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${g.date}</b> • Dicetak oleh: <b>${currentUser}</b></div>
             </div>
@@ -538,7 +538,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               <div style="font-size: 18px; font-weight: 900; font-family: monospace; color: #0f172a; border: 1.5px solid #0f172a; padding: 4px 10px; border-radius: 6px; display: inline-block;">
                 ${g.noSJ}
               </div>
-              <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 4px;">Tujuan: <span style="color: #ff7a00;">${g.tujuan}</span></div>
+              <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 4px;">Tujuan: <span style="color: var(--theme-500);">${g.tujuan}</span></div>
             </div>
           </div>
 
@@ -793,12 +793,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         {/* Header Bar */}
         <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#ff7a00]/10 flex items-center justify-center text-[#ff7a00] border border-[#ff7a00]/20 flex-shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-primary-500/10 flex items-center justify-center text-primary-500 border border-primary-500/20 flex-shrink-0">
               <Package className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-extrabold text-[#ff7a00] uppercase tracking-wider">
+                <span className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
                   Fulfillment Refill
                 </span>
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
@@ -826,7 +826,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             onClick={() => setActiveTab('CSV')}
             className={`px-4 py-2.5 text-xs font-extrabold rounded-t-xl transition-all border-b-2 flex items-center gap-2 ${
               activeTab === 'CSV'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -838,7 +838,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             onClick={() => setActiveTab('MANUAL')}
             className={`px-4 py-2.5 text-xs font-extrabold rounded-t-xl transition-all border-b-2 flex items-center gap-2 ${
               activeTab === 'MANUAL'
-                ? 'border-[#ff7a00] text-[#ff7a00] bg-white dark:bg-[#131d31]'
+                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -853,7 +853,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               {/* CSV Upload Card */}
               <div className="p-4 sm:p-5 bg-gradient-to-br from-orange-50/60 to-amber-50/40 dark:from-[#1e293b]/40 dark:to-[#0f172a]/60 border border-orange-200 dark:border-slate-800 rounded-2xl">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 bg-[#ff7a00]/10 rounded-xl text-[#ff7a00] flex-shrink-0 mt-0.5">
+                  <div className="p-2 bg-primary-500/10 rounded-xl text-primary-500 flex-shrink-0 mt-0.5">
                     <FileText className="w-5 h-5" />
                   </div>
                   <div className="flex-1">
@@ -876,14 +876,14 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                       />
                       <label
                         htmlFor="csvFulfillmentInput"
-                        className="px-4 py-2.5 bg-[#ff7a00] hover:bg-[#e06c00] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer shadow-md active:scale-95 transition-all flex items-center gap-2"
+                        className="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl cursor-pointer shadow-md active:scale-95 transition-all flex items-center gap-2"
                       >
                         <Upload className="w-4 h-4" />
                         <span>Pilih File CSV Transfer Order</span>
                       </label>
 
                       {isProcessing && (
-                        <span className="text-xs font-bold text-[#ff7a00] flex items-center gap-1.5 animate-pulse">
+                        <span className="text-xs font-bold text-primary-500 flex items-center gap-1.5 animate-pulse">
                           <Loader2 className="w-4 h-4 animate-spin" /> Memproses file CSV...
                         </span>
                       )}
@@ -910,7 +910,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                         type="button"
                         disabled={isProcessing}
                         onClick={() => handleSaveToDatabase(parsedGroups, false)}
-                        className="px-4 py-2 bg-[#ff7a00] hover:bg-[#e06c00] text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50 transition-all"
+                        className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50 transition-all"
                       >
                         {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                         <span>🚀 Masukkan Semua ke Tugas Picking</span>
@@ -925,7 +925,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setParsedGroups([])}
-                      className="text-[11px] font-extrabold text-rose-500 hover:underline flex items-center gap-1"
+                      className="text-[11px] font-extrabold text-primary-500 hover:underline flex items-center gap-1"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Hapus Semua
                     </button>
@@ -952,12 +952,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                                 </span>
                               )}
                               <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                                <Truck className="w-3 h-3 text-[#ff7a00]" /> {group.tujuan}
+                                <Truck className="w-3 h-3 text-primary-500" /> {group.tujuan}
                               </span>
                             </div>
 
                             <div className="flex items-center gap-2">
-                              <span className="px-2.5 py-1 rounded-lg text-xs font-extrabold bg-white dark:bg-[#131d31] text-[#ff7a00] border border-slate-200 dark:border-slate-700 shadow-sm">
+                              <span className="px-2.5 py-1 rounded-lg text-xs font-extrabold bg-white dark:bg-[#131d31] text-primary-500 border border-slate-200 dark:border-slate-700 shadow-sm">
                                 {group.totalItems} SKU • {group.totalQty} Pcs
                               </span>
 
@@ -965,7 +965,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                                 type="button"
                                 disabled={isProcessing}
                                 onClick={() => handleSaveToDatabase([group], false)}
-                                className="px-2.5 py-1.5 bg-[#ff7a00]/10 hover:bg-[#ff7a00] text-[#ff7a00] hover:text-white rounded-lg border border-[#ff7a00]/30 text-xs font-black transition-all flex items-center gap-1"
+                                className="px-2.5 py-1.5 bg-primary-500/10 hover:bg-primary-500 text-primary-500 hover:text-white rounded-lg border border-primary-500/30 text-xs font-black transition-all flex items-center gap-1"
                                 title="Simpan SJ Ini ke Tugas Picking"
                               >
                                 <Send className="w-3.5 h-3.5" />
@@ -978,7 +978,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                                 className="p-1.5 bg-white dark:bg-[#131d31] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all"
                                 title="Cetak Surat Jalan Ini"
                               >
-                                <Printer className="w-3.5 h-3.5 text-[#ff7a00]" />
+                                <Printer className="w-3.5 h-3.5 text-primary-500" />
                               </button>
 
                               <button
@@ -1035,19 +1035,19 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                                           ))
                                         ) : isLoaded ? (
                                           <span
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 font-bold text-[9px] border border-primary-500/30"
                                             title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
                                           >
-                                            <AlertTriangle className="w-2.5 h-2.5 text-rose-500 shrink-0" />
+                                            <AlertTriangle className="w-2.5 h-2.5 text-primary-500 shrink-0" />
                                             <span>KOSONG (0)</span>
                                             {emptyRacks.length > 0 && (
-                                              <span className="text-[8px] text-rose-500/80 font-mono">
+                                              <span className="text-[8px] text-primary-500/80 font-mono">
                                                 ({emptyRacks.join(',')})
                                               </span>
                                             )}
                                           </span>
                                         ) : item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? (
-                                          <span className="font-mono font-bold text-[10px] text-[#ff7a00]">
+                                          <span className="font-mono font-bold text-[10px] text-primary-500">
                                             {item.lokasi}
                                           </span>
                                         ) : (
@@ -1094,7 +1094,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                     value={manualSJ}
                     onChange={(e) => setManualSJ(e.target.value)}
                     placeholder="Contoh: SJ-MKG-8821 / TO-2026-001"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-primary-500"
                   />
                 </div>
 
@@ -1108,7 +1108,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                     value={manualTujuan}
                     onChange={(e) => setManualTujuan(e.target.value)}
                     placeholder="Contoh: Store Mall Kelapa Gading / Live Shopee"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-[#ff7a00]"
+                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
@@ -1122,7 +1122,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                   <button
                     type="button"
                     onClick={handleAddManualRow}
-                    className="text-[11px] font-extrabold text-[#ff7a00] hover:underline flex items-center gap-1"
+                    className="text-[11px] font-extrabold text-primary-500 hover:underline flex items-center gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" /> Tambah Baris
                   </button>
@@ -1178,7 +1178,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveManualRow(idx)}
-                          className="text-slate-400 hover:text-rose-500 p-1"
+                          className="text-slate-400 hover:text-primary-500 p-1"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -1209,7 +1209,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                 onClick={() => handlePrintGroups(parsedGroups)}
                 className="px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-extrabold text-xs uppercase rounded-xl flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
               >
-                <Printer className="w-4 h-4 text-[#ff7a00]" />
+                <Printer className="w-4 h-4 text-primary-500" />
                 <span>🖨️ Cetak PDF Saja</span>
               </button>
 
@@ -1227,7 +1227,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                 type="button"
                 disabled={isProcessing}
                 onClick={() => handleSaveToDatabase(parsedGroups, false)}
-                className="px-5 py-2.5 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-2 shadow-lg shadow-[#ff7a00]/20 active:scale-95 disabled:opacity-50 transition-all"
+                className="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-2 shadow-lg shadow-primary-500/20 active:scale-95 disabled:opacity-50 transition-all"
               >
                 {isProcessing ? (
                   <>
@@ -1247,7 +1247,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               type="button"
               disabled={isProcessing}
               onClick={handleSaveManualSJ}
-              className="px-5 py-2.5 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-2 shadow-lg shadow-[#ff7a00]/20 active:scale-95 disabled:opacity-50 transition-all"
+              className="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-2 shadow-lg shadow-primary-500/20 active:scale-95 disabled:opacity-50 transition-all"
             >
               {isProcessing ? (
                 <>

@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <button
               type="button"
               onClick={this.handleReset}
-              className="px-4 py-2.5 bg-[#ff7a00] hover:bg-[#e06c00] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md inline-flex items-center gap-2 cursor-pointer active:scale-95"
+              className="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md inline-flex items-center gap-2 cursor-pointer active:scale-95"
             >
               <RefreshCw className="w-4 h-4" />
               Pulihkan / Muat Ulang

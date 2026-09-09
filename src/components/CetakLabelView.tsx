@@ -266,7 +266,7 @@ export const CetakLabelView: React.FC = () => {
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2">{item.alamat}</p>
                             <button
                               onClick={(e) => handleDeleteAddress(e, item.id)}
-                              className="absolute top-3 right-3 p-1.5 bg-white dark:bg-slate-800 rounded-md text-slate-400 hover:text-rose-500 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute top-3 right-3 p-1.5 bg-white dark:bg-slate-800 rounded-md text-slate-400 hover:text-primary-500 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                               title="Hapus"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -308,7 +308,7 @@ export const CetakLabelView: React.FC = () => {
 
               {/* Penerima */}
               <div className="space-y-3">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">Penerima <span className="text-rose-500">*</span></label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">Penerima <span className="text-primary-500">*</span></label>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2 sm:col-span-1 relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -444,7 +444,7 @@ export const CetakLabelView: React.FC = () => {
                         </h4>
                         <button
                           onClick={() => handleRemoveLabel(lbl.id)}
-                          className="text-slate-400 hover:text-rose-500 p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
+                          className="text-slate-400 hover:text-primary-500 p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -464,7 +464,7 @@ export const CetakLabelView: React.FC = () => {
               <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                 <button
                   onClick={() => setLabels([])}
-                  className="w-full px-4 py-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold rounded-lg hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors text-xs"
+                  className="w-full px-4 py-2 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-bold rounded-lg hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors text-xs"
                 >
                   Kosongkan Antrean
                 </button>
