@@ -26,6 +26,7 @@ import {
   Info,
   Building2,
   Calendar,
+  Share2,
 } from 'lucide-react';
 import {
   UserSession,
@@ -45,6 +46,7 @@ import {
 } from '../services/supabase';
 import { compressImage } from '../utils/imageCompressor';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
+import { normalizeWhatsAppNumber } from '../services/whatsapp';
 
 interface PenerimaanProduksiViewProps {
   session: UserSession | null;
@@ -129,6 +131,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     totalQty?: number;
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Share Modal
+  const [shareModal, setShareModal] = useState<{
+    isOpen: boolean;
+    noSuratJalan: string;
+    targetType: 'wa' | 'email';
+    targetValue: string;
+  }>({ isOpen: false, noSuratJalan: '', targetType: 'wa', targetValue: '' });
 
   // Webcam Modal
   const [webcamOpen, setWebcamOpen] = useState<boolean>(false);
@@ -545,6 +555,80 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       onShowToast(`Gagal menyimpan: ${err.message || 'Terjadi kesalahan sistem'}`, 'error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Open Share Modal
+  const handleOpenShare = (noSuratJalan: string) => {
+    setShareModal({
+      isOpen: true,
+      noSuratJalan: noSuratJalan,
+      targetType: 'wa',
+      targetValue: ''
+    });
+  };
+
+  // Handle Share Submit
+  const handleShareSubmit = () => {
+    const { noSuratJalan, targetType, targetValue } = shareModal;
+    if (!targetValue.trim()) {
+      onShowToast(`Silakan masukkan ${targetType === 'wa' ? 'nomor WA' : 'alamat Email'}.`, 'error');
+      return;
+    }
+    
+    const items = dataList.filter((d) => (d.no_surat_jalan || '').trim().toUpperCase() === (noSuratJalan || '').trim().toUpperCase());
+    if (items.length === 0) {
+      onShowToast('Data tidak ditemukan.', 'error');
+      return;
+    }
+    
+    if (targetType === 'wa') {
+      const totalQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+      let waText = `*DATA PENERIMAAN BARANG*\nNo. Surat Jalan: *${noSuratJalan}*\nTotal Item: ${items.length}\nTotal Qty: ${totalQty} pcs\n\n*Daftar Barang:*\n`;
+      items.forEach((item, idx) => {
+        waText += `${idx + 1}. ${item.kode_produksi} | ${item.warna} | ${item.size} | *${item.qty} pcs*\n`;
+      });
+      
+      const cleanPhone = normalizeWhatsAppNumber(targetValue) || targetValue;
+      const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(waText)}`;
+      window.open(url, '_blank');
+      setShareModal(prev => ({ ...prev, isOpen: false }));
+      onShowToast('Membuka WhatsApp...', 'success');
+    } else {
+      // CSV Export
+      const headers = ['Tanggal', 'Kategori', 'No Surat Jalan', 'Kode Produksi', 'Warna', 'Size', 'Qty', 'Catatan', 'Operator'];
+      const rows = items.map(it => [
+        it.tanggal_penerimaan,
+        it.kategori,
+        it.no_surat_jalan,
+        it.kode_produksi,
+        it.warna,
+        it.size,
+        it.qty,
+        it.keterangan || '-',
+        it.operator || '-'
+      ]);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Penerimaan_${noSuratJalan}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Open mailto
+      const mailtoUrl = `mailto:${targetValue}?subject=Data Penerimaan Produksi - ${noSuratJalan}&body=${encodeURIComponent('Silakan temukan lampiran file CSV data penerimaan produksi yang telah didownload otomatis ke perangkat Anda.')}`;
+      window.open(mailtoUrl, '_self');
+      
+      setShareModal(prev => ({ ...prev, isOpen: false }));
+      onShowToast('CSV di-download, silakan lampirkan pada email Anda.', 'success');
     }
   };
 
@@ -1517,6 +1601,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
+                              onClick={() => handleOpenShare(row.no_surat_jalan)}
+                              className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition"
+                              title="Bagikan Surat Jalan Ini"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleOpenEditBatch(row.no_surat_jalan)}
                               className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition"
                               title="Edit Surat Jalan Ini"
@@ -1568,6 +1660,89 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: SHARE WA/EMAIL
+          ======================================================== */}
+      {shareModal.isOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
+                  Kirim Data Penerimaan
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-4 sm:p-5 space-y-4">
+              <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <p className="text-xs text-slate-500 font-medium">No. Surat Jalan</p>
+                <p className="text-sm font-bold text-slate-800 dark:text-white">{shareModal.noSuratJalan}</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Metode Pengiriman</label>
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => setShareModal(prev => ({ ...prev, targetType: 'wa' }))}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${shareModal.targetType === 'wa' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  >
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShareModal(prev => ({ ...prev, targetType: 'email' }))}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${shareModal.targetType === 'email' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  >
+                    Email (CSV)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  {shareModal.targetType === 'wa' ? 'Nomor WhatsApp' : 'Alamat Email'}
+                </label>
+                <input
+                  type={shareModal.targetType === 'wa' ? 'tel' : 'email'}
+                  placeholder={shareModal.targetType === 'wa' ? 'Contoh: 08123456789' : 'email@contoh.com'}
+                  value={shareModal.targetValue}
+                  onChange={(e) => setShareModal(prev => ({ ...prev, targetValue: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-850">
+              <button
+                type="button"
+                onClick={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleShareSubmit}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition"
+              >
+                Kirim
+              </button>
             </div>
           </div>
         </div>
