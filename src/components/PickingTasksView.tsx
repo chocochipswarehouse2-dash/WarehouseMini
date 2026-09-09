@@ -148,7 +148,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const [editSjTujuan, setEditSjTujuan] = useState('');
   const [editSjCatatan, setEditSjCatatan] = useState('');
   const [editSjRows, setEditSjRows] = useState<PickingListItem[]>([]);
-  const [deletedSjItemIds, setDeletedSjItemIds] = useState<string[]>([]);
+  const [deletedSjItems, setDeletedSjItems] = useState<PickingListItem[]>([]);
   const [newSjSkuInput, setNewSjSkuInput] = useState('');
   const [newSjSkuNama, setNewSjSkuNama] = useState('');
   const [newSjSkuSize, setNewSjSkuSize] = useState('');
@@ -1364,7 +1364,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setEditSjTujuan(sj.tujuan || '');
     setEditSjCatatan(sj.catatan || '');
     setEditSjRows(JSON.parse(JSON.stringify(sj.items)));
-    setDeletedSjItemIds([]);
+    setDeletedSjItems([]);
     setNewSjSkuInput('');
     setNewSjSkuNama('');
     setNewSjSkuSize('');
@@ -1416,7 +1416,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const handleRemoveRowFromEditSJ = (index: number) => {
     const target = editSjRows[index];
     if (target?.id) {
-      setDeletedSjItemIds([...deletedSjItemIds, target.id]);
+      setDeletedSjItems([...deletedSjItems, target]);
     }
     const nextRows = [...editSjRows];
     nextRows.splice(index, 1);
@@ -1474,7 +1474,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         editSjTujuan,
         existingItems,
         newItemsToAdd,
-        deletedSjItemIds
+        deletedSjItems
       );
 
       // 2. Update rawItems locally immediately so UI and filters update without waiting for fetch

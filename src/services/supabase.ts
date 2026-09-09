@@ -3349,7 +3349,7 @@ export async function completePickingSuratJalanSupabase(
       const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
       const condition = item.id && !item.id.startsWith('pick_')
         ? `id=eq.${item.id}`
-        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}*&sku=ilike.${encodeURIComponent(item.sku)}*`;
+        : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
       // Try updating with standard columns
       try {
@@ -3585,25 +3585,27 @@ export async function updatePickingSuratJalanDetailsSupabase(
   tujuan: string,
   items: PickingListItem[],
   newItems: Array<{ sku: string; nama_produk: string; size?: string; lokasi?: string; qty_req: number }>,
-  deletedItemIds: string[]
+  deletedItems: PickingListItem[]
 ): Promise<boolean> {
   const cleanNoSj = no_sj.trim().toUpperCase();
   const isSpsOrPjm = cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM');
 
   try {
     // 1. Delete removed items from picking_list and peminjaman
-    if (deletedItemIds.length > 0) {
-      for (const id of deletedItemIds) {
-        if (/^\d+$/.test(String(id))) {
-          try {
-            const rows = await supabaseFetch<any[]>('picking_list', 'GET', null, `id=eq.${id}`);
-            if (rows && rows[0] && isSpsOrPjm) {
-              const encodedSj = encodeURIComponent(cleanNoSj);
-              const encodedSku = encodeURIComponent(rows[0].sku);
-              await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}*&sku=ilike.${encodedSku}*`).catch(() => {});
-            }
-          } catch {}
-          await supabaseFetch('picking_list', 'DELETE', undefined, `id=eq.${id}`).catch(() => {});
+    if (deletedItems && deletedItems.length > 0) {
+      for (const item of deletedItems) {
+        if (item.id && /^\d+$/.test(String(item.id))) {
+          await supabaseFetch('picking_list', 'DELETE', undefined, `id=eq.${item.id}`).catch(() => {});
+        } else {
+          // If it doesn't have a numeric ID (e.g. pick_ prefix), delete by sj and sku
+          await supabaseFetch('picking_list', 'DELETE', undefined, `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`).catch(() => {});
+        }
+        
+        // Delete from peminjaman if needed
+        if (isSpsOrPjm) {
+          const encodedSj = encodeURIComponent(cleanNoSj);
+          const encodedSku = encodeURIComponent(item.sku);
+          await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedSj}&sku=eq.${encodedSku}`).catch(() => {});
         }
       }
     }
@@ -3624,7 +3626,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
 
       const condition = item.id && /^\d+$/.test(String(item.id))
         ? `id=eq.${item.id}`
-        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}*&sku=ilike.${encodeURIComponent(cleanSku)}*`;
+        : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(cleanSku)}`;
 
       try {
         await supabaseFetch('picking_list', 'PATCH', patchData, condition);
@@ -3645,7 +3647,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
             qty: Math.max(1, Number(item.qty_req) || 1),
             lokasi: item.lokasi || 'BLOK F',
           },
-          `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}*&sku=ilike.${encodeURIComponent(cleanSku)}*`
+          `no_peminjaman=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(cleanSku)}`
         ).catch(() => {});
       }
     }
@@ -3730,9 +3732,10 @@ export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Pr
   try {
     // Delete one by one to avoid PostgREST 'in' syntax issues with special chars
     for (const sj of no_sjs) {
-      const encodedSj = encodeURIComponent(sj);
-      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encodedSj}*`);
-      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}*`).catch(() => {});
+      const encodedSj = encodeURIComponent(sj.trim());
+      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=eq.${encodedSj}`);
+      // Also delete from peminjaman explicitly 
+      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedSj}`).catch(() => {});
     }
     // Clean up local caches
     try {
@@ -3768,11 +3771,11 @@ export async function completePickingSuratJalanBatchSupabase(no_sjs: string[], p
   if (!no_sjs || no_sjs.length === 0) return true;
   try {
     for (const sj of no_sjs) {
-      const encodedSj = encodeURIComponent(sj);
+      const encodedSj = encodeURIComponent(sj.trim());
       await supabaseFetch('picking_list', 'PATCH', { 
         status: 'SELESAI',
         picker_name: pickerName || 'Admin'
-      }, `no_sj=ilike.${encodedSj}*`);
+      }, `no_sj=eq.${encodedSj}`);
     }
     // Update local caches
     try {
