@@ -561,8 +561,8 @@ SELECT
   lp.sku,
   lp.lokasi,
   lp.area,
-  lp.nama_produk,
-  lp.size,
+  MAX(lp.nama_produk) as nama_produk,
+  MAX(lp.size) as size,
   SUM(
     CASE 
       WHEN lp.type IN ('IN', 'ADJ_IN') THEN lp.qty
@@ -572,7 +572,7 @@ SELECT
   ) as sisa_stok,
   MAX(lp.created_at) as updated_at
 FROM public.log_produk lp
-GROUP BY lp.sku, lp.lokasi, lp.area, lp.nama_produk, lp.size;
+GROUP BY lp.sku, lp.lokasi, lp.area;
 
 -- RLS Permissions (Open Anon for WMS Applet)
 ALTER TABLE public.wms_users ENABLE ROW LEVEL SECURITY;
@@ -3068,7 +3068,7 @@ export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<bo
       'peminjaman',
       'PATCH',
       { status: 'Dikembalikan', tanggal_kembali: new Date().toISOString().slice(0, 10) },
-      `no_peminjaman=ilike.${encodeURIComponent(noPeminjaman)}`
+      `no_peminjaman=ilike.${encodeURIComponent(noPeminjaman)}*`
     );
     return true;
   } catch (err) {
@@ -3080,7 +3080,7 @@ export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<bo
 
 function extractPickingItemFromRow(row: any): PickingListItem | null {
   if (!row) return null;
-  const no_sj = String(row.no_sj || row.number_delivery || row.no_delivery || row.invoice || row.nomor_sj || row.sj || '').trim();
+  const no_sj = String(row.no_sj || row.number_delivery || row.no_delivery || row.invoice || row.nomor_sj || row.sj || '').trim().toUpperCase();
   const sku = String(row.sku || row.code || row.barcode || '').trim().toUpperCase();
   if (!no_sj || !sku) return null;
 
@@ -3140,9 +3140,9 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
   if (peminjamanRes.status === 'fulfilled' && peminjamanRes.value && Array.isArray(peminjamanRes.value)) {
     const toInsert: any[] = [];
     for (const p of peminjamanRes.value) {
-      const no_sj = String(p.no_peminjaman || '');
-      const sku = String(p.sku || '').toUpperCase();
-      const pStatus = String(p.status || '').toUpperCase();
+      const no_sj = String(p.no_peminjaman || '').trim().toUpperCase();
+      const sku = String(p.sku || '').toUpperCase().trim();
+      const pStatus = String(p.status || '').toUpperCase().trim();
       
       // Skip items that are already returned to avoid re-adding them to picking list
       if (pStatus === 'DIKEMBALIKAN') continue;
@@ -3349,7 +3349,7 @@ export async function completePickingSuratJalanSupabase(
       const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
       const condition = item.id && !item.id.startsWith('pick_')
         ? `id=eq.${item.id}`
-        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(item.sku)}`;
+        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}*&sku=ilike.${encodeURIComponent(item.sku)}*`;
 
       // Try updating with standard columns
       try {
@@ -3600,7 +3600,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
             if (rows && rows[0] && isSpsOrPjm) {
               const encodedSj = encodeURIComponent(cleanNoSj);
               const encodedSku = encodeURIComponent(rows[0].sku);
-              await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}&sku=ilike.${encodedSku}`).catch(() => {});
+              await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}*&sku=ilike.${encodedSku}*`).catch(() => {});
             }
           } catch {}
           await supabaseFetch('picking_list', 'DELETE', undefined, `id=eq.${id}`).catch(() => {});
@@ -3624,7 +3624,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
 
       const condition = item.id && /^\d+$/.test(String(item.id))
         ? `id=eq.${item.id}`
-        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(cleanSku)}`;
+        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}*&sku=ilike.${encodeURIComponent(cleanSku)}*`;
 
       try {
         await supabaseFetch('picking_list', 'PATCH', patchData, condition);
@@ -3645,7 +3645,7 @@ export async function updatePickingSuratJalanDetailsSupabase(
             qty: Math.max(1, Number(item.qty_req) || 1),
             lokasi: item.lokasi || 'BLOK F',
           },
-          `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}&sku=ilike.${encodeURIComponent(cleanSku)}`
+          `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}*&sku=ilike.${encodeURIComponent(cleanSku)}*`
         ).catch(() => {});
       }
     }
@@ -3731,8 +3731,8 @@ export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Pr
     // Delete one by one to avoid PostgREST 'in' syntax issues with special chars
     for (const sj of no_sjs) {
       const encodedSj = encodeURIComponent(sj);
-      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encodedSj}`);
-      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}`).catch(() => {});
+      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encodedSj}*`);
+      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}*`).catch(() => {});
     }
     // Clean up local caches
     try {
@@ -3772,7 +3772,7 @@ export async function completePickingSuratJalanBatchSupabase(no_sjs: string[], p
       await supabaseFetch('picking_list', 'PATCH', { 
         status: 'SELESAI',
         picker_name: pickerName || 'Admin'
-      }, `no_sj=ilike.${encodedSj}`);
+      }, `no_sj=ilike.${encodedSj}*`);
     }
     // Update local caches
     try {
