@@ -6,7 +6,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(({ command }) => {
   const isGithubPages = process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_PAGES === 'true';
-  const base = process.env.VITE_BASE || (command === 'serve' ? '/' : (isGithubPages ? '/WarehouseMini/' : './'));
+  // Automatically detect Vercel environment (VERCEL=1)
+  const isVercel = !!process.env.VERCEL;
+  const base = process.env.VITE_BASE || (command === 'serve' || isVercel ? '/' : (isGithubPages ? '/WarehouseMini/' : './'));
 
   return {
     base,
@@ -173,7 +175,32 @@ export default defineConfig(({ command }) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              if (id.includes('html5-qrcode')) {
+                return 'vendor-scanner';
+              }
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'vendor-react';
+              }
+              return 'vendor-core'; // all other deps
+            }
+          }
+        }
+      }
+    },
     server: {
+
       host: '0.0.0.0',
       port: 3000,
       allowedHosts: true as const,

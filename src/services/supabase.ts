@@ -5676,3 +5676,23 @@ export async function hapusPenerimaanProduksiSingleRowFromSupabase(id: string | 
 
   return true;
 }
+
+/**
+ * Fetch logs matching a search keyword from all history.
+ */
+export async function fetchLogsBySearch(keyword: string, limit = 1000): Promise<LogProdukItem[]> {
+  if (!keyword) return [];
+  try {
+    const term = encodeURIComponent(`%${keyword}%`);
+    const data = await supabaseFetch<LogProdukItem[]>(
+      'log_produk',
+      'GET',
+      null,
+      `select=*&or=(sku.ilike.${term},nama_produk.ilike.${term},invoice.ilike.${term})&order=created_at.desc&limit=${limit}`
+    );
+    return data || [];
+  } catch (err) {
+    console.warn('Error fetching logs by search:', err);
+    return [];
+  }
+}
