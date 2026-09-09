@@ -4470,7 +4470,7 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
   // Attempt 1: Standard insert
   let inserted = false;
   try {
-    const res = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'POST', [payload]);
+    const res = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'POST', [payload], '', true);
     if (res && Array.isArray(res) && res.length > 0) {
       savedTicket = res[0];
       inserted = true;
@@ -4478,7 +4478,6 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
   } catch (err: any) {
     const errMsg = String(err?.message || err);
     console.warn('Percobaan 1 simpan tiket perbaikan ke Supabase gagal:', errMsg);
-
     // Attempt 2: If qc_report_no column is missing from Supabase perbaikan_tickets schema
     try {
       const fallbackPayload: any = { ...payload };
@@ -4488,7 +4487,7 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
         }
         delete fallbackPayload.qc_report_no;
       }
-      const res2 = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'POST', [fallbackPayload]);
+      const res2 = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'POST', [fallbackPayload], '', true);
       if (res2 && Array.isArray(res2) && res2.length > 0) {
         savedTicket = { ...res2[0], qc_report_no: ticket.qc_report_no };
         inserted = true;
@@ -4513,7 +4512,7 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
           status_pengerjaan: payload.status_pengerjaan || 'PENDING',
           operator_input: payload.operator_input || 'Operator QC',
         };
-        const res3 = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'POST', [minimalPayload]);
+        const res3 = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'POST', [minimalPayload], '', true);
         if (res3 && Array.isArray(res3) && res3.length > 0) {
           savedTicket = { ...res3[0], qc_report_no: ticket.qc_report_no };
           inserted = true;
@@ -4858,7 +4857,7 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
 
   // Jalur 1: Coba simpan ke tabel dedicated qc_reports
   try {
-    const res = await supabaseFetch<QcReport[]>('qc_reports', 'POST', preparedReports);
+    const res = await supabaseFetch<QcReport[]>('qc_reports', 'POST', preparedReports, '', true);
     if (res && Array.isArray(res) && res.length > 0) {
       savedBatch = res;
       insertedToSupabase = true;
@@ -4878,7 +4877,7 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
           delete clean.warna;
           return clean;
         });
-        const res2 = await supabaseFetch<QcReport[]>('qc_reports', 'POST', sanitized);
+        const res2 = await supabaseFetch<QcReport[]>('qc_reports', 'POST', sanitized, '', true);
         if (res2 && Array.isArray(res2) && res2.length > 0) {
           savedBatch = res2;
           insertedToSupabase = true;
@@ -4894,7 +4893,7 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
   if (!insertedToSupabase) {
     try {
       const logRows = preparedReports.map(qcReportToLogProduk);
-      const resLog = await supabaseFetch<any[]>('log_produk', 'POST', logRows);
+      const resLog = await supabaseFetch<any[]>('log_produk', 'POST', logRows, '', true);
       if (resLog && Array.isArray(resLog) && resLog.length > 0) {
         insertedToSupabase = true;
         console.log(`Berhasil menyimpan ${resLog.length} laporan QC ke Supabase via cloud log (QC_INSPEKSI)`);
@@ -4903,7 +4902,7 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
       console.warn('Percobaan batch log_produk gagal, mencoba per baris:', errLog);
       for (const rep of preparedReports) {
         try {
-          await supabaseFetch<any[]>('log_produk', 'POST', [qcReportToLogProduk(rep)]);
+          await supabaseFetch<any[]>('log_produk', 'POST', [qcReportToLogProduk(rep)], '', true);
           insertedToSupabase = true;
         } catch (singleErr) {
           console.error('Gagal simpan baris QC ke log_produk:', singleErr);
@@ -5318,8 +5317,8 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
       delete rowToInsert.id; // Let Supabase generate a new ID
       delete (rowToInsert as any).sheet_row;
       
-      const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert]);
-      if (res && res.length > 0) {
+      const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert], '', true);
+      if (res && Array.isArray(res) && res.length > 0) {
         synced++;
       } else {
         failed++;
@@ -5402,7 +5401,7 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
 
   // Attempt 1: Direct Supabase insert
   try {
-    const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', rowsToInsert);
+    const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', rowsToInsert, '', true);
     if (res && Array.isArray(res) && res.length > 0) {
       savedItems = res;
     } else {
