@@ -17,10 +17,13 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  QrCode,
+  RefreshCw
 } from 'lucide-react';
 import { supabaseFetch } from '../services/supabase';
 import Papa from 'papaparse';
+import QRCode from 'qrcode';
 
 export interface LabelItem {
   id: string;
@@ -32,6 +35,9 @@ export interface LabelItem {
   deskripsi: string;
   ekspedisi: string;
   resi: string;
+  invoice_no: string;
+  qr_content: string;
+  qr_data_url?: string;
 }
 
 export interface AddressBookItem {
@@ -41,6 +47,75 @@ export interface AddressBookItem {
   alamat: string;
   keterangan: string;
 }
+
+export const generateInvoiceNumber = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `INV-${year}${month}${day}-${rand}`;
+};
+
+export const createQrDataUrl = async (text: string): Promise<string> => {
+  try {
+    return await QRCode.toDataURL(text, {
+      width: 180,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'M',
+    });
+  } catch (err) {
+    console.error('Error generating QR code:', err);
+    return '';
+  }
+};
+
+export const QrCodeImage: React.FC<{ text: string; size?: number; className?: string }> = ({
+  text,
+  size = 64,
+  className = '',
+}) => {
+  const [dataUrl, setDataUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!text) {
+      setDataUrl('');
+      return;
+    }
+    createQrDataUrl(text).then((url) => {
+      if (isMounted) setDataUrl(url);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [text]);
+
+  if (!dataUrl) {
+    return (
+      <div
+        style={{ width: size, height: size }}
+        className={`bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-[7px] font-mono text-gray-400 ${className}`}
+      >
+        QR...
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={dataUrl}
+      alt="QR Code"
+      width={size}
+      height={size}
+      className={`block object-contain ${className}`}
+    />
+  );
+};
 
 export const CetakLabelView: React.FC = () => {
   const [labels, setLabels] = useState<LabelItem[]>([]);
@@ -65,6 +140,7 @@ export const CetakLabelView: React.FC = () => {
   const [ekspedisi, setEkspedisi] = useState('');
   const [resi, setResi] = useState('');
   const [qty, setQty] = useState<number>(1);
+  const [invoiceNo, setInvoiceNo] = useState<string>(() => generateInvoiceNumber());
 
   useEffect(() => {
     fetchAddressBook();
@@ -126,7 +202,7 @@ export const CetakLabelView: React.FC = () => {
     setIsAddressDropdownOpen(false);
   };
 
-  const handleAddLabel = (e: React.FormEvent) => {
+  const handleAddLabel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!penerimaNama || !penerimaAlamat) {
       alert('Nama dan Alamat Penerima wajib diisi');
@@ -134,7 +210,13 @@ export const CetakLabelView: React.FC = () => {
     }
 
     const newLabels: LabelItem[] = [];
+    const baseInv = invoiceNo.trim() || generateInvoiceNumber();
+
     for (let i = 0; i < qty; i++) {
+      const currentInv = qty > 1 ? `${baseInv}-${i + 1}` : baseInv;
+      const qrText = `Manual paket + Invoice: ${currentInv}`;
+      const qrDataUrl = await createQrDataUrl(qrText);
+
       newLabels.push({
         id: `lbl_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         pengirim_nama: pengirimNama || 'CHOCOCHIPS',
@@ -145,10 +227,13 @@ export const CetakLabelView: React.FC = () => {
         deskripsi: deskripsi,
         ekspedisi: ekspedisi,
         resi: resi,
+        invoice_no: currentInv,
+        qr_content: qrText,
+        qr_data_url: qrDataUrl,
       });
     }
 
-    setLabels([...labels, ...newLabels]);
+    setLabels(prev => [...prev, ...newLabels]);
 
     // Reset some fields but keep pengirim and ekspedisi to speed up entry
     setPenerimaNama('');
@@ -157,6 +242,7 @@ export const CetakLabelView: React.FC = () => {
     setDeskripsi('');
     setResi('');
     setQty(1);
+    setInvoiceNo(generateInvoiceNumber());
   };
 
   const handleRemoveLabel = (id: string) => {
@@ -181,7 +267,8 @@ export const CetakLabelView: React.FC = () => {
       'isi_paket',
       'ekspedisi',
       'no_resi',
-      'jumlah_copy'
+      'jumlah_copy',
+      'no_invoice'
     ];
 
     const sampleRows = [
@@ -194,7 +281,8 @@ export const CetakLabelView: React.FC = () => {
         '2x Dress Floral M, 1x Scarf',
         'JNE',
         'JNE12345678',
-        '1'
+        '1',
+        ''
       ],
       [
         'Budi Santoso',
@@ -205,7 +293,8 @@ export const CetakLabelView: React.FC = () => {
         '1x Kemeja Rayon L',
         'SiCepat',
         'SCP99887766',
-        '1'
+        '1',
+        'INV-20260910-8821'
       ]
     ];
 
@@ -232,7 +321,7 @@ export const CetakLabelView: React.FC = () => {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
+      complete: async (results) => {
         try {
           const rows = results.data as Record<string, any>[];
           if (!rows || rows.length === 0) {
@@ -257,7 +346,8 @@ export const CetakLabelView: React.FC = () => {
             return '';
           };
 
-          rows.forEach((row, index) => {
+          for (let index = 0; index < rows.length; index++) {
+            const row = rows[index];
             const rNama = getField(row, ['nama_penerima', 'penerima_nama', 'penerima', 'nama', 'recipient', 'receiver', 'customer']);
             const rAlamat = getField(row, ['alamat_penerima', 'penerima_alamat', 'alamat', 'address', 'lokasi', 'alamat_lengkap']);
             const rTelp = getField(row, ['no_telp_penerima', 'telp_penerima', 'penerima_telp', 'telepon', 'no_telp', 'telp', 'no_hp', 'phone', 'hp']);
@@ -266,17 +356,24 @@ export const CetakLabelView: React.FC = () => {
             const rDeskripsi = getField(row, ['isi_paket', 'deskripsi', 'barang', 'keterangan', 'items', 'paket']);
             const rEkspedisi = getField(row, ['ekspedisi', 'kurir', 'courier', 'jasa_kirim', 'logistic']);
             const rResi = getField(row, ['no_resi', 'resi', 'tracking_number', 'airwaybill', 'awb']);
-            
+            const customInv = getField(row, ['no_invoice', 'invoice_no', 'invoice', 'nomor_invoice', 'inv']);
+
             const rawQty = getField(row, ['jumlah_copy', 'qty', 'copy', 'jumlah', 'copies']);
             const itemQty = Math.max(1, parseInt(rawQty, 10) || 1);
 
             // Skip row if it doesn't have minimal recipient data
             if (!rNama && !rAlamat) {
               skippedCount++;
-              return;
+              continue;
             }
 
+            const baseInv = customInv || generateInvoiceNumber();
+
             for (let c = 0; c < itemQty; c++) {
+              const currentInv = itemQty > 1 ? `${baseInv}-${c + 1}` : baseInv;
+              const qrText = `Manual paket + Invoice: ${currentInv}`;
+              const qrDataUrl = await createQrDataUrl(qrText);
+
               newImportedLabels.push({
                 id: `lbl_import_${Date.now()}_${index}_${c}_${Math.random().toString(36).substring(2, 7)}`,
                 pengirim_nama: sNama,
@@ -287,9 +384,12 @@ export const CetakLabelView: React.FC = () => {
                 deskripsi: rDeskripsi,
                 ekspedisi: rEkspedisi,
                 resi: rResi,
+                invoice_no: currentInv,
+                qr_content: qrText,
+                qr_data_url: qrDataUrl,
               });
             }
-          });
+          }
 
           if (newImportedLabels.length === 0) {
             setImportNotice({ 
@@ -300,7 +400,7 @@ export const CetakLabelView: React.FC = () => {
           }
 
           setLabels(prev => [...prev, ...newImportedLabels]);
-          const successMsg = `Berhasil mengimpor ${newImportedLabels.length} label dari CSV!${skippedCount > 0 ? ` (${skippedCount} baris kosong dilewati)` : ''}`;
+          const successMsg = `Berhasil mengimpor ${newImportedLabels.length} label dari CSV dengan QR code & invoice otomatis!${skippedCount > 0 ? ` (${skippedCount} baris kosong dilewati)` : ''}`;
           setImportNotice({ type: 'success', message: successMsg });
           setTimeout(() => setImportNotice(null), 7000);
         } catch (err: any) {
@@ -619,6 +719,38 @@ export const CetakLabelView: React.FC = () => {
                 </div>
               </div>
 
+              {/* No. Invoice & QR Code Auto-Generated */}
+              <div className="bg-indigo-50/70 dark:bg-indigo-950/30 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    No. Invoice (Auto-Generated)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setInvoiceNo(generateInvoiceNumber())}
+                    className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Acak / Generate Invoice Baru"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Acak Ulang
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={invoiceNo}
+                  onChange={e => setInvoiceNo(e.target.value)}
+                  placeholder="Contoh: INV-20260910-1234"
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                />
+                <div className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-600 dark:text-slate-400">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Isi QR Code:</span>
+                  <code className="px-1.5 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-[10px] font-mono text-indigo-600 dark:text-indigo-400 truncate">
+                    Manual paket + Invoice: {invoiceNo || 'INV-...'}
+                  </code>
+                </div>
+              </div>
+
               {/* Action */}
               <div className="pt-2 flex gap-3">
                 <div className="w-24">
@@ -633,7 +765,7 @@ export const CetakLabelView: React.FC = () => {
                 </div>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 mt-[18px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2 mt-[18px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Plus className="w-5 h-5" />
                   Tambah ke Antrean
@@ -678,22 +810,33 @@ export const CetakLabelView: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-1">
-                        <h4 className="text-sm font-bold text-slate-800 dark:text-white truncate">
-                          {lbl.penerima_nama}
-                        </h4>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h4 className="text-sm font-bold text-slate-800 dark:text-white truncate">
+                            {lbl.penerima_nama}
+                          </h4>
+                          <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono font-bold rounded border border-indigo-200/60 dark:border-indigo-800/60 flex-shrink-0">
+                            {lbl.invoice_no}
+                          </span>
+                        </div>
                         <button
                           onClick={() => handleRemoveLabel(lbl.id)}
-                          className="text-slate-400 hover:text-primary-500 p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
+                          className="text-slate-400 hover:text-primary-500 p-1 rounded transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                       <p className="text-xs text-slate-500 line-clamp-1">{lbl.penerima_alamat}</p>
-                      {(lbl.ekspedisi || lbl.resi) && (
-                        <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mt-1 uppercase">
-                          {lbl.ekspedisi} {lbl.resi ? `- ${lbl.resi}` : ''}
-                        </p>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                        {(lbl.ekspedisi || lbl.resi) && (
+                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                            {lbl.ekspedisi} {lbl.resi ? `- ${lbl.resi}` : ''}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
+                          <QrCode className="w-3 h-3 text-indigo-500 flex-shrink-0" />
+                          Manual paket + Invoice: {lbl.invoice_no}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -703,7 +846,7 @@ export const CetakLabelView: React.FC = () => {
               <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
                 <button
                   onClick={() => setLabels([])}
-                  className="w-full px-4 py-2 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-bold rounded-lg hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors text-xs"
+                  className="w-full px-4 py-2 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-bold rounded-lg hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors text-xs cursor-pointer"
                 >
                   Kosongkan Antrean
                 </button>
@@ -720,54 +863,93 @@ export const CetakLabelView: React.FC = () => {
       */}
       <div id="print-area" className="hidden print:block bg-white w-full h-full text-black">
         {labels.map((lbl, idx) => (
-          <div key={lbl.id} className="page-break w-[105mm] h-[148mm] overflow-hidden p-4 relative bg-white box-border border-b border-dashed border-gray-300">
-            {/* Outline box (opsional, membantu cutting jika print di A4 biasa, tapi di printer thermal ini menyesuaikan kertas) */}
+          <div key={lbl.id} className="page-break w-[105mm] h-[148mm] overflow-hidden p-3 relative bg-white box-border border-b border-dashed border-gray-300">
+            {/* Outline box disesuaikan untuk A6 */}
             <div className="w-full h-full border-2 border-black flex flex-col relative overflow-hidden bg-white">
               
               {/* Header Label */}
-              <div className="border-b-2 border-black p-3 bg-gray-50 flex justify-between items-center">
-                <h1 className="text-lg font-black tracking-widest uppercase">PENGIRIMAN PAKET</h1>
-                {(lbl.ekspedisi || lbl.resi) && (
+              <div className="border-b-2 border-black px-3 py-2 bg-gray-50 flex justify-between items-center">
+                <div>
+                  <h1 className="text-base font-black tracking-wider uppercase leading-none">PENGIRIMAN PAKET</h1>
+                  <div className="text-[9px] font-bold text-gray-500 mt-0.5">WMS CHOCOCHIPS EXPRESS</div>
+                </div>
+                {(lbl.ekspedisi || lbl.resi) ? (
                   <div className="text-right">
-                    <div className="text-lg font-black uppercase leading-none">{lbl.ekspedisi}</div>
-                    <div className="text-xs font-bold font-mono tracking-widest mt-0.5">{lbl.resi}</div>
+                    <div className="text-base font-black uppercase leading-none">{lbl.ekspedisi || 'KURIR'}</div>
+                    {lbl.resi && <div className="text-[10px] font-bold font-mono tracking-wider mt-0.5">{lbl.resi}</div>}
                   </div>
+                ) : (
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase bg-black text-white rounded">
+                    MANUAL
+                  </span>
                 )}
               </div>
 
               {/* Penerima Box (Utama & Besar) */}
-              <div className="p-4 border-b border-black bg-white flex-1 flex flex-col justify-center">
-                <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Kepada / Penerima:</div>
-                <div className="text-xl font-black uppercase mb-1 leading-tight">{lbl.penerima_nama}</div>
+              <div className="p-3 border-b-2 border-black bg-white flex-1 flex flex-col justify-center">
+                <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Kepada / Penerima:</div>
+                <div className="text-lg font-black uppercase mb-0.5 leading-tight">{lbl.penerima_nama}</div>
                 {lbl.penerima_telp && (
-                  <div className="text-sm font-bold font-mono mb-2">{lbl.penerima_telp}</div>
+                  <div className="text-xs font-bold font-mono text-gray-800 mb-1">{lbl.penerima_telp}</div>
                 )}
-                <div className="text-sm font-medium leading-snug whitespace-pre-wrap">{lbl.penerima_alamat}</div>
+                <div className="text-xs font-medium leading-snug whitespace-pre-wrap line-clamp-3">{lbl.penerima_alamat}</div>
               </div>
 
               {/* Pengirim & Deskripsi */}
-              <div className="flex border-b border-black">
+              <div className="flex border-b-2 border-black">
                 {/* Pengirim */}
-                <div className="p-3 border-r border-black flex-1">
-                  <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-1">Dari / Pengirim:</div>
-                  <div className="text-sm font-black uppercase">{lbl.pengirim_nama}</div>
-                  {lbl.pengirim_telp && <div className="text-xs font-bold font-mono">{lbl.pengirim_telp}</div>}
+                <div className="p-2.5 border-r-2 border-black flex-1">
+                  <div className="text-[8px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Dari / Pengirim:</div>
+                  <div className="text-xs font-black uppercase">{lbl.pengirim_nama}</div>
+                  {lbl.pengirim_telp && <div className="text-[10px] font-bold font-mono text-gray-700">{lbl.pengirim_telp}</div>}
                 </div>
-                {/* Qty / Indikator (Optional) */}
-                <div className="p-3 w-16 flex items-center justify-center bg-gray-50">
+                {/* Qty / Indikator */}
+                <div className="p-2.5 w-20 flex flex-col items-center justify-center bg-gray-50">
+                  <span className="text-[8px] font-bold text-gray-500 uppercase">PAKET</span>
                   <span className="text-xs font-black">1/1</span>
                 </div>
               </div>
 
               {/* Deskripsi Paket */}
-              <div className="p-3 text-xs bg-white flex-1 max-h-[80px] overflow-hidden">
-                <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-1">Isi Paket:</div>
-                <div className="font-medium whitespace-pre-wrap leading-tight">{lbl.deskripsi || '-'}</div>
+              <div className="p-2.5 text-xs bg-white h-[58px] overflow-hidden border-b-2 border-black">
+                <div className="text-[8px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Isi Paket:</div>
+                <div className="font-medium text-[11px] whitespace-pre-wrap leading-tight line-clamp-2">{lbl.deskripsi || '-'}</div>
               </div>
 
-              {/* Footer / Barcode Placeholder */}
-              <div className="h-12 border-t-2 border-black flex items-center justify-center bg-gray-50 text-[10px] font-bold text-gray-400">
-                {lbl.resi ? `* ${lbl.resi} *` : 'Cetak Label WMS'}
+              {/* QR Code & Invoice Section (Manual Paket + Auto-Generated Invoice) */}
+              <div className="p-2 bg-gray-50 flex items-center justify-between gap-2.5 h-[84px] box-border">
+                {/* Left: Invoice & Resi details */}
+                <div className="flex-1 min-w-0 pr-1">
+                  <div className="inline-block px-1.5 py-0.5 bg-black text-white text-[8px] font-black uppercase tracking-wider rounded mb-1">
+                    MANUAL PAKET
+                  </div>
+                  <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">No. Invoice:</div>
+                  <div className="text-xs font-black font-mono tracking-tight text-black truncate">
+                    {lbl.invoice_no}
+                  </div>
+                  <div className="text-[8px] font-mono text-gray-600 mt-1 truncate">
+                    {lbl.resi ? `Resi: ${lbl.resi} (${lbl.ekspedisi || 'Kurir'})` : `QR: Manual paket + Invoice: ${lbl.invoice_no}`}
+                  </div>
+                </div>
+
+                {/* Right: Crisp QR Code */}
+                <div className="flex flex-col items-center justify-center flex-shrink-0 bg-white p-1 border-2 border-black rounded">
+                  {lbl.qr_data_url ? (
+                    <img
+                      src={lbl.qr_data_url}
+                      alt="QR Code"
+                      className="w-[58px] h-[58px] block object-contain"
+                    />
+                  ) : (
+                    <QrCodeImage
+                      text={lbl.qr_content || `Manual paket + Invoice: ${lbl.invoice_no}`}
+                      size={58}
+                    />
+                  )}
+                  <span className="text-[6.5px] font-mono font-black text-black uppercase tracking-tighter mt-0.5">
+                    SCAN QR PAKET
+                  </span>
+                </div>
               </div>
 
             </div>
