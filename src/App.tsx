@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, startTransition } from 'react';
+import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import confetti from 'canvas-confetti';
 import { Scan, FileText, ShieldAlert, Package, X } from 'lucide-react';
 import {
@@ -270,6 +270,16 @@ export default function App() {
   const [productDatabase, setProductDatabase] = useState<ProductItem[]>([]);
   const [hasScannedSku, setHasScannedSku] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Synchronous refs to prevent stale closure during camera barcode callbacks
+  const currentCategoryRef = useRef<CategoryType>(currentCategory);
+  currentCategoryRef.current = currentCategory;
+
+  const currentLocationRef = useRef<string>(currentLocation);
+  currentLocationRef.current = currentLocation;
+
+  const productDatabaseRef = useRef<ProductItem[]>(productDatabase);
+  productDatabaseRef.current = productDatabase;
 
   // Modals & Drawers & Sidebar
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -749,10 +759,11 @@ export default function App() {
     let productName = '';
     let size = '';
 
-    let found = productDatabase.find((p) => p.k.toUpperCase() === text);
+    const activeDatabase = productDatabaseRef.current.length > 0 ? productDatabaseRef.current : productDatabase;
+    let found = activeDatabase.find((p) => p.k.toUpperCase() === text);
     if (!found) {
       // Fallback: partial match by SKU or Name (like Stok Lokasi)
-      found = productDatabase.find((p) => 
+      found = activeDatabase.find((p) => 
         p.k.toUpperCase().includes(text) || 
         (p.p && p.p.toUpperCase().includes(text)) ||
         (p.n && p.n.toUpperCase().includes(text))
@@ -760,7 +771,7 @@ export default function App() {
     }
 
     if (!found) {
-      if (productDatabase.length > 0) {
+      if (activeDatabase.length > 0) {
         isInvalidSku = true;
         playErrorBeep();
         vibrateDevice([100, 100, 100]);
@@ -776,7 +787,10 @@ export default function App() {
       vibrateDevice(40);
     }
 
-    if (!hasScannedSku && currentCategory === 'SO') {
+    const catToMatch = currentCategoryRef.current;
+    const locToMatch = currentLocationRef.current || (found ? found.lokasi || '' : '');
+
+    if (!hasScannedSku && catToMatch === 'SO') {
       showToast('SKU discan dengan kategori default #SO (Opname).', 'info');
     }
     setHasScannedSku(true);
@@ -785,8 +799,6 @@ export default function App() {
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     const textToMatch = found ? found.k : text;
-    const catToMatch = currentCategory;
-    const locToMatch = currentLocation || (found ? found.lokasi || '' : '');
 
     setScannedData((prev) => {
       const existingIdx = prev.findIndex(
@@ -841,16 +853,47 @@ export default function App() {
 
   const handleSelectQuickCategory = (cat: CategoryType) => {
     setCurrentCategory(cat);
+    currentCategoryRef.current = cat;
     playCategoryBeep();
     vibrateDevice(40);
-    showToast(`Kategori aktif diubah ke #${cat}`, 'info');
+
+    // If user already scanned items with another category, update existing list to the selected category
+    if (scannedData.length > 0 && scannedData.some((item) => item.category !== cat)) {
+      setScannedData((prev) =>
+        prev.map((item) => ({ ...item, category: cat }))
+      );
+      showToast(`Mode diubah ke #${cat}: ${scannedData.length} item di daftar scan disesuaikan ke #${cat}`, 'info');
+      return;
+    }
+
+    showToast(`Kategori aktif diubah ke #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})`, 'info');
   };
 
   const handleSelectQuickLocation = (loc: string) => {
     setCurrentLocation(loc);
+    currentLocationRef.current = loc;
     playCategoryBeep();
     vibrateDevice(40);
-    showToast(`Lokasi aktif diubah ke #${loc}`, 'info');
+
+    // If user selected location and there are items, sync location to current items as well
+    if (loc && scannedData.length > 0) {
+      setScannedData((prev) =>
+        prev.map((item) => ({ ...item, location: loc }))
+      );
+      showToast(`Lokasi aktif dan ${scannedData.length} item di daftar diubah ke #${loc}`, 'info');
+      return;
+    }
+
+    showToast(loc ? `Lokasi aktif diubah ke #${loc}` : 'Lokasi aktif dikosongkan', 'info');
+  };
+
+  const handleUpdateItemCategory = (id: string, newCat: CategoryType) => {
+    setScannedData((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, category: newCat } : item))
+    );
+    playCategoryBeep();
+    vibrateDevice(30);
+    showToast(`Kategori item diubah ke #${newCat} (${newCat === 'SO' ? 'Opname' : newCat === 'IN' ? 'Masuk' : 'Keluar'})`, 'info');
   };
 
   // Save to Supabase & Sheets
@@ -1181,6 +1224,7 @@ export default function App() {
                     items={scannedData}
                     onRemoveItem={handleRemoveItem}
                     onClearAll={handleClearAll}
+                    onUpdateCategory={handleUpdateItemCategory}
                   />
                   
                   <BottomSaveBar

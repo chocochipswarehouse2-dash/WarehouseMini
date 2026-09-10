@@ -12,18 +12,20 @@ import {
   ArrowUpRight,
   CheckSquare,
 } from 'lucide-react';
-import { ScannedItem } from '../types';
+import { CategoryType, ScannedItem } from '../types';
 
 interface ScannedItemsListProps {
   items: ScannedItem[];
   onRemoveItem: (id: string) => void;
   onClearAll: () => void;
+  onUpdateCategory?: (id: string, newCategory: CategoryType) => void;
 }
 
 export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
   items,
   onRemoveItem,
   onClearAll,
+  onUpdateCategory,
 }) => {
   const totalScannedQty = items.reduce((sum, item) => sum + (item.qty || 1), 0);
   const listBottomRef = useRef<HTMLDivElement>(null);
@@ -143,22 +145,36 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
 
                   {/* Badges: Category, Location, Size */}
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    {/* Category Label */}
-                    {cat === 'IN' && (
-                      <span className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
-                        <ArrowDownLeft className="w-3 h-3 text-indigo-500" /> #IN Masuk
-                      </span>
-                    )}
-                    {cat === 'OUT' && (
-                      <span className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
-                        <ArrowUpRight className="w-3 h-3 text-purple-500" /> #OUT Keluar
-                      </span>
-                    )}
-                    {cat === 'SO' && (
-                      <span className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
-                        <CheckSquare className="w-3 h-3 text-emerald-500" /> #SO Opname
-                      </span>
-                    )}
+                    {/* Category Label (Clickable to switch mode on the fly) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!onUpdateCategory) return;
+                        const nextCat: CategoryType = cat === 'SO' ? 'IN' : cat === 'IN' ? 'OUT' : 'SO';
+                        onUpdateCategory(item.id, nextCat);
+                      }}
+                      title="Klik untuk ubah mode (#IN / #OUT / #SO)"
+                      className="cursor-pointer transition-transform active:scale-95 text-left select-none inline-flex items-center"
+                    >
+                      {cat === 'IN' && (
+                        <span className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                          <ArrowDownLeft className="w-3 h-3 text-indigo-500" /> #IN Masuk
+                          <span className="text-[9px] opacity-60 ml-0.5">↻</span>
+                        </span>
+                      )}
+                      {cat === 'OUT' && (
+                        <span className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                          <ArrowUpRight className="w-3 h-3 text-purple-500" /> #OUT Keluar
+                          <span className="text-[9px] opacity-60 ml-0.5">↻</span>
+                        </span>
+                      )}
+                      {cat === 'SO' && (
+                        <span className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                          <CheckSquare className="w-3 h-3 text-emerald-500" /> #SO Opname
+                          <span className="text-[9px] opacity-60 ml-0.5">↻</span>
+                        </span>
+                      )}
+                    </button>
 
                     {/* Location Label */}
                     {loc ? (

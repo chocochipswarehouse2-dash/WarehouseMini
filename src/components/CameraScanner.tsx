@@ -90,6 +90,17 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const isMountedRef = useRef(true);
   const isStartingRef = useRef(false);
 
+  // Keep latest callbacks in refs to avoid stale closures inside html5QrCode background loop
+  const onScanRef = useRef(onScan);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  });
+
+  const onRequestWakeLockRef = useRef(onRequestWakeLock);
+  useEffect(() => {
+    onRequestWakeLockRef.current = onRequestWakeLock;
+  });
+
   // Safely enumerate devices using native Web API without creating conflict stream
   const enumerateAvailableCameras = useCallback(async () => {
     try {
@@ -135,9 +146,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       setError(null);
       setIsInitializing(true);
 
-      if (onRequestWakeLock) {
+      if (onRequestWakeLockRef.current) {
         try {
-          onRequestWakeLock();
+          onRequestWakeLockRef.current();
         } catch {}
       }
 
@@ -207,7 +218,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               }, 300);
             }
 
-            onScan(cleanText);
+            onScanRef.current(cleanText);
           },
           () => {}
         );
@@ -261,7 +272,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   setFlashSuccess(true);
                   setTimeout(() => isMountedRef.current && setFlashSuccess(false), 300);
                 }
-                onScan(cleanText);
+                onScanRef.current(cleanText);
               },
               () => {}
             );
@@ -292,7 +303,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         isStartingRef.current = false;
       }
     },
-    [id, onRequestWakeLock, onScan, stopCamera, enumerateAvailableCameras]
+    [id, stopCamera, enumerateAvailableCameras]
   );
 
   // Mount effect: run device enumeration and autostart cleanly
