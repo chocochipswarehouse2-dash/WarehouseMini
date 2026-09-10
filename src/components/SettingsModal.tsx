@@ -439,10 +439,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // --- GAS ACTIONS ---
   const handleSaveGas = async () => {
     const cleanEndpoint = gasEndpoint.trim();
-    if (!cleanEndpoint) {
-      onNotify('Endpoint URL Google Apps Script tidak boleh kosong!', 'warning');
-      return;
-    }
 
     localStorage.setItem('wms_endpoint_url', cleanEndpoint);
     localStorage.setItem('wms_gas_endpoint', cleanEndpoint);
