@@ -4,11 +4,15 @@
  * dan hanya menyimpan URL / File ID di database Supabase.
  */
 
-export const DEFAULT_GDRIVE_FOLDER_URL =
-  'https://drive.google.com/drive/folders/14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB';
+import {
+  getStoredGdriveFolderUrl,
+  getStoredGdriveGasUrl,
+  saveWmsSettings,
+  DEFAULT_GDRIVE_FOLDER_URL,
+  DEFAULT_GDRIVE_GAS_URL,
+} from './settings';
 
-export const DEFAULT_GDRIVE_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w/exec';
+export { DEFAULT_GDRIVE_FOLDER_URL, DEFAULT_GDRIVE_GAS_URL };
 
 /**
  * Ekstrak ID Folder dari URL Google Drive atau string ID langsung
@@ -31,24 +35,32 @@ export function extractGdriveFolderId(urlOrId: string): string {
 }
 
 /**
- * Ambil konfigurasi GDrive aktif dari LocalStorage
+ * Ambil konfigurasi GDrive aktif (Tersinkronisasi dari Supabase & cache)
  */
 export function getGdriveConfig(): { folderUrl: string; folderId: string; gasUrl: string } {
-  const folderUrl =
-    localStorage.getItem('wms_gdrive_folder_url') || DEFAULT_GDRIVE_FOLDER_URL;
-  const gasUrl =
-    localStorage.getItem('wms_gdrive_gas_url') || DEFAULT_GDRIVE_GAS_URL;
+  const folderUrl = getStoredGdriveFolderUrl();
+  const gasUrl = getStoredGdriveGasUrl();
   const folderId = extractGdriveFolderId(folderUrl);
 
   return { folderUrl, folderId, gasUrl };
 }
 
 /**
- * Simpan konfigurasi GDrive ke LocalStorage
+ * Simpan konfigurasi GDrive ke LocalStorage dan Supabase Cloud
  */
 export function saveGdriveConfig(folderUrl: string, gasUrl: string): void {
-  localStorage.setItem('wms_gdrive_folder_url', folderUrl.trim());
-  localStorage.setItem('wms_gdrive_gas_url', gasUrl.trim());
+  const cleanFolder = folderUrl.trim();
+  const cleanGas = gasUrl.trim();
+  try {
+    localStorage.setItem('wms_gdrive_folder_url', cleanFolder);
+    localStorage.setItem('wms_gdrive_gas_url', cleanGas);
+  } catch {}
+  saveWmsSettings({
+    gdrive_folder_url: cleanFolder,
+    gdrive_gas_url: cleanGas,
+  }).catch((err) => {
+    console.warn('Background Supabase save for GDrive config error:', err);
+  });
 }
 
 export interface GdriveUploadResult {

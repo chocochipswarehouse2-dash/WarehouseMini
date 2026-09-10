@@ -1,10 +1,24 @@
 CREATE TABLE IF NOT EXISTS public.wms_settings (
   id integer PRIMARY KEY DEFAULT 1,
+  gas_endpoint text,
+  manual_shipment_gas_url text,
+  gdrive_gas_url text,
+  gdrive_folder_url text,
   fonnte_token text,
   fonnte_group_target text,
   fonnte_auto_send boolean DEFAULT true,
   updated_at timestamp with time zone DEFAULT timezone('utc'::text, now())
 );
+
+-- Migration for existing wms_settings tables
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS gas_endpoint text;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS manual_shipment_gas_url text;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS gdrive_gas_url text;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS gdrive_folder_url text;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS fonnte_token text;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS fonnte_group_target text;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS fonnte_auto_send boolean DEFAULT true;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT timezone('utc'::text, now());
 
 ALTER TABLE public.wms_settings ENABLE ROW LEVEL SECURITY;
 

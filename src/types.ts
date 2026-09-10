@@ -599,8 +599,13 @@ export interface QcReport {
 
 export interface WmsSettings {
   id?: number;
+  gas_endpoint?: string;
+  manual_shipment_gas_url?: string;
+  gdrive_gas_url?: string;
+  gdrive_folder_url?: string;
   fonnte_token?: string;
   fonnte_group_target?: string;
   fonnte_auto_send?: boolean;
+  config_json?: string;
   updated_at?: string;
 }

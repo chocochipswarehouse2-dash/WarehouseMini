@@ -82,6 +82,7 @@ import {
   showPushNotification,
 } from './services/pushNotification';
 import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
+import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
 
 export default function App() {
   // Session & Auth (Multi-Role User Session)
@@ -89,7 +90,7 @@ export default function App() {
     const token = localStorage.getItem('wms_session_token');
     const username = localStorage.getItem('wms_session_username');
     const role = localStorage.getItem('wms_user_role');
-    const endpointUrl = localStorage.getItem('wms_endpoint_url');
+    const endpointUrl = getStoredGasEndpoint();
     const sessionExpiry = localStorage.getItem('wms_session_expiry');
     const permissionsStr = localStorage.getItem('wms_user_permissions');
 
@@ -98,7 +99,6 @@ export default function App() {
       localStorage.removeItem('wms_session_token');
       localStorage.removeItem('wms_session_username');
       localStorage.removeItem('wms_user_role');
-      localStorage.removeItem('wms_endpoint_url');
       localStorage.removeItem('wms_session_expiry');
       localStorage.removeItem('wms_user_permissions');
       return null;
@@ -153,17 +153,28 @@ export default function App() {
     }
   }, [session, activePage]);
 
-  // Add generic settings loader
+  // Add generic settings loader (fetch from Supabase Cloud on mount & keep in sync)
   useEffect(() => {
-    import('./services/settings').then(({ fetchWmsSettings }) => {
-      fetchWmsSettings().then((settings) => {
-        if (settings) {
-          if (settings.fonnte_token) localStorage.setItem('wms_fonnte_token', settings.fonnte_token);
-          if (settings.fonnte_group_target) localStorage.setItem('wms_fonnte_group_target', settings.fonnte_group_target);
-          if (settings.fonnte_auto_send !== undefined) localStorage.setItem('wms_fonnte_auto_send', String(settings.fonnte_auto_send));
-        }
-      });
-    }).catch(err => console.warn('Failed to load global settings', err));
+    fetchWmsSettings(true).then((settings) => {
+      if (settings && settings.gas_endpoint) {
+        setSession((prev) => {
+          if (!prev) return prev;
+          if (prev.endpointUrl !== settings.gas_endpoint) {
+            return { ...prev, endpointUrl: settings.gas_endpoint || '' };
+          }
+          return prev;
+        });
+      }
+    }).catch(err => console.warn('Failed to load global settings from Supabase', err));
+
+    const handleSettingsChanged = (e: any) => {
+      const settings = e.detail;
+      if (settings?.gas_endpoint !== undefined) {
+        setSession((prev) => (prev ? { ...prev, endpointUrl: settings.gas_endpoint || '' } : prev));
+      }
+    };
+    window.addEventListener('wms_settings_changed', handleSettingsChanged);
+    return () => window.removeEventListener('wms_settings_changed', handleSettingsChanged);
   }, []);
 
   // Sync permissions logic...
@@ -656,19 +667,22 @@ export default function App() {
   const handleLogin = async (user: string, pass: string) => {
     const res = await verifySupabaseLogin(user, pass);
     if (res.success && res.token) {
+      const sharedGasEndpoint = getStoredGasEndpoint();
       const newSession: UserSession = {
         token: res.token,
         username: res.user || user,
         role: res.role || 'Operator',
         permissions: res.permissions,
         nik: res.nik,
-        endpointUrl: '',
+        endpointUrl: sharedGasEndpoint,
       };
       setSession(newSession);
       localStorage.setItem('wms_session_token', res.token);
       localStorage.setItem('wms_session_username', res.user || user);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
-      localStorage.setItem('wms_endpoint_url', '');
+      if (sharedGasEndpoint) {
+        localStorage.setItem('wms_endpoint_url', sharedGasEndpoint);
+      }
       if (res.nik) {
         localStorage.setItem('wms_user_nik', res.nik);
       } else {
@@ -702,7 +716,6 @@ export default function App() {
     localStorage.removeItem('wms_session_token');
     localStorage.removeItem('wms_session_username');
     localStorage.removeItem('wms_user_role');
-    localStorage.removeItem('wms_endpoint_url');
     localStorage.removeItem('wms_session_expiry');
     localStorage.removeItem('wms_user_permissions');
     localStorage.removeItem('wms_user_nik');

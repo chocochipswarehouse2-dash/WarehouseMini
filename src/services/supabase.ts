@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { uploadMultipleImagesToGdrive } from './gdriveUpload';
+import { getStoredGasEndpoint } from './settings';
 import {
   getAllProductsFromLocalDb,
   saveProductsToLocalDb,
@@ -5496,7 +5497,7 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
   } catch {}
 
   // Google Apps Script Mirror (if configured)
-  const gasUrl = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+  const gasUrl = getStoredGasEndpoint();
   if (gasUrl && gasUrl.startsWith('http')) {
     try {
       fetch(gasUrl, {
@@ -5568,7 +5569,7 @@ export async function updateBatchPenerimaanProduksiInSupabase(
   const newItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
 
   // 4. GAS Mirror Update if configured
-  const gasUrl = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+  const gasUrl = getStoredGasEndpoint();
   if (gasUrl && gasUrl.startsWith('http')) {
     try {
       fetch(gasUrl, {
@@ -5622,7 +5623,7 @@ export async function hapusBatchPenerimaanProduksiFromSupabase(noSuratJalan: str
   } catch {}
 
   // 3. GAS Mirror Delete
-  const gasUrl = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+  const gasUrl = getStoredGasEndpoint();
   if (gasUrl && gasUrl.startsWith('http')) {
     try {
       fetch(gasUrl, {

@@ -73,6 +73,14 @@ import {
 } from '../services/gdriveUpload';
 import { DEFAULT_MANUAL_SHIPMENT_GAS_URL } from '../services/gasManualShipment';
 import {
+  fetchWmsSettings,
+  saveWmsSettings,
+  getStoredGasEndpoint,
+  getStoredManualShipmentGasUrl,
+  getStoredGdriveGasUrl,
+  getStoredGdriveFolderUrl,
+} from '../services/settings';
+import {
   hasPermission,
   isSuperadmin,
   ROLE_DETAILS,
@@ -216,41 +224,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const storedSupabase = getStoredSupabaseConfig();
       setSupabaseUrl(storedSupabase.url);
       setSupabaseKey(storedSupabase.key);
-      setGdriveFolderUrl(
-        localStorage.getItem('wms_gdrive_folder_url') || DEFAULT_GDRIVE_FOLDER_URL
-      );
-      setGdriveGasUrl(
-        localStorage.getItem('wms_gdrive_gas_url') || DEFAULT_GDRIVE_GAS_URL
-      );
-      setManualShipmentGasUrl(
-        localStorage.getItem('wms_manual_shipment_gas_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL
-      );
+      setGdriveFolderUrl(getStoredGdriveFolderUrl());
+      setGdriveGasUrl(getStoredGdriveGasUrl());
+      setManualShipmentGasUrl(getStoredManualShipmentGasUrl());
 
       const storedGas =
+        getStoredGasEndpoint() ||
         session?.endpointUrl ||
-        localStorage.getItem('wms_endpoint_url') ||
         '';
       setGasEndpoint(storedGas);
 
-      // Load WMS settings from Supabase
-      import('../services/settings').then(({ fetchWmsSettings }) => {
-        fetchWmsSettings().then((settings) => {
-          if (settings) {
-            setFonnteToken(settings.fonnte_token || localStorage.getItem('wms_fonnte_token') || '');
-            setFonnteGroupTarget(settings.fonnte_group_target || localStorage.getItem('wms_fonnte_group_target') || '');
-            setFonnteAutoSend(settings.fonnte_auto_send !== undefined ? settings.fonnte_auto_send : localStorage.getItem('wms_fonnte_auto_send') !== 'false');
-            
-            // Sync to local storage for quick access elsewhere
-            if (settings.fonnte_token) localStorage.setItem('wms_fonnte_token', settings.fonnte_token);
-            if (settings.fonnte_group_target) localStorage.setItem('wms_fonnte_group_target', settings.fonnte_group_target);
-            if (settings.fonnte_auto_send !== undefined) localStorage.setItem('wms_fonnte_auto_send', String(settings.fonnte_auto_send));
-          } else {
-            setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
-            setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
-            setFonnteAutoSend(localStorage.getItem('wms_fonnte_auto_send') !== 'false');
+      setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
+      setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
+      setFonnteAutoSend(localStorage.getItem('wms_fonnte_auto_send') !== 'false');
+
+      // Load unified WMS settings from Supabase (shared across all users)
+      fetchWmsSettings(true).then((settings) => {
+        if (settings) {
+          if (settings.gas_endpoint !== undefined) {
+            setGasEndpoint(settings.gas_endpoint);
           }
-        });
-      });
+          if (settings.manual_shipment_gas_url) {
+            setManualShipmentGasUrl(settings.manual_shipment_gas_url);
+          }
+          if (settings.gdrive_folder_url) {
+            setGdriveFolderUrl(settings.gdrive_folder_url);
+          }
+          if (settings.gdrive_gas_url) {
+            setGdriveGasUrl(settings.gdrive_gas_url);
+          }
+          if (settings.fonnte_token !== undefined) {
+            setFonnteToken(settings.fonnte_token);
+          }
+          if (settings.fonnte_group_target !== undefined) {
+            setFonnteGroupTarget(settings.fonnte_group_target);
+          }
+          if (settings.fonnte_auto_send !== undefined) {
+            setFonnteAutoSend(settings.fonnte_auto_send);
+          }
+        }
+      }).catch((err) => console.warn('Gagal memuat konfigurasi dari Supabase:', err));
 
       loadUsersFromSupabase();
       setDatabaseStatus('idle');
@@ -269,7 +282,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   // --- SUPABASE & GDRIVE ACTIONS ---
-  const handleSaveDatabase = () => {
+  const handleSaveDatabase = async () => {
     const cleanUrl = supabaseUrl.trim();
     const cleanKey = supabaseKey.trim();
     const cleanGdrive = gdriveFolderUrl.trim();
@@ -283,7 +296,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     saveSupabaseConfig(cleanUrl, cleanKey);
     saveGdriveConfig(cleanGdrive, cleanGas);
     localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
-    onNotify('Konfigurasi berhasil disimpan!', 'success');
+
+    try {
+      await saveWmsSettings({
+        gdrive_folder_url: cleanGdrive,
+        gdrive_gas_url: cleanGas,
+        manual_shipment_gas_url: manualShipmentGasUrl.trim(),
+      });
+    } catch {}
+
+    onNotify('Konfigurasi database & Google Drive berhasil disimpan global!', 'success');
     playSuccessBeep();
   };
 
@@ -415,7 +437,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   // --- GAS ACTIONS ---
-  const handleSaveGas = () => {
+  const handleSaveGas = async () => {
     const cleanEndpoint = gasEndpoint.trim();
     if (!cleanEndpoint) {
       onNotify('Endpoint URL Google Apps Script tidak boleh kosong!', 'warning');
@@ -423,24 +445,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     localStorage.setItem('wms_endpoint_url', cleanEndpoint);
+    localStorage.setItem('wms_gas_endpoint', cleanEndpoint);
     localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
     if (session) {
       const updated = { ...session, endpointUrl: cleanEndpoint };
       onUpdateSession(updated);
     }
-    onNotify('Endpoint Google Apps Script berhasil disimpan!', 'success');
-    playSuccessBeep();
+
+    try {
+      const success = await saveWmsSettings({
+        gas_endpoint: cleanEndpoint,
+        manual_shipment_gas_url: manualShipmentGasUrl.trim(),
+      });
+      if (success) {
+        onNotify('Konfigurasi GAS berhasil disimpan ke Supabase Cloud (berlaku untuk semua user)!', 'success');
+        playSuccessBeep();
+      } else {
+        onNotify('Tersimpan di lokal, namun sinkronisasi ke Supabase Cloud gagal.', 'warning');
+      }
+    } catch (e) {
+      onNotify('Konfigurasi GAS disimpan secara lokal.', 'info');
+    }
   };
 
-  const handleResetGas = () => {
+  const handleResetGas = async () => {
     setGasEndpoint('');
     setManualShipmentGasUrl(DEFAULT_MANUAL_SHIPMENT_GAS_URL);
     localStorage.setItem('wms_endpoint_url', '');
-    localStorage.removeItem('wms_manual_shipment_gas_url');
+    localStorage.setItem('wms_gas_endpoint', '');
+    localStorage.setItem('wms_manual_shipment_gas_url', DEFAULT_MANUAL_SHIPMENT_GAS_URL);
     if (session) {
       onUpdateSession({ ...session, endpointUrl: '' });
     }
-    onNotify('Endpoint GAS di-reset ke URL default!', 'info');
+    try {
+      await saveWmsSettings({
+        gas_endpoint: '',
+        manual_shipment_gas_url: DEFAULT_MANUAL_SHIPMENT_GAS_URL,
+      });
+    } catch {}
+    onNotify('Endpoint GAS di-reset ke URL default dan disinkronkan ke Supabase!', 'info');
   };
 
   const handleTestGas = async () => {
@@ -1816,11 +1859,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     G
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                      Google Sheets Backend (GAS)
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Google Sheets Backend (GAS)
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        Global Cloud (Supabase)
+                      </span>
+                    </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Sinkronisasi katalog produk master, SPS peminjaman & mutasi stok
+                      Tersimpan di Supabase Cloud: 1 kali simpan otomatis setup semua user & perangkat.
                     </p>
                   </div>
                 </div>
@@ -1927,7 +1975,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Simpan Endpoint GAS</span>
+                  <span>Simpan ke Supabase (Semua User)</span>
                 </button>
               </div>
             </div>

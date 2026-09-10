@@ -1,9 +1,10 @@
 import { ManualShipmentOrder } from '../types';
+import { getStoredManualShipmentGasUrl, DEFAULT_MANUAL_SHIPMENT_GAS_URL } from './settings';
 
-export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = 'https://script.google.com/macros/s/1ja4dOeLJb98Q2Jk6uvOFqT2xTFHX9d63uyO3ohp8zgku3dj97E7FpC-b/exec';
+export { DEFAULT_MANUAL_SHIPMENT_GAS_URL };
 
 const getGasUrl = () => {
-  return localStorage.getItem('wms_manual_shipment_gas_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+  return getStoredManualShipmentGasUrl();
 };
 
 // Due to CORS restrictions with Google Apps Script Web Apps in some environments,
