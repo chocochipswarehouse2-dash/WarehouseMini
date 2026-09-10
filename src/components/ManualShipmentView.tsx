@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../types';
 import { hasPermission, isSuperadmin } from '../services/permissions';
+import { PhysicalScanInput } from './PhysicalScanInput';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -44,13 +45,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const [notesPaket, setNotesPaket] = useState('');
   const [transCustomer, setTransCustomer] = useState('');
   
-  const [items, setItems] = useState<ManualShipmentItem[]>([{
-    id: 'item-1', nama_produk: '', sku: '', qty: 1, fulfillment: ''
-  }]);
-
-  // Autocomplete state
-  const [activeComboIndex, setActiveComboIndex] = useState(-1);
-  const [searchTerms, setSearchTerms] = useState<{ [id: string]: string }>({});
+  const [items, setItems] = useState<ManualShipmentItem[]>([]);
 
   useEffect(() => {
     loadOutlets();
@@ -76,7 +71,6 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   };
 
   const handleRemoveItem = (id: string) => {
-    if (items.length <= 1) return;
     setItems(prev => prev.filter(i => i.id !== id));
   };
 
@@ -91,7 +85,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pengirim || !tujuan || items.some(i => !i.nama_produk || !i.fulfillment)) {
+    if (!pengirim || !tujuan || items.length === 0 || items.some(i => !i.nama_produk || !i.fulfillment)) {
       onShowToast('Harap lengkapi form dan item pesanan', 'warning');
       return;
     }
@@ -135,8 +129,33 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     setAlamatTujuan('');
     setNotesPaket('');
     setTransCustomer('');
-    setItems([{ id: 'item-1', nama_produk: '', sku: '', qty: 1, fulfillment: '' }]);
-    setSearchTerms({});
+    setItems([]);
+  };
+
+  const handleScanProduct = (sku: string) => {
+    const product = productCatalog.find(p => p.k.toUpperCase() === sku.toUpperCase());
+    if (!product) {
+      onShowToast(`Produk dengan SKU ${sku} tidak ditemukan!`, 'error');
+      return;
+    }
+
+    setItems(prev => {
+      const existing = prev.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+      if (existing) {
+        // Increment qty
+        return prev.map(i => i.sku.toUpperCase() === sku.toUpperCase() ? { ...i, qty: i.qty + 1 } : i);
+      }
+      
+      const fullName = `${product.n} - ${product.s} (${product.k})`;
+      return [...prev, {
+        id: `item-${Date.now()}`,
+        nama_produk: fullName,
+        sku: product.k,
+        qty: 1,
+        fulfillment: ''
+      }];
+    });
+    onShowToast(`Berhasil menambahkan ${product.p || product.n}`, 'success');
   };
 
   const renderForm = () => (
@@ -246,68 +265,36 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           <div>
             <h3 className="text-lg font-semibold text-slate-700 mb-4 border-b pb-2 flex justify-between items-center">
               <span>Item Pesanan</span>
-              <button
-                type="button"
-                onClick={handleAddItem}
-                className="text-sm px-3 py-1 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 flex items-center"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                Tambah Produk
-              </button>
             </h3>
-            <div className="space-y-4">
-              {items.map((item, index) => {
-                const term = searchTerms[item.id] || '';
-                
-                let searchResults: ProductItem[] = [];
-                if (term.length >= 2 && activeComboIndex === index) {
-                  const lower = term.toLowerCase().split(/\s+/).filter(Boolean);
-                  searchResults = productCatalog.filter(p => {
-                    const text = `${p.k} ${p.n} ${p.s}`.toLowerCase();
-                    return lower.every(kw => text.includes(kw));
-                  }).slice(0, 20);
-                }
 
-                return (
+            {/* Scan / Add Product */}
+            <div className="mb-6">
+              <PhysicalScanInput 
+                onScan={handleScanProduct}
+                products={productCatalog}
+                placeholder="Ketik SKU atau Scan Barcode Produk..."
+              />
+            </div>
+
+            <div className="space-y-4">
+              {items.length === 0 && (
+                <div className="text-center py-8 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl text-slate-500">
+                  <Package className="w-10 h-10 mx-auto text-slate-400 mb-3" />
+                  <p>Belum ada produk. Silakan scan barcode atau cari SKU produk di atas.</p>
+                </div>
+              )}
+              {items.map((item) => (
                   <div key={item.id} className="p-4 bg-slate-50 rounded-lg border border-slate-200 relative">
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                      {/* Product Name Autocomplete */}
-                      <div className="md:col-span-5 relative">
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Nama Produk (SKU)</label>
-                        <input
-                          type="text"
-                          value={item.nama_produk || searchTerms[item.id] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSearchTerms(prev => ({ ...prev, [item.id]: val }));
-                            handleItemChange(item.id, 'nama_produk', val);
-                          }}
-                          onFocus={() => setActiveComboIndex(index)}
-                          onBlur={() => setTimeout(() => setActiveComboIndex(-1), 200)}
-                          placeholder="Cari produk..."
-                          className="w-full rounded-md border-slate-300 text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                          required
-                        />
-                        {searchResults.length > 0 && activeComboIndex === index && (
-                          <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-auto">
-                            {searchResults.map((res) => (
-                              <div
-                                key={res.k}
-                                className="px-3 py-2 text-sm hover:bg-indigo-50 cursor-pointer border-b last:border-b-0 border-slate-100"
-                                onMouseDown={() => {
-                                  const fullName = `${res.n} - ${res.s} (${res.k})`;
-                                  handleItemChange(item.id, 'nama_produk', fullName);
-                                  handleItemChange(item.id, 'sku', res.k);
-                                  setSearchTerms(prev => ({ ...prev, [item.id]: fullName }));
-                                  setActiveComboIndex(-1);
-                                }}
-                              >
-                                <div className="font-medium text-slate-800">{res.n}</div>
-                                <div className="text-xs text-slate-500">Size: {res.s} | SKU: {res.k}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      {/* Product Name */}
+                      <div className="md:col-span-5 flex flex-col justify-center">
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Nama Produk</label>
+                        <div className="font-medium text-slate-800 text-sm">
+                          {item.nama_produk}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono mt-0.5">
+                          SKU: {item.sku}
+                        </div>
                       </div>
 
                       {/* QTY */}
@@ -345,16 +332,15 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveItem(item.id)}
-                          className={`p-2 rounded-md transition-colors ${items.length > 1 ? 'text-red-500 hover:bg-red-50' : 'text-slate-300 cursor-not-allowed'}`}
-                          disabled={items.length <= 1}
+                          className="p-2 rounded-md transition-colors text-red-500 hover:bg-red-50"
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                ))
+              }
             </div>
           </div>
 
