@@ -171,7 +171,12 @@ export default function App() {
     const handleSettingsChanged = (e: any) => {
       const settings = e.detail;
       if (settings?.gas_endpoint !== undefined) {
-        setSession((prev) => (prev ? { ...prev, endpointUrl: settings.gas_endpoint || '' } : prev));
+        setSession((prev) => {
+          if (!prev) return prev;
+          const newEndpoint = settings.gas_endpoint || '';
+          if (prev.endpointUrl === newEndpoint) return prev; // Do not create a new object if unchanged
+          return { ...prev, endpointUrl: newEndpoint };
+        });
       }
     };
     window.addEventListener('wms_settings_changed', handleSettingsChanged);

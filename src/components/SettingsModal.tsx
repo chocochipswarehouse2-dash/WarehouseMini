@@ -270,7 +270,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setGasStatus('idle');
       setGdriveStatus('idle');
     }
-  }, [isOpen, session]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
