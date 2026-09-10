@@ -71,6 +71,7 @@ import {
   testGdriveConnection,
   saveGdriveConfig,
 } from '../services/gdriveUpload';
+import { DEFAULT_MANUAL_SHIPMENT_GAS_URL } from '../services/gasManualShipment';
 import {
   hasPermission,
   isSuperadmin,
@@ -135,6 +136,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [databaseStatusMsg, setDatabaseStatusMsg] = useState<string>('');
   const [gdriveFolderUrl, setGdriveFolderUrl] = useState<string>('');
   const [gdriveGasUrl, setGdriveGasUrl] = useState<string>('');
+  const [manualShipmentGasUrl, setManualShipmentGasUrl] = useState<string>('');
   const [isTestingGdrive, setIsTestingGdrive] = useState<boolean>(false);
   const [gdriveStatus, setGdriveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [gdriveStatusMsg, setGdriveStatusMsg] = useState<string>('');
@@ -220,6 +222,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setGdriveGasUrl(
         localStorage.getItem('wms_gdrive_gas_url') || DEFAULT_GDRIVE_GAS_URL
       );
+      setManualShipmentGasUrl(
+        localStorage.getItem('wms_manual_shipment_gas_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL
+      );
 
       const storedGas =
         session?.endpointUrl ||
@@ -277,7 +282,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     saveSupabaseConfig(cleanUrl, cleanKey);
     saveGdriveConfig(cleanGdrive, cleanGas);
-    onNotify('Konfigurasi Supabase & Google Drive berhasil disimpan!', 'success');
+    localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
+    onNotify('Konfigurasi berhasil disimpan!', 'success');
     playSuccessBeep();
   };
 
@@ -417,6 +423,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     localStorage.setItem('wms_endpoint_url', cleanEndpoint);
+    localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
     if (session) {
       const updated = { ...session, endpointUrl: cleanEndpoint };
       onUpdateSession(updated);
@@ -427,7 +434,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleResetGas = () => {
     setGasEndpoint('');
+    setManualShipmentGasUrl(DEFAULT_MANUAL_SHIPMENT_GAS_URL);
     localStorage.setItem('wms_endpoint_url', '');
+    localStorage.removeItem('wms_manual_shipment_gas_url');
     if (session) {
       onUpdateSession({ ...session, endpointUrl: '' });
     }
@@ -1828,27 +1837,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               )}
 
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Google Apps Script Web App Exec URL
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(gasEndpoint, 'GAS Endpoint')}
-                    className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedKey === 'GAS Endpoint' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                    <span>Salin</span>
-                  </button>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      1. Master WMS GAS Web App Exec URL (Utama)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(gasEndpoint, 'GAS Endpoint')}
+                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey === 'GAS Endpoint' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      <span>Salin</span>
+                    </button>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={gasEndpoint}
+                    onChange={(e) => setGasEndpoint(e.target.value)}
+                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                  />
                 </div>
-                <textarea
-                  rows={3}
-                  value={gasEndpoint}
-                  onChange={(e) => setGasEndpoint(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                />
+
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      2. Manual Shipment GAS Web App Exec URL
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(manualShipmentGasUrl, 'Manual Shipment GAS')}
+                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey === 'Manual Shipment GAS' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      <span>Salin</span>
+                    </button>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={manualShipmentGasUrl}
+                    onChange={(e) => setManualShipmentGasUrl(e.target.value)}
+                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                  />
+                </div>
               </div>
 
               <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800">

@@ -1,8 +1,10 @@
 import { ManualShipmentOrder } from '../types';
 
-// Replace this with the deployed Web App URL
-// The user provided script ID: 1ja4dOeLJb98Q2Jk6uvOFqT2xTFHX9d63uyO3ohp8zgku3dj97E7FpC-b
-const GAS_URL = 'https://script.google.com/macros/s/1ja4dOeLJb98Q2Jk6uvOFqT2xTFHX9d63uyO3ohp8zgku3dj97E7FpC-b/exec';
+export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = 'https://script.google.com/macros/s/1ja4dOeLJb98Q2Jk6uvOFqT2xTFHX9d63uyO3ohp8zgku3dj97E7FpC-b/exec';
+
+const getGasUrl = () => {
+  return localStorage.getItem('wms_manual_shipment_gas_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+};
 
 // Due to CORS restrictions with Google Apps Script Web Apps in some environments,
 // requests are usually made with `no-cors` mode. However, `no-cors` prevents reading the response.
@@ -10,7 +12,7 @@ const GAS_URL = 'https://script.google.com/macros/s/1ja4dOeLJb98Q2Jk6uvOFqT2xTFH
 
 export async function fetchOutlets(): Promise<{ nama: string; fulfillment: string }[]> {
   try {
-    const url = `${GAS_URL}?action=getOutlets`;
+    const url = `${getGasUrl()}?action=getOutlets`;
     const res = await fetch(url, { method: 'GET' });
     if (!res.ok) throw new Error('Failed to fetch outlets');
     const data = await res.json();
@@ -23,7 +25,7 @@ export async function fetchOutlets(): Promise<{ nama: string; fulfillment: strin
 
 export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
   try {
-    const url = `${GAS_URL}?action=getOrders`;
+    const url = `${getGasUrl()}?action=getOrders`;
     const res = await fetch(url, { method: 'GET' });
     if (!res.ok) throw new Error('Failed to fetch orders');
     const data = await res.json();
@@ -40,7 +42,7 @@ export async function submitManualShipment(orderData: ManualShipmentOrder): Prom
       action: 'submitShipment',
       data: orderData
     };
-    await fetch(GAS_URL, {
+    await fetch(getGasUrl(), {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
@@ -59,7 +61,7 @@ export async function updateShipmentResi(no_pesanan: string, no_resi: string): P
       action: 'updateResi',
       data: { no_pesanan, no_resi }
     };
-    await fetch(GAS_URL, {
+    await fetch(getGasUrl(), {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
@@ -78,7 +80,7 @@ export async function updateShipmentStatus(no_pesanan: string, status: 'diterima
       action: 'updateStatus',
       data: { no_pesanan, status }
     };
-    await fetch(GAS_URL, {
+    await fetch(getGasUrl(), {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
@@ -97,7 +99,7 @@ export async function deleteManualShipment(no_pesanan: string): Promise<boolean>
       action: 'deleteShipment',
       data: { no_pesanan }
     };
-    await fetch(GAS_URL, {
+    await fetch(getGasUrl(), {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
@@ -116,7 +118,7 @@ export async function editManualShipment(orderData: ManualShipmentOrder): Promis
       action: 'editShipment',
       data: orderData
     };
-    await fetch(GAS_URL, {
+    await fetch(getGasUrl(), {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
