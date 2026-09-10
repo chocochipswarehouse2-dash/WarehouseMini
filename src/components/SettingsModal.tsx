@@ -1923,7 +1923,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      2. Manual Shipment GAS Web App Exec URL
+                      2. Manual Shipment & Tarikan MD GAS Web App Exec URL
                     </label>
                     <button
                       type="button"
