@@ -9,7 +9,7 @@ import {
   Check,
   CheckSquare,
   Square,
-  ClipboardList,
+  ClipboardList, Info,
   ShieldCheck,
   XCircle,
   Download,

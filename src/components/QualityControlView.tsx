@@ -6,7 +6,7 @@ import {
   AlertTriangle,
   Layers,
   Sparkles,
-  ShieldCheck,
+  ShieldCheck, Info,
   Wrench,
   HelpCircle,
 } from 'lucide-react';

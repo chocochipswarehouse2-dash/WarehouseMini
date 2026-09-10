@@ -5,7 +5,7 @@ import {
   Filter,
   ArrowDownLeft,
   ArrowUpRight,
-  ArrowRightLeft,
+  ArrowRightLeft, Info,
   SlidersHorizontal,
   Loader2,
   Trash2,

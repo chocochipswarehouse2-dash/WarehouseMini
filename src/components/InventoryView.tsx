@@ -15,7 +15,7 @@ import {
   Package,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown,
+  ArrowDown, Info,
   ChevronDown,
   ChevronRight,
   Filter,
@@ -1684,22 +1684,29 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   };
 
   return (
-    <div id="inventoryViewContainer" className="space-y-4 max-w-7xl mx-auto pb-16">
+    <div id="inventoryViewContainer" className="space-y-2 max-w-7xl mx-auto pb-16">
       {/* Header Banner */}
-      <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 mb-2 relative overflow-hidden shadow-xl shadow-slate-900/10 border border-slate-800">
-        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Boxes className="w-32 h-32 transform rotate-12" />
-        </div>
-        <div className="relative z-10">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold tracking-widest uppercase mb-3 border border-emerald-500/30">
-            <Sparkles className="w-3 h-3" />
-            Sistem Terpadu WMS • Manajemen Inventori
+      <div className="flex items-center justify-between bg-slate-900 text-white rounded-xl p-3 sm:p-4 mb-1 relative overflow-hidden shadow-md border border-slate-800">
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+            <Boxes className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-black mb-2 tracking-tight">Katalog & Stok Gudang</h2>
-          <p className="text-sm text-slate-400 mb-0 leading-relaxed max-w-2xl">
-            Pantau real-time pergerakan stok, rincian alokasi MAP, stok sampel Live Blok F, serta antrean produk perbaikan & defect di seluruh titik penyimpanan.
-          </p>
+          <div>
+            <h2 className="text-sm sm:text-base font-black tracking-tight leading-tight">Katalog & Stok Gudang</h2>
+            <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> WMS Inventori
+            </div>
+          </div>
         </div>
+        <button
+          onClick={() => {
+            const msg = 'Pantau real-time pergerakan stok, rincian alokasi MAP, stok sampel Live Blok F, serta antrean produk perbaikan & defect di seluruh titik penyimpanan.';
+            alert(msg); // Or standard modal, but standard alert is quick for mobile info
+          }}
+          className="relative z-10 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+        >
+          <Info className="w-4 h-4" />
+        </button>
       </div>
 
       {/* ========================================================

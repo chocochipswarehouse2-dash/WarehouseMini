@@ -2,7 +2,7 @@ import { getLocalUsers } from '../utils/localStore';
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
-  FileText,
+  FileText, Info,
   Plus,
   Trash2,
   Send,

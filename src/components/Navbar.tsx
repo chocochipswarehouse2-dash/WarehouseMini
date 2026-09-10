@@ -107,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header
       id="mainNavbar"
-      className="bg-white/95 dark:bg-[#131d31]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-1.5 flex justify-between items-center sticky top-0 z-30 transition-colors shadow-xs"
+      className="bg-white/95 dark:bg-[#131d31]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-2 sm:px-4 py-1 flex justify-between items-center sticky top-0 z-30 transition-colors shadow-xs"
     >
       {/* Left side: Hamburger Toggle & Active Page Title */}
       <div className="flex items-center gap-2.5 sm:gap-3.5">
@@ -137,10 +137,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <PageIcon className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 font-sans">
+            <h1 className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 font-sans">
               <span>{pageInfo.title}</span>
             </h1>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium hidden xs:block">
+            <p className="hidden">
               {pageInfo.subtitle}
             </p>
           </div>
