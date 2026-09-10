@@ -170,9 +170,32 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
 
   isFetchingPromise = (async () => {
     try {
-      const data = await supabaseFetch<WmsSettings[]>('wms_settings', 'GET', undefined, 'limit=1');
-      if (data && data.length > 0) {
-        return syncCacheAndStorage(data[0]);
+      const rows = await supabaseFetch<any[]>('wms_settings', 'GET', undefined, 'order=id.asc');
+      if (rows && rows.length > 0) {
+        // Cari baris utama (id: 1) dan baris konfigurasi ekstensi (CONFIG_GAS / id: 2)
+        const row1 = rows.find((r) => r.id === 1) || rows[0];
+        const row2 = rows.find((r) => r.id === 2 || r.fonnte_token === 'CONFIG_GAS');
+
+        let gasConfig: any = {};
+        if (row2 && row2.fonnte_group_target) {
+          try {
+            gasConfig = JSON.parse(row2.fonnte_group_target);
+          } catch {}
+        }
+
+        const merged: WmsSettings = {
+          id: 1,
+          fonnte_token: row1.fonnte_token || '',
+          fonnte_group_target: row1.fonnte_group_target || '',
+          fonnte_auto_send: row1.fonnte_auto_send !== undefined ? row1.fonnte_auto_send : true,
+          gas_endpoint: row1.gas_endpoint || gasConfig.gas_endpoint || '',
+          manual_shipment_gas_url: row1.manual_shipment_gas_url || gasConfig.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
+          gdrive_gas_url: row1.gdrive_gas_url || gasConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
+          gdrive_folder_url: row1.gdrive_folder_url || gasConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
+          updated_at: row1.updated_at || new Date().toISOString(),
+        };
+
+        return syncCacheAndStorage(merged);
       }
       return cachedSettings;
     } catch (error) {
@@ -201,59 +224,57 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
 
   // 2. Persist ke Supabase Cloud
   try {
-    // Siapkan payload dengan config_json sebagai fallback kompatibilitas schema
     const configPayload = {
-      gas_endpoint: updated.gas_endpoint,
-      manual_shipment_gas_url: updated.manual_shipment_gas_url,
-      gdrive_gas_url: updated.gdrive_gas_url,
-      gdrive_folder_url: updated.gdrive_folder_url,
+      gas_endpoint: updated.gas_endpoint || '',
+      manual_shipment_gas_url: updated.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
+      gdrive_gas_url: updated.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
+      gdrive_folder_url: updated.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
     };
 
-    const payload: any = {
-      ...settings,
-      config_json: JSON.stringify(configPayload),
-      updated_at: new Date().toISOString(),
-    };
-
-    // Ambil data eksisting untuk cek id
-    let existingId: number | null = null;
+    // A. Simpan row id: 1 (Fonnte & kolom spesifik jika sudah ada di database)
     try {
-      const existing = await supabaseFetch<WmsSettings[]>('wms_settings', 'GET', undefined, 'limit=1');
-      if (existing && existing.length > 0 && existing[0].id) {
-        existingId = existing[0].id;
-      }
-    } catch {}
+      const row1Payload: any = {
+        fonnte_token: updated.fonnte_token || '',
+        fonnte_group_target: updated.fonnte_group_target || '',
+        fonnte_auto_send: updated.fonnte_auto_send !== undefined ? updated.fonnte_auto_send : true,
+        gas_endpoint: updated.gas_endpoint || '',
+        manual_shipment_gas_url: updated.manual_shipment_gas_url || '',
+        gdrive_gas_url: updated.gdrive_gas_url || '',
+        gdrive_folder_url: updated.gdrive_folder_url || '',
+        updated_at: new Date().toISOString(),
+      };
+      await supabaseFetch('wms_settings', 'PATCH', row1Payload, 'id=eq.1');
+    } catch {
+      // Jika kolom gas_endpoint belum ditambahkan ke schema tabel di Supabase, update hanya kolom fonnte di row 1
+      try {
+        const fallbackRow1 = {
+          fonnte_token: updated.fonnte_token || '',
+          fonnte_group_target: updated.fonnte_group_target || '',
+          fonnte_auto_send: updated.fonnte_auto_send !== undefined ? updated.fonnte_auto_send : true,
+          updated_at: new Date().toISOString(),
+        };
+        await supabaseFetch('wms_settings', 'PATCH', fallbackRow1, 'id=eq.1');
+      } catch {}
+    }
 
-    if (existingId) {
-      // Coba UPDATE baris eksisting
+    // B. Simpan/Upsert row id: 2 sebagai payload JSON config agar 100% kompatibel tanpa perlu migrasi manual
+    try {
+      const row2Payload = {
+        id: 2,
+        fonnte_token: 'CONFIG_GAS',
+        fonnte_group_target: JSON.stringify(configPayload),
+        fonnte_auto_send: false,
+        updated_at: new Date().toISOString(),
+      };
+      // Coba patch id: 2 dulu
       try {
-        await supabaseFetch('wms_settings', 'PATCH', payload, `id=eq.${existingId}`);
-      } catch (err) {
-        // Jika skema kolom belum lengkap, coba simpan kolom dasar + config_json
-        console.warn('Percobaan update kolom spesifik gagal, mencoba fallback payload:', err);
-        const fallbackPayload = {
-          fonnte_token: updated.fonnte_token,
-          fonnte_group_target: updated.fonnte_group_target,
-          fonnte_auto_send: updated.fonnte_auto_send,
-          updated_at: payload.updated_at,
-        };
-        await supabaseFetch('wms_settings', 'PATCH', fallbackPayload, `id=eq.${existingId}`);
+        await supabaseFetch('wms_settings', 'PATCH', row2Payload, 'id=eq.2');
+      } catch {
+        // Jika belum ada row 2, lakukan insert
+        await supabaseFetch('wms_settings', 'POST', row2Payload);
       }
-    } else {
-      // Coba INSERT baris id: 1
-      try {
-        await supabaseFetch('wms_settings', 'POST', { ...payload, id: 1 });
-      } catch (err) {
-        console.warn('Percobaan insert spesifik gagal, mencoba fallback insert:', err);
-        const fallbackPayload = {
-          id: 1,
-          fonnte_token: updated.fonnte_token,
-          fonnte_group_target: updated.fonnte_group_target,
-          fonnte_auto_send: updated.fonnte_auto_send,
-          updated_at: payload.updated_at,
-        };
-        await supabaseFetch('wms_settings', 'POST', fallbackPayload);
-      }
+    } catch (err) {
+      console.warn('Gagal menyimpan fallback config row 2:', err);
     }
 
     return true;
