@@ -17,7 +17,7 @@ export interface PermissionGroup {
   permissions: PermissionItem[];
 }
 
-export const TOTAL_PERMISSIONS_COUNT = 20;
+export const TOTAL_PERMISSIONS_COUNT = 21;
 
 export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
@@ -50,6 +50,11 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         key: 'can_perbaikan',
         label: 'Quality Control (QC) & Perbaikan',
         description: 'Laporan inspeksi QC, reject, cuci, permak, dan pengelolaan defect',
+      },
+      {
+        key: 'can_tarikan_md',
+        label: 'Tarikan MD (Pengecekan Penerimaan Barang)',
+        description: 'Import CSV SJ, scan komparasi qty vs aktual, submit ke Google Sheet TarikanMD',
       },
     ],
   },
@@ -176,6 +181,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_approve_hr: true,
     can_perbaikan: true,
     can_manual_shipment_view: true, can_manual_shipment_action: true,
+    can_tarikan_md: true,
   },
   'All': {
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
@@ -187,6 +193,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_approve_hr: true,
     can_perbaikan: true,
     can_manual_shipment_view: true, can_manual_shipment_action: true,
+    can_tarikan_md: true,
   },
   'Perbaikan': {
     can_scan: true, can_penerimaan: true, can_picking: false, can_peminjaman: false,
@@ -377,6 +384,10 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
       return hasPermission(session, 'can_approve_hr');
     case 'manual_shipment':
       return hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
+    case 'tarikan_md':
+      return hasPermission(session, 'can_tarikan_md');
+    case 'cetak_label':
+      return true;
     default:
       return false;
   }

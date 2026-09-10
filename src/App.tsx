@@ -53,6 +53,7 @@ const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView')
 const HrRekapView = React.lazy(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 const CetakLabelView = React.lazy(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
 const ManualShipmentView = React.lazy(() => import('./components/ManualShipmentView').then(m => ({ default: m.ManualShipmentView })));
+const TarikanMDView = React.lazy(() => import('./components/TarikanMDView').then(m => ({ default: m.TarikanMDView })));
 
 import {
   fetchStockForLocations,
@@ -1366,6 +1367,13 @@ export default function App() {
                 <ManualShipmentView
                   session={session}
                   productCatalog={productDatabase}
+                  onShowToast={showToast}
+                />
+            )}
+
+            {activePage === 'tarikan_md' && (
+                <TarikanMDView
+                  session={session}
                   onShowToast={showToast}
                 />
             )}

@@ -18,7 +18,8 @@ export type ActivePage =
   | 'hr_approval'
   | 'hr_rekap'
   | 'cetak_label'
-  | 'manual_shipment';
+  | 'manual_shipment'
+  | 'tarikan_md';
 
 export type UserRole =
   | 'Superadmin'
@@ -56,7 +57,8 @@ export type UserPermissionKey =
   | 'can_approve_hr'
   | 'can_perbaikan'
   | 'can_manual_shipment_view'
-  | 'can_manual_shipment_action';
+  | 'can_manual_shipment_action'
+  | 'can_tarikan_md';
 
 export interface UserPermissions {
   can_scan: boolean;
@@ -81,6 +83,7 @@ export interface UserPermissions {
   can_perbaikan?: boolean;
   can_manual_shipment_view?: boolean;
   can_manual_shipment_action?: boolean;
+  can_tarikan_md?: boolean;
 }
 
 export interface WmsUser {
@@ -608,4 +611,37 @@ export interface WmsSettings {
   fonnte_auto_send?: boolean;
   config_json?: string;
   updated_at?: string;
+}
+
+// ------------------------------------------------------------
+// MODUL TARIKAN MD - PENGECEKAN PENERIMAAN BARANG
+// ------------------------------------------------------------
+
+/** Satu baris SKU dari file CSV Surat Jalan */
+export interface TarikanMDItem {
+  sku: string;
+  nama_produk: string;
+  category?: string;
+  qty_sj: number;
+}
+
+/** Hasil komparasi SJ vs aktual scan/input */
+export interface TarikanMDScanResult extends TarikanMDItem {
+  qty_scan: number;
+  selisih: number;          // qty_scan - qty_sj
+  status: 'COCOK' | 'KURANG' | 'LEBIH';
+}
+
+/** Record yang disimpan ke sheet TarikanMD */
+export interface TarikanMDRecord {
+  no_sj: string;
+  tanggal_sj: string;
+  source: string;
+  destination: string;
+  total_qty_sj: number;
+  total_qty_terima: number;
+  status_komparasi: 'COCOK' | 'SELISIH';
+  submitted_by: string;
+  created_at?: string;
+  items_json?: string;      // JSON.stringify(TarikanMDScanResult[])
 }

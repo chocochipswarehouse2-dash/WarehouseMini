@@ -84,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canViewMutasi = userIsAdmin || hasPermission(session, 'can_view_mutasi');
   const canPerbaikan = userIsAdmin || hasPermission(session, 'can_perbaikan');
   const canManualShipment = userIsAdmin || hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
+  const canTarikanMD = userIsAdmin || hasPermission(session, 'can_tarikan_md');
   const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
@@ -166,6 +167,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Package,
       description: 'Pengiriman manual & rekap',
       access: canManualShipment,
+    },
+    {
+      id: 'tarikan_md' as ActivePage,
+      label: 'Tarikan MD',
+      shortLabel: 'Tarikan',
+      icon: ClipboardCheck,
+      description: 'Pengecekan penerimaan vs SJ',
+      access: canTarikanMD,
     },
   ].filter((item) => item.access);
 
