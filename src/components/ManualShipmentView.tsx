@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag
 } from 'lucide-react';
 import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../types';
 import { hasPermission, isSuperadmin } from '../services/permissions';
@@ -146,7 +146,9 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         return prev.map(i => i.sku.toUpperCase() === sku.toUpperCase() ? { ...i, qty: i.qty + 1 } : i);
       }
       
-      const fullName = `${product.n} - ${product.s} (${product.k})`;
+      const displayNama = product.p || product.n || 'Unknown Product';
+      const displaySize = product.s && product.s !== 'ALL' ? ` - ${product.s}` : '';
+      const fullName = `${displayNama}${displaySize}`;
       return [...prev, {
         id: `item-${Date.now()}`,
         nama_produk: fullName,
@@ -155,7 +157,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         fulfillment: ''
       }];
     });
-    onShowToast(`Berhasil menambahkan ${product.p || product.n}`, 'success');
+    onShowToast(`Berhasil menambahkan ${product.p || product.n || product.k}`, 'success');
   };
 
   const renderForm = () => (
@@ -272,15 +274,16 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
               <PhysicalScanInput 
                 onScan={handleScanProduct}
                 products={productCatalog}
-                placeholder="Ketik SKU atau Scan Barcode Produk..."
+                placeholder="KETIK SKU ATAU SCAN BARCODE"
               />
             </div>
 
             <div className="space-y-4">
               {items.length === 0 && (
-                <div className="text-center py-8 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl text-slate-500">
-                  <Package className="w-10 h-10 mx-auto text-slate-400 mb-3" />
-                  <p>Belum ada produk. Silakan scan barcode atau cari SKU produk di atas.</p>
+                <div className="text-center py-12 text-slate-400">
+                  <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+                  <div className="font-medium text-slate-500 mb-1">Empty Cart</div>
+                  <div className="text-sm">Add products to the cart<br/>or scan barcode</div>
                 </div>
               )}
               {items.map((item) => (
