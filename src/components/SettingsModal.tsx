@@ -769,6 +769,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           )}
 
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('gas')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'gas'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Cloud className="w-4 h-4" />
+              <span>Konfigurasi GAS</span>
+            </button>
+          )}
+
           {canManageUsers && (
             <button
               type="button"
