@@ -52,6 +52,7 @@ const LemburCutiView = React.lazy(() => import('./components/hr/LemburCutiView')
 const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
 const HrRekapView = React.lazy(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 const CetakLabelView = React.lazy(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
+const ManualShipmentView = React.lazy(() => import('./components/ManualShipmentView').then(m => ({ default: m.ManualShipmentView })));
 
 import {
   fetchStockForLocations,
@@ -183,6 +184,7 @@ export default function App() {
       import('./components/hr/LemburCutiView');
       import('./components/hr/HrApprovalView');
       import('./components/hr/HrRekapView');
+      import('./components/ManualShipmentView');
     }, 2000);
 
     const syncSessionPermissions = async () => {
@@ -1343,6 +1345,14 @@ export default function App() {
             {activePage === 'hr_rekap' && (
                 <HrRekapView
                   session={session}
+                  onShowToast={showToast}
+                />
+            )}
+
+            {activePage === 'manual_shipment' && (
+                <ManualShipmentView
+                  session={session}
+                  productCatalog={productDatabase}
                   onShowToast={showToast}
                 />
             )}

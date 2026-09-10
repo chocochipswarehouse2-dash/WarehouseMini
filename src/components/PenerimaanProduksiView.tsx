@@ -462,7 +462,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       } else if (field === 'warna') {
         v.warna = String(val).toUpperCase();
       } else {
-        v[field] = String(val) as any;
+        (v as any)[field] = String(val);
       }
       target.variants[variantIndex] = v;
       return next;

@@ -83,6 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canApproveSo = userIsAdmin || hasPermission(session, 'can_approve_so');
   const canViewMutasi = userIsAdmin || hasPermission(session, 'can_view_mutasi');
   const canPerbaikan = userIsAdmin || hasPermission(session, 'can_perbaikan');
+  const canManualShipment = userIsAdmin || hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
   const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
@@ -157,6 +158,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ClipboardCheck,
       description: 'Laporan QC, Perbaikan & Defect',
       access: canPerbaikan,
+    },
+    {
+      id: 'manual_shipment' as ActivePage,
+      label: 'Manual Shipment',
+      shortLabel: 'Shipment',
+      icon: Package,
+      description: 'Pengiriman manual & rekap',
+      access: canManualShipment,
     },
   ].filter((item) => item.access);
 

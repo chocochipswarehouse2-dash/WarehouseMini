@@ -175,6 +175,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_view_karyawan: true, can_view_presensi: true, can_view_roster: true, can_view_lembur_cuti: true,
     can_approve_hr: true,
     can_perbaikan: true,
+    can_manual_shipment_view: true, can_manual_shipment_action: true,
   },
   'All': {
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
@@ -185,6 +186,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_view_karyawan: true, can_view_presensi: true, can_view_roster: true, can_view_lembur_cuti: true,
     can_approve_hr: true,
     can_perbaikan: true,
+    can_manual_shipment_view: true, can_manual_shipment_action: true,
   },
   'Perbaikan': {
     can_scan: true, can_penerimaan: true, can_picking: false, can_peminjaman: false,
@@ -275,6 +277,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_view_karyawan: false, can_view_presensi: false, can_view_roster: false, can_view_lembur_cuti: false,
     can_approve_hr: false,
     can_perbaikan: true,
+    can_manual_shipment_view: true, can_manual_shipment_action: false,
   }
 };
 
@@ -372,6 +375,8 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
     case 'hr_approval':
     case 'hr_rekap':
       return hasPermission(session, 'can_approve_hr');
+    case 'manual_shipment':
+      return hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
     default:
       return false;
   }

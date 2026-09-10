@@ -17,7 +17,8 @@ export type ActivePage =
   | 'lembur_cuti'
   | 'hr_approval'
   | 'hr_rekap'
-  | 'cetak_label';
+  | 'cetak_label'
+  | 'manual_shipment';
 
 export type UserRole =
   | 'Superadmin'
@@ -53,7 +54,9 @@ export type UserPermissionKey =
   | 'can_view_roster'
   | 'can_view_lembur_cuti'
   | 'can_approve_hr'
-  | 'can_perbaikan';
+  | 'can_perbaikan'
+  | 'can_manual_shipment_view'
+  | 'can_manual_shipment_action';
 
 export interface UserPermissions {
   can_scan: boolean;
@@ -76,6 +79,8 @@ export interface UserPermissions {
   can_view_lembur_cuti?: boolean;
   can_approve_hr?: boolean;
   can_perbaikan?: boolean;
+  can_manual_shipment_view?: boolean;
+  can_manual_shipment_action?: boolean;
 }
 
 export interface WmsUser {
@@ -386,6 +391,37 @@ export interface PenerimaanVariantItem {
   warna: string;
   size: string;
   qty: number;
+  timestamp?: number;
+}
+
+export interface ManualShipmentItem {
+  id: string;
+  nama_produk: string;
+  sku: string;
+  qty: number;
+  fulfillment: string;
+}
+
+export interface ManualShipmentOrder {
+  id?: string;
+  no_pesanan?: string;
+  // Data Pengirim
+  nama_pengirim: string;
+  no_telp_store: string;
+  no_transaksi_pengirim: string[];
+  // Data Customer
+  nama_tujuan: string;
+  no_telp_tujuan: string;
+  alamat_tujuan: string;
+  notes_paket: string;
+  no_transaksi_customer: string;
+  // Pesanan
+  items: ManualShipmentItem[];
+  // Status & Meta
+  status: 'diterima' | 'diproses' | 'dikirim' | 'batal';
+  no_resi?: string;
+  created_at?: string;
+  submitted_by?: string;
 }
 
 export interface PenerimaanProdukBlock {
