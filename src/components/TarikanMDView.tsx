@@ -303,12 +303,12 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({ session, onShowToa
   };
 
   // ---- DELETE ----
-  const handleDeleteRecord = async (no_sj: string) => {
+  const handleDeleteRecord = async (id: string, no_sj: string) => {
     if (!window.confirm(`Yakin hapus rekap SJ "${no_sj}"?`)) return;
-    setDeletingId(no_sj);
+    setDeletingId(id);
     try {
-      await deleteTarikanMD(no_sj);
-      setRecords(prev => prev.filter(r => r.no_sj !== no_sj));
+      await deleteTarikanMD(id);
+      setRecords(prev => prev.filter(r => r.id !== id));
       onShowToast('Rekap berhasil dihapus!', 'success');
     } catch {
       onShowToast('Gagal menghapus rekap.', 'error');
@@ -662,11 +662,11 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({ session, onShowToa
                             <div className="flex gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-700">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteRecord(rec.no_sj)}
-                                disabled={deletingId === rec.no_sj}
+                                onClick={() => handleDeleteRecord(rec.id, rec.no_sj)}
+                                disabled={deletingId === rec.id}
                                 className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-rose-200 dark:border-rose-800 disabled:opacity-50"
                               >
-                                {deletingId === rec.no_sj
+                                {deletingId === rec.id
                                   ? <RefreshCw className="w-3 h-3 animate-spin" />
                                   : <Trash2 className="w-3 h-3" />}
                                 Hapus
