@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Printer, 
   Plus, 
@@ -11,9 +11,16 @@ import {
   Bookmark,
   ChevronDown,
   Loader2,
-  Save
+  Save,
+  Upload,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
 import { supabaseFetch } from '../services/supabase';
+import Papa from 'papaparse';
 
 export interface LabelItem {
   id: string;
@@ -41,6 +48,10 @@ export const CetakLabelView: React.FC = () => {
   const [isAddressDropdownOpen, setIsAddressDropdownOpen] = useState(false);
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
+
+  // CSV Import State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importNotice, setImportNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Form State
   const [pengirimNama, setPengirimNama] = useState('CHOCOCHIPS');
@@ -160,6 +171,152 @@ export const CetakLabelView: React.FC = () => {
     window.print();
   };
 
+  const handleDownloadTemplate = () => {
+    const headers = [
+      'nama_penerima',
+      'no_telp_penerima',
+      'alamat_penerima',
+      'nama_pengirim',
+      'no_telp_pengirim',
+      'isi_paket',
+      'ekspedisi',
+      'no_resi',
+      'jumlah_copy'
+    ];
+
+    const sampleRows = [
+      [
+        'Siti Rahma',
+        '081234567890',
+        'Jl. Merdeka No. 45 RT 02/05 Gambir Jakarta Pusat',
+        pengirimNama || 'CHOCOCHIPS',
+        pengirimTelp || '081122334455',
+        '2x Dress Floral M, 1x Scarf',
+        'JNE',
+        'JNE12345678',
+        '1'
+      ],
+      [
+        'Budi Santoso',
+        '087811223344',
+        'Komplek Permai Blok B2 No. 10 Sukajadi Bandung',
+        pengirimNama || 'CHOCOCHIPS',
+        pengirimTelp || '081122334455',
+        '1x Kemeja Rayon L',
+        'SiCepat',
+        'SCP99887766',
+        '1'
+      ]
+    ];
+
+    const csvContent = '\uFEFF' + [
+      headers.join(','),
+      ...sampleRows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'template_cetak_label_a6.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        try {
+          const rows = results.data as Record<string, any>[];
+          if (!rows || rows.length === 0) {
+            setImportNotice({ type: 'error', message: 'File CSV kosong atau tidak memiliki baris data.' });
+            return;
+          }
+
+          const newImportedLabels: LabelItem[] = [];
+          let skippedCount = 0;
+
+          // Helper to match column variations
+          const getField = (row: Record<string, any>, candidates: string[]) => {
+            const keys = Object.keys(row);
+            for (const c of candidates) {
+              const target = c.toLowerCase().replace(/[\s_-]/g, '');
+              const matchedKey = keys.find(k => k.trim().toLowerCase().replace(/[\s_-]/g, '') === target);
+              if (matchedKey && row[matchedKey] !== undefined && row[matchedKey] !== null) {
+                const val = String(row[matchedKey]).trim();
+                if (val) return val;
+              }
+            }
+            return '';
+          };
+
+          rows.forEach((row, index) => {
+            const rNama = getField(row, ['nama_penerima', 'penerima_nama', 'penerima', 'nama', 'recipient', 'receiver', 'customer']);
+            const rAlamat = getField(row, ['alamat_penerima', 'penerima_alamat', 'alamat', 'address', 'lokasi', 'alamat_lengkap']);
+            const rTelp = getField(row, ['no_telp_penerima', 'telp_penerima', 'penerima_telp', 'telepon', 'no_telp', 'telp', 'no_hp', 'phone', 'hp']);
+            const sNama = getField(row, ['nama_pengirim', 'pengirim_nama', 'pengirim', 'sender']) || pengirimNama || 'CHOCOCHIPS';
+            const sTelp = getField(row, ['no_telp_pengirim', 'telp_pengirim', 'pengirim_telp', 'sender_phone']) || pengirimTelp || '';
+            const rDeskripsi = getField(row, ['isi_paket', 'deskripsi', 'barang', 'keterangan', 'items', 'paket']);
+            const rEkspedisi = getField(row, ['ekspedisi', 'kurir', 'courier', 'jasa_kirim', 'logistic']);
+            const rResi = getField(row, ['no_resi', 'resi', 'tracking_number', 'airwaybill', 'awb']);
+            
+            const rawQty = getField(row, ['jumlah_copy', 'qty', 'copy', 'jumlah', 'copies']);
+            const itemQty = Math.max(1, parseInt(rawQty, 10) || 1);
+
+            // Skip row if it doesn't have minimal recipient data
+            if (!rNama && !rAlamat) {
+              skippedCount++;
+              return;
+            }
+
+            for (let c = 0; c < itemQty; c++) {
+              newImportedLabels.push({
+                id: `lbl_import_${Date.now()}_${index}_${c}_${Math.random().toString(36).substring(2, 7)}`,
+                pengirim_nama: sNama,
+                pengirim_telp: sTelp,
+                penerima_nama: rNama || 'Tanpa Nama',
+                penerima_telp: rTelp,
+                penerima_alamat: rAlamat || '-',
+                deskripsi: rDeskripsi,
+                ekspedisi: rEkspedisi,
+                resi: rResi,
+              });
+            }
+          });
+
+          if (newImportedLabels.length === 0) {
+            setImportNotice({ 
+              type: 'error', 
+              message: 'Tidak ada data valid yang dapat diimpor. Pastikan header CSV memiliki kolom nama_penerima dan alamat_penerima.' 
+            });
+            return;
+          }
+
+          setLabels(prev => [...prev, ...newImportedLabels]);
+          const successMsg = `Berhasil mengimpor ${newImportedLabels.length} label dari CSV!${skippedCount > 0 ? ` (${skippedCount} baris kosong dilewati)` : ''}`;
+          setImportNotice({ type: 'success', message: successMsg });
+          setTimeout(() => setImportNotice(null), 7000);
+        } catch (err: any) {
+          console.error(err);
+          setImportNotice({ type: 'error', message: `Gagal memproses file CSV: ${err?.message || 'Format tidak valid'}` });
+        } finally {
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      },
+      error: (err) => {
+        setImportNotice({ type: 'error', message: `Gagal membaca file CSV: ${err.message}` });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    });
+  };
+
   return (
     <>
       {/* 
@@ -209,17 +366,88 @@ export const CetakLabelView: React.FC = () => {
               Cetak Label Alamat (A6)
             </h1>
             <p className="text-indigo-100 text-sm mt-1">
-              Tambahkan data penerima ke antrean lalu cetak sekaligus.
+              Tambahkan data penerima ke antrean atau import file CSV, lalu cetak sekaligus.
             </p>
           </div>
-          <button
-            onClick={handlePrint}
-            disabled={labels.length === 0}
-            className="w-full sm:w-auto px-5 py-2.5 bg-white text-indigo-700 font-bold rounded-xl shadow-sm hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            <Printer className="w-4 h-4" />
-            Cetak {labels.length} Label
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={handlePrint}
+              disabled={labels.length === 0}
+              className="w-full sm:w-auto px-5 py-2.5 bg-white text-indigo-700 font-bold rounded-xl shadow-sm hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              Cetak {labels.length} Label
+            </button>
+          </div>
+        </div>
+
+        {/* Import CSV Notification Banner */}
+        {importNotice && (
+          <div className={`p-4 rounded-xl flex items-center justify-between gap-3 text-xs font-bold border transition-all ${
+            importNotice.type === 'success' 
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800'
+              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-800'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              {importNotice.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 flex-shrink-0" />
+              )}
+              <span>{importNotice.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setImportNotice(null)}
+              className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Card Import CSV & Download Template */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
+                Import Label Massal (CSV)
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Download format template CSV, isi data penerima, lalu upload file untuk memasukkan antrean sekaligus.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="flex-1 sm:flex-none px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer border border-slate-200 dark:border-slate-700"
+              title="Download Template CSV"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              Download Template CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              title="Upload File CSV Berisi Data Penerima"
+            >
+              <Upload className="w-4 h-4" />
+              Import CSV
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -421,9 +649,20 @@ export const CetakLabelView: React.FC = () => {
                 <Printer className="w-4 h-4 text-indigo-500" />
                 Antrean Cetak
               </h2>
-              <span className="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-full">
-                {labels.length} Label
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="Import Data dari CSV"
+                >
+                  <Upload className="w-3.5 h-3.5 text-indigo-500" />
+                  Import CSV
+                </button>
+                <span className="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 text-xs font-bold rounded-full">
+                  {labels.length} Label
+                </span>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {labels.length === 0 ? (
