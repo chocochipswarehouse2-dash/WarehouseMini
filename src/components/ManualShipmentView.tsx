@@ -260,12 +260,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 const term = searchTerms[item.id] || '';
                 
                 let searchResults: ProductItem[] = [];
-                if (term.length > 2 && activeComboIndex === index) {
+                if (term.length >= 2 && activeComboIndex === index) {
                   const lower = term.toLowerCase().split(/\s+/).filter(Boolean);
                   searchResults = productCatalog.filter(p => {
                     const text = `${p.k} ${p.n} ${p.s}`.toLowerCase();
                     return lower.every(kw => text.includes(kw));
-                  }).slice(0, 5);
+                  }).slice(0, 20);
                 }
 
                 return (
