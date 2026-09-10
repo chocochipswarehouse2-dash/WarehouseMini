@@ -1115,66 +1115,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* 0. Cloud Sync & Supabase Status Banner */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-emerald-500/10 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-emerald-900/20 border border-blue-200/80 dark:border-blue-800/60 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-600 dark:bg-blue-500 text-white shadow-xs">
-            <CloudCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 dark:text-white">
-                Supabase Cloud Sync Aktif
-              </span>
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60">
-                Terhubung Cloud
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-              Laporan inspeksi QC otomatis tersinkronisasi realtime & langsung dapat dilihat oleh seluruh admin / staf di perangkat lain.
-            </p>
-          </div>
-        </div>
+    <div className="space-y-4">
+      {/* 0. (Banner removed) */}
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <button
-            type="button"
-            onClick={async () => {
-              setIsLoading(true);
-              try {
-                const data = await fetchQcReportsFromSupabase();
-                if (data) setReports(data);
-                onShowToast('Laporan QC berhasil disinkronkan dengan Supabase Cloud!', 'success');
-              } catch (err: any) {
-                onShowToast('Gagal sinkronisasi: ' + (err.message || 'Kendala koneksi'), 'error');
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors shadow-xs disabled:opacity-50"
-            title="Tarik data terbaru dari Supabase"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
-            <span>{isLoading ? 'Sinkronisasi...' : 'Sinkronkan'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsSqlModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs"
-            title="Lihat & Salin Script SQL Tabel qc_reports Supabase"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>Script SQL</span>
-          </button>
-        </div>
-      </div>
 
       {/* 1. Stat Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
