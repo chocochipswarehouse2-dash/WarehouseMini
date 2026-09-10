@@ -117,7 +117,7 @@ type KpiModalType = 'CATEGORY' | 'MAP' | 'BLOK_F' | 'PERBAIKAN' | null;
 // Module-level in-memory cache to make tab transitions 100% instant (0ms)
 let globalInventoryStockCache: StockRealtimeItem[] | null = null;
 let globalInventoryLastFetch = 0;
-const CACHE_STALE_TTL = 3 * 60 * 1000; // 3 minutes
+const CACHE_STALE_TTL = 30 * 1000; // 30 seconds
 
 const SIZE_ORDER_MAP: Record<string, number> = {
   'ALL': 0, 'DEFAULT': 1, 'FREE': 2, 'XS': 3, 'S': 4, 'M': 5, 'L': 6, 'XL': 7, 'XXL': 8, '3XL': 9, '4XL': 10
@@ -281,8 +281,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     try {
       // 1. Fetch physical stock rows from Supabase view_stok_realtime (Direct GAS Method)
-      // Since loadStockData already has a cache check above, we ALWAYS want to force a network request here
-      const realtimeData = await fetchSupabaseStokFisikDirect(true);
+      // Call with isManualRefresh to allow using cache from supabase.ts if not manually refreshed
+      const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh);
       if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
         globalInventoryStockCache = realtimeData;
         globalInventoryLastFetch = Date.now();

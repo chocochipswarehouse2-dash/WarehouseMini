@@ -42,6 +42,7 @@ import {
 import { compressImage, formatBytes } from '../utils/imageCompressor';
 import { isSuperadmin, hasPermission } from '../services/permissions';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
+import { globalRealtimeStore } from '../services/store';
 import {
   fetchPerbaikanTicketsFromSupabase,
   savePerbaikanTicketToSupabase,
@@ -289,26 +290,25 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     window.addEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
     window.addEventListener('wms_qc_reports_updated', handleTicketEvent);
 
-    const sb = getSupabaseClient();
-    const channel = sb
-      .channel('realtime_perbaikan_tickets')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'perbaikan_tickets' },
-        async () => {
-          const fresh = await fetchPerbaikanTicketsFromSupabase();
-          if (isMounted && fresh) {
-            setTickets(fresh);
-          }
+    let debounceTimer: any = null;
+    const triggerDebouncedSync = async () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        const fresh = await fetchPerbaikanTicketsFromSupabase();
+        if (isMounted && fresh) {
+          setTickets(fresh);
         }
-      )
-      .subscribe();
+      }, 400);
+    };
+
+    const unsub = globalRealtimeStore.subscribe('perbaikan_tickets', triggerDebouncedSync);
 
     return () => {
       isMounted = false;
       window.removeEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
       window.removeEventListener('wms_qc_reports_updated', handleTicketEvent);
-      sb.removeChannel(channel);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsub();
     };
   }, []);
 

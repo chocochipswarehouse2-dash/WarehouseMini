@@ -70,6 +70,7 @@ import {
   isWarehouseLocation,
   getAreaFromLokasi,
   getSupabaseClient,
+  extractPickingItemFromRow,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -218,22 +219,46 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     } catch (e) {
       console.warn('Gagal memulihkan sesi picking lokal:', e);
     }
+    
     loadPickingList();
 
     // Supabase Realtime via global store
-    let debounceTimer: any = null;
-
-    const triggerDebouncedSync = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadPickingList();
-      }, 400);
+    const handleRealtimeUpdate = (payload: any) => {
+      if (!payload) return;
+      
+      setRawItems((prev) => {
+        const { eventType, new: newRow, old: oldRow } = payload;
+        
+        if (eventType === 'INSERT' && newRow) {
+          const item = extractPickingItemFromRow(newRow);
+          if (!item) return prev;
+          if (prev.some((p) => p.id === item.id || (p.no_sj === item.no_sj && p.sku === item.sku))) return prev;
+          return [item, ...prev];
+        } 
+        else if (eventType === 'UPDATE' && newRow) {
+          const item = extractPickingItemFromRow(newRow);
+          if (!item) return prev;
+          return prev.map((p) =>
+            p.id === item.id || (p.no_sj === item.no_sj && p.sku === item.sku) ? { ...p, ...item } : p
+          );
+        } 
+        else if (eventType === 'DELETE' && oldRow) {
+          const oldNoSj = (oldRow.no_sj || '').toUpperCase().trim();
+          const oldSku = (oldRow.sku || '').toUpperCase().trim();
+          return prev.filter((p) => {
+            if (oldRow.id && p.id === String(oldRow.id)) return false;
+            if (oldNoSj && oldSku && (p.no_sj || '').toUpperCase().trim() === oldNoSj && (p.sku || '').toUpperCase().trim() === oldSku) return false;
+            return true;
+          });
+        }
+        
+        return prev;
+      });
     };
 
-    const unsub = globalRealtimeStore.subscribe('picking_list', triggerDebouncedSync);
+    const unsub = globalRealtimeStore.subscribe('picking_list', handleRealtimeUpdate);
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
     };
   }, []);
@@ -598,8 +623,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const success = await deletePickingSuratJalanBatchSupabase(selectedSJs);
         if (success) {
           onNotify(`${selectedSJs.length} Surat Jalan berhasil dihapus`, 'success');
+          const upperSJs = new Set(selectedSJs.map((s) => s.toUpperCase().trim()));
+          setRawItems((prev) => {
+            const updated = prev.filter((item) => !upperSJs.has((item.no_sj || '').toUpperCase().trim()));
+            try {
+              localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+            } catch {}
+            return updated;
+          });
           setSelectedSJs([]);
-          loadPickingList();
         } else {
           onNotify('Gagal menghapus beberapa Surat Jalan', 'error');
         }
@@ -622,8 +654,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const success = await completePickingSuratJalanBatchSupabase(selectedSJs, currentUser);
         if (success) {
           onNotify(`${selectedSJs.length} Surat Jalan berhasil diselesaikan`, 'success');
+          const upperSJs = new Set(selectedSJs.map((s) => s.toUpperCase().trim()));
+          setRawItems((prev) => {
+            const updated = prev.map((item) => {
+              if (upperSJs.has((item.no_sj || '').toUpperCase().trim())) {
+                return {
+                  ...item,
+                  status: 'SELESAI' as const,
+                  picker_name: currentUser || 'Admin',
+                };
+              }
+              return item;
+            });
+            try {
+              localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+            } catch {}
+            return updated;
+          });
           setSelectedSJs([]);
-          loadPickingList();
         } else {
           onNotify('Gagal menyelesaikan beberapa Surat Jalan', 'error');
         }
@@ -894,7 +942,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         const success = await deletePickingSuratJalanBatchSupabase([no_sj]);
         if (success) {
           onNotify(`Surat Jalan ${no_sj} berhasil dihapus`, 'success');
-          loadPickingList();
+          const cleanNoSj = no_sj.toUpperCase().trim();
+          setRawItems((prev) => {
+            const updated = prev.filter((item) => (item.no_sj || '').toUpperCase().trim() !== cleanNoSj);
+            try {
+              localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+            } catch {}
+            return updated;
+          });
         } else {
           onNotify('Gagal menghapus Surat Jalan', 'error');
         }
@@ -1506,7 +1561,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       playSuccessBeep();
       onNotify('Form Surat Jalan dan daftar SKU berhasil diperbarui!', 'success');
       setIsEditSJModalOpen(false);
-      loadPickingList();
+      
     } catch (err: any) {
       onNotify(`Gagal memperbarui Surat Jalan: ${err.message}`, 'error');
     } finally {
@@ -1669,10 +1724,34 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
         // Close workspace & modal
         setIsRekapModalOpen(false);
+        const completedNoSj = activeSJ.no_sj;
         setActiveSJ(null);
         setActiveItems([]);
         setUnexpectedItems([]);
-        loadPickingList();
+        
+        // Optimistically update rawItems so SJ moves from Belum Selesai to Selesai immediately
+        setRawItems((prev) => {
+          const cleanNoSj = completedNoSj.toUpperCase().trim();
+          const updated = prev.map((item) => {
+            if ((item.no_sj || '').toUpperCase().trim() === cleanNoSj) {
+              const matchedActive = activeItems.find(
+                (it) => it.sku.toUpperCase().trim() === (item.sku || '').toUpperCase().trim()
+              );
+              return {
+                ...item,
+                status: 'SELESAI' as const,
+                qty_picked: matchedActive ? matchedActive.qty_picked : item.qty_picked,
+                picker_name: currentUser || 'Operator',
+                catatan: rekapCatatan || item.catatan,
+              };
+            }
+            return item;
+          });
+          try {
+            localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
       } else {
         onNotify('Gagal menyimpan hasil rekap ke Database. Cek koneksi.', 'error');
       }
@@ -1721,7 +1800,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
 
       onNotify('Berhasil membuat 3 contoh Surat Jalan Picking di Database!', 'success');
-      loadPickingList();
+      
     } catch (e) {
       onNotify('Gagal membuat contoh Surat Jalan', 'error');
     } finally {
@@ -1778,7 +1857,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         setNewSjNumber('');
         setNewSjTujuan('');
         setNewSjRows([{ sku: '', nama_produk: '', size: '', lokasi: '', qty_req: 1 }]);
-        loadPickingList();
+        
       } else {
         onNotify('Gagal menyimpan Surat Jalan baru ke Database', 'error');
       }
@@ -2774,21 +2853,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 mr-2">
-            <input
-              type="checkbox"
-              checked={selectedSJs.length === filteredSJs.length && filteredSJs.length > 0}
-              onChange={handleSelectAllSJs}
-              className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
-              title="Pilih Semua"
-            />
-          </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Status Segmented Tabs */}
-          <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
+          <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1 w-full sm:w-auto">
             <button
+              type="button"
               onClick={() => setStatusFilter('ACTIVE')}
-              className={`px-3 py-1.5 text-xs font-extrabold rounded-lg transition-all ${
+              className={`flex-1 sm:flex-none px-3.5 py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer select-none text-center touch-manipulation ${
                 statusFilter === 'ACTIVE'
                   ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
@@ -2797,8 +2868,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               Belum Selesai ({sjGroups.filter((g) => g.status !== 'SELESAI').length})
             </button>
             <button
+              type="button"
               onClick={() => setStatusFilter('ALL')}
-              className={`px-3 py-1.5 text-xs font-extrabold rounded-lg transition-all ${
+              className={`flex-1 sm:flex-none px-3.5 py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer select-none text-center touch-manipulation ${
                 statusFilter === 'ALL'
                   ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
@@ -2807,8 +2879,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               Semua ({sjGroups.length})
             </button>
             <button
+              type="button"
               onClick={() => setStatusFilter('SELESAI')}
-              className={`px-3 py-1.5 text-xs font-extrabold rounded-lg transition-all ${
+              className={`flex-1 sm:flex-none px-3.5 py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer select-none text-center touch-manipulation ${
                 statusFilter === 'SELESAI'
                   ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
@@ -2817,28 +2890,47 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               Selesai ({sjGroups.filter((g) => g.status === 'SELESAI').length})
             </button>
           </div>
-          {/* Multiple Actions */}
-          {selectedSJs.length > 0 && (
+
+          <div className="flex items-center justify-between sm:justify-end gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                {selectedSJs.length} Terpilih
-              </span>
-              <button
-                onClick={handleMarkCompleteSelected}
-                disabled={isBulkActionRunning}
-                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" /> Selesaikan
-              </button>
-              <button
-                onClick={handleDeleteSelected}
-                disabled={isBulkActionRunning}
-                className="px-3 py-1.5 bg-primary-100 hover:bg-primary-200 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Hapus
-              </button>
+              <input
+                type="checkbox"
+                checked={selectedSJs.length === filteredSJs.length && filteredSJs.length > 0}
+                onChange={handleSelectAllSJs}
+                className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
+                title="Pilih Semua"
+                id="select-all-sjs-chk"
+              />
+              <label htmlFor="select-all-sjs-chk" className="text-xs font-semibold text-slate-500 cursor-pointer select-none">
+                Pilih Semua
+              </label>
             </div>
-          )}
+
+            {/* Multiple Actions */}
+            {selectedSJs.length > 0 && (
+              <div className="flex items-center gap-1.5 ml-auto">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {selectedSJs.length} Terpilih
+                </span>
+                <button
+                  type="button"
+                  onClick={handleMarkCompleteSelected}
+                  disabled={isBulkActionRunning}
+                  className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Selesaikan
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  disabled={isBulkActionRunning}
+                  className="px-3 py-1.5 bg-primary-100 hover:bg-primary-200 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Hapus
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="relative">
@@ -3635,7 +3727,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             });
           }
           setTimeout(() => {
-            loadPickingList();
+            
           }, 500);
         }}
         onNotify={onNotify}

@@ -32,6 +32,8 @@ import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 
+import { globalRealtimeStore } from '../services/store';
+
 interface StockOpnameViewProps {
   session?: UserSession | null;
   productCatalog?: ProductItem[];
@@ -92,33 +94,31 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     loadSoData();
 
     // Supabase Realtime for Stock Opname Queue
-    const supaClient = getSupabaseClient();
-    let channel: any = null;
-    let debounceTimer: any = null;
-
-    const triggerDebouncedSync = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadSoData();
-      }, 400);
+    const handleRealtimeUpdate = (payload: any) => {
+      if (!payload) return;
+      
+      setSoQueue((prevQueue) => {
+        const { eventType, new: newRow, old: oldRow } = payload;
+        
+        if (eventType === 'INSERT' && newRow) {
+          if (prevQueue.some((q) => q.id === newRow.id)) return prevQueue;
+          return [newRow as StockOpnameQueueItem, ...prevQueue];
+        } 
+        else if (eventType === 'UPDATE' && newRow) {
+          return prevQueue.map((q) => (q.id === newRow.id ? (newRow as StockOpnameQueueItem) : q));
+        } 
+        else if (eventType === 'DELETE' && oldRow) {
+          return prevQueue.filter((q) => q.id !== oldRow.id);
+        }
+        
+        return prevQueue;
+      });
     };
 
-    try {
-      channel = supaClient
-        .channel('so-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_opname_queue' }, () => {
-          triggerDebouncedSync();
-        })
-        .subscribe();
-    } catch (err) {
-      console.warn('SO queue realtime subscription error:', err);
-    }
+    const unsub = globalRealtimeStore.subscribe('stock_opname_queue', handleRealtimeUpdate);
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        supaClient.removeChannel(channel);
-      }
+      unsub();
     };
   }, []);
 
@@ -259,6 +259,9 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
         setIsActionLoading(true);
         showGlobalLoading('Menghapus data...');
 
+        // Simpan state lama untuk revert jika gagal
+        const previousQueue = [...soQueue];
+
         // Optimistic UI update
         setSoQueue((prev) => prev.filter((it) => !it.id || !targetIds.includes(it.id)));
         setSelectedSoIds([]);
@@ -267,14 +270,15 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           const res = await deleteStockOpnameQueueItems(targetIds);
           if (res.success) {
             if (onNotify) onNotify(`Berhasil menghapus ${res.count} item dari antrean SO.`, 'info');
-            await loadSoData();
           } else {
             if (onNotify) onNotify(`Gagal menghapus: ${res.error}`, 'error');
-            await loadSoData();
+            // Revert on failure
+            setSoQueue(previousQueue);
           }
         } catch (e: any) {
           if (onNotify) onNotify(`Terjadi kesalahan: ${e.message}`, 'error');
-          await loadSoData();
+          // Revert on failure
+          setSoQueue(previousQueue);
         } finally {
           setIsActionLoading(false);
           hideGlobalLoading();
@@ -335,6 +339,9 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
         setIsActionLoading(true);
         showGlobalLoading('Menghapus...');
 
+        // Simpan state lama untuk revert jika gagal
+        const previousQueue = [...soQueue];
+
         // Optimistic UI update
         setSoQueue((prev) => prev.filter((it) => it.id !== id));
         setSelectedSoIds((prev) => prev.filter((item) => item !== id));
@@ -343,14 +350,13 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           const res = await deleteStockOpnameQueueItems([id]);
           if (res.success) {
             if (onNotify) onNotify('Item SO berhasil dihapus.', 'info');
-            await loadSoData();
           } else {
             if (onNotify) onNotify(`Gagal menghapus: ${res.error}`, 'error');
-            await loadSoData();
+            setSoQueue(previousQueue);
           }
         } catch (e: any) {
           if (onNotify) onNotify(e.message, 'error');
-          await loadSoData();
+          setSoQueue(previousQueue);
         } finally {
           setIsActionLoading(false);
           hideGlobalLoading();

@@ -1418,8 +1418,8 @@ export function setMemoryStokFisikCache(data: StockRealtimeItem[]): void {
 }
 
 export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
-  // SWR: return in-memory cache if fresh within 3 minutes and not forcing refresh
-  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 180000) {
+  // SWR: return in-memory cache if fresh within 30 seconds and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 30000) {
     return memoryStokFisikCache;
   }
 
@@ -2583,9 +2583,6 @@ export async function searchProductsInSupabase(keyword: string): Promise<Product
   const foundMap = new Map<string, ProductItem>();
   const searchTargets = [
     { table: 'master_produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk', 'kategori']).substring(1)}&limit=40` },
-    { table: 'produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama', 'nama_produk']).substring(1)}&limit=40` },
-    { table: 'products', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'name']).substring(1)}&limit=40` },
-    { table: 'master_barang', filter: `${buildFuzzySearchQuery(cleanQ, ['kode_barang', 'nama_barang']).substring(1)}&limit=40` },
   ];
 
   await Promise.allSettled(
@@ -2633,35 +2630,46 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     : '';
 
   try {
-    // Primary query: non-zero remaining stocks (chunked for safety)
-    const pageSize = 2000; // Increase page size if supported, PostgREST default max is usually 1000 or limits configured
     let viewRowsNonZero: any[] = [];
     
-    if (searchKeyword && searchKeyword.trim()) {
-      // If there's a search keyword, it's usually a small result set, fetch once
-      const chunk = await supabaseFetch<any[]>(
-        'view_stok_realtime',
-        'GET',
-        null,
-        `select=*&sisa_stok=neq.0${searchFilter}&limit=3000`
-      );
-      if (chunk && Array.isArray(chunk)) viewRowsNonZero = chunk;
-    } else {
-      // Parallelize fetching for full load to avoid 4+ seconds sequential block
-      const offsets = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000];
-      const fetchPromises = offsets.map(offset => 
-        supabaseFetch<any[]>(
+    // Check if we can use the cache
+    if (!searchKeyword || !searchKeyword.trim()) {
+      if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+        // Filter out zero stocks from cache
+        viewRowsNonZero = memoryStokFisikCache.filter(r => (r.sisa_stok ?? r.qty ?? 0) !== 0);
+      }
+    }
+
+    // If cache is empty or searchKeyword is provided, fetch from network
+    if (viewRowsNonZero.length === 0) {
+      const pageSize = 2000;
+      
+      if (searchKeyword && searchKeyword.trim()) {
+        // If there's a search keyword, it's usually a small result set, fetch once
+        const chunk = await supabaseFetch<any[]>(
           'view_stok_realtime',
           'GET',
           null,
-          `select=*&sisa_stok=neq.0&limit=${pageSize}&offset=${offset}`
-        ).catch(() => []) // fail gracefully for each chunk
-      );
-      
-      const results = await Promise.all(fetchPromises);
-      for (const chunk of results) {
-        if (chunk && Array.isArray(chunk)) {
-          viewRowsNonZero.push(...chunk);
+          `select=sku,nama_produk,size,lokasi,area,sisa_stok&sisa_stok=neq.0${searchFilter}&limit=3000`
+        );
+        if (chunk && Array.isArray(chunk)) viewRowsNonZero = chunk;
+      } else {
+        // Parallelize fetching for full load to avoid 4+ seconds sequential block
+        const offsets = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000];
+        const fetchPromises = offsets.map(offset => 
+          supabaseFetch<any[]>(
+            'view_stok_realtime',
+            'GET',
+            null,
+            `select=sku,nama_produk,size,lokasi,area,sisa_stok&sisa_stok=neq.0&limit=${pageSize}&offset=${offset}`
+          ).catch(() => []) // fail gracefully for each chunk
+        );
+        
+        const results = await Promise.all(fetchPromises);
+        for (const chunk of results) {
+          if (chunk && Array.isArray(chunk)) {
+            viewRowsNonZero.push(...chunk);
+          }
         }
       }
     }
@@ -3081,7 +3089,7 @@ export async function returnPeminjamanSupabase(noPeminjaman: string): Promise<bo
 }
 
 
-function extractPickingItemFromRow(row: any): PickingListItem | null {
+export function extractPickingItemFromRow(row: any): PickingListItem | null {
   if (!row) return null;
   const no_sj = String(row.no_sj || row.number_delivery || row.no_delivery || row.invoice || row.nomor_sj || row.sj || '').trim().toUpperCase();
   const sku = String(row.sku || row.code || row.barcode || '').trim().toUpperCase();
@@ -3993,7 +4001,7 @@ export async function fetchRosterShiftList(
   endDate?: string
 ): Promise<RosterShiftRecord[]> {
   try {
-    let query = 'select=*&order=tanggal.asc';
+    let query = 'select=*&order=tanggal.asc&limit=1000';
     if (nik) {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }
@@ -4016,7 +4024,7 @@ export async function fetchRosterShiftList(
  */
 export async function fetchMasterShiftList(): Promise<MasterShiftRecord[]> {
   try {
-    const data = await supabaseFetch<MasterShiftRecord[]>('master_shift', 'GET', null, 'order=id.asc');
+    const data = await supabaseFetch<MasterShiftRecord[]>('master_shift', 'GET', null, 'order=id.asc&limit=100');
     return data || [];
   } catch (err) {
     console.warn('fetchMasterShiftList error:', err);
@@ -4029,7 +4037,7 @@ export async function fetchMasterShiftList(): Promise<MasterShiftRecord[]> {
  */
 export async function fetchLemburRecords(nik?: string): Promise<LemburRecord[]> {
   try {
-    let query = 'select=*&order=tanggal.desc,created_at.desc';
+    let query = 'select=*&order=tanggal.desc,created_at.desc&limit=500';
     if (nik) {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }
@@ -4097,7 +4105,7 @@ export async function updateLemburStatus(
  */
 export async function fetchCutiRecords(nik?: string): Promise<PerijinanCutiRecord[]> {
   try {
-    let query = 'select=*&order=tgl_mulai.desc,created_at.desc';
+    let query = 'select=*&order=tgl_mulai.desc,created_at.desc&limit=500';
     if (nik) {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }
@@ -4159,7 +4167,7 @@ export async function updateCutiStatus(
  */
 export async function fetchKaryawanDirectory(): Promise<KaryawanRecord[]> {
   try {
-    const data = await supabaseFetch<KaryawanRecord[]>('karyawan', 'GET', null, 'order=nik.asc');
+    const data = await supabaseFetch<KaryawanRecord[]>('karyawan', 'GET', null, 'order=nik.asc&limit=1000');
     return data || [];
   } catch (err) {
     console.warn('fetchKaryawanDirectory error:', err);
@@ -4216,7 +4224,7 @@ export async function fetchPresensiRange(
   nik?: string
 ): Promise<PresensiRecord[]> {
   try {
-    let query = `select=*&tanggal=gte.${encodeURIComponent(startDate)}&tanggal=lte.${encodeURIComponent(endDate)}&order=tanggal.desc`;
+    let query = `select=*&tanggal=gte.${encodeURIComponent(startDate)}&tanggal=lte.${encodeURIComponent(endDate)}&order=tanggal.desc&limit=1000`;
     if (nik && nik !== 'ALL') {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }

@@ -36,6 +36,7 @@ import {
   PenerimaanVariantItem,
   SimpanPenerimaanPayload,
 } from '../types';
+import { globalRealtimeStore } from '../services/store';
 import {
   fetchPenerimaanProduksiFromSupabase,
   simpanBatchPenerimaanProduksiToSupabase,
@@ -201,21 +202,20 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     window.addEventListener('wms_penerimaan_produksi_updated', handleUpdateEvent);
 
     // Supabase Realtime Channel
-    const supabase = getSupabaseClient();
-    const channel = supabase
-      .channel('realtime_penerimaan_produksi')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'penerimaan_produksi' },
-        () => {
-          loadData();
-        }
-      )
-      .subscribe();
+    let debounceTimer: any = null;
+    const triggerDebouncedSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadData();
+      }, 400);
+    };
+
+    const unsub = globalRealtimeStore.subscribe('penerimaan_produksi', triggerDebouncedSync);
 
     return () => {
       window.removeEventListener('wms_penerimaan_produksi_updated', handleUpdateEvent);
-      supabase.removeChannel(channel);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsub();
     };
   }, []);
 
@@ -752,7 +752,6 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
       onShowToast(`Penerimaan ${editingBatch.no_surat_jalan} berhasil diperbarui!`, 'success');
       setEditingBatch(null);
-      loadData();
     } catch (err: any) {
       console.error('Gagal update batch penerimaan:', err);
       onShowToast(`Gagal menyimpan perubahan: ${err.message || 'Error'}`, 'error');
@@ -790,6 +789,13 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     if (!deletingTarget) return;
 
     setIsDeleting(true);
+    const prevList = [...dataList];
+    if (deletingTarget.type === 'single' && deletingTarget.id) {
+      setDataList((prev) => prev.filter((it) => it.id !== deletingTarget.id));
+    } else if (deletingTarget.type === 'batch') {
+      setDataList((prev) => prev.filter((it) => it.no_surat_jalan !== deletingTarget.no_surat_jalan));
+    }
+
     try {
       if (deletingTarget.type === 'single' && deletingTarget.id) {
         await hapusPenerimaanProduksiSingleRowFromSupabase(deletingTarget.id);
@@ -805,9 +811,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         }
       }
       setDeletingTarget(null);
-      loadData();
     } catch (err: any) {
       console.error('Gagal hapus data:', err);
+      setDataList(prevList);
       onShowToast('Gagal menghapus data penerimaan barang.', 'error');
     } finally {
       setIsDeleting(false);

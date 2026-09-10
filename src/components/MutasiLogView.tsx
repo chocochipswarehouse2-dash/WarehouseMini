@@ -199,19 +199,31 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     loadLogs();
 
     // Supabase Realtime via global store
-    let debounceTimer: any = null;
-
-    const triggerDebouncedSync = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        loadLogs();
-      }, 400);
+    const handleRealtimeUpdate = (payload: any) => {
+      if (!payload) return;
+      
+      setLogs((prevLogs) => {
+        const { eventType, new: newRow, old: oldRow } = payload;
+        
+        if (eventType === 'INSERT' && newRow) {
+          // Check if already exists to avoid duplicates
+          if (prevLogs.some((l) => l.id === newRow.id)) return prevLogs;
+          return [newRow as LogProdukItem, ...prevLogs];
+        } 
+        else if (eventType === 'UPDATE' && newRow) {
+          return prevLogs.map((l) => (l.id === newRow.id ? (newRow as LogProdukItem) : l));
+        } 
+        else if (eventType === 'DELETE' && oldRow) {
+          return prevLogs.filter((l) => l.id !== oldRow.id);
+        }
+        
+        return prevLogs;
+      });
     };
 
-    const unsub = globalRealtimeStore.subscribe('log_produk', triggerDebouncedSync);
+    const unsub = globalRealtimeStore.subscribe('log_produk', handleRealtimeUpdate);
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
     };
   }, []);
@@ -338,7 +350,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       if (res.success) {
         if (onNotify) onNotify(`Invoice ${editingInvoice} berhasil diperbarui (${res.count} item)!`, 'success');
         setEditingInvoice(null);
-        await loadLogs();
+        
       } else {
         if (onNotify) onNotify(`Gagal menyimpan perubahan: ${res.error}`, 'error');
       }
@@ -363,6 +375,9 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         setIsActionLoading(true);
         showGlobalLoading('Menghapus log...');
 
+        const prevLogs = [...logs];
+        const prevEditItems = [...editInvoiceItems];
+
         // Optimistic UI updates
         setLogs((prev) => prev.filter((it) => it.id !== id));
         if (fromModal) {
@@ -373,14 +388,16 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           const res = await deleteLogProdukItem(id);
           if (res.success) {
             if (onNotify) onNotify('Item mutasi log berhasil dihapus.', 'info');
-            await loadLogs();
+            
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            await loadLogs();
+            setLogs(prevLogs);
+            if (fromModal) setEditInvoiceItems(prevEditItems);
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          await loadLogs();
+          setLogs(prevLogs);
+          if (fromModal) setEditInvoiceItems(prevEditItems);
         } finally {
           setIsActionLoading(false);
           hideGlobalLoading();
@@ -402,6 +419,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         setIsActionLoading(true);
         showGlobalLoading('Menghapus invoice...');
 
+        const prevLogs = [...logs];
+
         // Optimistic update
         setLogs((prev) => prev.filter((it) => it.invoice !== invoice));
 
@@ -409,14 +428,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           const res = await deleteLogProdukInvoice(invoice);
           if (res.success) {
             if (onNotify) onNotify(`Seluruh mutasi pada invoice ${invoice} berhasil dihapus.`, 'info');
-            await loadLogs();
+            
           } else {
             if (onNotify) onNotify(`Gagal menghapus invoice: ${res.error}`, 'error');
-            await loadLogs();
+            setLogs(prevLogs);
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          await loadLogs();
+          setLogs(prevLogs);
         } finally {
           setIsActionLoading(false);
           hideGlobalLoading();
@@ -445,14 +464,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           if (res.success) {
             if (onNotify) onNotify(`${res.count} item mutasi berhasil dihapus.`, 'success');
             setSelectedIds(new Set());
-            await loadLogs();
+            
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            await loadLogs();
+            
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          await loadLogs();
+          
         } finally {
           setIsActionLoading(false);
         }
@@ -481,14 +500,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           if (res.success) {
             if (onNotify) onNotify(`${res.count} item mutasi hasil filter berhasil dihapus.`, 'success');
             setSelectedIds(new Set());
-            await loadLogs();
+            
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            await loadLogs();
+            
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          await loadLogs();
+          
         } finally {
           setIsActionLoading(false);
         }
@@ -518,14 +537,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
           if (res.success) {
             if (onNotify) onNotify(`Mutasi log rentang tanggal ${dateFilterModal.start} - ${dateFilterModal.end} berhasil dihapus.`, 'success');
             setSelectedIds(new Set());
-            await loadLogs();
+            
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            await loadLogs();
+            
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          await loadLogs();
+          
         } finally {
           setIsActionLoading(false);
         }

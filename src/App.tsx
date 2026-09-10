@@ -429,16 +429,28 @@ export default function App() {
     });
   }, []);
 
+  const sessionLoadedRef = React.useRef<string | null>(null);
+
   // Load product database on mount & session ready
   useEffect(() => {
+    if (!session) {
+      sessionLoadedRef.current = null;
+      return;
+    }
+
+    if (sessionLoadedRef.current === session.username) {
+      return;
+    }
+    
+    sessionLoadedRef.current = session.username;
+
     loadProducts();
     // Preload physical stock in background so Inventory tab opens instantly with full 4,500+ items
     fetchSupabaseStokFisikDirect().catch((err) => {
       console.warn('Background physical stock preload warning:', err);
     });
-    if (session) {
-      requestScreenWakeLock();
-    }
+    
+    requestScreenWakeLock();
   }, [session, loadProducts]);
 
   // Set up Supabase Real-time listener for log_produk, master_produk, & other warehouse activity
@@ -536,6 +548,20 @@ export default function App() {
           (payload) => {
             globalRealtimeStore.notify('peminjaman', payload);
             // Removed loadProducts() to save egress
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'penerimaan_produksi' },
+          (payload) => {
+            globalRealtimeStore.notify('penerimaan_produksi', payload);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'perbaikan_tickets' },
+          (payload) => {
+            globalRealtimeStore.notify('perbaikan_tickets', payload);
           }
         )
         .on(
