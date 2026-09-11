@@ -224,6 +224,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
   }, [drafts, activeDraftId]);
 
   const [submitting, setSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<'pending' | 'selesai'>('pending');
   const [detailFilter, setDetailFilter] = useState<'ALL' | 'COCOK' | 'SELISIH'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -536,7 +537,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
         qty_scan: item.qty_scan,
         selisih: item.selisih,
         status_item: item.status,
-        status_sj: 'pending',
+        status_sj: submitStatus,
         is_unexpected: false,
         submitted_by: submittedBy,
         created_at: nowIso,
@@ -558,7 +559,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
         qty_scan: val.qty,
         selisih: val.qty,
         status_item: 'LEBIH' as const,
-        status_sj: 'pending',
+        status_sj: submitStatus,
         is_unexpected: true,
         submitted_by: submittedBy,
         created_at: nowIso,
@@ -573,7 +574,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
         source: activeDraft.source,
         destination: activeDraft.destination,
         tanggal_sj: activeDraft.tanggal_sj,
-        status: 'pending', // Sesuai instruksi: disubmit masuk ke list pengecekan otomatis langsung ditulis ke sheet dengan status pending
+        status: submitStatus,
         status_komparasi: summary.has_selisih ? 'SELISIH' : 'COCOK',
         total_qty_sj: summary.total_sj,
         total_qty_terima: summary.total_scan + summary.total_unexpected_qty,
@@ -1319,12 +1320,40 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     <div>
                       <div className={`text-sm font-bold ${summary.has_selisih ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
                         {summary.has_selisih
-                          ? `Terdapat ${summary.kurang + summary.lebih + summary.unexpectedCount} SKU berselisih. Data akan disubmit ke Sheet dengan status PENDING.`
-                          : 'Semua barang cocok dengan Surat Jalan ✓ (Status PENDING saat disubmit ke sheet)'}
+                          ? `Terdapat ${summary.kurang + summary.lebih + summary.unexpectedCount} SKU berselisih.`
+                          : 'Semua barang cocok dengan Surat Jalan ✓'}
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Keseluruhan data per baris produk akan ditulis ke database sheet (bukan JSON blob).
+                        Keseluruhan data per baris produk akan ditulis ke database sheet.
                       </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-4 mt-2 p-3 bg-slate-50 dark:bg-[#0f172a] rounded-xl border border-slate-200 dark:border-slate-700">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tentukan Status Surat Jalan:</label>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="submitStatus" 
+                          value="pending" 
+                          checked={submitStatus === 'pending'} 
+                          onChange={() => setSubmitStatus('pending')} 
+                          className="w-4 h-4 text-primary-600 border-slate-300 focus:ring-primary-500" 
+                        />
+                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">PENDING</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="submitStatus" 
+                          value="selesai" 
+                          checked={submitStatus === 'selesai'} 
+                          onChange={() => setSubmitStatus('selesai')} 
+                          className="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500" 
+                        />
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded">SELESAI</span>
+                      </label>
                     </div>
                   </div>
 
@@ -1337,7 +1366,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     {submitting ? (
                       <><RefreshCw className="w-4 h-4 animate-spin" /> Menyimpan ke Sheet...</>
                     ) : (
-                      <><Send className="w-4 h-4" /> Submit Pengecekan ke Sheet (Status Pending)</>
+                      <><Send className="w-4 h-4" /> Submit Pengecekan ke Sheet</>
                     )}
                   </button>
                 </div>
