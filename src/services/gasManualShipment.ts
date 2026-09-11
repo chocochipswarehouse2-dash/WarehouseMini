@@ -166,18 +166,22 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
   } catch {}
 
   try {
-    const url = `${getGasUrl()}?action=getOrders`;
-    const res = await fetch(url, { method: 'GET' });
-    if (!res.ok) throw new Error(`HTTP status ${res.status}`);
-    const data = await res.json();
-    if (data && data.success && Array.isArray(data.data)) {
+    const sb = getSupabaseClient();
+    const { data, error } = await sb
+      .from('manual_shipment')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    
+    if (data && Array.isArray(data)) {
       try {
-        localStorage.setItem('wms_cached_manual_shipments', JSON.stringify(data.data));
+        localStorage.setItem('wms_cached_manual_shipments', JSON.stringify(data));
       } catch {}
-      return data.data;
+      return data as ManualShipmentOrder[];
     }
   } catch (error) {
-    console.warn('Gagal memuat manual shipments dari GAS, menggunakan cache lokal:', error);
+    console.warn('Gagal memuat manual shipments dari Supabase, menggunakan cache lokal:', error);
   }
 
   return cached;
@@ -195,7 +199,6 @@ export async function submitManualShipment(orderData: ManualShipmentOrder): Prom
   try {
     const sb = getSupabaseClient();
     const payload = {
-      ...(orderData.id ? { id: orderData.id } : {}),
       no_pesanan: orderData.no_pesanan,
       tanggal: orderData.created_at || new Date().toISOString(),
       nama_pengirim: orderData.nama_pengirim,
@@ -312,7 +315,6 @@ export async function editManualShipment(orderData: ManualShipmentOrder): Promis
   try {
     const sb = getSupabaseClient();
     const payload = {
-      ...(orderData.id ? { id: orderData.id } : {}),
       no_pesanan: orderData.no_pesanan,
       tanggal: orderData.created_at || new Date().toISOString(),
       nama_pengirim: orderData.nama_pengirim,
