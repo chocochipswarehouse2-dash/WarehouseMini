@@ -563,13 +563,13 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           <style>
             body { font-family: monospace; font-size: 12px; margin: 0; padding: 20px; color: #000; }
             h2 { margin: 0 0 10px 0; font-size: 16px; border-bottom: 1px dashed #000; padding-bottom: 5px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
             th, td { border: 1px dashed #000; padding: 5px; text-align: left; }
-            .header-info { margin-bottom: 15px; }
-            .barcode { font-size: 14px; font-weight: bold; }
+            th { border-bottom: 2px dashed #000; }
+            .header-info { margin-bottom: 20px; }
+            .order-header { margin-bottom: 5px; line-height: 1.3; }
             @media print {
               body { margin: 0; padding: 10px; }
-              .page-break { page-break-after: always; }
               @page { size: portrait; margin: 5mm; }
             }
           </style>
@@ -579,10 +579,10 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           <div class="header-info">Dicetak: ${todayStr}<br/>Admin: ${session?.username}</div>
     `);
 
-    itemsToPrint.forEach((order, index) => {
+    itemsToPrint.forEach((order) => {
       printWin.document.write(`
-        <div style="margin-bottom: 30px; ${index < itemsToPrint.length - 1 ? 'page-break-after: always;' : ''}">
-          <div style="margin-bottom: 10px;">
+        <div>
+          <div class="order-header">
             <strong>No Pesanan:</strong> ${order.no_pesanan} <br/>
             <strong>Order ID:</strong> ${order.no_transaksi_customer || '-'} <br/>
             <strong>Jasa Kirim:</strong> ${order.jasa_kirim || '-'} <br/>
@@ -593,18 +593,28 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           <table>
             <thead>
               <tr>
-                <th>Produk & SKU</th>
-                <th>Qty</th>
-                <th>Fulfillment</th>
-                <th>Lokasi (Marketplace Only)</th>
+                <th style="width: 5%">#</th>
+                <th style="width: 45%">Nama Produk</th>
+                <th style="width: 15%">SKU</th>
+                <th style="width: 15%">Variasi</th>
+                <th style="width: 5%">Qty</th>
+                <th style="width: 15%">Lokasi</th>
               </tr>
             </thead>
             <tbody>
       `);
 
-      order.items.forEach(item => {
-        // find location if marketplace
+      order.items.forEach((item, itemIdx) => {
+        // find location and details
         let location = '-';
+        let variasi = 'Default';
+        
+        // Try to extract variasi from nama produk (usually after dash)
+        const parts = item.nama_produk.split('-');
+        if (parts.length > 1) {
+          variasi = parts[parts.length - 1].trim();
+        }
+
         if (item.fulfillment === 'Marketplace') {
           const prod = productCatalog.find(p => p.k === item.sku);
           if (prod && prod.lokasi) location = prod.lokasi;
@@ -612,9 +622,11 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
         printWin.document.write(`
           <tr>
+            <td>${itemIdx + 1}</td>
             <td>${item.nama_produk}</td>
+            <td>${item.sku}</td>
+            <td>${variasi}</td>
             <td>${item.qty}</td>
-            <td>${item.fulfillment}</td>
             <td>${location}</td>
           </tr>
         `);
