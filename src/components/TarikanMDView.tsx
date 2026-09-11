@@ -618,7 +618,12 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
     setLoadingRecords(true);
     try {
       const data = await fetchTarikanMDRecords();
-      setRecords(data.reverse()); // Terbaru di atas
+      const sorted = [...data].sort((a, b) => {
+        const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
+        const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
+        return timeB - timeA;
+      });
+      setRecords(sorted);
     } catch {
       onShowToast('Gagal memuat riwayat pengecekan.', 'error');
     } finally {

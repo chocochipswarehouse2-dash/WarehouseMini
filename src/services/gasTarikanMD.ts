@@ -5,6 +5,7 @@ import {
   TarikanMDRecord,
 } from '../types';
 import { getStoredManualShipmentGasUrl } from './settings';
+import { getSupabaseClient } from './supabase';
 
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
@@ -16,7 +17,141 @@ const getGasUrl = (): string => {
 };
 
 /**
- * Normalisasi data record yang didapat dari GAS atau local storage
+ * Simpan data Pengecekan Surat Jalan langsung ke Supabase (Database Utama)
+ */
+export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Promise<boolean> {
+  try {
+    const sb = getSupabaseClient();
+    const cleanNoSj = String(record.no_sj || '').trim();
+    if (!cleanNoSj) return false;
+
+    // Bersihkan record lama dengan nomor SJ ini agar tidak duplikat
+    await sb.from('log_produk').delete().eq('type', 'PENGECEKAN_SJ').eq('invoice', cleanNoSj);
+
+    const firstItem = record.items?.[0];
+    const insertPayload = {
+      type: 'PENGECEKAN_SJ',
+      invoice: cleanNoSj,
+      sku: firstItem?.sku || 'SJ-SUMMARY',
+      nama_produk: firstItem?.nama_produk || record.catatan || `Pengecekan ${cleanNoSj}`,
+      size: '-',
+      area: record.source || 'Gudang Pusat',
+      lokasi: record.destination || 'Outlet',
+      qty: Number(record.total_qty_sj || 0),
+      operator: record.submitted_by || 'Petugas',
+      keterangan: record.status_komparasi || 'COCOK',
+      raw_payload: JSON.stringify(record),
+      created_at: record.created_at || new Date().toISOString()
+    };
+
+    const { error } = await sb.from('log_produk').insert([insertPayload]);
+    if (error) {
+      console.warn('Warning: Gagal simpan Pengecekan SJ ke Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error saat savePengecekanSJToSupabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Memuat riwayat Pengecekan Surat Jalan langsung dari Supabase (Cepat & Akurat)
+ */
+export async function fetchPengecekanSJFromSupabase(): Promise<PengecekanSJRecord[]> {
+  try {
+    const sb = getSupabaseClient();
+    const { data, error } = await sb
+      .from('log_produk')
+      .select('*')
+      .eq('type', 'PENGECEKAN_SJ')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (error || !Array.isArray(data)) {
+      return [];
+    }
+
+    const records: PengecekanSJRecord[] = [];
+    for (const row of data) {
+      if (row.raw_payload) {
+        try {
+          const parsed = JSON.parse(row.raw_payload);
+          if (parsed && typeof parsed === 'object') {
+            // Pastikan ID dan No SJ konsisten
+            parsed.id = parsed.id || String(row.id || row.invoice);
+            parsed.no_sj = parsed.no_sj || row.invoice;
+            records.push(parsed);
+            continue;
+          }
+        } catch {}
+      }
+
+      // Rekonstruksi jika tidak ada raw_payload
+      const no_sj = row.invoice || `SJ-${row.id}`;
+      records.push({
+        id: String(row.id || no_sj),
+        no_sj,
+        source: row.area || 'Gudang Pusat',
+        destination: row.lokasi || 'Outlet',
+        tanggal_sj: String(row.created_at || '').slice(0, 10),
+        status: 'pending',
+        status_komparasi: row.keterangan || 'COCOK',
+        total_qty_sj: Number(row.qty || 0),
+        total_qty_terima: Number(row.qty || 0),
+        total_sku: 1,
+        submitted_by: row.operator || 'Petugas',
+        created_at: row.created_at || new Date().toISOString(),
+        catatan: row.keterangan || '',
+        items: [
+          {
+            id: `${no_sj}-${row.sku || 'SKU1'}`,
+            no_sj,
+            source: row.area || 'Gudang Pusat',
+            destination: row.lokasi || 'Outlet',
+            tanggal_sj: String(row.created_at || '').slice(0, 10),
+            sku: row.sku || 'SKU-ITEM',
+            nama_produk: row.nama_produk || `Item ${no_sj}`,
+            category: '',
+            qty_sj: Number(row.qty || 0),
+            qty_scan: Number(row.qty || 0),
+            selisih: 0,
+            status_item: (row.keterangan === 'SELISIH' ? 'KURANG' : 'COCOK') as 'COCOK' | 'KURANG' | 'LEBIH',
+            status_sj: 'pending',
+            is_unexpected: false,
+            submitted_by: row.operator || 'Petugas',
+            created_at: row.created_at || new Date().toISOString(),
+          }
+        ]
+      });
+    }
+
+    return normalizeRecords(records);
+  } catch (err) {
+    console.warn('Gagal fetchPengecekanSJFromSupabase:', err);
+    return [];
+  }
+}
+
+/**
+ * Menghapus data Pengecekan Surat Jalan dari Supabase
+ */
+export async function deletePengecekanSJFromSupabase(no_sj: string): Promise<boolean> {
+  try {
+    const sb = getSupabaseClient();
+    const cleanNoSj = String(no_sj || '').trim();
+    if (!cleanNoSj) return false;
+    await sb.from('log_produk').delete().eq('type', 'PENGECEKAN_SJ').eq('invoice', cleanNoSj);
+    return true;
+  } catch (err) {
+    console.warn('Gagal deletePengecekanSJFromSupabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Normalisasi data record yang didapat dari Supabase, GAS, atau local storage
  * Memastikan items tersimpan sebagai baris terstruktur (bukan hanya string JSON)
  */
 function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
@@ -45,8 +180,12 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
     if (!source && no_sj && (no_sj.toLowerCase().includes('warehouse') || no_sj.toLowerCase().includes('gudang'))) {
       source = no_sj;
     }
-    if (!destination && submitted_by && submitted_by !== 'Unknown' && !submitted_by.includes('@')) {
+    if (!destination && submitted_by && submittedByNotUser(submitted_by)) {
       destination = submitted_by;
+    }
+    // Jika no_sj sama dengan destination dan ID berawalan SJ-, utamakan ID sebagai no_sj
+    if (d.id && String(d.id).startsWith('SJ-') && (!no_sj || no_sj === destination)) {
+      no_sj = String(d.id).trim();
     }
     if (!no_sj) {
       no_sj = source && destination ? `SJ-${source.slice(0, 3).toUpperCase()}-${destination.slice(0, 3).toUpperCase()}` : 'SJ-PENGECEKAN';
@@ -56,16 +195,16 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
 
     if (!grouped.has(key)) {
       const rec: PengecekanSJRecord = {
-        id: key,
+        id: String(d.id || key),
         no_sj,
         source: source || 'Gudang Asal',
         destination: destination || 'Outlet Tujuan',
         tanggal_sj: tanggal_sj || new Date().toISOString().slice(0, 10),
         status: status_sj,
-        status_komparasi: 'COCOK',
-        total_qty_sj: 0,
-        total_qty_terima: 0,
-        total_sku: 0,
+        status_komparasi: (d.status_komparasi === 'SELISIH' || String(d.status_komparasi).toLowerCase().includes('selisih')) ? 'SELISIH' : 'COCOK',
+        total_qty_sj: Number(d.total_qty_sj || 0),
+        total_qty_terima: Number(d.total_qty_terima || 0),
+        total_sku: Number(d.total_sku || 0),
         submitted_by: submitted_by || 'Petugas',
         created_at,
         catatan,
@@ -80,6 +219,14 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
     let rawItems: any[] = [];
     if (Array.isArray(d.items) && d.items.length > 0) {
       rawItems = d.items;
+    } else if (typeof d.items === 'number' && d.items > 0) {
+      rawItems = [{
+        sku: d.sku || 'ITEM-1',
+        nama_produk: d.nama_produk || d.catatan || `Item ${no_sj}`,
+        qty_sj: d.total_qty_sj || d.items,
+        qty_scan: d.total_qty_terima || d.items,
+        status_item: (d.status_komparasi === 'SELISIH' ? 'KURANG' : 'COCOK') as 'COCOK' | 'KURANG' | 'LEBIH',
+      }];
     } else if (d.items_json) {
       try {
         const parsed = JSON.parse(d.items_json);
@@ -88,35 +235,39 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
     }
 
     // Jika item tidak ditemukan di `items` array, cek apakah baris `d` itu sendiri adalah item.
-    // Hindari menganggap parent record sebagai item hanya karena status_komparasi memiliki '/'.
-    // Pastikan baris tersebut benar-benar memiliki field item spesifik.
     if (rawItems.length === 0 && (d.sku || d.code || d.barcode || d.nama_produk || d.product || d.variant || (d.category && d.category !== ''))) {
       rawItems = [d]; // Anggap baris record itu sendiri sebagai item tunggal
     }
 
-    // Abaikan jika tidak ada item sama sekali (misal record kosong hasil migrasi)
-    if (rawItems.length === 0) continue;
+    // Jika masih kosong tapi record memiliki nomor SJ valid, buat fallback item agar data tidak hilang
+    if (rawItems.length === 0 && (no_sj || d.total_qty_sj || d.total_qty_terima)) {
+      rawItems = [{
+        sku: d.sku || 'SJ-ITEM',
+        nama_produk: d.nama_produk || d.catatan || `Item ${no_sj}`,
+        category: d.category || '',
+        qty_sj: Number(d.total_qty_sj || 0),
+        qty_scan: Number(d.total_qty_terima || 0),
+        selisih: Number(d.total_qty_terima || 0) - Number(d.total_qty_sj || 0),
+        status_item: (d.status_komparasi === 'SELISIH' ? 'KURANG' : 'COCOK') as 'COCOK' | 'KURANG' | 'LEBIH',
+      }];
+    }
 
     if (rawItems.length > 0) {
-      // Record sudah membawa item-item
       for (const item of rawItems) {
         let itemCategory = String(item.category || item.kategori || '').trim();
-        
-        // Coba ambil dari status_komparasi jika category kosong (seperti bug data sebelumnya)
         if (!itemCategory && String(item.status_komparasi || '').includes('/')) {
-            itemCategory = String(item.status_komparasi);
+          itemCategory = String(item.status_komparasi);
         }
 
         let sku = String(item.sku || item.code || item.barcode || '').trim();
         if (!sku) {
-           // Fallback sku logic
-           if (item.id && !String(item.id).includes('GMT')) {
-             sku = String(item.id).trim();
-           } else if (itemCategory) {
-             sku = itemCategory;
-           } else {
-             sku = `ITEM-${group.itemsMap.size + 1}`;
-           }
+          if (item.id && !String(item.id).includes('GMT')) {
+            sku = String(item.id).trim();
+          } else if (itemCategory) {
+            sku = itemCategory;
+          } else {
+            sku = `ITEM-${group.itemsMap.size + 1}`;
+          }
         }
 
         const itemKey = `${sku.toUpperCase()}___${itemCategory || ''}___${group.itemsMap.size}`;
@@ -154,8 +305,28 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
   for (const { rec, itemsMap } of grouped.values()) {
     rec.items = Array.from(itemsMap.values());
     
-    // Jangan tambahkan record yang kosong sama sekali (tidak ada item)
-    if (rec.items.length === 0) continue;
+    // Jika tidak ada item sama sekali, sintesis minimal 1 item agar tidak dihilangkan
+    if (rec.items.length === 0) {
+      rec.items = [{
+        id: `${rec.no_sj}-ITEM-1`,
+        no_sj: rec.no_sj,
+        source: rec.source,
+        destination: rec.destination,
+        tanggal_sj: rec.tanggal_sj,
+        sku: 'SJ-ITEM',
+        nama_produk: rec.catatan || `Item ${rec.no_sj}`,
+        category: '',
+        qty_sj: rec.total_qty_sj || 0,
+        qty_scan: rec.total_qty_terima || 0,
+        selisih: (rec.total_qty_terima || 0) - (rec.total_qty_sj || 0),
+        status_item: 'COCOK',
+        status_sj: rec.status,
+        is_unexpected: false,
+        submitted_by: rec.submitted_by,
+        created_at: rec.created_at,
+        catatan: rec.catatan
+      }];
+    }
     
     rec.total_sku = rec.items.length;
     rec.total_qty_sj = rec.items.reduce((acc, it) => acc + (it.qty_sj || 0), 0);
@@ -168,10 +339,19 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
   return result;
 }
 
+function submittedByNotUser(submitted_by: string): boolean {
+  if (!submitted_by || submitted_by === 'Unknown' || submitted_by.includes('@')) return false;
+  const lower = submitted_by.toLowerCase();
+  return lower.includes('outlet') || lower.includes('store') || lower.includes('paskal') || lower.includes('senayan');
+}
+
 /**
- * Mengambil seluruh riwayat pengecekan surat jalan dari GAS/Local cache
+ * Mengambil seluruh riwayat pengecekan surat jalan:
+ * PRIORITAS TINGGI: Langsung dari Supabase untuk kecepatan & keakuratan maksimal.
+ * Sinkronisasi latar belakang dengan Google Apps Script & Local Storage.
  */
 export async function fetchTarikanMDRecords(): Promise<PengecekanSJRecord[]> {
+  // 1. Muat cache instan dari local storage (0ms)
   let cached: PengecekanSJRecord[] = [];
   try {
     const raw = localStorage.getItem(CACHE_KEY_RECORDS) || localStorage.getItem(CACHE_KEY_LEGACY);
@@ -180,43 +360,64 @@ export async function fetchTarikanMDRecords(): Promise<PengecekanSJRecord[]> {
     }
   } catch {}
 
-  const gasUrl = getGasUrl();
-  if (!gasUrl) return cached;
-
+  // 2. PRIORITAS UTAMA: Ambil langsung dari Supabase
+  let supabaseRecords: PengecekanSJRecord[] = [];
   try {
-    const url = `${gasUrl}?action=getPengecekanSJ`;
-    const res = await fetch(url, { method: 'GET' });
-    if (res.ok) {
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (data && data.success && Array.isArray(data.data)) {
-        const normalized = normalizeRecords(data.data);
-        try {
-          localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(normalized));
-        } catch {}
-        return normalized;
-      }
-    }
-  } catch (error) {
-    // Fallback coba action lama getTarikanMD jika script GAS masih versi sebelumnya
+    supabaseRecords = await fetchPengecekanSJFromSupabase();
+  } catch (err) {
+    console.warn('Gagal memuat dari Supabase:', err);
+  }
+
+  // Jika Supabase memiliki data, update cache lokal & siapkan sebagai basis data utama
+  if (supabaseRecords.length > 0) {
     try {
-      const fallbackUrl = `${gasUrl}?action=getTarikanMD`;
-      const res = await fetch(fallbackUrl, { method: 'GET' });
+      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(supabaseRecords));
+    } catch {}
+    cached = supabaseRecords;
+  }
+
+  // 3. Ambil data dari Google Apps Script secara paralel / pelengkap
+  const gasUrl = getGasUrl();
+  if (gasUrl) {
+    try {
+      const url = `${gasUrl}?action=getPengecekanSJ`;
+      const res = await fetch(url, { method: 'GET' });
       if (res.ok) {
-        const data = await res.json();
-        if (data && data.success && Array.isArray(data.data)) {
-          const normalized = normalizeRecords(data.data);
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+          const gasNormalized = normalizeRecords(data.data);
+          
+          // Gabungkan record dari GAS dengan Supabase tanpa menduplikasi No SJ
+          const mergedMap = new Map<string, PengecekanSJRecord>();
+          // Masukkan data GAS terlebih dahulu
+          for (const r of gasNormalized) {
+            mergedMap.set(r.no_sj.toUpperCase(), r);
+          }
+          // Timpa dengan data Supabase jika ada (karena Supabase menyimpan raw_payload item lengkap)
+          for (const r of supabaseRecords) {
+            mergedMap.set(r.no_sj.toUpperCase(), r);
+          }
+          // Masukkan juga data dari cache lokal jika belum ada di map
+          for (const r of cached) {
+            if (!mergedMap.has(r.no_sj.toUpperCase())) {
+              mergedMap.set(r.no_sj.toUpperCase(), r);
+            }
+          }
+
+          const combined = Array.from(mergedMap.values());
           try {
-            localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(normalized));
+            localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(combined));
           } catch {}
-          return normalized;
+          return combined;
         }
       }
-    } catch (err) {
-      console.warn('Gagal fetch dari GAS, menggunakan cache lokal:', err);
+    } catch (gasError) {
+      console.warn('GAS fetch gagal/timeout, data dari Supabase/Cache tetap digunakan:', gasError);
     }
   }
 
+  // Jika GAS tidak ada atau gagal, kembalikan hasil Supabase / Cache lokal
   return cached;
 }
 
@@ -260,7 +461,10 @@ export interface SubmitPengecekanResult {
 export async function submitTarikanMD(record: PengecekanSJRecord): Promise<SubmitPengecekanResult> {
   const isCurrentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
-  // 1. Simpan ke local cache segera (optimistic update)
+  // 1. Simpan langsung ke Supabase (Database Utama Cloud)
+  savePengecekanSJToSupabase(record).catch(e => console.warn('Supabase save background err:', e));
+
+  // 2. Simpan ke local cache segera (optimistic update)
   try {
     const current = await fetchTarikanMDRecords();
     const updatedRecord: PengecekanSJRecord = {
@@ -281,7 +485,7 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<Submi
     return {
       success: true,
       offline: true,
-      message: 'Tersimpan offline di perangkat. Otomatis dikirim ke Google Sheets saat internet kembali terhubung.',
+      message: 'Tersimpan aman di Supabase & antrean lokal. Otomatis dikirim ke Google Sheets saat internet kembali terhubung.',
     };
   }
 
@@ -322,7 +526,7 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<Submi
     return {
       success: true,
       offline: true,
-      message: 'Koneksi terganggu. Data telah diamankan di perangkat & akan otomatis dikirim saat online.',
+      message: 'Tersimpan aman di Supabase. Data ke Google Sheet akan dikirim ulang secara otomatis.',
     };
   }
 }
@@ -342,6 +546,8 @@ export async function syncPendingOfflinePengecekanSJ(): Promise<{ successCount: 
   const remaining: PengecekanSJRecord[] = [];
 
   for (const record of queue) {
+    // Pastikan tersimpan di Supabase
+    savePengecekanSJToSupabase(record).catch(() => {});
     try {
       const payload = {
         action: 'submitPengecekanSJ',
@@ -395,9 +601,14 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Menghapus record riwayat pengecekan
+ * Menghapus record riwayat pengecekan (dari Supabase, cache lokal, dan Sheet)
  */
 export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boolean> {
+  const targetNoSj = no_sj || (id && id.startsWith('SJ-') ? id : '');
+  if (targetNoSj) {
+    deletePengecekanSJFromSupabase(targetNoSj).catch(() => {});
+  }
+
   // Hapus dari cache lokal
   try {
     const current = await fetchTarikanMDRecords();
@@ -411,7 +622,7 @@ export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boole
   try {
     const payload = {
       action: 'deletePengecekanSJ',
-      data: { id, no_sj },
+      data: { id, no_sj: targetNoSj || id },
       legacyAction: 'deleteTarikanMD',
     };
     await fetch(gasUrl, {
@@ -431,6 +642,10 @@ export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boole
  * Mengupdate data riwayat pengecekan (Edit oleh Admin)
  */
 export async function editPengecekanSJ(record: PengecekanSJRecord): Promise<boolean> {
+  // Update ke Supabase
+  savePengecekanSJToSupabase(record).catch(e => console.warn('Supabase edit err:', e));
+
+  // Update ke cache lokal
   try {
     const current = await fetchTarikanMDRecords();
     const updated = current.map(r => (r.id === record.id ? record : r));

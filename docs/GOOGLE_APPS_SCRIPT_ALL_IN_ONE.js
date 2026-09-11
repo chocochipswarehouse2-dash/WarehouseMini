@@ -534,23 +534,54 @@ function handleDeleteDataAlamat(data) {
 // 4. MODUL PENGECEKAN SURAT JALAN (FORMAT DATABASE MULTI-BARIS)
 // =========================================================
 function getPengecekanSJSheet(ss) {
-  var sheet = ss.getSheetByName('PengecekanSJ') || ss.getSheetByName('TarikanMD') || ss.getSheetByName('tarikan_md');
+  var sheet = null;
+  // 1. Coba exact match terlebih dahulu
+  sheet = ss.getSheetByName('PengecekanSJ') || ss.getSheetByName('TarikanMD') || ss.getSheetByName('tarikan_md');
+
+  // 2. Jika belum ketemu, cari case-insensitive dan spasi-insensitive
+  if (!sheet) {
+    var targetNames = ['pengecekansj', 'tarikanmd', 'pengecekansuratjalan', 'suratjalan', 'pengecekan'];
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      var rawName = sheets[i].getName().trim().toLowerCase().replace(/[\s_.]+/g, '');
+      for (var t = 0; t < targetNames.length; t++) {
+        if (rawName === targetNames[t]) {
+          sheet = sheets[i];
+          break;
+        }
+      }
+      if (sheet) break;
+    }
+  }
+
+  // 3. Jika belum ada, buat sheet baru
   if (!sheet) {
     sheet = ss.insertSheet('PengecekanSJ');
     sheet.appendRow(PENGECEKAN_SJ_HEADERS);
     return sheet;
   }
 
+  // 4. Pastikan header baris 1 memuat PENGECEKAN_SJ_HEADERS
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(PENGECEKAN_SJ_HEADERS);
+  } else {
+    var firstRow = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+    var hasSku = firstRow.some(function(h) {
+      var clean = String(h || '').toLowerCase().trim().replace(/[\s_.]+/g, '');
+      return clean === 'sku' || clean === 'kodesku';
+    });
+    if (!hasSku || sheet.getLastColumn() < 15) {
+      sheet.getRange(1, 1, 1, PENGECEKAN_SJ_HEADERS.length).setValues([PENGECEKAN_SJ_HEADERS]);
+    }
   }
+
   return sheet;
 }
 
 /**
  * Membaca riwayat Pengecekan Surat Jalan
  * Mengelompokkan seluruh baris item menjadi 1 Record per Surat Jalan (No SJ + Source + Destination).
- * Mendukung format database baris per SKU maupun format sheet dengan header legacy.
+ * Mendukung format database baris per SKU maupun format sheet dengan header legacy / JSON.
  */
 function handleGetPengecekanSJ() {
   const ss = getSpreadsheet();
@@ -585,38 +616,6 @@ function handleGetPengecekanSJ() {
     return '';
   }
 
-  // Cek apakah sheet adalah format lama dengan kolom JSON utuh per baris
-  var isPureLegacyJson = colMap['itemsjson'] !== undefined && colMap['sku'] === undefined;
-
-  if (isPureLegacyJson) {
-    const legacyRecords = [];
-    for (var i = 1; i < values.length; i++) {
-      var r = values[i];
-      if (!r[0] && !r[3]) continue;
-      var rawItems = String(r[colMap['itemsjson']] || '[]');
-      var parsedItems = [];
-      try { parsedItems = JSON.parse(rawItems); } catch (e) {}
-
-      legacyRecords.push({
-        id: String(r[0] || ('SJ-' + i)),
-        no_sj: String(r[colMap['sjnumber'] !== undefined ? colMap['sjnumber'] : 3] || r[0] || ''),
-        tanggal_sj: String(r[colMap['tanggal'] !== undefined ? colMap['tanggal'] : 1] || ''),
-        source: String(r[colMap['source'] !== undefined ? colMap['source'] : 2] || ''),
-        destination: String(r[colMap['destination'] !== undefined ? colMap['destination'] : 3] || ''),
-        status: 'pending',
-        status_komparasi: String(r[colMap['status'] !== undefined ? colMap['status'] : 7] || 'COCOK'),
-        total_qty_sj: Number(r[colMap['totalqtysj'] !== undefined ? colMap['totalqtysj'] : 5]) || 0,
-        total_qty_terima: Number(r[colMap['totalqtyaktual'] !== undefined ? colMap['totalqtyaktual'] : 6]) || 0,
-        total_sku: Number(r[colMap['totalsku'] !== undefined ? colMap['totalsku'] : 4]) || parsedItems.length,
-        submitted_by: String(r[colMap['user'] !== undefined ? colMap['user'] : 2] || 'Petugas'),
-        created_at: String(r[colMap['tanggal'] !== undefined ? colMap['tanggal'] : 1] || new Date().toISOString()),
-        catatan: String(r[colMap['catatan'] !== undefined ? colMap['catatan'] : 8] || ''),
-        items: parsedItems
-      });
-    }
-    return jsonResponse({ success: true, data: legacyRecords });
-  }
-
   // Format Database Baris per Item SKU (Dikelompokkan menjadi 1 Surat Jalan)
   const sjMap = {};
   const sjList = [];
@@ -632,6 +631,11 @@ function handleGetPengecekanSJ() {
     var destination = getVal(row, ['destination', 'tujuan', 'destinationtujuan', 'ke', 'outlettujuan'], 3);
     var submittedBy = getVal(row, ['petugas', 'operator', 'admin', 'user', 'submittedby'], 13);
 
+    // Jika no_sj sama persis dengan destination dan row[0] ada nilai ID/SJ, utamakan row[0]
+    if (noSj === destination && row[0] && String(row[0]).trim() !== destination) {
+      noSj = String(row[0]).trim();
+    }
+
     // Normalisasi cerdas jika posisi kolom terisi nama gudang / outlet
     if (!source && noSj && (noSj.toLowerCase().includes('warehouse') || noSj.toLowerCase().includes('gudang'))) {
       source = noSj;
@@ -640,7 +644,7 @@ function handleGetPengecekanSJ() {
       destination = submittedBy;
     }
     if (!noSj) {
-      noSj = (source && destination) ? ('SJ-' + source.slice(0, 3).toUpperCase() + '-' + destination.slice(0, 3).toUpperCase()) : 'SJ-PENGECEKAN';
+      noSj = (source && destination) ? ('SJ-' + source.slice(0, 3).toUpperCase() + '-' + destination.slice(0, 3).toUpperCase()) : ('SJ-' + i);
     }
 
     // Kunci Pengelompokan: No SJ + Source + Destination
@@ -674,6 +678,54 @@ function handleGetPengecekanSJ() {
 
       sjMap[groupKey] = newRecord;
       sjList.push(newRecord);
+    }
+
+    // Cek apakah baris ini memuat items_json yang valid (format legacy JSON)
+    var itemsFromLegacyJson = null;
+    if (colMap['itemsjson'] !== undefined) {
+      var rawJson = String(row[colMap['itemsjson']] || '').trim();
+      if (rawJson.startsWith('[') && rawJson.endsWith(']')) {
+        try {
+          var parsed = JSON.parse(rawJson);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            itemsFromLegacyJson = parsed;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (itemsFromLegacyJson) {
+      for (var m = 0; m < itemsFromLegacyJson.length; m++) {
+        var itJson = itemsFromLegacyJson[m];
+        var itSku = String(itJson.sku || itJson.code || ('ITEM-' + (sjMap[groupKey].items.length + 1))).trim();
+        var itName = String(itJson.nama_produk || itJson.product || itSku).trim();
+        var itQtySj = Number(itJson.qty_sj !== undefined ? itJson.qty_sj : 0);
+        var itQtyScan = Number(itJson.qty_scan !== undefined ? itJson.qty_scan : (itJson.qty_terima || 0));
+        var itSelisih = Number(itJson.selisih !== undefined ? itJson.selisih : (itQtyScan - itQtySj));
+
+        sjMap[groupKey].items.push({
+          id: noSj + '-' + itSku + '-' + (sjMap[groupKey].items.length + 1),
+          no_sj: noSj,
+          source: sjMap[groupKey].source,
+          destination: sjMap[groupKey].destination,
+          tanggal_sj: sjMap[groupKey].tanggal_sj,
+          sku: itSku,
+          nama_produk: itName,
+          category: String(itJson.category || ''),
+          qty_sj: itQtySj,
+          qty_scan: itQtyScan,
+          selisih: itSelisih,
+          status_item: itJson.status_item || (itSelisih === 0 ? 'COCOK' : (itSelisih > 0 ? 'LEBIH' : 'KURANG')),
+          status_sj: sjMap[groupKey].status,
+          is_unexpected: Boolean(itJson.is_unexpected),
+          submitted_by: sjMap[groupKey].submitted_by,
+          created_at: sjMap[groupKey].created_at,
+          catatan: itJson.catatan || sjMap[groupKey].catatan
+        });
+        sjMap[groupKey].total_qty_sj += itQtySj;
+        sjMap[groupKey].total_qty_terima += itQtyScan;
+      }
+      continue;
     }
 
     // Ambil detail produk per baris
@@ -726,6 +778,27 @@ function handleGetPengecekanSJ() {
   // Evaluasi total SKU dan status komparasi dokumen
   for (var j = 0; j < sjList.length; j++) {
     var rec = sjList[j];
+    if (rec.items.length === 0) {
+      rec.items.push({
+        id: rec.no_sj + '-ITEM-1',
+        no_sj: rec.no_sj,
+        source: rec.source,
+        destination: rec.destination,
+        tanggal_sj: rec.tanggal_sj,
+        sku: 'SJ-ITEM',
+        nama_produk: rec.catatan || ('Item ' + rec.no_sj),
+        category: '',
+        qty_sj: rec.total_qty_sj,
+        qty_scan: rec.total_qty_terima,
+        selisih: rec.total_qty_terima - rec.total_qty_sj,
+        status_item: 'COCOK',
+        status_sj: rec.status,
+        is_unexpected: false,
+        submitted_by: rec.submitted_by,
+        created_at: rec.created_at,
+        catatan: rec.catatan
+      });
+    }
     rec.total_sku = rec.items.length;
     var hasMismatch = rec.items.some(function(it) { return it.selisih !== 0; });
     rec.status_komparasi = hasMismatch ? 'SELISIH' : 'COCOK';
