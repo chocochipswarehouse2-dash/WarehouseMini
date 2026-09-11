@@ -741,6 +741,70 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
     }
   };
 
+  const [bulkStatusAction, setBulkStatusAction] = useState<'pending' | 'selesai' | null>(null);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
+  const handleBulkUpdateStatus = async (newStatus: 'pending' | 'selesai') => {
+    if (filteredRecords.length === 0) {
+      onShowToast('Tidak ada data yang ditampilkan untuk diubah statusnya.', 'warning');
+      return;
+    }
+
+    const recordsToUpdate = filteredRecords.filter(r => r.status !== newStatus);
+    
+    if (recordsToUpdate.length === 0) {
+      onShowToast(`Semua data yang ditampilkan sudah berstatus ${newStatus.toUpperCase()}.`, 'warning');
+      return;
+    }
+
+    if (!window.confirm(`Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan menjadi ${newStatus.toUpperCase()}?`)) {
+      return;
+    }
+
+    setIsBulkUpdating(true);
+    setBulkStatusAction(newStatus);
+    let successCount = 0;
+    
+    try {
+      const updatedRecordsList: PengecekanSJRecord[] = [];
+      
+      // Perform updates sequentially to avoid overwhelming the GAS endpoint
+      for (const rec of recordsToUpdate) {
+        const updatedRecord: PengecekanSJRecord = {
+          ...rec,
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        };
+        
+        const success = await editPengecekanSJ(updatedRecord);
+        if (success) {
+          updatedRecordsList.push(updatedRecord);
+          successCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        setRecords(prev => {
+          const newRecords = [...prev];
+          updatedRecordsList.forEach(updated => {
+            const index = newRecords.findIndex(r => r.id === updated.id);
+            if (index !== -1) newRecords[index] = updated;
+          });
+          return newRecords;
+        });
+        onShowToast(`Berhasil memperbarui ${successCount} data menjadi ${newStatus.toUpperCase()}`, 'success');
+      } else {
+        onShowToast('Gagal memperbarui status. Silakan coba lagi.', 'error');
+      }
+    } catch (e) {
+      console.error('Bulk update error:', e);
+      onShowToast('Terjadi kesalahan saat memperbarui data secara massal.', 'error');
+    } finally {
+      setIsBulkUpdating(false);
+      setBulkStatusAction(null);
+    }
+  };
+
   // FILTERED RIWAYAT RECORDS
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
@@ -1441,6 +1505,31 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* BULK ACTIONS (ADMIN ONLY) */}
+            {userIsAdmin && filteredRecords.length > 0 && (
+              <div className="flex items-center justify-end gap-2 px-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Ubah Semua Status Menjadi:</span>
+                <button
+                  type="button"
+                  onClick={() => handleBulkUpdateStatus('pending')}
+                  disabled={isBulkUpdating || filteredRecords.every(r => r.status === 'pending')}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-blue-200 dark:border-blue-800/50"
+                >
+                  {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3" />}
+                  PENDING
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkUpdateStatus('selesai')}
+                  disabled={isBulkUpdating || filteredRecords.every(r => r.status === 'selesai')}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-800/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-200 dark:border-emerald-800/50"
+                >
+                  {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                  SELESAI
+                </button>
+              </div>
+            )}
 
             {/* RECORD LIST */}
             {loadingRecords ? (
