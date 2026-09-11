@@ -11,9 +11,17 @@ import {
   submitManualShipment,
   updateShipmentStatus,
   updateShipmentResi,
-  deleteManualShipment
+  deleteManualShipment,
+  fetchJasaKirimList,
 } from '../services/gasManualShipment';
 import QRCode from 'qrcode';
+import {
+  generateCustomerTransactionNumber,
+  generateManualShipmentOrderId,
+  isTransactionNumberUnique,
+  getStoreCode,
+  generateShortOrderId,
+} from '../utils/transactionGenerator';
 
 interface ManualShipmentViewProps {
   session: UserSession | null;
@@ -32,25 +40,46 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const [activeTab, setActiveTab] = useState<'form' | 'rekap'>('form');
   const [loading, setLoading] = useState(false);
   const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string }[]>([]);
+  const [jasaKirimList, setJasaKirimList] = useState<string[]>([]);
   const [orders, setOrders] = useState<ManualShipmentOrder[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Form State
+  // Form State - langsung terisi Order ID Manual Shipment unik anti-collision
   const [pengirim, setPengirim] = useState('');
   const [telpPengirim, setTelpPengirim] = useState('');
   const [transPengirim, setTransPengirim] = useState('');
   
+  // Pilihan Jasa Kirim (Sheet outlet kolom C row 2)
+  const [jasaKirim, setJasaKirim] = useState('');
+  const [customJasaKirim, setCustomJasaKirim] = useState('');
+  const [isCustomJasaKirim, setIsCustomJasaKirim] = useState(false);
+  const [loadingJasaKirim, setLoadingJasaKirim] = useState(false);
+
   const [tujuan, setTujuan] = useState('');
   const [telpTujuan, setTelpTujuan] = useState('');
   const [alamatTujuan, setAlamatTujuan] = useState('');
   const [notesPaket, setNotesPaket] = useState('');
-  const [transCustomer, setTransCustomer] = useState('');
+  const [transCustomer, setTransCustomer] = useState<string>(() => generateManualShipmentOrderId([], ''));
   
   const [items, setItems] = useState<ManualShipmentItem[]>([]);
 
   useEffect(() => {
     loadOutlets();
     loadOrders();
+    loadJasaKirim();
   }, []);
+
+  const loadJasaKirim = async () => {
+    setLoadingJasaKirim(true);
+    try {
+      const list = await fetchJasaKirimList();
+      setJasaKirimList(list);
+    } catch (e) {
+      console.warn('Error loading jasa kirim:', e);
+    } finally {
+      setLoadingJasaKirim(false);
+    }
+  };
 
   const loadOutlets = async () => {
     const data = await fetchOutlets();
@@ -59,9 +88,23 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
   const loadOrders = async () => {
     setLoading(true);
-    const data = await fetchManualShipments();
-    setOrders(data.reverse());
-    setLoading(false);
+    try {
+      const data = await fetchManualShipments();
+      const reversed = [...data].reverse();
+      setOrders(reversed);
+
+      // Pastikan nomor transaksi customer di form tidak bentrok dengan order yang baru di-load dari server
+      setTransCustomer(current => {
+        if (!current || reversed.some(o => o.no_transaksi_customer && o.no_transaksi_customer.trim().toUpperCase() === current.trim().toUpperCase())) {
+          return generateCustomerTransactionNumber(reversed, pengirim);
+        }
+        return current;
+      });
+    } catch (e) {
+      console.warn('Error in loadOrders:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAddItem = () => {
@@ -91,8 +134,23 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     }
 
     setLoading(true);
+
+    // 1. Validasi & pastikan no_transaksi_customer memuat kode store dan 100% unik
+    let finalTransCustomer = transCustomer.trim();
+    const expectedPrefix = pengirim ? `MS${getStoreCode(pengirim)}-` : 'MS-';
+    if (!finalTransCustomer || !finalTransCustomer.startsWith(expectedPrefix) || !isTransactionNumberUnique(finalTransCustomer, orders)) {
+      finalTransCustomer = generateCustomerTransactionNumber(orders, pengirim);
+      setTransCustomer(finalTransCustomer);
+    }
+
+    // 2. Ambil nilai jasa kirim
+    const finalJasaKirim = (isCustomJasaKirim ? customJasaKirim : jasaKirim).trim();
+
+    // 3. Cegah bentrokan ID pesanan internal dengan format ringkas yang rapi
+    const uniquePesananId = generateShortOrderId(pengirim, orders);
+
     const orderData: ManualShipmentOrder = {
-      no_pesanan: `MS-${Date.now()}`,
+      no_pesanan: uniquePesananId,
       nama_pengirim: pengirim,
       no_telp_store: telpPengirim,
       no_transaksi_pengirim: transPengirim.split(',').map(s => s.trim()).filter(Boolean),
@@ -100,7 +158,8 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       no_telp_tujuan: telpTujuan,
       alamat_tujuan: alamatTujuan,
       notes_paket: notesPaket,
-      no_transaksi_customer: transCustomer,
+      no_transaksi_customer: finalTransCustomer,
+      jasa_kirim: finalJasaKirim,
       items: items,
       status: 'diterima',
       no_resi: '',
@@ -124,11 +183,15 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     setPengirim('');
     setTelpPengirim('');
     setTransPengirim('');
+    setJasaKirim('');
+    setCustomJasaKirim('');
+    setIsCustomJasaKirim(false);
     setTujuan('');
     setTelpTujuan('');
     setAlamatTujuan('');
     setNotesPaket('');
-    setTransCustomer('');
+    // Otomatis terisi Order ID Manual Shipment baru yang unik untuk pesanan berikutnya
+    setTransCustomer(generateManualShipmentOrderId(orders, ''));
     setItems([]);
   };
 
@@ -168,7 +231,91 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           Form Manual Shipment
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Order ID Manual Shipment & Pilihan Jasa Kirim (Paling Atas) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+            <div className="max-w-md">
+              <label className="block text-sm font-bold text-slate-700 mb-1">
+                Order ID Manual Shipment
+              </label>
+              <input
+                type="text"
+                value={transCustomer}
+                readOnly
+                tabIndex={-1}
+                placeholder="Pilih store pengirim..."
+                className="w-full rounded-lg border-slate-300 bg-white text-slate-900 font-mono font-bold sm:text-base cursor-not-allowed select-all shadow-sm py-2 px-3 tracking-wide"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Nomor unik dibuat otomatis oleh sistem berdasarkan store yang dipilih
+              </p>
+            </div>
+
+            {/* Pilihan Jasa Kirim (Dibawah Order ID Manual Shipment) */}
+            <div className="max-w-md">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-bold text-slate-700">
+                  Pilihan Jasa Kirim <span className="text-xs font-normal text-slate-500">(Sheet outlet kolom C)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await loadJasaKirim();
+                    onShowToast('Daftar jasa kirim disinkronkan dari sheet outlet kolom C', 'info');
+                  }}
+                  disabled={loadingJasaKirim}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Sinkronkan data jasa kirim dari sheet outlet kolom C"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingJasaKirim ? 'animate-spin' : ''}`} />
+                  <span>Sinkron Sheet</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <select
+                  value={isCustomJasaKirim ? '__custom__' : jasaKirim}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__custom__') {
+                      setIsCustomJasaKirim(true);
+                      setJasaKirim(customJasaKirim);
+                    } else {
+                      setIsCustomJasaKirim(false);
+                      setJasaKirim(val);
+                    }
+                  }}
+                  className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white"
+                  required={!isCustomJasaKirim}
+                >
+                  <option value="">-- Pilih Jasa Kirim / Ekspedisi --</option>
+                  {jasaKirimList.map((jk, idx) => (
+                    <option key={idx} value={jk}>
+                      {jk}
+                    </option>
+                  ))}
+                  <option value="__custom__">+ Ketik Jasa Kirim Lainnya (Manual)</option>
+                </select>
+
+                {isCustomJasaKirim && (
+                  <input
+                    type="text"
+                    value={customJasaKirim}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomJasaKirim(val);
+                      setJasaKirim(val);
+                    }}
+                    placeholder="Ketik nama ekspedisi / jasa kirim manual..."
+                    className="w-full rounded-lg border-indigo-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 bg-indigo-50/40 text-slate-800"
+                    autoFocus
+                    required
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Data Pengirim */}
           <div>
             <h3 className="text-lg font-semibold text-slate-700 mb-4 border-b pb-2">Data Pengirim</h3>
@@ -177,7 +324,11 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nama Pengirim (Store)</label>
                 <select
                   value={pengirim}
-                  onChange={(e) => setPengirim(e.target.value)}
+                  onChange={(e) => {
+                    const newStore = e.target.value;
+                    setPengirim(newStore);
+                    setTransCustomer(generateManualShipmentOrderId(orders, newStore));
+                  }}
                   className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   required
                 >
@@ -197,11 +348,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">No. Transaksi Pengirim (Bisa lebih dari 1, pisahkan koma)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">No. Transaksi DealPOS (Bisa lebih dari 1, pisahkan koma)</label>
                 <input
                   type="text"
                   value={transPengirim}
                   onChange={(e) => setTransPengirim(e.target.value)}
+                  placeholder="Contoh: POS-260901-001, POS-260901-002"
                   className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
               </div>
@@ -242,16 +394,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">No. Transaksi Customer</label>
-                <input
-                  type="text"
-                  value={transCustomer}
-                  onChange={(e) => setTransCustomer(e.target.value)}
-                  className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-              </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Notes Tambahan Paket</label>
                 <input
                   type="text"
@@ -426,6 +569,9 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         <div style="margin-bottom: 30px; ${index < itemsToPrint.length - 1 ? 'page-break-after: always;' : ''}">
           <div style="margin-bottom: 10px;">
             <strong>No Pesanan:</strong> ${order.no_pesanan} <br/>
+            <strong>Order ID:</strong> ${order.no_transaksi_customer || '-'} <br/>
+            <strong>Jasa Kirim:</strong> ${order.jasa_kirim || '-'} <br/>
+            <strong>DealPOS:</strong> ${(order.no_transaksi_pengirim || []).join(', ') || '-'} <br/>
             <strong>Dari:</strong> ${order.nama_pengirim} <br/>
             <strong>Tujuan:</strong> ${order.nama_tujuan} <br/>
           </div>
@@ -547,8 +693,9 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           <div class="section">
             <div class="section-title">Informasi Tambahan</div>
             <div class="text-sm">No Pesanan: ${order.no_pesanan}</div>
-            <div class="text-sm">No Transaksi (P): ${(order.no_transaksi_pengirim || []).join(', ')}</div>
-            <div class="text-sm">No Transaksi (C): ${order.no_transaksi_customer || '-'}</div>
+            <div class="text-sm">Order ID: ${order.no_transaksi_customer || '-'}</div>
+            <div class="text-sm">Jasa Kirim: ${order.jasa_kirim || '-'}</div>
+            <div class="text-sm">No. Transaksi DealPOS: ${(order.no_transaksi_pengirim || []).join(', ') || '-'}</div>
             <div class="text-sm">Catatan: ${order.notes_paket || '-'}</div>
           </div>
           
@@ -607,13 +754,56 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     setLoading(false);
   };
 
+  const filteredOrders = useMemo(() => {
+    if (!searchTerm.trim()) return orders;
+    const q = searchTerm.toLowerCase().trim();
+    return orders.filter(o => 
+      (o.no_pesanan && o.no_pesanan.toLowerCase().includes(q)) ||
+      (o.no_transaksi_customer && o.no_transaksi_customer.toLowerCase().includes(q)) ||
+      (o.jasa_kirim && o.jasa_kirim.toLowerCase().includes(q)) ||
+      (o.no_transaksi_pengirim && o.no_transaksi_pengirim.some(p => p.toLowerCase().includes(q))) ||
+      (o.nama_tujuan && o.nama_tujuan.toLowerCase().includes(q)) ||
+      (o.nama_pengirim && o.nama_pengirim.toLowerCase().includes(q)) ||
+      (o.no_resi && o.no_resi.toLowerCase().includes(q)) ||
+      (o.no_telp_tujuan && o.no_telp_tujuan.toLowerCase().includes(q)) ||
+      (o.items && o.items.some(i => i.nama_produk?.toLowerCase().includes(q) || i.sku?.toLowerCase().includes(q)))
+    );
+  }, [orders, searchTerm]);
+
   const renderRekap = () => (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[600px]">
-      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 flex-wrap gap-2">
-        <h2 className="text-lg font-bold text-slate-800 flex items-center">
-          <FileText className="w-5 h-5 mr-2 text-indigo-600" />
-          Rekap Manual Shipment
-        </h2>
+      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-lg font-bold text-slate-800 flex items-center">
+            <FileText className="w-5 h-5 mr-2 text-indigo-600" />
+            Rekap Manual Shipment
+          </h2>
+          <span className="text-xs font-medium text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full">
+            {filteredOrders.length} Order
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-1 max-w-xs min-w-[200px]">
+          <div className="relative w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
         
         <div className="flex gap-2 flex-wrap">
           <button
@@ -655,14 +845,15 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     type="checkbox"
                     className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     onChange={(e) => {
-                      if (e.target.checked) setSelectedOrders(new Set(orders.map(o => o.no_pesanan)));
+                      if (e.target.checked) setSelectedOrders(new Set(filteredOrders.map(o => o.no_pesanan)));
                       else setSelectedOrders(new Set());
                     }}
-                    checked={orders.length > 0 && selectedOrders.size === orders.length}
+                    checked={filteredOrders.length > 0 && selectedOrders.size === filteredOrders.length}
                   />
                 </th>
               )}
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No Pesanan</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No Pesanan / Order ID</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Jasa Kirim</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Pengirim / Tujuan</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Item / Fulfillment</th>
@@ -672,14 +863,14 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
-            {orders.length === 0 ? (
+            {filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan={canAction ? 6 : 5} className="px-6 py-10 text-center text-slate-500">
-                  Tidak ada data pesanan
+                <td colSpan={canAction ? 7 : 6} className="px-6 py-10 text-center text-slate-500">
+                  {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
                 </td>
               </tr>
             ) : (
-              orders.map((order) => (
+              filteredOrders.map((order) => (
                 <tr key={order.no_pesanan} className="hover:bg-slate-50">
                   {canAction && (
                     <td className="px-4 py-4 whitespace-nowrap">
@@ -694,10 +885,29 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   <td className="px-4 py-4 whitespace-nowrap">
                     <div className="font-medium text-slate-900">{order.no_pesanan}</div>
                     <div className="text-xs text-slate-500">{new Date(order.created_at || '').toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year:'numeric'})}</div>
+                    {order.no_transaksi_customer && (
+                      <div className="mt-1 text-xs font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100 block font-semibold w-fit">
+                        Order ID: {order.no_transaksi_customer}
+                      </div>
+                    )}
+                    {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
+                      <div className="mt-0.5 text-[11px] font-mono text-slate-600 block">
+                        DealPOS: {order.no_transaksi_pengirim.join(', ')}
+                      </div>
+                    )}
                     {order.no_resi && (
-                      <div className="mt-1 text-xs font-mono bg-slate-100 text-slate-700 px-2 py-1 rounded inline-block">
+                      <div className="mt-1 text-xs font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded inline-block">
                         Resi: {order.no_resi}
                       </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    {order.jasa_kirim ? (
+                      <span className="px-2.5 py-1 inline-flex text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        {order.jasa_kirim}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">-</span>
                     )}
                   </td>
                   <td className="px-4 py-4">

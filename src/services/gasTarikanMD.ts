@@ -1,23 +1,35 @@
 import { TarikanMDRecord } from '../types';
+import { getStoredManualShipmentGasUrl } from './settings';
 
 const getGasUrl = (): string => {
-  return localStorage.getItem('wms_manual_shipment_gas_url') || '';
+  return getStoredManualShipmentGasUrl();
 };
 
 export async function fetchTarikanMDRecords(): Promise<TarikanMDRecord[]> {
   const gasUrl = getGasUrl();
-  if (!gasUrl) return [];
+  let cached: TarikanMDRecord[] = [];
+  try {
+    const raw = localStorage.getItem('wms_cached_tarikan_md');
+    if (raw) cached = JSON.parse(raw);
+  } catch {}
+
+  if (!gasUrl) return cached;
   try {
     const url = `${gasUrl}?action=getTarikanMD`;
     const res = await fetch(url, { method: 'GET' });
-    if (!res.ok) throw new Error('Failed to fetch TarikanMD records');
+    if (!res.ok) throw new Error(`HTTP status ${res.status}`);
     const text = await res.text();
     const data = JSON.parse(text);
-    return data.success ? data.data : [];
+    if (data && data.success && Array.isArray(data.data)) {
+      try {
+        localStorage.setItem('wms_cached_tarikan_md', JSON.stringify(data.data));
+      } catch {}
+      return data.data;
+    }
   } catch (error) {
-    console.error('Error fetching TarikanMD records:', error);
-    return [];
+    console.warn('Could not fetch TarikanMD records from GAS, using local cache:', error);
   }
+  return cached;
 }
 
 export async function submitTarikanMD(record: TarikanMDRecord): Promise<boolean> {

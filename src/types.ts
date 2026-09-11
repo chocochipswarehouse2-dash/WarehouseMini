@@ -418,6 +418,7 @@ export interface ManualShipmentOrder {
   alamat_tujuan: string;
   notes_paket: string;
   no_transaksi_customer: string;
+  jasa_kirim?: string;
   // Pesanan
   items: ManualShipmentItem[];
   // Status & Meta
@@ -634,6 +635,7 @@ export interface TarikanMDScanResult extends TarikanMDItem {
 
 /** Record yang disimpan ke sheet TarikanMD */
 export interface TarikanMDRecord {
+  id?: string;
   no_sj: string;
   tanggal_sj: string;
   source: string;

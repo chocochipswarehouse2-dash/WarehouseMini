@@ -8,11 +8,21 @@ export const DEFAULT_GDRIVE_GAS_URL =
   'https://script.google.com/macros/s/AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w/exec';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y/exec';
+  'https://script.google.com/macros/s/AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w/exec';
 
 // In-memory cache for ultra-fast zero-latency access across components
 let cachedSettings: WmsSettings | null = null;
 let isFetchingPromise: Promise<WmsSettings | null> | null = null;
+
+/**
+ * Validasi dan bersihkan URL GAS jika merupakan URL script mati/404 lama
+ */
+function sanitizeManualShipmentGasUrl(url?: string): string {
+  if (!url || !url.trim() || url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y')) {
+    return DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+  }
+  return url.trim();
+}
 
 /**
  * Inisialisasi cache dari LocalStorage saat startup (0ms latency)
@@ -22,7 +32,12 @@ function initCacheFromLocalStorage(): WmsSettings {
 
   try {
     const gasEndpoint = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
-    const manualShipmentGas = localStorage.getItem('wms_manual_shipment_gas_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+    const storedManualGas = localStorage.getItem('wms_manual_shipment_gas_url') || '';
+    const manualShipmentGas = sanitizeManualShipmentGasUrl(storedManualGas);
+    if (storedManualGas !== manualShipmentGas) {
+      localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGas);
+    }
+
     const gdriveGas = localStorage.getItem('wms_gdrive_gas_url') || DEFAULT_GDRIVE_GAS_URL;
     const gdriveFolder = localStorage.getItem('wms_gdrive_folder_url') || DEFAULT_GDRIVE_FOLDER_URL;
     const fonnteToken = localStorage.getItem('wms_fonnte_token') || '';
@@ -65,11 +80,10 @@ export function getStoredGasEndpoint(): string {
  * Ambil endpoint GAS Manual Shipment yang sedang aktif
  */
 export function getStoredManualShipmentGasUrl(): string {
-  if (cachedSettings?.manual_shipment_gas_url) return cachedSettings.manual_shipment_gas_url;
-  return (
+  const current = cachedSettings?.manual_shipment_gas_url ||
     localStorage.getItem('wms_manual_shipment_gas_url') ||
-    DEFAULT_MANUAL_SHIPMENT_GAS_URL
-  );
+    DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+  return sanitizeManualShipmentGasUrl(current);
 }
 
 /**
@@ -106,10 +120,13 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     } catch {}
   }
 
+  const rawManualGas = data.manual_shipment_gas_url || jsonConfig.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+  const safeManualGas = sanitizeManualShipmentGasUrl(rawManualGas);
+
   const merged: WmsSettings = {
     ...data,
     gas_endpoint: data.gas_endpoint || jsonConfig.gas_endpoint || '',
-    manual_shipment_gas_url: data.manual_shipment_gas_url || jsonConfig.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
+    manual_shipment_gas_url: safeManualGas,
     gdrive_gas_url: data.gdrive_gas_url || jsonConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
     gdrive_folder_url: data.gdrive_folder_url || jsonConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
   };
