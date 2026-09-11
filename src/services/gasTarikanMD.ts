@@ -606,15 +606,20 @@ if (typeof window !== 'undefined') {
 export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boolean> {
   const targetNoSj = no_sj || (id && id.startsWith('SJ-') ? id : '');
   if (targetNoSj) {
-    deletePengecekanSJFromSupabase(targetNoSj).catch(() => {});
+    await deletePengecekanSJFromSupabase(targetNoSj).catch(() => {});
   }
 
-  // Hapus dari cache lokal
+  // Hapus dari cache lokal secara sinkron (jangan panggil fetch yang memicu HTTP request)
   try {
-    const current = await fetchTarikanMDRecords();
-    const updated = current.filter(r => r.id !== id && (!no_sj || r.no_sj !== no_sj));
-    localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updated));
-  } catch {}
+    const raw = localStorage.getItem(CACHE_KEY_RECORDS);
+    if (raw) {
+      const current: PengecekanSJRecord[] = JSON.parse(raw);
+      const updated = current.filter(r => r.id !== id && (!no_sj || r.no_sj !== no_sj));
+      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.warn('Gagal menghapus dari cache lokal:', e);
+  }
 
   const gasUrl = getGasUrl();
   if (!gasUrl) return true;
