@@ -170,8 +170,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'tarikan_md' as ActivePage,
-      label: 'Tarikan MD',
-      shortLabel: 'Tarikan',
+      label: 'Pengecekan Surat Jalan',
+      shortLabel: 'Cek SJ',
       icon: ClipboardCheck,
       description: 'Pengecekan penerimaan vs SJ',
       access: canTarikanMD,

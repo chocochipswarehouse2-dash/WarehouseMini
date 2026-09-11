@@ -1379,6 +1379,7 @@ export default function App() {
             {activePage === 'tarikan_md' && (
                 <TarikanMDView
                   session={session}
+                  productCatalog={productDatabase}
                   onShowToast={showToast}
                 />
             )}

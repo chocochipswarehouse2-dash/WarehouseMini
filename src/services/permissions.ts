@@ -53,8 +53,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
       {
         key: 'can_tarikan_md',
-        label: 'Tarikan MD (Pengecekan Penerimaan Barang)',
-        description: 'Import CSV SJ, scan komparasi qty vs aktual, submit ke Google Sheet TarikanMD',
+        label: 'Pengecekan Surat Jalan',
+        description: 'Import CSV SJ, antrean pengecekan draft, scan komparasi, riwayat, dan export data',
       },
     ],
   },

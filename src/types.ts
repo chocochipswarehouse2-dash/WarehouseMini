@@ -616,7 +616,7 @@ export interface WmsSettings {
 }
 
 // ------------------------------------------------------------
-// MODUL TARIKAN MD - PENGECEKAN PENERIMAAN BARANG
+// MODUL PENGECEKAN SURAT JALAN (TARIKAN MD)
 // ------------------------------------------------------------
 
 /** Satu baris SKU dari file CSV Surat Jalan */
@@ -632,19 +632,65 @@ export interface TarikanMDScanResult extends TarikanMDItem {
   qty_scan: number;
   selisih: number;          // qty_scan - qty_sj
   status: 'COCOK' | 'KURANG' | 'LEBIH';
+  is_unexpected?: boolean;
 }
 
-/** Record yang disimpan ke sheet TarikanMD */
-export interface TarikanMDRecord {
+/** Detail baris komparasi item untuk database/sheet (setara baris manual shipment) */
+export interface PengecekanSJItem {
   id?: string;
   no_sj: string;
-  tanggal_sj: string;
   source: string;
   destination: string;
+  tanggal_sj: string;
+  sku: string;
+  nama_produk: string;
+  category?: string;
+  qty_sj: number;
+  qty_scan: number;
+  selisih: number;
+  status_item: 'COCOK' | 'KURANG' | 'LEBIH';
+  status_sj?: 'pending' | 'selesai' | 'cocok' | 'selisih';
+  is_unexpected?: boolean;
+  submitted_by?: string;
+  created_at?: string;
+  catatan?: string;
+}
+
+/** Draft antrean pengecekan surat jalan (stay di tab pengecekan) */
+export interface PengecekanSJDraft {
+  id: string; // key = no_sj + source + destination
+  no_sj: string;
+  source: string;
+  destination: string;
+  tanggal_sj: string;
+  file_name?: string;
+  items: TarikanMDItem[];
+  scanQty: Record<string, number>;
+  unexpected: Record<string, { nama?: string; qty: number; category?: string }>;
+  catatan?: string;
+  status: 'draft' | 'pending' | 'selesai';
+  created_at: string;
+  updated_at: string;
+}
+
+/** Record riwayat pengecekan yang disimpan ke sheet & database */
+export interface PengecekanSJRecord {
+  id: string;
+  no_sj: string;
+  source: string;
+  destination: string;
+  tanggal_sj: string;
+  status: 'pending' | 'selesai' | 'cocok' | 'selisih';
+  status_komparasi: 'COCOK' | 'SELISIH';
   total_qty_sj: number;
   total_qty_terima: number;
-  status_komparasi: 'COCOK' | 'SELISIH';
+  total_sku: number;
   submitted_by: string;
-  created_at?: string;
-  items_json?: string;      // JSON.stringify(TarikanMDScanResult[])
+  created_at: string;
+  updated_at?: string;
+  catatan?: string;
+  items: PengecekanSJItem[];
+  items_json?: string;
 }
+
+export type TarikanMDRecord = PengecekanSJRecord;
