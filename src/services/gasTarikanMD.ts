@@ -87,86 +87,65 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
       } catch {}
     }
 
+    // Jika item tidak ditemukan di `items` array, cek apakah baris `d` itu sendiri adalah item.
+    // Hindari menganggap parent record sebagai item hanya karena status_komparasi memiliki '/'.
+    // Pastikan baris tersebut benar-benar memiliki field item spesifik.
+    if (rawItems.length === 0 && (d.sku || d.code || d.barcode || d.nama_produk || d.product || d.variant || (d.category && d.category !== ''))) {
+      rawItems = [d]; // Anggap baris record itu sendiri sebagai item tunggal
+    }
+
+    // Abaikan jika tidak ada item sama sekali (misal record kosong hasil migrasi)
+    if (rawItems.length === 0) continue;
+
     if (rawItems.length > 0) {
       // Record sudah membawa item-item
       for (const item of rawItems) {
-        const sku = String(item.sku || item.code || '').trim();
-        if (!sku) continue;
-        const itemKey = `${sku.toUpperCase()}___${item.category || ''}`;
-        const qty_sj = parseInt(item.qty_sj ?? '0', 10) || 0;
-        const qty_scan = parseInt(item.qty_scan ?? item.qty_terima ?? '0', 10) || 0;
+        let itemCategory = String(item.category || item.kategori || '').trim();
+        
+        // Coba ambil dari status_komparasi jika category kosong (seperti bug data sebelumnya)
+        if (!itemCategory && String(item.status_komparasi || '').includes('/')) {
+            itemCategory = String(item.status_komparasi);
+        }
+
+        let sku = String(item.sku || item.code || item.barcode || '').trim();
+        if (!sku) {
+           // Fallback sku logic
+           if (item.id && !String(item.id).includes('GMT')) {
+             sku = String(item.id).trim();
+           } else if (itemCategory) {
+             sku = itemCategory;
+           } else {
+             sku = `ITEM-${group.itemsMap.size + 1}`;
+           }
+        }
+
+        const itemKey = `${sku.toUpperCase()}___${itemCategory || ''}___${group.itemsMap.size}`;
+        const qty_sj = parseInt(item.qty_sj ?? item.total_qty_sj ?? item.qty ?? '0', 10) || 0;
+        const qty_scan = parseInt(item.qty_scan ?? item.qty_terima ?? item.total_qty_terima ?? '0', 10) || 0;
         const selisih = parseInt(item.selisih ?? String(qty_scan - qty_sj), 10) || (qty_scan - qty_sj);
 
         if (!group.itemsMap.has(itemKey)) {
           group.itemsMap.set(itemKey, {
-            id: item.id || `${key}-${sku}`,
+            id: item.id || `${key}-${sku}-${group.itemsMap.size}`,
             no_sj,
             source: group.rec.source,
             destination: group.rec.destination,
             tanggal_sj: group.rec.tanggal_sj,
             sku,
-            nama_produk: String(item.nama_produk || sku).trim(),
-            category: item.category || '',
+            nama_produk: String(item.nama_produk || item.product || item.variant || (itemCategory ? `${itemCategory} (${sku})` : sku)).trim(),
+            category: itemCategory || '',
             qty_sj,
             qty_scan,
             selisih,
             status_item: item.status_item || (selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH'),
             status_sj: group.rec.status,
-            is_unexpected: Boolean(item.is_unexpected || qty_sj === 0),
+            is_unexpected: Boolean(item.is_unexpected || String(item.is_unexpected).toLowerCase() === 'ya' || qty_sj === 0),
             submitted_by: group.rec.submitted_by,
             created_at: group.rec.created_at,
             catatan: item.catatan || '',
           });
         }
       }
-    } else {
-      // d sendiri adalah baris item (flat row / database row per item)
-      // Ekstrak SKU, Category, dan Nama Produk
-      const stat_comp = String(d.status_komparasi || '').trim();
-      let category = String(d.category || d.kategori || '').trim();
-      if (!category && stat_comp.includes('/')) {
-        category = stat_comp; // misal 'CLOTHING/BOTTOM/SKORT'
-      }
-
-      let sku = String(d.sku || d.code || d.barcode || '').trim();
-      if (!sku) {
-        // Jika SKU belum diisi dari kolom, gunakan id jika id bukan tanggal
-        if (d.id && !String(d.id).includes('GMT')) {
-          sku = String(d.id).trim();
-        } else if (category) {
-          sku = category;
-        } else {
-          sku = `ITEM-${group.itemsMap.size + 1}`;
-        }
-      }
-
-      const nama_produk = String(d.nama_produk || d.product || d.variant || (category ? `${category} (${sku})` : sku)).trim();
-      const qty_sj = parseInt(d.qty_sj ?? d.total_qty_sj ?? d.qty ?? '0', 10) || 0;
-      const qty_scan = parseInt(d.qty_scan ?? d.total_qty_terima ?? d.qty_terima ?? '0', 10) || 0;
-      const selisih = parseInt(d.selisih ?? String(qty_scan - qty_sj), 10) || (qty_scan - qty_sj);
-      const is_unexpected = Boolean(d.is_unexpected || String(d.is_unexpected).toLowerCase() === 'ya' || qty_sj === 0);
-      const status_item = (d.status_item || (selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH')) as 'COCOK' | 'KURANG' | 'LEBIH';
-
-      const itemKey = `${sku.toUpperCase()}___${category.toUpperCase()}___${group.itemsMap.size}`;
-      group.itemsMap.set(itemKey, {
-        id: d.id || `${key}-${sku}-${group.itemsMap.size + 1}`,
-        no_sj,
-        source: group.rec.source,
-        destination: group.rec.destination,
-        tanggal_sj: group.rec.tanggal_sj,
-        sku,
-        nama_produk,
-        category,
-        qty_sj,
-        qty_scan,
-        selisih,
-        status_item,
-        status_sj: group.rec.status,
-        is_unexpected,
-        submitted_by: group.rec.submitted_by,
-        created_at: group.rec.created_at,
-        catatan: d.catatan || '',
-      });
     }
   }
 
@@ -174,6 +153,10 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
   const result: PengecekanSJRecord[] = [];
   for (const { rec, itemsMap } of grouped.values()) {
     rec.items = Array.from(itemsMap.values());
+    
+    // Jangan tambahkan record yang kosong sama sekali (tidak ada item)
+    if (rec.items.length === 0) continue;
+    
     rec.total_sku = rec.items.length;
     rec.total_qty_sj = rec.items.reduce((acc, it) => acc + (it.qty_sj || 0), 0);
     rec.total_qty_terima = rec.items.reduce((acc, it) => acc + (it.qty_scan || 0), 0);
