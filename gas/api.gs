@@ -26,12 +26,12 @@ function doGet(e) {
 
     // ── MANUAL SHIPMENT ─────────────────────────────────────────────────
     if (action === 'getOrders' || action === 'getManualShipment' || action === 'getShipments') {
-      return handleGetSheet('Manual Shipment');
+      return handleGetSheet('manual_shipment');
     }
 
     // ── PENGECEKAN SURAT JALAN (Tarikan MD) ──────────────────────────────
     if (action === 'getPengecekanSJ' || action === 'getTarikanMD') {
-      return handleGetSheet('Pengecekan SJ');
+      return handleGetSheet('pengecekan_sj');
     }
 
     // ── DATA ALAMAT (Address Book) ───────────────────────────────────────

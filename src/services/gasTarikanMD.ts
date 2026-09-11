@@ -16,9 +16,6 @@ const getGasUrl = (): string => {
   return getStoredManualShipmentGasUrl();
 };
 
-/**
- * Simpan data Pengecekan Surat Jalan langsung ke Supabase (Database Utama)
- */
 export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Promise<boolean> {
   try {
     const sb = getSupabaseClient();
@@ -26,25 +23,29 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
     if (!cleanNoSj) return false;
 
     // Bersihkan record lama dengan nomor SJ ini agar tidak duplikat
-    await sb.from('log_produk').delete().eq('type', 'PENGECEKAN_SJ').eq('invoice', cleanNoSj);
+    await sb.from('pengecekan_sj').delete().eq('no_sj', cleanNoSj);
 
-    const firstItem = record.items?.[0];
     const insertPayload = {
-      type: 'PENGECEKAN_SJ',
-      invoice: cleanNoSj,
-      sku: firstItem?.sku || 'SJ-SUMMARY',
-      nama_produk: firstItem?.nama_produk || record.catatan || `Pengecekan ${cleanNoSj}`,
-      size: '-',
-      area: record.source || 'Gudang Pusat',
-      lokasi: record.destination || 'Outlet',
-      qty: Number(record.total_qty_sj || 0),
-      operator: record.submitted_by || 'Petugas',
-      keterangan: record.status_komparasi || 'COCOK',
-      raw_payload: JSON.stringify(record),
-      created_at: record.created_at || new Date().toISOString()
+      ...(record.id && record.id.length === 36 ? { id: record.id } : {}),
+      no_sj: cleanNoSj,
+      tanggal_sj: record.tanggal_sj || new Date().toISOString().slice(0, 10),
+      source: record.source || 'Gudang Pusat',
+      destination: record.destination || 'Outlet',
+      status: record.status || 'pending',
+      status_komparasi: record.status_komparasi || 'COCOK',
+      total_qty_sj: Number(record.total_qty_sj || 0),
+      total_qty_terima: Number(record.total_qty_terima || 0),
+      total_sku: Number(record.total_sku || 0),
+      submitted_by: record.submitted_by || 'Petugas',
+      catatan: record.catatan || '',
+      items: record.items,
+      items_json: JSON.stringify(record.items),
+      sync_status: 'synced',
+      created_at: record.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
-    const { error } = await sb.from('log_produk').insert([insertPayload]);
+    const { error } = await sb.from('pengecekan_sj').insert([insertPayload]);
     if (error) {
       console.warn('Warning: Gagal simpan Pengecekan SJ ke Supabase:', error);
       return false;
@@ -56,16 +57,12 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
   }
 }
 
-/**
- * Memuat riwayat Pengecekan Surat Jalan langsung dari Supabase (Cepat & Akurat)
- */
 export async function fetchPengecekanSJFromSupabase(): Promise<PengecekanSJRecord[]> {
   try {
     const sb = getSupabaseClient();
     const { data, error } = await sb
-      .from('log_produk')
+      .from('pengecekan_sj')
       .select('*')
-      .eq('type', 'PENGECEKAN_SJ')
       .order('created_at', { ascending: false })
       .limit(500);
 
@@ -75,55 +72,22 @@ export async function fetchPengecekanSJFromSupabase(): Promise<PengecekanSJRecor
 
     const records: PengecekanSJRecord[] = [];
     for (const row of data) {
-      if (row.raw_payload) {
-        try {
-          const parsed = JSON.parse(row.raw_payload);
-          if (parsed && typeof parsed === 'object') {
-            // Pastikan ID dan No SJ konsisten
-            parsed.id = parsed.id || String(row.id || row.invoice);
-            parsed.no_sj = parsed.no_sj || row.invoice;
-            records.push(parsed);
-            continue;
-          }
-        } catch {}
-      }
-
-      // Rekonstruksi jika tidak ada raw_payload
-      const no_sj = row.invoice || `SJ-${row.id}`;
       records.push({
-        id: String(row.id || no_sj),
-        no_sj,
-        source: row.area || 'Gudang Pusat',
-        destination: row.lokasi || 'Outlet',
-        tanggal_sj: String(row.created_at || '').slice(0, 10),
-        status: 'pending',
-        status_komparasi: row.keterangan || 'COCOK',
-        total_qty_sj: Number(row.qty || 0),
-        total_qty_terima: Number(row.qty || 0),
-        total_sku: 1,
-        submitted_by: row.operator || 'Petugas',
-        created_at: row.created_at || new Date().toISOString(),
-        catatan: row.keterangan || '',
-        items: [
-          {
-            id: `${no_sj}-${row.sku || 'SKU1'}`,
-            no_sj,
-            source: row.area || 'Gudang Pusat',
-            destination: row.lokasi || 'Outlet',
-            tanggal_sj: String(row.created_at || '').slice(0, 10),
-            sku: row.sku || 'SKU-ITEM',
-            nama_produk: row.nama_produk || `Item ${no_sj}`,
-            category: '',
-            qty_sj: Number(row.qty || 0),
-            qty_scan: Number(row.qty || 0),
-            selisih: 0,
-            status_item: (row.keterangan === 'SELISIH' ? 'KURANG' : 'COCOK') as 'COCOK' | 'KURANG' | 'LEBIH',
-            status_sj: 'pending',
-            is_unexpected: false,
-            submitted_by: row.operator || 'Petugas',
-            created_at: row.created_at || new Date().toISOString(),
-          }
-        ]
+        id: row.id,
+        no_sj: row.no_sj,
+        source: row.source,
+        destination: row.destination,
+        tanggal_sj: row.tanggal_sj,
+        status: row.status,
+        status_komparasi: row.status_komparasi,
+        total_qty_sj: row.total_qty_sj,
+        total_qty_terima: row.total_qty_terima,
+        total_sku: row.total_sku,
+        submitted_by: row.submitted_by,
+        created_at: row.created_at,
+        catatan: row.catatan,
+        items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || []),
+        items_json: row.items_json
       });
     }
 
@@ -134,15 +98,12 @@ export async function fetchPengecekanSJFromSupabase(): Promise<PengecekanSJRecor
   }
 }
 
-/**
- * Menghapus data Pengecekan Surat Jalan dari Supabase
- */
 export async function deletePengecekanSJFromSupabase(no_sj: string): Promise<boolean> {
   try {
     const sb = getSupabaseClient();
     const cleanNoSj = String(no_sj || '').trim();
     if (!cleanNoSj) return false;
-    await sb.from('log_produk').delete().eq('type', 'PENGECEKAN_SJ').eq('invoice', cleanNoSj);
+    await sb.from('pengecekan_sj').delete().eq('no_sj', cleanNoSj);
     return true;
   } catch (err) {
     console.warn('Gagal deletePengecekanSJFromSupabase:', err);
@@ -452,93 +413,51 @@ export interface SubmitPengecekanResult {
   message?: string;
 }
 
-/**
- * Submit Pengecekan Surat Jalan ke sheet.
- * Menuliskan KESELURUHAN DATA item secara individual (sama kayak manual shipment).
- * Dilengkapi kemampuan Offline-First: jika koneksi internet terputus, pekerjaan
- * TIDAK AKAN HILANG dan disimpan ke antrean offline untuk disinkronkan otomatis saat online.
- */
 export async function submitTarikanMD(record: PengecekanSJRecord): Promise<SubmitPengecekanResult> {
   const isCurrentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
   // 1. Simpan langsung ke Supabase (Database Utama Cloud)
-  savePengecekanSJToSupabase(record).catch(e => console.warn('Supabase save background err:', e));
+  const isSaved = await savePengecekanSJToSupabase(record).catch(e => {
+    console.warn('Supabase save err:', e);
+    return false;
+  });
 
   // 2. Simpan ke local cache segera (optimistic update)
   try {
     const current = await fetchTarikanMDRecords();
     const updatedRecord: PengecekanSJRecord = {
       ...record,
-      sync_status: isCurrentlyOnline ? 'synced' : 'pending_sync',
+      sync_status: isCurrentlyOnline && isSaved ? 'synced' : 'pending_sync',
     };
     const updated = [updatedRecord, ...current.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
     localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updated));
   } catch {}
 
-  const gasUrl = getGasUrl();
-
-  // Jika kondisi offline atau tidak ada URL GAS
-  if (!isCurrentlyOnline || !gasUrl) {
+  // Jika kondisi offline atau tidak tersimpan di Supabase
+  if (!isCurrentlyOnline || !isSaved) {
     const currentQueue = getPendingOfflinePengecekanSJ();
     const updatedQueue = [record, ...currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
     savePendingOfflinePengecekanSJ(updatedQueue);
     return {
       success: true,
       offline: true,
-      message: 'Tersimpan aman di Supabase & antrean lokal. Otomatis dikirim ke Google Sheets saat internet kembali terhubung.',
+      message: 'Tersimpan aman di antrean lokal. Otomatis dikirim ke Supabase saat internet kembali terhubung.',
     };
   }
 
-  try {
-    // Format payload agar GAS bisa menuliskan item individual sebagai baris spreadsheet
-    const payload = {
-      action: 'submitPengecekanSJ',
-      data: {
-        ...record,
-        items: record.items,
-        rows: record.items,
-        items_json: JSON.stringify(record.items),
-      },
-      legacyAction: 'submitTarikanMD',
-    };
-
-    await fetch(gasUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-    });
-
-    // Berhasil kirim online, pastikan dikeluarkan dari offline queue jika ada
-    const currentQueue = getPendingOfflinePengecekanSJ();
-    if (currentQueue.some(r => r.id === record.id || r.no_sj === record.no_sj)) {
-      savePendingOfflinePengecekanSJ(currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj));
-    }
-
-    return { success: true, offline: false };
-  } catch (error) {
-    console.warn('Gagal koneksi ke Google Sheet saat submit, mengamankan ke antrean offline:', error);
-    // Masukkan ke offline queue
-    const currentQueue = getPendingOfflinePengecekanSJ();
-    const updatedQueue = [record, ...currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
-    savePendingOfflinePengecekanSJ(updatedQueue);
-
-    return {
-      success: true,
-      offline: true,
-      message: 'Tersimpan aman di Supabase. Data ke Google Sheet akan dikirim ulang secara otomatis.',
-    };
+  // Berhasil kirim online, pastikan dikeluarkan dari offline queue jika ada
+  const currentQueue = getPendingOfflinePengecekanSJ();
+  if (currentQueue.some(r => r.id === record.id || r.no_sj === record.no_sj)) {
+    savePendingOfflinePengecekanSJ(currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj));
   }
+
+  return { success: true, offline: false };
 }
 
-/**
- * Mengirimkan data-data offline yang tertunda ke Google Apps Script
- */
 export async function syncPendingOfflinePengecekanSJ(): Promise<{ successCount: number; remainingCount: number }> {
   const queue = getPendingOfflinePengecekanSJ();
   if (queue.length === 0) return { successCount: 0, remainingCount: 0 };
-  const gasUrl = getGasUrl();
-  if (!gasUrl || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return { successCount: 0, remainingCount: queue.length };
   }
 
@@ -546,28 +465,13 @@ export async function syncPendingOfflinePengecekanSJ(): Promise<{ successCount: 
   const remaining: PengecekanSJRecord[] = [];
 
   for (const record of queue) {
-    // Pastikan tersimpan di Supabase
-    savePengecekanSJToSupabase(record).catch(() => {});
     try {
-      const payload = {
-        action: 'submitPengecekanSJ',
-        data: {
-          ...record,
-          items: record.items,
-          rows: record.items,
-          items_json: JSON.stringify(record.items),
-        },
-        legacyAction: 'submitTarikanMD',
-      };
-
-      await fetch(gasUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-      });
-
-      successCount++;
+      const isSaved = await savePengecekanSJToSupabase(record);
+      if (isSaved) {
+        successCount++;
+      } else {
+        remaining.push(record);
+      }
     } catch {
       remaining.push(record);
     }
@@ -600,9 +504,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-/**
- * Menghapus record riwayat pengecekan (dari Supabase, cache lokal, dan Sheet)
- */
 export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boolean> {
   const targetNoSj = no_sj || (id && id.startsWith('SJ-') ? id : '');
   if (targetNoSj) {
@@ -621,34 +522,12 @@ export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boole
     console.warn('Gagal menghapus dari cache lokal:', e);
   }
 
-  const gasUrl = getGasUrl();
-  if (!gasUrl) return true;
-
-  try {
-    const payload = {
-      action: 'deletePengecekanSJ',
-      data: { id, no_sj: targetNoSj || id },
-      legacyAction: 'deleteTarikanMD',
-    };
-    await fetch(gasUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-    });
-    return true;
-  } catch (error) {
-    console.error('Error deleting Pengecekan Surat Jalan:', error);
-    return false;
-  }
+  return true;
 }
 
-/**
- * Mengupdate data riwayat pengecekan (Edit oleh Admin)
- */
 export async function editPengecekanSJ(record: PengecekanSJRecord): Promise<boolean> {
   // Update ke Supabase
-  savePengecekanSJToSupabase(record).catch(e => console.warn('Supabase edit err:', e));
+  await savePengecekanSJToSupabase(record).catch(e => console.warn('Supabase edit err:', e));
 
   // Update ke cache lokal
   try {
@@ -657,30 +536,7 @@ export async function editPengecekanSJ(record: PengecekanSJRecord): Promise<bool
     localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updated));
   } catch {}
 
-  const gasUrl = getGasUrl();
-  if (!gasUrl) return true;
-
-  try {
-    const payload = {
-      action: 'editPengecekanSJ',
-      data: {
-        ...record,
-        items: record.items,
-        rows: record.items,
-        items_json: JSON.stringify(record.items),
-      },
-    };
-    await fetch(gasUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-    });
-    return true;
-  } catch (error) {
-    console.error('Error editing Pengecekan Surat Jalan:', error);
-    return false;
-  }
+  return true;
 }
 
 // ============================================================

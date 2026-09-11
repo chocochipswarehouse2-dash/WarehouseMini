@@ -15,7 +15,7 @@ const WEBHOOK_SECRET = 'wms-webhook-secret-2026';
 
 /**
  * Peta nama sheet ke konfigurasi kolom.
- * Key = nama sheet persis seperti di Google Spreadsheet.
+ * Key = nama sheet persis seperti di Google Spreadsheet (Sekarang disamakan dgn nama tabel Supabase)
  * supabaseTable = nama tabel di Supabase.
  * columns = urutan kolom di sheet (kolom A, B, C, dst).
  */
@@ -25,10 +25,10 @@ const SCHEMA = {
     columns: [
       'id',                      // A — UUID Supabase (WAJIB di kolom A)
       'no_pesanan',              // B
-      'tanggal',                 // C
+      'created_at',              // C
       'nama_pengirim',           // D
-      'no_telp_store',           // E
-      'no_transaksi_pengirim',   // F — disimpan sebagai JSON array string
+      'no_telp_pengirim',        // E
+      'no_transaksi_dealpos',    // F
       'nama_tujuan',             // G
       'no_telp_tujuan',          // H
       'alamat_tujuan',           // I
@@ -36,15 +36,13 @@ const SCHEMA = {
       'no_resi',                 // K
       'status',                  // L — diterima | diproses | dikirim | batal | DELETED
       'notes_paket',             // M
-      'no_transaksi_customer',   // N
-      'submitted_by',            // O
-      'items_json',              // P — JSON string dari array items
-      'created_at',              // Q
-      'updated_at',              // R
+      'submitted_by',            // N
+      'items',                   // O — JSON string dari array items
+      'updated_at',              // P
     ]
   },
 
-  'Pengecekan SJ': {
+  'Tarikan MD': {
     supabaseTable: 'pengecekan_sj',
     columns: [
       'id',                 // A — UUID Supabase (WAJIB di kolom A)
@@ -59,7 +57,7 @@ const SCHEMA = {
       'total_sku',          // J
       'submitted_by',       // K
       'catatan',            // L
-      'items_json',         // M — JSON string dari array items
+      'items',              // M — JSON string dari array items
       'sync_status',        // N — synced | pending_sync
       'created_at',         // O
       'updated_at',         // P
@@ -78,7 +76,7 @@ const SCHEMA = {
     ]
   },
 
-  'outlet': {
+  'Outlet': {
     supabaseTable: 'outlet_config',
     columns: [
       'id',           // A
@@ -91,7 +89,7 @@ const SCHEMA = {
     ]
   },
 
-  'Log Produk': {
+  'log_produk': {
     supabaseTable: 'log_produk',
     columns: [
       'id',           // A
@@ -109,7 +107,7 @@ const SCHEMA = {
     ]
   },
 
-  'Master Produk': {
+  'master_produk': {
     supabaseTable: 'master_produk',
     columns: [
       'sku',              // A — PRIMARY KEY (bukan UUID, tapi string SKU)
@@ -122,7 +120,7 @@ const SCHEMA = {
     ]
   },
 
-  'Picking List': {
+  'picking_list': {
     supabaseTable: 'picking_list',
     columns: [
       'id',           // A
@@ -140,7 +138,7 @@ const SCHEMA = {
     ]
   },
 
-  'Stock Opname': {
+  'stock_opname_queue': {
     supabaseTable: 'stock_opname_queue',
     columns: [
       'id',           // A

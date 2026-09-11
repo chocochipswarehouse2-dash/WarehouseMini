@@ -1,5 +1,6 @@
 import { ManualShipmentOrder } from '../types';
 import { getStoredManualShipmentGasUrl, DEFAULT_MANUAL_SHIPMENT_GAS_URL } from './settings';
+import { getSupabaseClient } from './supabase';
 
 export { DEFAULT_MANUAL_SHIPMENT_GAS_URL };
 
@@ -192,20 +193,31 @@ export async function submitManualShipment(orderData: ManualShipmentOrder): Prom
   } catch {}
 
   try {
-    const gasUrl = getGasUrl();
-    if (!gasUrl) return false;
-    const url = gasUrl.includes('?') ? `${gasUrl}&action=submitShipment` : `${gasUrl}?action=submitShipment`;
+    const sb = getSupabaseClient();
     const payload = {
-      action: 'submitShipment',
-      data: orderData
+      ...(orderData.id ? { id: orderData.id } : {}),
+      no_pesanan: orderData.no_pesanan,
+      tanggal: orderData.created_at || new Date().toISOString(),
+      nama_pengirim: orderData.nama_pengirim,
+      no_telp_store: orderData.no_telp_store,
+      no_transaksi_pengirim: orderData.no_transaksi_pengirim,
+      nama_tujuan: orderData.nama_tujuan,
+      no_telp_tujuan: orderData.no_telp_tujuan,
+      alamat_tujuan: orderData.alamat_tujuan,
+      notes_paket: orderData.notes_paket,
+      no_transaksi_customer: orderData.no_transaksi_customer,
+      jasa_kirim: orderData.jasa_kirim || '',
+      no_resi: orderData.no_resi || '',
+      status: orderData.status,
+      submitted_by: orderData.submitted_by || '',
+      items: orderData.items,
+      updated_at: new Date().toISOString()
     };
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    return true; // Assume success for no-cors
+
+    const { error } = await sb.from('manual_shipment').upsert(payload, { onConflict: 'no_pesanan' });
+    if (error) throw error;
+    
+    return true;
   } catch (error) {
     console.error('Error submitting shipment:', error);
     return false;
@@ -223,19 +235,13 @@ export async function updateShipmentResi(no_pesanan: string, no_resi: string): P
   } catch {}
 
   try {
-    const gasUrl = getGasUrl();
-    if (!gasUrl) return false;
-    const url = gasUrl.includes('?') ? `${gasUrl}&action=updateResi` : `${gasUrl}?action=updateResi`;
-    const payload = {
-      action: 'updateResi',
-      data: { no_pesanan, no_resi }
-    };
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+    const sb = getSupabaseClient();
+    const { error } = await sb
+      .from('manual_shipment')
+      .update({ no_resi, updated_at: new Date().toISOString() })
+      .eq('no_pesanan', no_pesanan);
+      
+    if (error) throw error;
     return true;
   } catch (error) {
     console.error('Error updating resi:', error);
@@ -254,19 +260,13 @@ export async function updateShipmentStatus(no_pesanan: string, status: 'diterima
   } catch {}
 
   try {
-    const gasUrl = getGasUrl();
-    if (!gasUrl) return false;
-    const url = gasUrl.includes('?') ? `${gasUrl}&action=updateStatus` : `${gasUrl}?action=updateStatus`;
-    const payload = {
-      action: 'updateStatus',
-      data: { no_pesanan, status }
-    };
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+    const sb = getSupabaseClient();
+    const { error } = await sb
+      .from('manual_shipment')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('no_pesanan', no_pesanan);
+      
+    if (error) throw error;
     return true;
   } catch (error) {
     console.error('Error updating status:', error);
@@ -285,19 +285,13 @@ export async function deleteManualShipment(no_pesanan: string): Promise<boolean>
   } catch {}
 
   try {
-    const gasUrl = getGasUrl();
-    if (!gasUrl) return false;
-    const url = gasUrl.includes('?') ? `${gasUrl}&action=deleteShipment` : `${gasUrl}?action=deleteShipment`;
-    const payload = {
-      action: 'deleteShipment',
-      data: { no_pesanan }
-    };
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+    const sb = getSupabaseClient();
+    const { error } = await sb
+      .from('manual_shipment')
+      .delete()
+      .eq('no_pesanan', no_pesanan);
+      
+    if (error) throw error;
     return true;
   } catch (error) {
     console.error('Error deleting shipment:', error);
@@ -316,19 +310,30 @@ export async function editManualShipment(orderData: ManualShipmentOrder): Promis
   } catch {}
 
   try {
-    const gasUrl = getGasUrl();
-    if (!gasUrl) return false;
-    const url = gasUrl.includes('?') ? `${gasUrl}&action=editShipment` : `${gasUrl}?action=editShipment`;
+    const sb = getSupabaseClient();
     const payload = {
-      action: 'editShipment',
-      data: orderData
+      ...(orderData.id ? { id: orderData.id } : {}),
+      no_pesanan: orderData.no_pesanan,
+      tanggal: orderData.created_at || new Date().toISOString(),
+      nama_pengirim: orderData.nama_pengirim,
+      no_telp_store: orderData.no_telp_store,
+      no_transaksi_pengirim: orderData.no_transaksi_pengirim,
+      nama_tujuan: orderData.nama_tujuan,
+      no_telp_tujuan: orderData.no_telp_tujuan,
+      alamat_tujuan: orderData.alamat_tujuan,
+      notes_paket: orderData.notes_paket,
+      no_transaksi_customer: orderData.no_transaksi_customer,
+      jasa_kirim: orderData.jasa_kirim || '',
+      no_resi: orderData.no_resi || '',
+      status: orderData.status,
+      submitted_by: orderData.submitted_by || '',
+      items: orderData.items,
+      updated_at: new Date().toISOString()
     };
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+
+    const { error } = await sb.from('manual_shipment').update(payload).eq('no_pesanan', orderData.no_pesanan);
+    if (error) throw error;
+    
     return true;
   } catch (error) {
     console.error('Error editing shipment:', error);
