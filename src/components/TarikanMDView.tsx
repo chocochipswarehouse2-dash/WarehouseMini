@@ -741,23 +741,24 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
     }
   };
 
+  const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const [bulkStatusAction, setBulkStatusAction] = useState<'pending' | 'selesai' | null>(null);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
   const handleBulkUpdateStatus = async (newStatus: 'pending' | 'selesai') => {
-    if (filteredRecords.length === 0) {
-      onShowToast('Tidak ada data yang ditampilkan untuk diubah statusnya.', 'warning');
+    if (selectedRecords.size === 0) {
+      onShowToast('Pilih setidaknya satu Surat Jalan untuk diubah statusnya.', 'warning');
       return;
     }
 
-    const recordsToUpdate = filteredRecords.filter(r => r.status !== newStatus);
+    const recordsToUpdate = filteredRecords.filter(r => selectedRecords.has(r.id) && r.status !== newStatus);
     
     if (recordsToUpdate.length === 0) {
-      onShowToast(`Semua data yang ditampilkan sudah berstatus ${newStatus.toUpperCase()}.`, 'warning');
+      onShowToast(`Semua data yang dipilih sudah berstatus ${newStatus.toUpperCase()}.`, 'warning');
       return;
     }
 
-    if (!window.confirm(`Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan menjadi ${newStatus.toUpperCase()}?`)) {
+    if (!window.confirm(`Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan yang dipilih menjadi ${newStatus.toUpperCase()}?`)) {
       return;
     }
 
@@ -802,6 +803,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
     } finally {
       setIsBulkUpdating(false);
       setBulkStatusAction(null);
+      setSelectedRecords(new Set());
     }
   };
 
@@ -1508,26 +1510,50 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
 
             {/* BULK ACTIONS (ADMIN ONLY) */}
             {userIsAdmin && filteredRecords.length > 0 && (
-              <div className="flex items-center justify-end gap-2 px-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Ubah Semua Status Menjadi:</span>
-                <button
-                  type="button"
-                  onClick={() => handleBulkUpdateStatus('pending')}
-                  disabled={isBulkUpdating || filteredRecords.every(r => r.status === 'pending')}
-                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-blue-200 dark:border-blue-800/50"
-                >
-                  {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3" />}
-                  PENDING
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleBulkUpdateStatus('selesai')}
-                  disabled={isBulkUpdating || filteredRecords.every(r => r.status === 'selesai')}
-                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-800/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-200 dark:border-emerald-800/50"
-                >
-                  {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                  SELESAI
-                </button>
+              <div className="flex items-center justify-between gap-4 px-3 py-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={selectedRecords.size > 0 && selectedRecords.size === filteredRecords.length}
+                    ref={input => {
+                      if (input) {
+                        input.indeterminate = selectedRecords.size > 0 && selectedRecords.size < filteredRecords.length;
+                      }
+                    }}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedRecords(new Set(filteredRecords.map(r => r.id)));
+                      } else {
+                        setSelectedRecords(new Set());
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
+                  />
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+                    {selectedRecords.size > 0 ? `${selectedRecords.size} Dipilih` : 'Pilih Semua'}
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Ubah Status Terpilih:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkUpdateStatus('pending')}
+                    disabled={isBulkUpdating || selectedRecords.size === 0}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-blue-200 dark:border-blue-800/50"
+                  >
+                    {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3" />}
+                    PENDING
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkUpdateStatus('selesai')}
+                    disabled={isBulkUpdating || selectedRecords.size === 0}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-800/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-200 dark:border-emerald-800/50"
+                  >
+                    {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                    SELESAI
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1556,17 +1582,41 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     >
                       {/* ROW HEADER */}
                       <div
-                        onClick={() => {
-                          if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
-                        }}
-                        className="flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                        className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
-                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                          rec.status === 'pending' ? 'bg-blue-500' :
-                          rec.status_komparasi === 'COCOK' ? 'bg-emerald-500' : 'bg-rose-500'
-                        }`} />
+                        {userIsAdmin && (
+                          <div className="shrink-0 flex items-center pr-1" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedRecords.has(rec.id)}
+                              onChange={(e) => {
+                                const newSet = new Set(selectedRecords);
+                                if (e.target.checked) newSet.add(rec.id);
+                                else newSet.delete(rec.id);
+                                setSelectedRecords(newSet);
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-primary-500 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700 cursor-pointer"
+                            />
+                          </div>
+                        )}
+                        <div 
+                          className="shrink-0 cursor-pointer"
+                          onClick={() => {
+                            if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
+                          }}
+                        >
+                          <div className={`w-2.5 h-2.5 rounded-full ${
+                            rec.status === 'pending' ? 'bg-blue-500' :
+                            rec.status_komparasi === 'COCOK' ? 'bg-emerald-500' : 'bg-rose-500'
+                          }`} />
+                        </div>
 
-                        <div className="flex-1 min-w-0">
+                        <div 
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => {
+                            if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
+                          }}
+                        >
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-black text-slate-800 dark:text-white font-mono">{rec.no_sj}</span>
                             <StatusBadge status={rec.status_komparasi} />
