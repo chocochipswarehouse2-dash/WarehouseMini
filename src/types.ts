@@ -403,6 +403,7 @@ export interface ManualShipmentItem {
   sku: string;
   qty: number;
   fulfillment: string;
+  size?: string;
 }
 
 export interface ManualShipmentOrder {

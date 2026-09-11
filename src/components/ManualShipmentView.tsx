@@ -90,7 +90,21 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     setLoading(true);
     try {
       const data = await fetchManualShipments();
-      const reversed = [...data].reverse();
+      // Sanitize jika ada sisa data lama di mana string JSON masuk ke kolom no_transaksi_customer
+      const cleaned = data.map(o => {
+        const cleanOrder = { ...o };
+        if (cleanOrder.no_transaksi_customer && (cleanOrder.no_transaksi_customer.startsWith('[') || cleanOrder.no_transaksi_customer.startsWith('{'))) {
+          if (!cleanOrder.items || cleanOrder.items.length === 0) {
+            try {
+              const parsed = JSON.parse(cleanOrder.no_transaksi_customer);
+              if (Array.isArray(parsed)) cleanOrder.items = parsed;
+            } catch {}
+          }
+          cleanOrder.no_transaksi_customer = cleanOrder.no_pesanan || '';
+        }
+        return cleanOrder;
+      });
+      const reversed = [...cleaned].reverse();
       setOrders(reversed);
 
       // Pastikan nomor transaksi customer di form tidak bentrok dengan order yang baru di-load dari server
@@ -109,7 +123,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
   const handleAddItem = () => {
     setItems(prev => [...prev, {
-      id: `item-${Date.now()}`, nama_produk: '', sku: '', qty: 1, fulfillment: ''
+      id: `item-${Date.now()}`, nama_produk: '', sku: '', qty: 1, fulfillment: '', size: ''
     }]);
   };
 
@@ -217,7 +231,8 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         nama_produk: fullName,
         sku: product.k,
         qty: 1,
-        fulfillment: ''
+        fulfillment: '',
+        size: product.s && product.s !== 'ALL' ? product.s : ''
       }];
     });
     onShowToast(`Berhasil menambahkan ${product.p || product.n || product.k}`, 'success');
