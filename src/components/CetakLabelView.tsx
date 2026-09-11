@@ -1115,72 +1115,72 @@ export const CetakLabelView: React.FC = () => {
             {/* Outline box disesuaikan untuk A6 */}
             <div className="w-full h-full border-2 border-black flex flex-col relative overflow-hidden bg-white">
               
-              {/* Header Label */}
+              {/* 1. Header Label: Kiri Jasa Kirim, Kanan CHOCOCHIPS */}
               <div className="border-b-2 border-black px-3 py-2 bg-gray-50 flex justify-between items-center">
-                <div>
-                  <h1 className="text-base font-black tracking-wider uppercase leading-none">PENGIRIMAN PAKET</h1>
-                  <div className="text-[9px] font-bold text-gray-500 mt-0.5">WMS CHOCOCHIPS EXPRESS</div>
+                <div className="text-sm font-black tracking-wider uppercase leading-none text-black">
+                  {lbl.ekspedisi || 'PENGIRIMAN PAKET'}
                 </div>
-                {lbl.ekspedisi ? (
-                  <div className="text-right">
-                    <div className="text-sm font-black uppercase leading-none">{lbl.ekspedisi}</div>
-                  </div>
-                ) : (
-                  <span className="px-2 py-0.5 text-[9px] font-black uppercase bg-black text-white rounded">
-                    MANUAL
-                  </span>
-                )}
+                <div className="text-[13px] font-black tracking-widest uppercase leading-none text-black">
+                  CHOCOCHIPS
+                </div>
               </div>
 
-              {/* Penerima Box (Utama & Besar) */}
+              {/* 2. Penerima Box (Utama & Besar) */}
               <div className="p-3 border-b-2 border-black bg-white flex-1 flex flex-col justify-center">
-                <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Kepada / Penerima:</div>
-                <div className="text-lg font-black uppercase mb-0.5 leading-tight">{lbl.penerima_nama}</div>
+                <div className="text-[8.5px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Kepada / Penerima:</div>
+                <div className="text-base font-black uppercase mb-0.5 leading-tight text-black">{lbl.penerima_nama}</div>
                 {lbl.penerima_telp && (
-                  <div className="text-xs font-bold font-mono text-gray-800 mb-1">{lbl.penerima_telp}</div>
+                  <div className="text-[11.5px] font-extrabold font-mono text-gray-900 mb-1">{lbl.penerima_telp}</div>
                 )}
-                <div className="text-xs font-medium leading-snug whitespace-pre-wrap line-clamp-3">{lbl.penerima_alamat}</div>
+                <div className="text-[11px] font-medium leading-snug whitespace-pre-wrap line-clamp-3 text-black">{lbl.penerima_alamat}</div>
               </div>
 
-              {/* Pengirim & Deskripsi */}
+              {/* 3. Warning Box: PERHATIAN JANGAN DITERIMA JIKA RUSAK */}
+              <div className="border-b-2 border-black py-1 px-2 bg-gray-100 flex items-center justify-center text-center">
+                <div className="text-[8px] font-black text-black tracking-tight uppercase leading-tight">
+                  ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
+                </div>
+              </div>
+
+              {/* 4. Pengirim & Total Item */}
               <div className="flex border-b-2 border-black">
                 {/* Pengirim */}
-                <div className="p-2.5 border-r-2 border-black flex-1">
-                  <div className="text-[8px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Dari / Pengirim:</div>
-                  <div className="text-xs font-black uppercase">{lbl.pengirim_nama}</div>
-                  {lbl.pengirim_telp && <div className="text-[10px] font-bold font-mono text-gray-700">{lbl.pengirim_telp}</div>}
+                <div className="p-2 border-r-2 border-black flex-1">
+                  <div className="text-[8px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Dari / Pengirim:</div>
+                  <div className="text-[11.5px] font-black uppercase text-black">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
+                  {lbl.pengirim_telp && <div className="text-[9.5px] font-bold font-mono text-gray-700">{lbl.pengirim_telp}</div>}
                 </div>
                 {/* Qty / Indikator */}
-                <div className="p-2.5 w-20 flex flex-col items-center justify-center bg-gray-50">
-                  <span className="text-[8px] font-bold text-gray-500 uppercase">PAKET</span>
-                  <span className="text-xs font-black">1/1</span>
+                <div className="p-2 w-20 flex flex-col items-center justify-center bg-gray-50">
+                  <span className="text-[8px] font-extrabold text-gray-500 uppercase">PAKET</span>
+                  <span className="text-xs font-black text-black">1/1</span>
                 </div>
               </div>
 
-              {/* Deskripsi Paket */}
-              <div className="p-2.5 text-xs bg-white h-[58px] overflow-hidden border-b-2 border-black">
-                <div className="text-[8px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Isi Paket:</div>
-                <div className="font-medium text-[11px] whitespace-pre-wrap leading-tight line-clamp-2">{lbl.deskripsi || '-'}</div>
+              {/* 5. Deskripsi Paket */}
+              <div className="p-2 text-xs bg-white h-[52px] overflow-hidden border-b-2 border-black box-border">
+                <div className="text-[8px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Isi Paket:</div>
+                <div className="font-semibold text-[9.5px] whitespace-pre-wrap leading-tight line-clamp-2 text-gray-900">{lbl.deskripsi || '-'}</div>
               </div>
 
-              {/* QR Code & ID Paket Section */}
-              <div className="p-2 bg-gray-50 flex items-center justify-between gap-2.5 h-[84px] box-border">
+              {/* 6. Footer: QR Code & ID Paket (Tanpa Border QR & Tanpa Caption SCAN QR) */}
+              <div className="px-3 py-2 bg-gray-50 flex items-center justify-between gap-2.5 h-[76px] box-border">
                 {/* Left: ID Paket details */}
                 <div className="flex-1 min-w-0 pr-1">
-                  <div className="inline-block px-1.5 py-0.5 bg-black text-white text-[8px] font-black uppercase tracking-wider rounded mb-1">
+                  <div className="inline-block px-1.5 py-0.5 bg-black text-white text-[7.5px] font-black uppercase tracking-wider rounded mb-1">
                     MANUAL PAKET
                   </div>
-                  <div className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">ID Paket:</div>
-                  <div className="text-xs font-black font-mono tracking-tight text-black truncate">
+                  <div className="text-[8px] font-extrabold text-gray-500 uppercase tracking-wider">ID Paket:</div>
+                  <div className="text-xs font-black font-mono tracking-tight text-black truncate leading-tight">
                     {lbl.invoice_no}
                   </div>
                   <div className="text-[8px] font-mono text-gray-600 mt-1 truncate">
-                    {lbl.ekspedisi ? `Jasa Kirim: ${lbl.ekspedisi}` : `QR: Manual paket + ID: ${lbl.invoice_no}`}
+                    {lbl.ekspedisi ? `Jasa Kirim: ${lbl.ekspedisi}` : `ID: ${lbl.invoice_no}`}
                   </div>
                 </div>
 
-                {/* Right: Crisp QR Code */}
-                <div className="flex flex-col items-center justify-center flex-shrink-0 bg-white p-1 border-2 border-black rounded">
+                {/* Right: Clean QR Code (Tanpa Border Luar & Tanpa Caption) */}
+                <div className="flex items-center justify-center flex-shrink-0">
                   {lbl.qr_data_url ? (
                     <img
                       src={lbl.qr_data_url}
@@ -1193,9 +1193,6 @@ export const CetakLabelView: React.FC = () => {
                       size={58}
                     />
                   )}
-                  <span className="text-[6.5px] font-mono font-black text-black uppercase tracking-tighter mt-0.5">
-                    SCAN QR PAKET
-                  </span>
                 </div>
               </div>
 

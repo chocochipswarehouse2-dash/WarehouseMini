@@ -736,57 +736,63 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           <!-- Outline box A6 -->
           <div style="width: 100%; height: 100%; border: 2px solid #000; display: flex; flex-direction: column; position: relative; overflow: hidden; background: #fff; box-sizing: border-box;">
             
-            <!-- 1. Header Label -->
-            <div style="border-bottom: 2px solid #000; padding: 7px 10px; background-color: #f9fafb; display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1;">PENGIRIMAN PAKET</div>
-                <div style="font-size: 8.5px; font-weight: 700; color: #6b7280; margin-top: 2px;">WMS CHOCOCHIPS EXPRESS</div>
+            <!-- 1. Header Label: Kiri Jasa Kirim, Kanan CHOCOCHIPS -->
+            <div style="border-bottom: 2px solid #000; padding: 8px 12px; background-color: #f9fafb; display: flex; justify-content: space-between; align-items: center;">
+              <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1; color: #000;">
+                ${escapeHtml(order.jasa_kirim || 'PENGIRIMAN PAKET')}
               </div>
-              <div style="text-align: right;">
-                <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; line-height: 1;">${escapeHtml(order.jasa_kirim || 'MANUAL')}</div>
+              <div style="font-size: 13px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; line-height: 1; color: #000;">
+                CHOCOCHIPS
               </div>
             </div>
 
             <!-- 2. Penerima Box (Utama & Besar) -->
             <div style="padding: 10px 12px; border-bottom: 2px solid #000; background: #fff; flex: 1; display: flex; flex-direction: column; justify-content: center;">
               <div style="font-size: 8.5px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Kepada / Penerima:</div>
-              <div style="font-size: 16px; font-weight: 900; text-transform: uppercase; line-height: 1.2; margin-bottom: 2px;">${escapeHtml(order.nama_tujuan || '-')}</div>
+              <div style="font-size: 16px; font-weight: 900; text-transform: uppercase; line-height: 1.2; margin-bottom: 2px; color: #000;">${escapeHtml(order.nama_tujuan || '-')}</div>
               ${order.no_telp_tujuan ? `<div style="font-size: 11.5px; font-weight: 800; font-family: monospace; color: #111827; margin-bottom: 3px;">${escapeHtml(order.no_telp_tujuan)}</div>` : ''}
               <div style="font-size: 11px; font-weight: 500; line-height: 1.35; color: #000; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(order.alamat_tujuan || '-')}</div>
             </div>
 
-            <!-- 3. Pengirim & Total Item -->
+            <!-- 3. Warning Box: PERHATIAN JANGAN DITERIMA JIKA RUSAK -->
+            <div style="border-bottom: 2px solid #000; padding: 5px 8px; background-color: #f3f4f6; display: flex; align-items: center; justify-content: center; text-align: center;">
+              <div style="font-size: 8px; font-weight: 900; color: #000; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.25;">
+                ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
+              </div>
+            </div>
+
+            <!-- 4. Pengirim & Total Item -->
             <div style="display: flex; border-bottom: 2px solid #000;">
               <!-- Pengirim -->
               <div style="padding: 7px 10px; border-right: 2px solid #000; flex: 1;">
                 <div style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Dari / Pengirim:</div>
-                <div style="font-size: 11.5px; font-weight: 900; text-transform: uppercase;">${escapeHtml(order.nama_pengirim || 'CHOCOCHIPS')}</div>
+                <div style="font-size: 11.5px; font-weight: 900; text-transform: uppercase; color: #000;">${escapeHtml(order.nama_pengirim || 'CHOCOCHIPS')}</div>
                 ${order.no_telp_store ? `<div style="font-size: 9.5px; font-weight: 700; font-family: monospace; color: #374151;">${escapeHtml(order.no_telp_store)}</div>` : ''}
               </div>
               <!-- Qty / Indikator -->
               <div style="padding: 7px 10px; width: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f9fafb;">
                 <span style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase;">TOTAL ITEM</span>
-                <span style="font-size: 13px; font-weight: 900;">${totalQty} Pcs</span>
+                <span style="font-size: 13px; font-weight: 900; color: #000;">${totalQty} Pcs</span>
               </div>
             </div>
 
-            <!-- 4. Isi Paket / Deskripsi -->
-            <div style="padding: 7px 10px; font-size: 11px; background-color: #fff; height: 56px; overflow: hidden; border-bottom: 2px solid #000; box-sizing: border-box;">
+            <!-- 5. Isi Paket / Deskripsi -->
+            <div style="padding: 6px 10px; font-size: 11px; background-color: #fff; height: 52px; overflow: hidden; border-bottom: 2px solid #000; box-sizing: border-box;">
               <div style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Isi Paket:</div>
-              <div style="font-size: 10px; font-weight: 600; line-height: 1.25; color: #111827; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;">
+              <div style="font-size: 9.5px; font-weight: 600; line-height: 1.25; color: #111827; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;">
                 ${escapeHtml(fullDesc)}
               </div>
             </div>
 
-            <!-- 5. QR Code & No Pesanan Section (Sesuai Format Label A6) -->
-            <div style="padding: 6px 10px; background-color: #f9fafb; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 82px; box-sizing: border-box;">
+            <!-- 6. Footer: QR Code & No Pesanan (Tanpa Border QR & Tanpa Caption SCAN QR) -->
+            <div style="padding: 8px 12px; background-color: #f9fafb; display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 76px; box-sizing: border-box;">
               <!-- Left: ID & Info -->
               <div style="flex: 1; min-width: 0; padding-right: 4px;">
                 <div style="display: inline-block; padding: 2px 6px; background-color: #000; color: #fff; font-size: 7.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 3px; margin-bottom: 2px;">
                   MANUAL SHIPMENT
                 </div>
-                <div style="font-size: 8.5px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">No. Pesanan:</div>
-                <div style="font-size: 12.5px; font-weight: 900; font-family: monospace; letter-spacing: -0.02em; color: #000; word-break: break-all;">
+                <div style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">No. Pesanan:</div>
+                <div style="font-size: 13px; font-weight: 900; font-family: monospace; letter-spacing: -0.02em; color: #000; word-break: break-all; line-height: 1.15;">
                   ${escapeHtml(order.no_pesanan || '')}
                 </div>
                 <div style="font-size: 8px; font-family: monospace; color: #4b5563; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
@@ -794,12 +800,9 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 </div>
               </div>
 
-              <!-- Right: Crisp QR Code -->
-              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; background-color: #fff; padding: 3px; border: 2px solid #000; border-radius: 4px;">
-                <img src="${qrDataUrl}" alt="QR Code" style="width: 54px; height: 54px; display: block; object-fit: contain;" />
-                <span style="font-size: 6.5px; font-family: monospace; font-weight: 900; color: #000; text-transform: uppercase; letter-spacing: -0.05em; margin-top: 1px;">
-                  SCAN QR PAKET
-                </span>
+              <!-- Right: Clean QR Code (Tanpa Border Luar & Tanpa Caption) -->
+              <div style="display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <img src="${qrDataUrl}" alt="QR Code" style="width: 58px; height: 58px; display: block; object-fit: contain;" />
               </div>
             </div>
 
