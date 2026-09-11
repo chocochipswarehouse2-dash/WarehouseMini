@@ -561,22 +561,30 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         <head>
           <title>Picking List - Manual Shipment</title>
           <style>
-            body { font-family: monospace; font-size: 12px; margin: 0; padding: 20px; color: #000; }
-            h2 { margin: 0 0 10px 0; font-size: 16px; border-bottom: 1px dashed #000; padding-bottom: 5px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-            th, td { border: 1px dashed #000; padding: 5px; text-align: left; }
-            th { border-bottom: 2px dashed #000; }
-            .header-info { margin-bottom: 20px; }
-            .order-header { margin-bottom: 5px; line-height: 1.3; }
+            body { font-family: 'Courier New', Courier, monospace; font-size: 11px; margin: 0; padding: 15px; color: #000; }
+            h2 { margin: 0 0 10px 0; font-size: 14px; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; table-layout: fixed; }
+            th, td { border: none; border-bottom: 1px solid #ccc; padding: 6px 4px; text-align: left; vertical-align: top; word-wrap: break-word; }
+            th { border-bottom: 2px solid #000; font-weight: bold; }
+            .header-info { margin-bottom: 20px; font-size: 10px; color: #333; }
+            .order-header { margin-bottom: 8px; line-height: 1.4; font-size: 11px; }
+            .order-header strong { display: inline-block; width: 90px; }
+            .item-name { font-weight: 500; margin-bottom: 2px; }
+            .item-sku { color: #555; font-size: 10px; }
+            .text-center { text-align: center; }
+            .page-container { max-width: 800px; margin: 0 auto; }
+            
             @media print {
-              body { margin: 0; padding: 10px; }
+              body { margin: 0; padding: 5mm; }
               @page { size: portrait; margin: 5mm; }
+              .no-print { display: none; }
             }
           </style>
         </head>
         <body>
-          <h2>PICKING LIST - MANUAL SHIPMENT</h2>
-          <div class="header-info">Dicetak: ${todayStr}<br/>Admin: ${session?.username}</div>
+          <div class="page-container">
+            <h2>PICKING LIST - MANUAL SHIPMENT</h2>
+            <div class="header-info">Dicetak: ${todayStr}<br/>Admin: ${session?.username || 'admin'}</div>
     `);
 
     itemsToPrint.forEach((order) => {
@@ -588,17 +596,17 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             <strong>Jasa Kirim:</strong> ${order.jasa_kirim || '-'} <br/>
             <strong>DealPOS:</strong> ${(order.no_transaksi_pengirim || []).join(', ') || '-'} <br/>
             <strong>Dari:</strong> ${order.nama_pengirim} <br/>
-            <strong>Tujuan:</strong> ${order.nama_tujuan} <br/>
+            <strong>Tujuan:</strong> ${order.nama_tujuan}
           </div>
           <table>
             <thead>
               <tr>
-                <th style="width: 5%">#</th>
-                <th style="width: 45%">Nama Produk</th>
-                <th style="width: 15%">SKU</th>
+                <th style="width: 5%" class="text-center">#</th>
+                <th style="width: 35%">Nama Produk</th>
+                <th style="width: 25%">SKU</th>
                 <th style="width: 15%">Variasi</th>
-                <th style="width: 5%">Qty</th>
-                <th style="width: 15%">Lokasi</th>
+                <th style="width: 8%" class="text-center">Qty</th>
+                <th style="width: 12%">Lokasi</th>
               </tr>
             </thead>
             <tbody>
@@ -609,10 +617,13 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         let location = '-';
         let variasi = 'Default';
         
-        // Try to extract variasi from nama produk (usually after dash)
+        // Clean up item name (remove variasi from the end if it exists)
+        let cleanName = item.nama_produk;
         const parts = item.nama_produk.split('-');
         if (parts.length > 1) {
           variasi = parts[parts.length - 1].trim();
+          // Assume the rest is the product name
+          cleanName = parts.slice(0, parts.length - 1).join('-').trim();
         }
 
         if (item.fulfillment === 'Marketplace') {
@@ -622,11 +633,11 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
         printWin.document.write(`
           <tr>
-            <td>${itemIdx + 1}</td>
-            <td>${item.nama_produk}</td>
-            <td>${item.sku}</td>
+            <td class="text-center">${itemIdx + 1}</td>
+            <td><div class="item-name">${cleanName}</div></td>
+            <td><div class="item-sku">${item.sku}</div></td>
             <td>${variasi}</td>
-            <td>${item.qty}</td>
+            <td class="text-center"><strong>${item.qty}</strong></td>
             <td>${location}</td>
           </tr>
         `);
@@ -639,7 +650,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       `);
     });
 
-    printWin.document.write('</body></html>');
+    printWin.document.write('</div></body></html>');
     printWin.document.close();
     printWin.focus();
     setTimeout(() => {
