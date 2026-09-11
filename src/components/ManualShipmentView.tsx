@@ -13,6 +13,7 @@ import {
   updateShipmentResi,
   deleteManualShipment,
   fetchJasaKirimList,
+  editManualShipment,
 } from '../services/gasManualShipment';
 import QRCode from 'qrcode';
 import {
@@ -43,6 +44,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const [jasaKirimList, setJasaKirimList] = useState<string[]>([]);
   const [orders, setOrders] = useState<ManualShipmentOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
+
+  const [editingOrder, setEditingOrder] = useState<ManualShipmentOrder | null>(null);
 
   // Form State - langsung terisi Order ID Manual Shipment unik anti-collision
   const [pengirim, setPengirim] = useState('');
@@ -152,18 +159,22 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     // 1. Validasi & pastikan no_transaksi_customer memuat kode store dan 100% unik
     let finalTransCustomer = transCustomer.trim();
     const expectedPrefix = pengirim ? `MS${getStoreCode(pengirim)}-` : 'MS-';
-    if (!finalTransCustomer || !finalTransCustomer.startsWith(expectedPrefix) || !isTransactionNumberUnique(finalTransCustomer, orders)) {
-      finalTransCustomer = generateCustomerTransactionNumber(orders, pengirim);
-      setTransCustomer(finalTransCustomer);
+    
+    if (!editingOrder) {
+      if (!finalTransCustomer || !finalTransCustomer.startsWith(expectedPrefix) || !isTransactionNumberUnique(finalTransCustomer, orders)) {
+        finalTransCustomer = generateCustomerTransactionNumber(orders, pengirim);
+        setTransCustomer(finalTransCustomer);
+      }
     }
 
     // 2. Ambil nilai jasa kirim
     const finalJasaKirim = (isCustomJasaKirim ? customJasaKirim : jasaKirim).trim();
 
     // 3. Cegah bentrokan ID pesanan internal dengan format ringkas yang rapi
-    const uniquePesananId = generateShortOrderId(pengirim, orders);
+    const uniquePesananId = editingOrder ? editingOrder.no_pesanan! : generateShortOrderId(pengirim, orders);
 
     const orderData: ManualShipmentOrder = {
+      ...(editingOrder || {}),
       no_pesanan: uniquePesananId,
       nama_pengirim: pengirim,
       no_telp_store: telpPengirim,
@@ -175,25 +186,32 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       no_transaksi_customer: finalTransCustomer,
       jasa_kirim: finalJasaKirim,
       items: items,
-      status: 'diterima',
-      no_resi: '',
-      created_at: new Date().toISOString(),
-      submitted_by: session?.username || 'Unknown'
+      status: editingOrder ? editingOrder.status : 'diterima',
+      no_resi: editingOrder ? (editingOrder.no_resi || '') : '',
+      created_at: editingOrder ? editingOrder.created_at : new Date().toISOString(),
+      submitted_by: editingOrder ? editingOrder.submitted_by : (session?.username || 'Unknown')
     };
 
-    const success = await submitManualShipment(orderData);
+    let success = false;
+    if (editingOrder) {
+      success = await editManualShipment(orderData);
+    } else {
+      success = await submitManualShipment(orderData);
+    }
+
     if (success) {
-      onShowToast('Pesanan berhasil disubmit', 'success');
+      onShowToast(editingOrder ? 'Pesanan berhasil diupdate' : 'Pesanan berhasil disubmit', 'success');
       resetForm();
       loadOrders();
       setActiveTab('rekap');
     } else {
-      onShowToast('Gagal submit pesanan', 'error');
+      onShowToast(editingOrder ? 'Gagal update pesanan' : 'Gagal submit pesanan', 'error');
     }
     setLoading(false);
   };
 
   const resetForm = () => {
+    setEditingOrder(null);
     setPengirim('');
     setTelpPengirim('');
     setTransPengirim('');
@@ -243,7 +261,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       <div className="p-6">
         <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
           <Package className="w-6 h-6 mr-2 text-indigo-600" />
-          Form Manual Shipment
+          {editingOrder ? 'Edit Manual Shipment' : 'Form Manual Shipment'}
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -505,7 +523,16 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             </div>
           </div>
 
-          <div className="pt-6 border-t border-slate-200 flex justify-end">
+          <div className="pt-6 border-t border-slate-200 flex justify-end gap-3">
+            {editingOrder && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-6 py-2.5 rounded-lg text-slate-700 font-medium bg-slate-100 hover:bg-slate-200"
+              >
+                Batal Edit
+              </button>
+            )}
             <button
               type="submit"
               disabled={loading}
@@ -518,7 +545,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
               ) : (
                 <Send className="w-5 h-5 mr-2" />
               )}
-              {loading ? 'Submitting...' : 'Submit Pesanan'}
+              {loading ? 'Submitting...' : editingOrder ? 'Update Pesanan' : 'Submit Pesanan'}
             </button>
           </div>
         </form>
@@ -892,6 +919,31 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     setLoading(false);
   };
 
+  const handleEdit = (order: ManualShipmentOrder) => {
+    setEditingOrder(order);
+    setPengirim(order.nama_pengirim || '');
+    setTelpPengirim(order.no_telp_store || order.no_telp_pengirim || '');
+    setTransPengirim((order.no_transaksi_pengirim || []).join(', '));
+    
+    if (jasaKirimList.includes(order.jasa_kirim || '')) {
+      setJasaKirim(order.jasa_kirim || '');
+      setIsCustomJasaKirim(false);
+    } else {
+      setJasaKirim('custom');
+      setCustomJasaKirim(order.jasa_kirim || '');
+      setIsCustomJasaKirim(true);
+    }
+    
+    setTujuan(order.nama_tujuan || '');
+    setTelpTujuan(order.no_telp_tujuan || '');
+    setAlamatTujuan(order.alamat_tujuan || '');
+    setNotesPaket(order.notes_paket || '');
+    setTransCustomer(order.no_transaksi_customer || '');
+    setItems(order.items || []);
+    
+    setActiveTab('form');
+  };
+
   const handleDelete = async (no_pesanan: string) => {
     if (!confirm(`Yakin ingin menghapus pesanan ${no_pesanan}?`)) return;
     setLoading(true);
@@ -906,20 +958,87 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   };
 
   const filteredOrders = useMemo(() => {
-    if (!searchTerm.trim()) return orders;
-    const q = searchTerm.toLowerCase().trim();
-    return orders.filter(o => 
-      (o.no_pesanan && o.no_pesanan.toLowerCase().includes(q)) ||
-      (o.no_transaksi_customer && o.no_transaksi_customer.toLowerCase().includes(q)) ||
-      (o.jasa_kirim && o.jasa_kirim.toLowerCase().includes(q)) ||
-      (o.no_transaksi_pengirim && o.no_transaksi_pengirim.some(p => p.toLowerCase().includes(q))) ||
-      (o.nama_tujuan && o.nama_tujuan.toLowerCase().includes(q)) ||
-      (o.nama_pengirim && o.nama_pengirim.toLowerCase().includes(q)) ||
-      (o.no_resi && o.no_resi.toLowerCase().includes(q)) ||
-      (o.no_telp_tujuan && o.no_telp_tujuan.toLowerCase().includes(q)) ||
-      (o.items && o.items.some(i => i.nama_produk?.toLowerCase().includes(q) || i.sku?.toLowerCase().includes(q)))
-    );
-  }, [orders, searchTerm]);
+    let result = orders;
+    
+    // Status filter
+    if (filterStatus !== 'all') {
+      result = result.filter(o => o.status === filterStatus);
+    }
+    
+    // Date filter
+    if (filterStartDate) {
+      const start = new Date(filterStartDate);
+      start.setHours(0, 0, 0, 0);
+      result = result.filter(o => {
+        if (!o.created_at) return false;
+        const d = new Date(o.created_at);
+        return d >= start;
+      });
+    }
+    if (filterEndDate) {
+      const end = new Date(filterEndDate);
+      end.setHours(23, 59, 59, 999);
+      result = result.filter(o => {
+        if (!o.created_at) return false;
+        const d = new Date(o.created_at);
+        return d <= end;
+      });
+    }
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase().trim();
+      result = result.filter(o => 
+        (o.no_pesanan && o.no_pesanan.toLowerCase().includes(q)) ||
+        (o.no_transaksi_customer && o.no_transaksi_customer.toLowerCase().includes(q)) ||
+        (o.jasa_kirim && o.jasa_kirim.toLowerCase().includes(q)) ||
+        (o.no_transaksi_pengirim && o.no_transaksi_pengirim.some(p => p.toLowerCase().includes(q))) ||
+        (o.nama_tujuan && o.nama_tujuan.toLowerCase().includes(q)) ||
+        (o.nama_pengirim && o.nama_pengirim.toLowerCase().includes(q)) ||
+        (o.no_resi && o.no_resi.toLowerCase().includes(q)) ||
+        (o.no_telp_tujuan && o.no_telp_tujuan.toLowerCase().includes(q)) ||
+        (o.items && o.items.some(i => i.nama_produk?.toLowerCase().includes(q) || i.sku?.toLowerCase().includes(q)))
+      );
+    }
+    
+    return result;
+  }, [orders, searchTerm, filterStatus, filterStartDate, filterEndDate]);
+
+  const handleExportCSV = () => {
+    if (filteredOrders.length === 0) {
+      onShowToast('Tidak ada data untuk diexport', 'warning');
+      return;
+    }
+    
+    const headers = ['Order ID', 'Tanggal', 'Pengirim', 'No Telp Pengirim', 'Tujuan', 'No Telp Tujuan', 'Alamat Tujuan', 'Jasa Kirim', 'Resi', 'Status', 'Items'];
+    
+    const rows = filteredOrders.map(o => {
+      const itemsStr = o.items ? o.items.map(i => `${i.nama_produk} (x${i.qty})`).join('; ') : '';
+      return [
+        o.no_pesanan,
+        new Date(o.created_at || '').toLocaleDateString('en-US'),
+        o.nama_pengirim,
+        o.no_telp_store || o.no_telp_pengirim || '',
+        o.nama_tujuan,
+        o.no_telp_tujuan,
+        `"${(o.alamat_tujuan || '').replace(/"/g, '""')}"`,
+        o.jasa_kirim,
+        o.no_resi || '',
+        o.status,
+        `"${itemsStr.replace(/"/g, '""')}"`
+      ].join(',');
+    });
+    
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `manual_shipment_export_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const renderRekap = () => (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[600px]">
@@ -934,29 +1053,67 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2 flex-1 max-w-xs min-w-[200px]">
-          <div className="relative w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
-              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
-              >
-                ✕
-              </button>
-            )}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative w-full max-w-xs min-w-[200px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="all">Semua Status</option>
+              <option value="pending">Pending</option>
+              <option value="diterima">Diterima</option>
+              <option value="diproses">Diproses</option>
+              <option value="dikirim">Dikirim</option>
+              <option value="batal">Batal</option>
+            </select>
+            
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <span className="text-xs text-slate-500">-</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
           </div>
         </div>
         
         <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={handleExportCSV}
+            className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
+            title="Export CSV"
+          >
+            <span className="text-[11px] font-semibold flex items-center gap-1"><FileText className="w-4 h-4" /> Export</span>
+          </button>
           <button
             onClick={loadOrders}
             className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
@@ -1100,6 +1257,14 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleEdit(order)}
+                          className="text-[10px] text-blue-600 border border-blue-200 bg-white px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors shadow-xs"
+                          title="Edit Pesanan"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleUpdateResi(order.no_pesanan!)}
                           className="text-[10px] text-slate-600 border border-slate-300 bg-white px-2 py-0.5 rounded-sm hover:bg-slate-50 transition-colors shadow-xs"
                         >
@@ -1133,9 +1298,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
             activeTab === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
           }`}
-          onClick={() => setActiveTab('form')}
+          onClick={() => {
+            if (editingOrder) resetForm();
+            setActiveTab('form');
+          }}
         >
-          Form Input
+          {editingOrder ? 'Edit Pesanan' : 'Form Input'}
         </button>
         <button
           className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
