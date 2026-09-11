@@ -9,6 +9,7 @@ import { getStoredManualShipmentGasUrl } from './settings';
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
 const CACHE_KEY_DRAFTS = 'wms_cached_pengecekan_sj_drafts';
+const CACHE_KEY_OFFLINE_QUEUE = 'wms_offline_queue_pengecekan_sj';
 
 const getGasUrl = (): string => {
   return getStoredManualShipmentGasUrl();
@@ -203,20 +204,69 @@ export async function fetchTarikanMDRecords(): Promise<PengecekanSJRecord[]> {
 }
 
 /**
- * Submit Pengecekan Surat Jalan ke sheet.
- * Menuliskan KESELURUHAN DATA item secara individual (sama kayak manual shipment),
- * bukan sekadar JSON blob!
+ * Mengambil antrean data offline yang belum sempat terkirim ke GAS
  */
-export async function submitTarikanMD(record: PengecekanSJRecord): Promise<boolean> {
+export function getPendingOfflinePengecekanSJ(): PengecekanSJRecord[] {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY_OFFLINE_QUEUE);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Menyimpan antrean data offline ke local storage
+ */
+export function savePendingOfflinePengecekanSJ(queue: PengecekanSJRecord[]): void {
+  try {
+    localStorage.setItem(CACHE_KEY_OFFLINE_QUEUE, JSON.stringify(queue));
+  } catch (e) {
+    console.warn('Gagal menyimpan offline queue:', e);
+  }
+}
+
+export interface SubmitPengecekanResult {
+  success: boolean;
+  offline?: boolean;
+  message?: string;
+}
+
+/**
+ * Submit Pengecekan Surat Jalan ke sheet.
+ * Menuliskan KESELURUHAN DATA item secara individual (sama kayak manual shipment).
+ * Dilengkapi kemampuan Offline-First: jika koneksi internet terputus, pekerjaan
+ * TIDAK AKAN HILANG dan disimpan ke antrean offline untuk disinkronkan otomatis saat online.
+ */
+export async function submitTarikanMD(record: PengecekanSJRecord): Promise<SubmitPengecekanResult> {
+  const isCurrentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
   // 1. Simpan ke local cache segera (optimistic update)
   try {
     const current = await fetchTarikanMDRecords();
-    const updated = [record, ...current.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
+    const updatedRecord: PengecekanSJRecord = {
+      ...record,
+      sync_status: isCurrentlyOnline ? 'synced' : 'pending_sync',
+    };
+    const updated = [updatedRecord, ...current.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
     localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updated));
   } catch {}
 
   const gasUrl = getGasUrl();
-  if (!gasUrl) return false;
+
+  // Jika kondisi offline atau tidak ada URL GAS
+  if (!isCurrentlyOnline || !gasUrl) {
+    const currentQueue = getPendingOfflinePengecekanSJ();
+    const updatedQueue = [record, ...currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
+    savePendingOfflinePengecekanSJ(updatedQueue);
+    return {
+      success: true,
+      offline: true,
+      message: 'Tersimpan offline di perangkat. Otomatis dikirim ke Google Sheets saat internet kembali terhubung.',
+    };
+  }
 
   try {
     // Format payload agar GAS bisa menuliskan item individual sebagai baris spreadsheet
@@ -224,12 +274,10 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<boole
       action: 'submitPengecekanSJ',
       data: {
         ...record,
-        // Baris-baris individual item produk (kolom lengkap: no_sj, source, dest, sku, nama, qty_sj, qty_scan, selisih, status)
         items: record.items,
         rows: record.items,
         items_json: JSON.stringify(record.items),
       },
-      // Backward compatibility jika GAS mengharapkan format submitTarikanMD
       legacyAction: 'submitTarikanMD',
     };
 
@@ -240,11 +288,93 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<boole
       body: JSON.stringify(payload),
     });
 
-    return true;
+    // Berhasil kirim online, pastikan dikeluarkan dari offline queue jika ada
+    const currentQueue = getPendingOfflinePengecekanSJ();
+    if (currentQueue.some(r => r.id === record.id || r.no_sj === record.no_sj)) {
+      savePendingOfflinePengecekanSJ(currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj));
+    }
+
+    return { success: true, offline: false };
   } catch (error) {
-    console.error('Error submitting Pengecekan Surat Jalan:', error);
-    return false;
+    console.warn('Gagal koneksi ke Google Sheet saat submit, mengamankan ke antrean offline:', error);
+    // Masukkan ke offline queue
+    const currentQueue = getPendingOfflinePengecekanSJ();
+    const updatedQueue = [record, ...currentQueue.filter(r => r.id !== record.id && r.no_sj !== record.no_sj)];
+    savePendingOfflinePengecekanSJ(updatedQueue);
+
+    return {
+      success: true,
+      offline: true,
+      message: 'Koneksi terganggu. Data telah diamankan di perangkat & akan otomatis dikirim saat online.',
+    };
   }
+}
+
+/**
+ * Mengirimkan data-data offline yang tertunda ke Google Apps Script
+ */
+export async function syncPendingOfflinePengecekanSJ(): Promise<{ successCount: number; remainingCount: number }> {
+  const queue = getPendingOfflinePengecekanSJ();
+  if (queue.length === 0) return { successCount: 0, remainingCount: 0 };
+  const gasUrl = getGasUrl();
+  if (!gasUrl || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+    return { successCount: 0, remainingCount: queue.length };
+  }
+
+  let successCount = 0;
+  const remaining: PengecekanSJRecord[] = [];
+
+  for (const record of queue) {
+    try {
+      const payload = {
+        action: 'submitPengecekanSJ',
+        data: {
+          ...record,
+          items: record.items,
+          rows: record.items,
+          items_json: JSON.stringify(record.items),
+        },
+        legacyAction: 'submitTarikanMD',
+      };
+
+      await fetch(gasUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+
+      successCount++;
+    } catch {
+      remaining.push(record);
+    }
+  }
+
+  savePendingOfflinePengecekanSJ(remaining);
+
+  // Perbarui status di cache records
+  if (successCount > 0) {
+    try {
+      const current = await fetchTarikanMDRecords();
+      const updated = current.map(rec => {
+        const isStillPending = remaining.some(rem => rem.id === rec.id || rem.no_sj === rec.no_sj);
+        if (!isStillPending && rec.sync_status === 'pending_sync') {
+          return { ...rec, sync_status: 'synced' } as PengecekanSJRecord;
+        }
+        return rec;
+      });
+      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(updated));
+    } catch {}
+  }
+
+  return { successCount, remainingCount: remaining.length };
+}
+
+// Inisialisasi auto-sync otomatis saat browser mendeteksi sinyal internet pulih
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    syncPendingOfflinePengecekanSJ().catch(() => {});
+  });
 }
 
 /**

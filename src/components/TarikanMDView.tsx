@@ -3,7 +3,8 @@ import {
   Upload, RefreshCw, Send, ChevronDown, ChevronUp, CheckCircle2,
   AlertTriangle, Package, FileText, Trash2, ClipboardCheck, X,
   Minus, Plus, RotateCcw, ArrowUpDown, ScanLine, Download,
-  Edit3, ArrowLeftRight, Check, Search, Filter, Layers, ListFilter
+  Edit3, ArrowLeftRight, Check, Search, Filter, Layers, ListFilter,
+  Wifi, WifiOff, CloudOff
 } from 'lucide-react';
 import {
   UserSession,
@@ -25,6 +26,8 @@ import {
   saveSJDrafts,
   deleteSJDraft,
   exportPengecekanToCsv,
+  getPendingOfflinePengecekanSJ,
+  syncPendingOfflinePengecekanSJ,
 } from '../services/gasTarikanMD';
 import { playSuccessBeep, playErrorBeep } from '../services/audio';
 
@@ -235,6 +238,61 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<PengecekanSJRecord | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Offline & Sync Detection
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(() => getPendingOfflinePengecekanSJ().length);
+  const [isSyncingOffline, setIsSyncingOffline] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Begitu internet pulih, coba sinkronisasi otomatis
+      syncPendingOfflinePengecekanSJ().then((res) => {
+        if (res.successCount > 0) {
+          onShowToast(`Koneksi internet pulih: ${res.successCount} hasil pengecekan berhasil disinkronkan ke Sheet!`, 'success');
+          loadRecords();
+        }
+        setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
+      });
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const handleManualSyncOffline = async () => {
+    if (!isOnline) {
+      onShowToast('Perangkat masih dalam kondisi offline. Sambungkan ke internet terlebih dahulu.', 'warning');
+      return;
+    }
+    setIsSyncingOffline(true);
+    try {
+      const res = await syncPendingOfflinePengecekanSJ();
+      if (res.successCount > 0) {
+        onShowToast(`Berhasil menyinkronkan ${res.successCount} data surat jalan ke Google Sheets!`, 'success');
+        loadRecords();
+      } else if (res.remainingCount > 0) {
+        onShowToast('Gagal menghubungi Google Sheets. Coba sesaat lagi.', 'warning');
+      } else {
+        onShowToast('Semua data pengecekan sudah tersinkronisasi!', 'info');
+      }
+      setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
+    } catch {
+      onShowToast('Terjadi kesalahan saat sinkronisasi.', 'error');
+    } finally {
+      setIsSyncingOffline(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'riwayat') {
@@ -526,19 +584,24 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
         items_json: JSON.stringify(allRows),
       };
 
-      const ok = await submitTarikanMD(record);
-      if (ok) {
-        onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit ke Sheet dengan status PENDING!`, 'success');
+      const result = await submitTarikanMD(record);
+      if (result.success) {
+        if (result.offline) {
+          onShowToast(result.message || 'Tersimpan offline di perangkat. Otomatis dikirim ke Google Sheets saat internet kembali aktif.', 'info');
+        } else {
+          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit ke Sheet dengan status PENDING!`, 'success');
+        }
 
-        // Hapus dari antrean draft
+        // Hapus dari antrean draft karena scan fisik sudah selesai
         deleteSJDraft(activeDraft.id);
         setDrafts(prev => prev.filter(d => d.id !== activeDraft.id));
+        setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
 
         // Buka tab Riwayat Pengecekan
         setActiveTab('riwayat');
         loadRecords();
       } else {
-        onShowToast('Gagal simpan ke Google Sheet. Periksa setting URL GAS.', 'error');
+        onShowToast('Gagal menyimpan hasil pengecekan.', 'error');
       }
     } catch (e) {
       console.error('Submit error:', e);
@@ -713,19 +776,79 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
             </div>
           </div>
 
-          {/* Quick Action Export Semua */}
-          {activeTab === 'riwayat' && records.length > 0 && (
+          {/* Quick Action Export Semua & Status Indikator */}
+          <div className="flex items-center gap-2">
+            <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+              isOnline
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+            }`}>
+              {isOnline ? (
+                <>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Online</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-3 h-3 text-amber-500" />
+                  <span>Offline</span>
+                </>
+              )}
+            </div>
+
+            {activeTab === 'riwayat' && records.length > 0 && (
+              <button
+                type="button"
+                onClick={() => exportPengecekanToCsv(records, `Semua_Riwayat_Pengecekan_SJ_${new Date().toISOString().slice(0, 10)}.csv`)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Export Semua Data</span>
+                <span className="sm:hidden">Export</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* OFFLINE INDICATOR BANNER */}
+        {!isOnline && (
+          <div className="mb-3 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-amber-700 dark:text-amber-300 text-xs">
+            <div className="flex items-center gap-2.5">
+              <WifiOff className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                <strong>Mode Offline Aktif:</strong> Internet terputus. Anda tetap bisa melakukan scan barcode dan import; progres scan tersimpan otomatis di perangkat Anda tanpa hilang.
+              </span>
+            </div>
+            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-[10px] font-extrabold shrink-0 text-amber-700 dark:text-amber-300">
+              Aman & Tersimpan
+            </span>
+          </div>
+        )}
+
+        {/* PENDING OFFLINE SYNC BANNER */}
+        {pendingOfflineCount > 0 && (
+          <div className="mb-3 px-3.5 py-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-3 text-blue-700 dark:text-blue-300 text-xs">
+            <div className="flex items-center gap-2.5">
+              <CloudOff className="w-4 h-4 shrink-0 text-blue-500" />
+              <span>
+                <strong>{pendingOfflineCount} Surat Jalan</strong> telah selesai dicek secara offline dan menunggu dikirim ke Google Sheets.
+              </span>
+            </div>
             <button
               type="button"
-              onClick={() => exportPengecekanToCsv(records, `Semua_Riwayat_Pengecekan_SJ_${new Date().toISOString().slice(0, 10)}.csv`)}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              disabled={isSyncingOffline || !isOnline}
+              onClick={handleManualSyncOffline}
+              className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                !isOnline
+                  ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+              }`}
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Export Semua Data</span>
-              <span className="sm:hidden">Export</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
+              <span>{isSyncingOffline ? 'Menyinkronkan...' : isOnline ? 'Sinkronkan Sekarang' : 'Menunggu Internet'}</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* TABS SELECTOR */}
         <div className="flex gap-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl p-1">
@@ -1304,6 +1427,12 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                             {rec.status === 'pending' && (
                               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
                                 PENDING
+                              </span>
+                            )}
+                            {rec.sync_status === 'pending_sync' && (
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                                <CloudOff className="w-2.5 h-2.5" />
+                                Menunggu Sync (Offline)
                               </span>
                             )}
                           </div>

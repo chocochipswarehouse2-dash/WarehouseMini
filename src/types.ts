@@ -689,6 +689,7 @@ export interface PengecekanSJRecord {
   created_at: string;
   updated_at?: string;
   catatan?: string;
+  sync_status?: 'synced' | 'pending_sync';
   items: PengecekanSJItem[];
   items_json?: string;
 }
