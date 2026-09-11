@@ -1109,72 +1109,66 @@ export const CetakLabelView: React.FC = () => {
         AREA PRINT (Hanya muncul saat dicetak ke printer A6)
         ========================================================
       */}
-      <div id="print-area" className="hidden print:block bg-white w-full h-full text-black">
+      <div id="print-area" className="hidden print:block bg-white w-full text-black">
         {labels.map((lbl) => (
-          <div key={lbl.id} className="page-break w-[105mm] h-[148mm] overflow-hidden p-3 relative bg-white box-border border-b border-dashed border-gray-300">
+          <div key={lbl.id} className="page-break w-[105mm] min-h-[148mm] h-auto p-3 relative bg-white box-border border-b border-dashed border-transparent">
             {/* Outline box disesuaikan untuk A6 */}
-            <div className="w-full h-full border-2 border-black flex flex-col relative overflow-hidden bg-white">
+            <div className="w-full h-full min-h-[calc(148mm-24px)] border-2 border-black flex flex-col relative bg-white">
               
               {/* 1. Header Label: Kiri Jasa Kirim, Kanan CHOCOCHIPS */}
-              <div className="border-b-2 border-black px-3 py-2 bg-gray-50 flex justify-between items-center">
-                <div className="text-sm font-black tracking-wider uppercase leading-none text-black">
+              <div className="border-b-2 border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
+                <div className="text-base font-black tracking-wider uppercase leading-none text-black">
                   {lbl.ekspedisi || 'PENGIRIMAN PAKET'}
                 </div>
-                <div className="text-[13px] font-black tracking-widest uppercase leading-none text-black">
+                <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black">
                   CHOCOCHIPS
                 </div>
               </div>
 
               {/* 2. Penerima Box (Utama & Besar) */}
-              <div className="p-3 border-b-2 border-black bg-white flex-1 flex flex-col justify-center">
-                <div className="text-[8.5px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Kepada / Penerima:</div>
-                <div className="text-base font-black uppercase mb-0.5 leading-tight text-black">{lbl.penerima_nama}</div>
+              <div className="p-3 border-b-2 border-black bg-white flex flex-col justify-center break-inside-avoid">
+                <div className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Kepada / Penerima:</div>
+                <div className="text-xl font-black uppercase mb-0.5 leading-tight text-black">{lbl.penerima_nama}</div>
                 {lbl.penerima_telp && (
-                  <div className="text-[11.5px] font-extrabold font-mono text-gray-900 mb-1">{lbl.penerima_telp}</div>
+                  <div className="text-[14px] font-extrabold font-mono text-gray-900 mb-1">{lbl.penerima_telp}</div>
                 )}
-                <div className="text-[11px] font-medium leading-snug whitespace-pre-wrap line-clamp-3 text-black">{lbl.penerima_alamat}</div>
+                <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black">{lbl.penerima_alamat}</div>
               </div>
 
               {/* 3. Warning Box: PERHATIAN JANGAN DITERIMA JIKA RUSAK */}
-              <div className="border-b-2 border-black py-1 px-2 bg-gray-100 flex items-center justify-center text-center">
-                <div className="text-[8px] font-black text-black tracking-tight uppercase leading-tight">
+              <div className="border-b-2 border-black py-2 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
+                <div className="text-[10px] font-black text-black tracking-tight uppercase leading-tight">
                   ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
                 </div>
               </div>
 
               {/* 4. Pengirim & Total Item */}
-              <div className="flex border-b-2 border-black">
+              <div className="flex border-b-2 border-black break-inside-avoid">
                 {/* Pengirim */}
-                <div className="p-2 border-r-2 border-black flex-1">
-                  <div className="text-[8px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Dari / Pengirim:</div>
-                  <div className="text-[11.5px] font-black uppercase text-black">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
-                  {lbl.pengirim_telp && <div className="text-[9.5px] font-bold font-mono text-gray-700">{lbl.pengirim_telp}</div>}
+                <div className="p-3 border-r-2 border-black flex-1">
+                  <div className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Dari / Pengirim:</div>
+                  <div className="text-[13px] font-black uppercase text-black">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
+                  {lbl.pengirim_telp && <div className="text-[11px] font-bold font-mono text-gray-700">{lbl.pengirim_telp}</div>}
                 </div>
                 {/* Qty / Indikator */}
-                <div className="p-2 w-20 flex flex-col items-center justify-center bg-gray-50">
-                  <span className="text-[8px] font-extrabold text-gray-500 uppercase">PAKET</span>
-                  <span className="text-xs font-black text-black">1/1</span>
+                <div className="p-2 w-24 flex flex-col items-center justify-center bg-gray-50">
+                  <span className="text-[10px] font-extrabold text-gray-500 uppercase">PAKET</span>
+                  <span className="text-sm font-black text-black">1/1</span>
                 </div>
               </div>
 
-              {/* 5. Deskripsi Paket */}
-              <div className="p-2 text-xs bg-white h-[52px] overflow-hidden border-b-2 border-black box-border">
-                <div className="text-[8px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Isi Paket:</div>
-                <div className="font-semibold text-[9.5px] whitespace-pre-wrap leading-tight line-clamp-2 text-gray-900">{lbl.deskripsi || '-'}</div>
-              </div>
-
-              {/* 6. Footer: QR Code & ID Paket (Tanpa Border QR & Tanpa Caption SCAN QR) */}
-              <div className="px-3 py-2 bg-gray-50 flex items-center justify-between gap-2.5 h-[76px] box-border">
+              {/* 5. Footer: QR Code & ID Paket */}
+              <div className="px-3 py-3 bg-gray-50 flex items-center justify-between gap-3 box-border border-b-2 border-black break-inside-avoid">
                 {/* Left: ID Paket details */}
                 <div className="flex-1 min-w-0 pr-1">
-                  <div className="inline-block px-1.5 py-0.5 bg-black text-white text-[7.5px] font-black uppercase tracking-wider rounded mb-1">
+                  <div className="inline-block px-1.5 py-0.5 bg-black text-white text-[9px] font-black uppercase tracking-wider rounded mb-1">
                     MANUAL PAKET
                   </div>
-                  <div className="text-[8px] font-extrabold text-gray-500 uppercase tracking-wider">ID Paket:</div>
-                  <div className="text-xs font-black font-mono tracking-tight text-black truncate leading-tight">
+                  <div className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider mt-1">ID Paket:</div>
+                  <div className="text-base font-black font-mono tracking-tight text-black truncate leading-tight">
                     {lbl.invoice_no}
                   </div>
-                  <div className="text-[8px] font-mono text-gray-600 mt-1 truncate">
+                  <div className="text-[11px] font-mono text-gray-600 mt-1.5 truncate">
                     {lbl.ekspedisi ? `Jasa Kirim: ${lbl.ekspedisi}` : `ID: ${lbl.invoice_no}`}
                   </div>
                 </div>
@@ -1185,14 +1179,22 @@ export const CetakLabelView: React.FC = () => {
                     <img
                       src={lbl.qr_data_url}
                       alt="QR Code"
-                      className="w-[58px] h-[58px] block object-contain"
+                      className="w-[74px] h-[74px] block object-contain"
                     />
                   ) : (
                     <QrCodeImage
                       text={lbl.qr_content || `Manual paket + ID: ${lbl.invoice_no}`}
-                      size={58}
+                      size={74}
                     />
                   )}
+                </div>
+              </div>
+
+              {/* 6. Deskripsi Paket (Isi Paket - Paling Bawah) */}
+              <div className="p-3 bg-white flex-1 flex flex-col">
+                <div className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider mb-1">Isi Paket:</div>
+                <div className="font-bold text-[13px] whitespace-pre-wrap leading-snug text-gray-900 break-words flex-1">
+                  {lbl.deskripsi || '-'}
                 </div>
               </div>
 
