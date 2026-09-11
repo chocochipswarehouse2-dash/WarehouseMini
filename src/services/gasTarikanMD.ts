@@ -20,34 +20,140 @@ const getGasUrl = (): string => {
  * Memastikan items tersimpan sebagai baris terstruktur (bukan hanya string JSON)
  */
 function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
-  if (!Array.isArray(rawData)) return [];
+  if (!Array.isArray(rawData) || rawData.length === 0) return [];
 
-  // 1. Cek apakah rawData adalah baris-baris datar (flat rows) per item dari spreadsheet (sama kayak manual shipment)
-  const isFlatRows = rawData.length > 0 && rawData[0] && typeof rawData[0] === 'object' && ('sku' in rawData[0] || 'code' in rawData[0]) && !('items' in rawData[0]);
+  // Grouping map berdasarkan Surat Jalan: no_sj + source + destination
+  const grouped = new Map<string, {
+    rec: PengecekanSJRecord;
+    itemsMap: Map<string, PengecekanSJItem>;
+  }>();
 
-  if (isFlatRows) {
-    const grouped = new Map<string, PengecekanSJRecord>();
-    for (const row of rawData) {
-      const no_sj = String(row.no_sj || row.number_delivery || row['No SJ'] || '').trim();
-      const source = String(row.source || row.asal || row['Source'] || '').trim();
-      const destination = String(row.destination || row.tujuan || row['Destination'] || '').trim();
-      const key = `${no_sj.toUpperCase()}___${source.toUpperCase()}___${destination.toUpperCase()}`;
+  for (const d of rawData) {
+    if (!d || typeof d !== 'object') continue;
 
-      const sku = String(row.sku || row.code || '').trim();
-      const nama_produk = String(row.nama_produk || row.product || row.variant || sku).trim();
-      const category = row.category || row.kategori || '';
-      const qty_sj = parseInt(row.qty_sj ?? row.qty ?? '0', 10) || 0;
-      const qty_scan = parseInt(row.qty_scan ?? row.qty_terima ?? '0', 10) || 0;
-      const selisih = parseInt(row.selisih ?? String(qty_scan - qty_sj), 10) || (qty_scan - qty_sj);
-      const status_item = (row.status_item || (selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH')) as 'COCOK' | 'KURANG' | 'LEBIH';
-      const status_sj = (row.status_sj || row.status || 'pending') as 'pending' | 'selesai' | 'cocok' | 'selisih';
+    // Normalisasi variabel Surat Jalan (No SJ + Source + Destination)
+    let no_sj = String(d.no_sj || d.number_delivery || d['No SJ'] || d['Delivery No'] || '').trim();
+    let source = String(d.source || d.asal || d['Source'] || '').trim();
+    let destination = String(d.destination || d.tujuan || d['Destination'] || '').trim();
+    const tanggal_sj = String(d.tanggal_sj || d.date || d.tanggal || d['Tanggal SJ'] || '').trim();
+    const submitted_by = String(d.submitted_by || d.petugas || d.operator || d.pemeriksa || '').trim();
+    const status_sj = (d.status || d.status_sj || 'pending') as 'pending' | 'selesai' | 'cocok' | 'selisih';
+    const catatan = String(d.catatan || d.notes || '').trim();
+    const created_at = String(d.created_at || d.waktu_submit || new Date().toISOString()).trim();
 
-      const item: PengecekanSJItem = {
-        id: row.id || `${key}-${sku}-${Date.now()}`,
+    // Deteksi cerdas jika data dari sheet lama misaligned (misal: source kosong tapi no_sj berisi nama gudang)
+    if (!source && no_sj && (no_sj.toLowerCase().includes('warehouse') || no_sj.toLowerCase().includes('gudang'))) {
+      source = no_sj;
+    }
+    if (!destination && submitted_by && submitted_by !== 'Unknown' && !submitted_by.includes('@')) {
+      destination = submitted_by;
+    }
+    if (!no_sj) {
+      no_sj = source && destination ? `SJ-${source.slice(0, 3).toUpperCase()}-${destination.slice(0, 3).toUpperCase()}` : 'SJ-PENGECEKAN';
+    }
+
+    const key = `${no_sj.toUpperCase()}___${source.toUpperCase()}___${destination.toUpperCase()}`;
+
+    if (!grouped.has(key)) {
+      const rec: PengecekanSJRecord = {
+        id: key,
         no_sj,
-        source,
-        destination,
-        tanggal_sj: String(row.tanggal_sj || row.date || '').trim(),
+        source: source || 'Gudang Asal',
+        destination: destination || 'Outlet Tujuan',
+        tanggal_sj: tanggal_sj || new Date().toISOString().slice(0, 10),
+        status: status_sj,
+        status_komparasi: 'COCOK',
+        total_qty_sj: 0,
+        total_qty_terima: 0,
+        total_sku: 0,
+        submitted_by: submitted_by || 'Petugas',
+        created_at,
+        catatan,
+        items: [],
+      };
+      grouped.set(key, { rec, itemsMap: new Map<string, PengecekanSJItem>() });
+    }
+
+    const group = grouped.get(key)!;
+
+    // Periksa apakah d memiliki array `items` atau string `items_json`
+    let rawItems: any[] = [];
+    if (Array.isArray(d.items) && d.items.length > 0) {
+      rawItems = d.items;
+    } else if (d.items_json) {
+      try {
+        const parsed = JSON.parse(d.items_json);
+        if (Array.isArray(parsed)) rawItems = parsed;
+      } catch {}
+    }
+
+    if (rawItems.length > 0) {
+      // Record sudah membawa item-item
+      for (const item of rawItems) {
+        const sku = String(item.sku || item.code || '').trim();
+        if (!sku) continue;
+        const itemKey = `${sku.toUpperCase()}___${item.category || ''}`;
+        const qty_sj = parseInt(item.qty_sj ?? '0', 10) || 0;
+        const qty_scan = parseInt(item.qty_scan ?? item.qty_terima ?? '0', 10) || 0;
+        const selisih = parseInt(item.selisih ?? String(qty_scan - qty_sj), 10) || (qty_scan - qty_sj);
+
+        if (!group.itemsMap.has(itemKey)) {
+          group.itemsMap.set(itemKey, {
+            id: item.id || `${key}-${sku}`,
+            no_sj,
+            source: group.rec.source,
+            destination: group.rec.destination,
+            tanggal_sj: group.rec.tanggal_sj,
+            sku,
+            nama_produk: String(item.nama_produk || sku).trim(),
+            category: item.category || '',
+            qty_sj,
+            qty_scan,
+            selisih,
+            status_item: item.status_item || (selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH'),
+            status_sj: group.rec.status,
+            is_unexpected: Boolean(item.is_unexpected || qty_sj === 0),
+            submitted_by: group.rec.submitted_by,
+            created_at: group.rec.created_at,
+            catatan: item.catatan || '',
+          });
+        }
+      }
+    } else {
+      // d sendiri adalah baris item (flat row / database row per item)
+      // Ekstrak SKU, Category, dan Nama Produk
+      const stat_comp = String(d.status_komparasi || '').trim();
+      let category = String(d.category || d.kategori || '').trim();
+      if (!category && stat_comp.includes('/')) {
+        category = stat_comp; // misal 'CLOTHING/BOTTOM/SKORT'
+      }
+
+      let sku = String(d.sku || d.code || d.barcode || '').trim();
+      if (!sku) {
+        // Jika SKU belum diisi dari kolom, gunakan id jika id bukan tanggal
+        if (d.id && !String(d.id).includes('GMT')) {
+          sku = String(d.id).trim();
+        } else if (category) {
+          sku = category;
+        } else {
+          sku = `ITEM-${group.itemsMap.size + 1}`;
+        }
+      }
+
+      const nama_produk = String(d.nama_produk || d.product || d.variant || (category ? `${category} (${sku})` : sku)).trim();
+      const qty_sj = parseInt(d.qty_sj ?? d.total_qty_sj ?? d.qty ?? '0', 10) || 0;
+      const qty_scan = parseInt(d.qty_scan ?? d.total_qty_terima ?? d.qty_terima ?? '0', 10) || 0;
+      const selisih = parseInt(d.selisih ?? String(qty_scan - qty_sj), 10) || (qty_scan - qty_sj);
+      const is_unexpected = Boolean(d.is_unexpected || String(d.is_unexpected).toLowerCase() === 'ya' || qty_sj === 0);
+      const status_item = (d.status_item || (selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH')) as 'COCOK' | 'KURANG' | 'LEBIH';
+
+      const itemKey = `${sku.toUpperCase()}___${category.toUpperCase()}___${group.itemsMap.size}`;
+      group.itemsMap.set(itemKey, {
+        id: d.id || `${key}-${sku}-${group.itemsMap.size + 1}`,
+        no_sj,
+        source: group.rec.source,
+        destination: group.rec.destination,
+        tanggal_sj: group.rec.tanggal_sj,
         sku,
         nama_produk,
         category,
@@ -55,100 +161,28 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
         qty_scan,
         selisih,
         status_item,
-        status_sj,
-        is_unexpected: row.is_unexpected || qty_sj === 0,
-        submitted_by: row.submitted_by || row.operator || '',
-        created_at: row.created_at || new Date().toISOString(),
-        catatan: row.catatan || '',
-      };
-
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          id: key,
-          no_sj,
-          source,
-          destination,
-          tanggal_sj: item.tanggal_sj,
-          status: status_sj,
-          status_komparasi: 'COCOK',
-          total_qty_sj: 0,
-          total_qty_terima: 0,
-          total_sku: 0,
-          submitted_by: item.submitted_by || '',
-          created_at: item.created_at || new Date().toISOString(),
-          items: [],
-        });
-      }
-
-      const rec = grouped.get(key)!;
-      rec.items.push(item);
-      rec.total_qty_sj += item.qty_sj;
-      rec.total_qty_terima += item.qty_scan;
-      rec.total_sku = rec.items.length;
-      if (item.selisih !== 0) {
-        rec.status_komparasi = 'SELISIH';
-      }
+        status_sj: group.rec.status,
+        is_unexpected,
+        submitted_by: group.rec.submitted_by,
+        created_at: group.rec.created_at,
+        catatan: d.catatan || '',
+      });
     }
-    return Array.from(grouped.values());
   }
 
-  // 2. Format standar object record
-  return rawData.map((d: any) => {
-    let items: PengecekanSJItem[] = [];
-    if (Array.isArray(d.items)) {
-      items = d.items;
-    } else if (d.items_json) {
-      try {
-        items = JSON.parse(d.items_json);
-      } catch {}
-    }
+  // Hitung total dan finalisasi setiap Surat Jalan record
+  const result: PengecekanSJRecord[] = [];
+  for (const { rec, itemsMap } of grouped.values()) {
+    rec.items = Array.from(itemsMap.values());
+    rec.total_sku = rec.items.length;
+    rec.total_qty_sj = rec.items.reduce((acc, it) => acc + (it.qty_sj || 0), 0);
+    rec.total_qty_terima = rec.items.reduce((acc, it) => acc + (it.qty_scan || 0), 0);
+    rec.status_komparasi = rec.items.some(it => it.selisih !== 0) ? 'SELISIH' : 'COCOK';
+    rec.items_json = JSON.stringify(rec.items);
+    result.push(rec);
+  }
 
-    const no_sj = String(d.no_sj || '').trim();
-    const source = String(d.source || '').trim();
-    const destination = String(d.destination || '').trim();
-    const tanggal_sj = String(d.tanggal_sj || '').trim();
-
-    // Pastikan setiap item memiliki atribut lengkap (sama kayak manual shipment)
-    const normalizedItems: PengecekanSJItem[] = items.map((item: any) => ({
-      id: item.id || `${no_sj}-${item.sku}`,
-      no_sj,
-      source,
-      destination,
-      tanggal_sj,
-      sku: item.sku,
-      nama_produk: item.nama_produk || item.sku,
-      category: item.category || '',
-      qty_sj: item.qty_sj ?? 0,
-      qty_scan: item.qty_scan ?? item.qty_terima ?? 0,
-      selisih: item.selisih ?? ((item.qty_scan ?? item.qty_terima ?? 0) - (item.qty_sj ?? 0)),
-      status_item: item.status_item || item.status || 'COCOK',
-      status_sj: d.status || 'pending',
-      is_unexpected: item.is_unexpected || item.qty_sj === 0,
-      submitted_by: d.submitted_by || '',
-      created_at: d.created_at || new Date().toISOString(),
-      catatan: item.catatan || d.catatan || '',
-    }));
-
-    const id = d.id || `${no_sj}___${source}___${destination}`;
-    return {
-      id,
-      no_sj,
-      source,
-      destination,
-      tanggal_sj,
-      status: (d.status || 'pending') as 'pending' | 'selesai' | 'cocok' | 'selisih',
-      status_komparasi: (d.status_komparasi || (normalizedItems.some(i => i.selisih !== 0) ? 'SELISIH' : 'COCOK')) as 'COCOK' | 'SELISIH',
-      total_qty_sj: d.total_qty_sj ?? normalizedItems.reduce((acc, i) => acc + (i.qty_sj || 0), 0),
-      total_qty_terima: d.total_qty_terima ?? normalizedItems.reduce((acc, i) => acc + (i.qty_scan || 0), 0),
-      total_sku: normalizedItems.length,
-      submitted_by: d.submitted_by || 'Unknown',
-      created_at: d.created_at || new Date().toISOString(),
-      updated_at: d.updated_at,
-      catatan: d.catatan || '',
-      items: normalizedItems,
-      items_json: JSON.stringify(normalizedItems),
-    };
-  });
+  return result;
 }
 
 /**
