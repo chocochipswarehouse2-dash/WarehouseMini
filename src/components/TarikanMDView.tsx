@@ -1599,15 +1599,31 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                           {isEditing && editFormData && (
                             <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-900 grid grid-cols-2 sm:grid-cols-4 gap-2">
                               <div>
-                                <label className="text-[9px] font-bold text-slate-400 uppercase">Status SJ</label>
-                                <select
-                                  value={editFormData.status}
-                                  onChange={e => setEditFormData({ ...editFormData, status: e.target.value as any })}
-                                  className="w-full text-xs font-bold px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg"
-                                >
-                                  <option value="pending">PENDING</option>
-                                  <option value="selesai">SELESAI</option>
-                                </select>
+                                <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Status SJ</label>
+                                <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1 h-[26px]">
+                                  <label className="flex items-center gap-1 cursor-pointer">
+                                    <input 
+                                      type="radio" 
+                                      name={`status-${editFormData.id}`} 
+                                      value="pending" 
+                                      checked={editFormData.status === 'pending'} 
+                                      onChange={() => setEditFormData({ ...editFormData, status: 'pending' })} 
+                                      className="w-3 h-3 text-blue-600 border-slate-300 focus:ring-blue-500" 
+                                    />
+                                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">PENDING</span>
+                                  </label>
+                                  <label className="flex items-center gap-1 cursor-pointer">
+                                    <input 
+                                      type="radio" 
+                                      name={`status-${editFormData.id}`} 
+                                      value="selesai" 
+                                      checked={editFormData.status === 'selesai'} 
+                                      onChange={() => setEditFormData({ ...editFormData, status: 'selesai' })} 
+                                      className="w-3 h-3 text-emerald-600 border-slate-300 focus:ring-emerald-500" 
+                                    />
+                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">SELESAI</span>
+                                  </label>
+                                </div>
                               </div>
 
                               <div>
