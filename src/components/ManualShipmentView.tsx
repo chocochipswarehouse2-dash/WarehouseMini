@@ -988,14 +988,14 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       </div>
       
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50 sticky top-0 z-10">
+        <table className="min-w-full">
+          <thead className="bg-white sticky top-0 z-10 border-b border-slate-200">
             <tr>
               {canAction && (
-                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-10">
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal w-10">
                   <input
                     type="checkbox"
-                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    className="rounded-sm border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                     onChange={(e) => {
                       if (e.target.checked) setSelectedOrders(new Set(filteredOrders.map(o => o.no_pesanan)));
                       else setSelectedOrders(new Set());
@@ -1004,119 +1004,114 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   />
                 </th>
               )}
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No Pesanan / Order ID</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Jasa Kirim</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Pengirim / Tujuan</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Item / Fulfillment</th>
+              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Order</th>
+              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Date</th>
+              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Customer</th>
+              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Shipping Method</th>
+              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Status</th>
+              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Items</th>
               {canAction && (
-                <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Aksi</th>
+                <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Aksi</th>
               )}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-slate-200">
+          <tbody className="bg-white">
             {filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan={canAction ? 7 : 6} className="px-6 py-10 text-center text-slate-500">
+                <td colSpan={canAction ? 8 : 7} className="px-3 py-8 text-center text-[11px] text-slate-500">
                   {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
                 </td>
               </tr>
             ) : (
               filteredOrders.map((order) => (
-                <tr key={order.no_pesanan} className="hover:bg-slate-50">
+                <tr key={order.no_pesanan} className="hover:bg-slate-50 border-b border-slate-100/80 last:border-b-0">
                   {canAction && (
-                    <td className="px-4 py-4 whitespace-nowrap">
+                    <td className="px-3 py-2.5 whitespace-nowrap align-top">
                       <input
                         type="checkbox"
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        className="rounded-sm border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer mt-0.5"
                         checked={selectedOrders.has(order.no_pesanan)}
                         onChange={() => toggleSelectOrder(order.no_pesanan)}
                       />
                     </td>
                   )}
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <div className="font-medium text-slate-900">{order.no_pesanan}</div>
-                    <div className="text-xs text-slate-500">{new Date(order.created_at || '').toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year:'numeric'})}</div>
+                  <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                    <div className="text-[11px] font-medium text-[#00a8e8] hover:underline cursor-pointer">{order.no_pesanan}</div>
                     {order.no_transaksi_customer && (
-                      <div className="mt-1 text-xs font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100 block font-semibold w-fit">
-                        Order ID: {order.no_transaksi_customer}
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        ID: {order.no_transaksi_customer}
                       </div>
                     )}
                     {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
-                      <div className="mt-0.5 text-[11px] font-mono text-slate-600 block">
-                        DealPOS: {order.no_transaksi_pengirim.join(', ')}
-                      </div>
-                    )}
-                    {order.no_resi && (
-                      <div className="mt-1 text-xs font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded inline-block">
-                        Resi: {order.no_resi}
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        DPOS: {order.no_transaksi_pengirim.join(', ')}
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    {order.jasa_kirim ? (
-                      <span className="px-2.5 py-1 inline-flex text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        {order.jasa_kirim}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400 italic">-</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="text-sm">
-                      <span className="font-medium text-slate-800">{order.nama_pengirim}</span>
-                      <span className="text-slate-500 mx-2">→</span>
-                      <span className="font-medium text-slate-800">{order.nama_tujuan}</span>
+                  <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      {new Date(order.created_at || '').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'})}
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 truncate max-w-xs" title={order.alamat_tujuan}>
+                  </td>
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="text-[11px] text-[#00a8e8] hover:underline cursor-pointer inline-flex">{order.nama_tujuan}</div>
+                    <div className="text-[10px] text-slate-500 truncate max-w-[160px] mt-0.5" title={order.alamat_tujuan}>
                       {order.alamat_tujuan}
                     </div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                      ${order.status === 'diterima' ? 'bg-blue-100 text-blue-800' : 
-                        order.status === 'diproses' ? 'bg-yellow-100 text-yellow-800' : 
-                        order.status === 'dikirim' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}
-                    >
-                      {order.status.toUpperCase()}
+                  <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                    <div className="text-[11px] text-slate-600 mt-0.5">{order.jasa_kirim || '-'}</div>
+                    {order.no_resi && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {order.no_resi}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                    <span className={`mt-0.5 px-1.5 py-0.5 inline-block text-[10px] font-semibold rounded-sm border ${
+                      order.status === 'diterima' ? 'border-slate-300 text-slate-600 bg-white' : 
+                      order.status === 'diproses' ? 'border-yellow-400 text-yellow-600 bg-white' : 
+                      order.status === 'dikirim' ? 'border-emerald-400 text-emerald-600 bg-white' : 
+                      order.status === 'pending' || order.status === 'open' ? 'border-red-400 text-red-500 bg-white' : 
+                      'border-slate-300 text-slate-600 bg-white'
+                    }`}>
+                      {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
                     </span>
                   </td>
-                  <td className="px-4 py-4">
-                    <ul className="text-sm text-slate-700 list-disc pl-4 space-y-1">
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="text-[10px] text-slate-600 leading-tight space-y-0.5">
                       {order.items?.map((item, idx) => (
-                        <li key={idx}>
-                          {item.nama_produk} <span className="font-medium">x{item.qty}</span>
-                          <span className="text-xs text-slate-500 ml-2">({item.fulfillment})</span>
-                        </li>
+                        <div key={idx} className="truncate max-w-[180px]" title={item.nama_produk}>
+                          <span className="text-[#00a8e8]">{item.nama_produk}</span> <span className="font-semibold text-slate-700">x{item.qty}</span>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   </td>
                   {canAction && (
-                    <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end gap-1.5">
+                    <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
+                      <div className="flex justify-end gap-1.5 mt-0.5">
                         <button
                           type="button"
                           onClick={() => handlePrintLabel(order)}
-                          className="text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-1 rounded text-xs flex items-center gap-1 font-semibold cursor-pointer shadow-xs"
+                          className="text-[10px] text-slate-600 border border-slate-300 bg-white px-2 py-0.5 rounded-sm hover:bg-slate-50 transition-colors shadow-xs"
                           title="Cetak Label A6 Pesanan Ini"
                         >
-                          <Printer className="w-3.5 h-3.5 text-slate-600" />
-                          Label A6
+                          Print
                         </button>
                         <button
                           type="button"
                           onClick={() => handleUpdateResi(order.no_pesanan!)}
-                          className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded text-xs font-semibold cursor-pointer"
+                          className="text-[10px] text-slate-600 border border-slate-300 bg-white px-2 py-0.5 rounded-sm hover:bg-slate-50 transition-colors shadow-xs"
                         >
-                          Input Resi
+                          Resi
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(order.no_pesanan!)}
-                          className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2 py-1 rounded cursor-pointer"
+                          className="text-[10px] text-red-500 border border-red-200 bg-white px-2 py-0.5 rounded-sm hover:bg-red-50 transition-colors shadow-xs"
                           title="Hapus Pesanan"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          Hapus
                         </button>
                       </div>
                     </td>
