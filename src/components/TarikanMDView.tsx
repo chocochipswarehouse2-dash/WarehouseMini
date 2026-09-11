@@ -224,6 +224,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
   }, [drafts, activeDraftId]);
 
   const [submitting, setSubmitting] = useState(false);
+  const [detailFilter, setDetailFilter] = useState<'ALL' | 'COCOK' | 'SELISIH'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- RIWAYAT PENGECEKAN STATE ----
@@ -1112,16 +1113,32 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                 {/* SUMMARY STATS */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: 'Total Qty SJ', value: summary.total_sj, color: 'text-slate-800 dark:text-white', bg: 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800' },
-                    { label: 'Total Discan', value: summary.total_scan + summary.total_unexpected_qty, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900' },
-                    { label: 'SKU Cocok', value: summary.cocok, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900' },
-                    { label: 'SKU Selisih', value: summary.kurang + summary.lebih + summary.unexpectedCount, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900' },
-                  ].map(({ label, value, color, bg }) => (
-                    <div key={label} className={`${bg} rounded-xl p-3 border`}>
-                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</div>
-                      <div className={`text-2xl font-black ${color}`}>{value}</div>
-                    </div>
-                  ))}
+                    { id: 'qty', label: 'Total Qty SJ', value: summary.total_sj, color: 'text-slate-800 dark:text-white', bg: 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800', clickable: false },
+                    { id: 'scan', label: 'Total Discan', value: summary.total_scan + summary.total_unexpected_qty, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900', clickable: false },
+                    { id: 'cocok', label: 'SKU Cocok', value: summary.cocok, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900', clickable: true },
+                    { id: 'selisih', label: 'SKU Selisih', value: summary.kurang + summary.lebih + summary.unexpectedCount, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900', clickable: true },
+                  ].map(({ id, label, value, color, bg, clickable }) => {
+                    const isFilterActive = (id === 'cocok' && detailFilter === 'COCOK') || (id === 'selisih' && detailFilter === 'SELISIH');
+                    const ringStyle = isFilterActive ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-slate-900' : '';
+                    
+                    return (
+                      <div 
+                        key={label} 
+                        onClick={() => {
+                          if (!clickable) return;
+                          if (id === 'cocok') setDetailFilter(prev => prev === 'COCOK' ? 'ALL' : 'COCOK');
+                          if (id === 'selisih') setDetailFilter(prev => prev === 'SELISIH' ? 'ALL' : 'SELISIH');
+                        }}
+                        className={`${bg} rounded-xl p-3 border ${clickable ? 'cursor-pointer hover:shadow-md transition-all' : ''} ${ringStyle}`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</div>
+                          {isFilterActive && <CheckCircle2 className="w-3.5 h-3.5 text-primary-500" />}
+                        </div>
+                        <div className={`text-2xl font-black ${color}`}>{value}</div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* KOMPARASI BARANG TABLE */}
@@ -1147,7 +1164,12 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {comparisonData.map(item => (
+                        {comparisonData.filter(item => {
+                          if (detailFilter === 'ALL') return true;
+                          if (detailFilter === 'COCOK') return item.status === 'COCOK';
+                          if (detailFilter === 'SELISIH') return item.status === 'KURANG' || item.status === 'LEBIH';
+                          return true;
+                        }).map(item => (
                           <tr
                             key={item.sku}
                             className={`transition-colors ${
@@ -1205,7 +1227,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
 
                   {/* UNEXPECTED ITEMS: BARANG LEBIH DI LUAR SURAT JALAN */}
                   {/* Sistem bantu menuliskan lebihan barang dengan pencatatan No SJ yang sama (No SJ + Source + Destination) */}
-                  {Object.keys(activeDraft.unexpected || {}).length > 0 && (
+                  {(detailFilter === 'ALL' || detailFilter === 'SELISIH') && Object.keys(activeDraft.unexpected || {}).length > 0 && (
                     <div className="border-t border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 px-4 py-3 space-y-2">
                       <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-amber-700 dark:text-amber-300 uppercase tracking-wider">
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
