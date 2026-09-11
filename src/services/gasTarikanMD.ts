@@ -172,7 +172,7 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
     let destination = String(d.destination || d.tujuan || d['Destination'] || '').trim();
     const tanggal_sj = String(d.tanggal_sj || d.date || d.tanggal || d['Tanggal SJ'] || '').trim();
     const submitted_by = String(d.submitted_by || d.petugas || d.operator || d.pemeriksa || '').trim();
-    const status_sj = (d.status || d.status_sj || 'pending') as 'pending' | 'selesai' | 'cocok' | 'selisih';
+    const status_sj = (d.status || d.status_sj || 'pending') as 'pending' | 'selesai';
     const catatan = String(d.catatan || d.notes || '').trim();
     const created_at = String(d.created_at || d.waktu_submit || new Date().toISOString()).trim();
 

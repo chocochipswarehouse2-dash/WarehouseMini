@@ -232,7 +232,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COCOK' | 'SELISIH'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
 
   // Inline Edit Mode untuk Admin
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -752,6 +752,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
       const matchStatus =
         statusFilter === 'ALL' ||
         (statusFilter === 'PENDING' && r.status === 'pending') ||
+        (statusFilter === 'SELESAI' && r.status === 'selesai') ||
         (statusFilter === 'COCOK' && r.status_komparasi === 'COCOK') ||
         (statusFilter === 'SELISIH' && r.status_komparasi === 'SELISIH');
 
@@ -1364,7 +1365,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
 
               {/* Status Filter Buttons */}
               <div className="flex items-center gap-1 flex-wrap">
-                {(['ALL', 'PENDING', 'COCOK', 'SELISIH'] as const).map(st => (
+                {(['ALL', 'PENDING', 'SELESAI', 'COCOK', 'SELISIH'] as const).map(st => (
                   <button
                     key={st}
                     type="button"
@@ -1555,8 +1556,6 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                                 >
                                   <option value="pending">PENDING</option>
                                   <option value="selesai">SELESAI</option>
-                                  <option value="cocok">COCOK</option>
-                                  <option value="selisih">SELISIH</option>
                                 </select>
                               </div>
 

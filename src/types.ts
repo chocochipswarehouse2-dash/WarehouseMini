@@ -680,7 +680,7 @@ export interface PengecekanSJRecord {
   source: string;
   destination: string;
   tanggal_sj: string;
-  status: 'pending' | 'selesai' | 'cocok' | 'selisih';
+  status: 'pending' | 'selesai';
   status_komparasi: 'COCOK' | 'SELISIH';
   total_qty_sj: number;
   total_qty_terima: number;
