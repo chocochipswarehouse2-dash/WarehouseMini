@@ -120,6 +120,27 @@ export const QrCodeImage: React.FC<{ text: string; size?: number; className?: st
   );
 };
 
+const parseDeskripsiToItems = (deskripsi: string) => {
+  if (!deskripsi) return [];
+  const itemsStr = deskripsi.split(/,\s+(?=\d+x\s+)/);
+  return itemsStr.map((itemStr) => {
+    const match = itemStr.match(/^(\d+)x\s+(.*)$/);
+    if (match) {
+      const qty = parseInt(match[1], 10);
+      let name = match[2];
+      let size = '';
+      const parts = name.split('-');
+      if (parts.length > 1) {
+        size = parts[parts.length - 1].trim();
+        name = parts.slice(0, parts.length - 1).join('-').trim();
+      }
+      return { qty, name, size };
+    } else {
+      return { qty: 1, name: itemStr, size: '' };
+    }
+  });
+};
+
 export const CetakLabelView: React.FC = () => {
   const [labels, setLabels] = useState<LabelItem[]>([]);
   
@@ -1192,10 +1213,38 @@ export const CetakLabelView: React.FC = () => {
 
               {/* 6. Deskripsi Paket (Isi Paket - Paling Bawah) */}
               <div className="p-3 bg-white flex-1 flex flex-col">
-                <div className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider mb-1">Isi Paket:</div>
-                <div className="font-bold text-[13px] whitespace-pre-wrap leading-snug text-gray-900 break-words flex-1">
-                  {lbl.deskripsi || '-'}
-                </div>
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr>
+                      <th className="border-b border-dashed border-black py-1 px-1 font-normal w-6">No.</th>
+                      <th className="border-b border-dashed border-black py-1 px-1 font-normal">Nama Produk</th>
+                      <th className="border-b border-dashed border-black py-1 px-1 font-normal w-12">Size</th>
+                      <th className="border-b border-dashed border-black py-1 px-1 font-normal text-center w-8">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parseDeskripsiToItems(lbl.deskripsi).length > 0 ? (
+                      <>
+                        {parseDeskripsiToItems(lbl.deskripsi).map((item, idx) => (
+                          <tr key={idx}>
+                            <td className="border-b border-dashed border-black py-1 px-1 align-top">{idx + 1}.</td>
+                            <td className="border-b border-dashed border-black py-1 px-1 align-top leading-tight">{item.name}</td>
+                            <td className="border-b border-dashed border-black py-1 px-1 align-top">{item.size}</td>
+                            <td className="border-b border-dashed border-black py-1 px-1 align-top text-center">{item.qty}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td colSpan={3} className="py-2 px-3 text-right font-normal">TOTAL</td>
+                          <td className="py-2 px-1 text-center font-normal">{parseDeskripsiToItems(lbl.deskripsi).reduce((acc, curr) => acc + curr.qty, 0)}</td>
+                        </tr>
+                      </>
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="py-2 px-2 text-center text-gray-500">-</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
 
             </div>
