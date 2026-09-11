@@ -192,11 +192,14 @@ export async function submitManualShipment(orderData: ManualShipmentOrder): Prom
   } catch {}
 
   try {
+    const gasUrl = getGasUrl();
+    if (!gasUrl) return false;
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=submitShipment` : `${gasUrl}?action=submitShipment`;
     const payload = {
       action: 'submitShipment',
       data: orderData
     };
-    await fetch(getGasUrl(), {
+    await fetch(url, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -220,11 +223,14 @@ export async function updateShipmentResi(no_pesanan: string, no_resi: string): P
   } catch {}
 
   try {
+    const gasUrl = getGasUrl();
+    if (!gasUrl) return false;
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=updateResi` : `${gasUrl}?action=updateResi`;
     const payload = {
       action: 'updateResi',
       data: { no_pesanan, no_resi }
     };
-    await fetch(getGasUrl(), {
+    await fetch(url, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -248,11 +254,14 @@ export async function updateShipmentStatus(no_pesanan: string, status: 'diterima
   } catch {}
 
   try {
+    const gasUrl = getGasUrl();
+    if (!gasUrl) return false;
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=updateStatus` : `${gasUrl}?action=updateStatus`;
     const payload = {
       action: 'updateStatus',
       data: { no_pesanan, status }
     };
-    await fetch(getGasUrl(), {
+    await fetch(url, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -276,11 +285,14 @@ export async function deleteManualShipment(no_pesanan: string): Promise<boolean>
   } catch {}
 
   try {
+    const gasUrl = getGasUrl();
+    if (!gasUrl) return false;
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=deleteShipment` : `${gasUrl}?action=deleteShipment`;
     const payload = {
       action: 'deleteShipment',
       data: { no_pesanan }
     };
-    await fetch(getGasUrl(), {
+    await fetch(url, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -304,11 +316,14 @@ export async function editManualShipment(orderData: ManualShipmentOrder): Promis
   } catch {}
 
   try {
+    const gasUrl = getGasUrl();
+    if (!gasUrl) return false;
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=editShipment` : `${gasUrl}?action=editShipment`;
     const payload = {
       action: 'editShipment',
       data: orderData
     };
-    await fetch(getGasUrl(), {
+    await fetch(url, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },

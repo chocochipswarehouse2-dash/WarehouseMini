@@ -83,10 +83,11 @@ export async function saveDataAlamatList(items: AddressData[]): Promise<boolean>
     localStorage.setItem('wms_cached_data_alamat', JSON.stringify(current));
   } catch {}
 
-  const url = getGasUrl();
-  if (!url) return true;
+  const gasUrl = getGasUrl();
+  if (!gasUrl) return true;
 
   try {
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=saveDataAlamat` : `${gasUrl}?action=saveDataAlamat`;
     await fetch(url, {
       method: 'POST',
       mode: 'no-cors',
@@ -116,10 +117,11 @@ export async function deleteDataAlamatItem(id: string): Promise<boolean> {
     }
   } catch {}
 
-  const url = getGasUrl();
-  if (!url) return true;
+  const gasUrl = getGasUrl();
+  if (!gasUrl) return true;
 
   try {
+    const url = gasUrl.includes('?') ? `${gasUrl}&action=deleteDataAlamat` : `${gasUrl}?action=deleteDataAlamat`;
     await fetch(url, {
       method: 'POST',
       mode: 'no-cors',

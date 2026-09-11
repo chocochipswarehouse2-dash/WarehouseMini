@@ -623,93 +623,171 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     onShowToast(`Berhasil mencetak ${itemsToPrint.length} picking list`, 'success');
   };
 
-  const handlePrintLabel = async () => {
-    if (selectedOrders.size === 0) return;
-    const itemsToPrint = orders.filter(o => selectedOrders.has(o.no_pesanan));
+  const escapeHtml = (unsafe: string = '') => {
+    return String(unsafe || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  const handlePrintLabel = async (singleOrder?: ManualShipmentOrder) => {
+    const itemsToPrint = singleOrder
+      ? [singleOrder]
+      : orders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
+
+    if (itemsToPrint.length === 0) {
+      onShowToast('Pilih setidaknya satu pesanan untuk dicetak labelnya', 'info');
+      return;
+    }
     
     const printWin = window.open('', '_blank');
     if (!printWin) {
-      onShowToast('Izinkan pop-ups untuk mencetak', 'error');
+      onShowToast('Izinkan pop-ups browser untuk mencetak label', 'error');
       return;
     }
 
-    printWin.document.write(`
+    printWin.document.write(`<!DOCTYPE html>
       <html>
         <head>
+          <meta charset="utf-8">
           <title>Cetak Label A6 - Manual Shipment</title>
           <style>
-            @page { size: 100mm 150mm; margin: 0; }
+            @page { 
+              size: 105mm 148mm; 
+              margin: 0; 
+            }
+            * {
+              box-sizing: border-box;
+            }
             body { 
-              font-family: Arial, sans-serif; 
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
               margin: 0; 
               padding: 0;
-              width: 100mm;
-              height: 150mm;
+              width: 105mm;
               color: #000;
-              box-sizing: border-box;
+              background-color: #fff;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
-            .label-container {
-              width: 100mm;
-              height: 148mm;
-              padding: 5mm;
-              box-sizing: border-box;
-              border: 1px solid #000;
-              page-break-after: always;
-              position: relative;
+            @media print {
+              html, body {
+                width: 105mm !important;
+                height: 148mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              .page-break {
+                page-break-after: always;
+                break-after: page;
+              }
             }
-            .header { text-align: center; font-weight: bold; font-size: 14px; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; }
-            .section { border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
-            .section-title { font-size: 10px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase; }
-            .text-sm { font-size: 11px; }
-            .text-md { font-size: 13px; font-weight: bold; }
-            .qr-code { position: absolute; right: 5mm; top: 15mm; width: 30mm; height: 30mm; }
-            .items-list { font-size: 10px; }
           </style>
         </head>
         <body>
     `);
 
     for (const order of itemsToPrint) {
-      const qrDataUrl = await QRCode.toDataURL(order.no_pesanan, { errorCorrectionLevel: 'M', margin: 1 });
-      
-      printWin.document.write(`
-        <div class="label-container">
-          <div class="header">MANUAL SHIPMENT</div>
-          <img class="qr-code" src="${qrDataUrl}" />
-          
-          <div class="section">
-            <div class="section-title">Penerima</div>
-            <div class="text-md">${order.nama_tujuan}</div>
-            <div class="text-sm">${order.no_telp_tujuan}</div>
-            <div class="text-sm">${order.alamat_tujuan}</div>
-          </div>
-          
-          <div class="section">
-            <div class="section-title">Pengirim</div>
-            <div class="text-sm">${order.nama_pengirim}</div>
-            <div class="text-sm">${order.no_telp_store}</div>
-          </div>
-          
-          <div class="section">
-            <div class="section-title">Informasi Tambahan</div>
-            <div class="text-sm">No Pesanan: ${order.no_pesanan}</div>
-            <div class="text-sm">Order ID: ${order.no_transaksi_customer || '-'}</div>
-            <div class="text-sm">Jasa Kirim: ${order.jasa_kirim || '-'}</div>
-            <div class="text-sm">No. Transaksi DealPOS: ${(order.no_transaksi_pengirim || []).join(', ') || '-'}</div>
-            <div class="text-sm">Catatan: ${order.notes_paket || '-'}</div>
-          </div>
-          
-          <div class="section" style="border-bottom: none;">
-            <div class="section-title">Isi Paket</div>
-            <ul class="items-list">
-      `);
-      
-      order.items.forEach(item => {
-        printWin.document.write(`<li>${item.qty}x ${item.nama_produk}</li>`);
+      const qrDataUrl = await QRCode.toDataURL(order.no_pesanan || 'UNKNOWN', { 
+        errorCorrectionLevel: 'M', 
+        margin: 1,
+        width: 180 
       });
+
+      const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 1;
+      
+      const itemsListStr = (order.items && order.items.length > 0)
+        ? order.items.map(it => `${it.qty}x ${it.nama_produk}`).join(', ')
+        : (order.notes_paket || '-');
+
+      const fullDesc = order.notes_paket && order.items && order.items.length > 0
+        ? `${itemsListStr} (Catatan: ${order.notes_paket})`
+        : itemsListStr;
+
+      const subInfoParts: string[] = [];
+      if (order.no_transaksi_customer) {
+        subInfoParts.push(`Order ID: ${order.no_transaksi_customer}`);
+      } else if (order.jasa_kirim) {
+        subInfoParts.push(`Jasa Kirim: ${order.jasa_kirim}`);
+      }
+      if (order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0) {
+        subInfoParts.push(`DealPOS: ${order.no_transaksi_pengirim.join(', ')}`);
+      }
+      const subInfoText = subInfoParts.length > 0 ? subInfoParts.join(' | ') : 'WMS Manual Package';
       
       printWin.document.write(`
-            </ul>
+        <div class="page-break" style="width: 105mm; height: 148mm; padding: 3mm; box-sizing: border-box; background: #fff; position: relative; overflow: hidden; page-break-after: always; break-after: page;">
+          <!-- Outline box A6 -->
+          <div style="width: 100%; height: 100%; border: 2px solid #000; display: flex; flex-direction: column; position: relative; overflow: hidden; background: #fff; box-sizing: border-box;">
+            
+            <!-- 1. Header Label -->
+            <div style="border-bottom: 2px solid #000; padding: 7px 10px; background-color: #f9fafb; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1;">PENGIRIMAN PAKET</div>
+                <div style="font-size: 8.5px; font-weight: 700; color: #6b7280; margin-top: 2px;">WMS CHOCOCHIPS EXPRESS</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; line-height: 1;">${escapeHtml(order.jasa_kirim || 'MANUAL')}</div>
+              </div>
+            </div>
+
+            <!-- 2. Penerima Box (Utama & Besar) -->
+            <div style="padding: 10px 12px; border-bottom: 2px solid #000; background: #fff; flex: 1; display: flex; flex-direction: column; justify-content: center;">
+              <div style="font-size: 8.5px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Kepada / Penerima:</div>
+              <div style="font-size: 16px; font-weight: 900; text-transform: uppercase; line-height: 1.2; margin-bottom: 2px;">${escapeHtml(order.nama_tujuan || '-')}</div>
+              ${order.no_telp_tujuan ? `<div style="font-size: 11.5px; font-weight: 800; font-family: monospace; color: #111827; margin-bottom: 3px;">${escapeHtml(order.no_telp_tujuan)}</div>` : ''}
+              <div style="font-size: 11px; font-weight: 500; line-height: 1.35; color: #000; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(order.alamat_tujuan || '-')}</div>
+            </div>
+
+            <!-- 3. Pengirim & Total Item -->
+            <div style="display: flex; border-bottom: 2px solid #000;">
+              <!-- Pengirim -->
+              <div style="padding: 7px 10px; border-right: 2px solid #000; flex: 1;">
+                <div style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Dari / Pengirim:</div>
+                <div style="font-size: 11.5px; font-weight: 900; text-transform: uppercase;">${escapeHtml(order.nama_pengirim || 'CHOCOCHIPS')}</div>
+                ${order.no_telp_store ? `<div style="font-size: 9.5px; font-weight: 700; font-family: monospace; color: #374151;">${escapeHtml(order.no_telp_store)}</div>` : ''}
+              </div>
+              <!-- Qty / Indikator -->
+              <div style="padding: 7px 10px; width: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f9fafb;">
+                <span style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase;">TOTAL ITEM</span>
+                <span style="font-size: 13px; font-weight: 900;">${totalQty} Pcs</span>
+              </div>
+            </div>
+
+            <!-- 4. Isi Paket / Deskripsi -->
+            <div style="padding: 7px 10px; font-size: 11px; background-color: #fff; height: 56px; overflow: hidden; border-bottom: 2px solid #000; box-sizing: border-box;">
+              <div style="font-size: 8px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Isi Paket:</div>
+              <div style="font-size: 10px; font-weight: 600; line-height: 1.25; color: #111827; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;">
+                ${escapeHtml(fullDesc)}
+              </div>
+            </div>
+
+            <!-- 5. QR Code & No Pesanan Section (Sesuai Format Label A6) -->
+            <div style="padding: 6px 10px; background-color: #f9fafb; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 82px; box-sizing: border-box;">
+              <!-- Left: ID & Info -->
+              <div style="flex: 1; min-width: 0; padding-right: 4px;">
+                <div style="display: inline-block; padding: 2px 6px; background-color: #000; color: #fff; font-size: 7.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 3px; margin-bottom: 2px;">
+                  MANUAL SHIPMENT
+                </div>
+                <div style="font-size: 8.5px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">No. Pesanan:</div>
+                <div style="font-size: 12.5px; font-weight: 900; font-family: monospace; letter-spacing: -0.02em; color: #000; word-break: break-all;">
+                  ${escapeHtml(order.no_pesanan || '')}
+                </div>
+                <div style="font-size: 8px; font-family: monospace; color: #4b5563; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  ${escapeHtml(subInfoText)}
+                </div>
+              </div>
+
+              <!-- Right: Crisp QR Code -->
+              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; background-color: #fff; padding: 3px; border: 2px solid #000; border-radius: 4px;">
+                <img src="${qrDataUrl}" alt="QR Code" style="width: 54px; height: 54px; display: block; object-fit: contain;" />
+                <span style="font-size: 6.5px; font-family: monospace; font-weight: 900; color: #000; text-transform: uppercase; letter-spacing: -0.05em; margin-top: 1px;">
+                  SCAN QR PAKET
+                </span>
+              </div>
+            </div>
+
           </div>
         </div>
       `);
@@ -718,12 +796,14 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     printWin.document.write('</body></html>');
     printWin.document.close();
     printWin.focus();
-    // Wait for images to load before printing
+    // Wait for images and layout to settle before printing
     setTimeout(() => {
       printWin.print();
-    }, 1000);
+    }, 600);
     
-    setSelectedOrders(new Set());
+    if (!singleOrder) {
+      setSelectedOrders(new Set());
+    }
   };
 
   const handleUpdateResi = async (no_pesanan: string) => {
@@ -824,11 +904,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 Cetak Picking ({selectedOrders.size})
               </button>
               <button
-                onClick={handlePrintLabel}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm font-medium flex items-center transition-colors"
+                onClick={() => handlePrintLabel()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm font-medium flex items-center transition-colors cursor-pointer shadow-xs"
+                title="Cetak Label Paket A6 untuk pesanan yang dipilih"
               >
                 <Printer className="w-4 h-4 mr-2" />
-                Cetak Label ({selectedOrders.size})
+                Cetak Label A6 ({selectedOrders.size})
               </button>
             </>
           )}
@@ -941,16 +1022,28 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   </td>
                   {canAction && (
                     <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-1.5">
                         <button
+                          type="button"
+                          onClick={() => handlePrintLabel(order)}
+                          className="text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-1 rounded text-xs flex items-center gap-1 font-semibold cursor-pointer shadow-xs"
+                          title="Cetak Label A6 Pesanan Ini"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-slate-600" />
+                          Label A6
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleUpdateResi(order.no_pesanan!)}
-                          className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-2 py-1 rounded"
+                          className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded text-xs font-semibold cursor-pointer"
                         >
                           Input Resi
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDelete(order.no_pesanan!)}
-                          className="text-red-600 hover:text-red-900 bg-red-50 px-2 py-1 rounded"
+                          className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2 py-1 rounded cursor-pointer"
+                          title="Hapus Pesanan"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
