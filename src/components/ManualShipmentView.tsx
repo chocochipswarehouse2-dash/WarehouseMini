@@ -39,6 +39,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const canAction = userIsAdmin || hasPermission(session, 'can_manual_shipment_action');
 
   const [activeTab, setActiveTab] = useState<'form' | 'rekap'>('form');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
   const [loading, setLoading] = useState(false);
   const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string }[]>([]);
   const [jasaKirimList, setJasaKirimList] = useState<string[]>([]);
@@ -57,6 +58,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
   // Form State - langsung terisi Order ID Manual Shipment unik anti-collision
   const [pengirim, setPengirim] = useState('');
+  const [picStore, setPicStore] = useState('');
   const [telpPengirim, setTelpPengirim] = useState('');
   const [transPengirim, setTransPengirim] = useState('');
   
@@ -181,6 +183,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       ...(editingOrder || {}),
       no_pesanan: uniquePesananId,
       nama_pengirim: pengirim,
+      pic_store: picStore,
       no_telp_store: telpPengirim,
       no_transaksi_pengirim: transPengirim.split(',').map(s => s.trim()).filter(Boolean),
       nama_tujuan: tujuan,
@@ -217,6 +220,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const resetForm = () => {
     setEditingOrder(null);
     setPengirim('');
+    setPicStore('');
     setTelpPengirim('');
     setTransPengirim('');
     setJasaKirim('');
@@ -356,7 +360,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           {/* Data Pengirim */}
           <div>
             <h3 className="text-lg font-semibold text-slate-700 mb-4 border-b pb-2">Data Pengirim</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nama Pengirim (Store)</label>
                 <select
@@ -376,6 +380,16 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">PIC Store</label>
+                <input
+                  type="text"
+                  value={picStore}
+                  onChange={(e) => setPicStore(e.target.value)}
+                  className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  placeholder="Nama PIC"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">No. Telp Store</label>
                 <input
                   type="text"
@@ -384,7 +398,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
               </div>
-              <div className="md:col-span-2">
+              <div className="md:col-span-3">
                 <label className="block text-sm font-medium text-slate-700 mb-1">No. Transaksi DealPOS (Bisa lebih dari 1, pisahkan koma)</label>
                 <input
                   type="text"
@@ -751,6 +765,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Pengirim / Store Info</h3>
                   <div className="text-sm text-slate-600 space-y-1">
                     <div className="font-semibold text-slate-800">{order.nama_pengirim}</div>
+                    {order.pic_store && <div>PIC: {order.pic_store}</div>}
                     {order.no_telp_store && <div>{order.no_telp_store}</div>}
                     {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
                       <div className="mt-2">
@@ -1006,6 +1021,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                  <div style="padding: 12px; flex: 1;">
                     <div style="font-size: 11px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;">PENGIRIM:</div>
                     <div style="font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;">${escapeHtml(order.nama_pengirim || 'CHOCOCHIPS')}</div>
+                    ${order.pic_store ? `<div style="font-size: 11px; font-weight: 900; margin-bottom: 4px;">PIC: ${escapeHtml(order.pic_store)}</div>` : ''}
                     ${order.no_telp_store ? `<div style="font-size: 11px; font-weight: 900; margin-bottom: 4px;">${escapeHtml(order.no_telp_store)}</div>` : ''}
                  </div>
               </div>
@@ -1084,6 +1100,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const handleEdit = (order: ManualShipmentOrder) => {
     setEditingOrder(order);
     setPengirim(order.nama_pengirim || '');
+    setPicStore(order.pic_store || '');
     setTelpPengirim(order.no_telp_store || '');
     setTransPengirim((order.no_transaksi_pengirim || []).join(', '));
     
@@ -1316,6 +1333,21 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
           
+          <div className="flex border border-slate-300 rounded-md overflow-hidden">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 text-xs font-semibold ${viewMode === 'table' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              Tabel
+            </button>
+            <button
+              onClick={() => setViewMode('card')}
+              className={`px-3 py-1.5 text-xs font-semibold border-l border-slate-300 ${viewMode === 'card' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              Kartu
+            </button>
+          </div>
+
           {canAction && selectedOrders.size > 0 && (
             <>
               <button
@@ -1338,42 +1370,44 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         </div>
       </div>
       
-      <div className="flex-1 overflow-auto">
-        <table className="min-w-full">
-          <thead className="bg-white sticky top-0 z-10 border-b border-slate-200">
-            <tr>
-              {canAction && (
-                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal w-10">
-                  <input
-                    type="checkbox"
-                    className="rounded-sm border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedOrders(new Set(filteredOrders.map(o => o.no_pesanan)));
-                      else setSelectedOrders(new Set());
-                    }}
-                    checked={filteredOrders.length > 0 && selectedOrders.size === filteredOrders.length}
-                  />
-                </th>
-              )}
-              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Order</th>
-              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Date</th>
-              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Customer</th>
-              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Shipping Method</th>
-              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Status</th>
-              <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Total Items</th>
-              {canAction && (
-                <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Aksi</th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="bg-white">
-            {filteredOrders.length === 0 ? (
+      <div className="flex-1 overflow-auto bg-slate-50/50">
+        {viewMode === 'table' ? (
+          <table className="min-w-full">
+            <thead className="bg-white sticky top-0 z-10 border-b border-slate-200">
               <tr>
-                <td colSpan={canAction ? 8 : 7} className="px-3 py-8 text-center text-[11px] text-slate-500">
-                  {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
-                </td>
+                {canAction && (
+                  <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal w-10">
+                    <input
+                      type="checkbox"
+                      className="rounded-sm border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedOrders(new Set(filteredOrders.map(o => o.no_pesanan)));
+                        else setSelectedOrders(new Set());
+                      }}
+                      checked={filteredOrders.length > 0 && selectedOrders.size === filteredOrders.length}
+                    />
+                  </th>
+                )}
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Order</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Date</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Store / Pengirim</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Customer</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Shipping Method</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Status</th>
+                <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Total Items</th>
+                {canAction && (
+                  <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Aksi</th>
+                )}
               </tr>
-            ) : (
+            </thead>
+            <tbody className="bg-white">
+              {filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={canAction ? 9 : 8} className="px-3 py-8 text-center text-[11px] text-slate-500">
+                    {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
+                  </td>
+                </tr>
+              ) : (
               filteredOrders.map((order) => (
                 <tr key={order.no_pesanan} className="hover:bg-slate-50 border-b border-slate-100/80 last:border-b-0">
                   {canAction && (
@@ -1408,6 +1442,10 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     <div className="text-[11px] text-slate-600 mt-0.5">
                       {new Date(order.created_at || '').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'})}
                     </div>
+                  </td>
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="text-[11px] font-semibold text-slate-800">{order.nama_pengirim}</div>
+                    {order.pic_store && <div className="text-[10px] text-slate-500 mt-0.5">PIC: {order.pic_store}</div>}
                   </td>
                   <td className="px-3 py-2.5 align-top">
                     <div 
@@ -1450,39 +1488,27 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   </td>
                   {canAction && (
                     <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
-                      <div className="flex justify-end gap-1.5 mt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => handlePrintLabel(order)}
-                          className="text-[10px] text-slate-600 border border-slate-300 bg-white px-2 py-0.5 rounded-sm hover:bg-slate-50 transition-colors shadow-xs"
-                          title="Cetak Label A6 Pesanan Ini"
-                        >
-                          Print
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleEdit(order)}
-                          className="text-[10px] text-blue-600 border border-blue-200 bg-white px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors shadow-xs"
-                          title="Edit Pesanan"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateResi(order.no_pesanan!)}
-                          className="text-[10px] text-slate-600 border border-slate-300 bg-white px-2 py-0.5 rounded-sm hover:bg-slate-50 transition-colors shadow-xs"
-                        >
-                          Resi
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(order.no_pesanan!)}
-                          className="text-[10px] text-red-500 border border-red-200 bg-white px-2 py-0.5 rounded-sm hover:bg-red-50 transition-colors shadow-xs"
-                          title="Hapus Pesanan"
-                        >
-                          Hapus
-                        </button>
-                      </div>
+                      <select
+                        className="text-[10px] text-slate-700 bg-white border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium"
+                        onChange={(e) => {
+                          const action = e.target.value;
+                          if (action === 'print') handlePrintLabel(order);
+                          if (action === 'edit') {
+                            handleEdit(order);
+                            setActiveTab('form');
+                          }
+                          if (action === 'resi') handleUpdateResi(order.no_pesanan!);
+                          if (action === 'delete') handleDelete(order.no_pesanan!);
+                          e.target.value = ''; // reset after selection
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Aksi</option>
+                        <option value="print">Print Label</option>
+                        <option value="edit">Edit</option>
+                        <option value="resi">Update Resi</option>
+                        <option value="delete">Hapus</option>
+                      </select>
                     </td>
                   )}
                 </tr>
@@ -1490,44 +1516,165 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             )}
           </tbody>
         </table>
+        ) : (
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredOrders.length === 0 ? (
+              <div className="col-span-full py-8 text-center text-sm text-slate-500 bg-white rounded-xl border border-slate-200">
+                {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
+              </div>
+            ) : (
+              filteredOrders.map((order) => (
+                <div key={order.no_pesanan} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-shadow hover:shadow-md">
+                  <div className="p-4 border-b border-slate-100 flex justify-between items-start">
+                    <div className="flex gap-2 items-start">
+                      {canAction && (
+                        <input
+                          type="checkbox"
+                          className="rounded-sm border-slate-300 text-blue-500 focus:ring-blue-500 w-4 h-4 cursor-pointer mt-0.5"
+                          checked={selectedOrders.has(order.no_pesanan)}
+                          onChange={() => toggleSelectOrder(order.no_pesanan)}
+                        />
+                      )}
+                      <div>
+                        <div 
+                          className="font-bold text-[#00a8e8] hover:underline cursor-pointer text-sm"
+                          onClick={() => setSelectedOrderDetails(order)}
+                        >
+                          {order.no_pesanan}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" /> {new Date(order.created_at || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${
+                      order.status === 'diterima' ? 'border-slate-300 text-slate-600 bg-white' : 
+                      order.status === 'diproses' ? 'border-yellow-400 text-yellow-600 bg-white' : 
+                      order.status === 'dikirim' ? 'border-emerald-400 text-emerald-600 bg-white' : 
+                      order.status === 'batal' ? 'border-red-400 text-red-500 bg-white' : 
+                      'border-slate-300 text-slate-600 bg-white'
+                    }`}>
+                      {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
+                    </span>
+                  </div>
+                  
+                  <div className="p-4 flex-1 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <div className="bg-slate-100 p-1.5 rounded-lg text-slate-500 shrink-0 mt-0.5">
+                        <Package className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Pengirim</div>
+                        <div className="text-xs font-semibold text-slate-800">{order.nama_pengirim}</div>
+                        {order.pic_store && <div className="text-[10px] text-slate-500 mt-0.5">PIC: {order.pic_store}</div>}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-2">
+                      <div className="bg-slate-100 p-1.5 rounded-lg text-slate-500 shrink-0 mt-0.5">
+                        <User className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Customer</div>
+                        <div className="text-xs font-medium text-slate-800">{order.nama_tujuan}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <div className="bg-slate-100 p-1.5 rounded-lg text-slate-500 shrink-0 mt-0.5">
+                        <Truck className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Jasa Kirim</div>
+                        <div className="text-xs font-medium text-slate-800">{order.jasa_kirim || '-'}</div>
+                        {order.no_resi && (
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 tracking-wider bg-slate-100 px-1 rounded inline-block">
+                            {order.no_resi}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedOrderDetails(order)}
+                      className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md border border-indigo-100 transition-colors flex items-center gap-1.5"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
+                    </button>
+                    
+                    {canAction && (
+                      <select
+                        className="text-xs text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium w-24"
+                        onChange={(e) => {
+                          const action = e.target.value;
+                          if (action === 'print') handlePrintLabel(order);
+                          if (action === 'edit') {
+                            handleEdit(order);
+                            setActiveTab('form');
+                          }
+                          if (action === 'resi') handleUpdateResi(order.no_pesanan!);
+                          if (action === 'delete') handleDelete(order.no_pesanan!);
+                          e.target.value = ''; // reset after selection
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Aksi</option>
+                        <option value="print">Print Label</option>
+                        <option value="edit">Edit</option>
+                        <option value="resi">Update Resi</option>
+                        <option value="delete">Hapus</option>
+                      </select>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-300">
-      {/* Mobile Tab Navigation */}
-      <div className="flex md:hidden mb-4 bg-slate-100 p-1 rounded-lg">
+      {/* Tab Navigation */}
+      <div className="flex mb-6 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
         <button
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
+          className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-colors flex justify-center items-center gap-2 ${
+            activeTab === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
           onClick={() => {
             if (editingOrder) resetForm();
             setActiveTab('form');
           }}
         >
-          {editingOrder ? 'Edit Pesanan' : 'Form Input'}
+          <Package className="w-4 h-4" />
+          {editingOrder ? 'Edit Pesanan' : 'Form Input Pesanan'}
         </button>
         <button
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === 'rekap' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'
+          className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-colors flex justify-center items-center gap-2 ${
+            activeTab === 'rekap' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
           onClick={() => {
             setActiveTab('rekap');
             loadOrders();
           }}
         >
-          Rekap
+          <History className="w-4 h-4" />
+          Order (Rekap Pesanan)
         </button>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        <div className={`xl:col-span-5 ${activeTab !== 'form' ? 'hidden md:block' : ''}`}>
+      <div className="w-full">
+        <div className={activeTab === 'form' ? 'block' : 'hidden'}>
           {renderForm()}
         </div>
         
-        <div className={`xl:col-span-7 ${activeTab !== 'rekap' ? 'hidden md:block' : ''}`}>
+        <div className={activeTab === 'rekap' ? 'block' : 'hidden'}>
           {renderRekap()}
         </div>
       </div>

@@ -411,6 +411,7 @@ export interface ManualShipmentOrder {
   no_pesanan?: string;
   // Data Pengirim
   nama_pengirim: string;
+  pic_store?: string;
   no_telp_store: string;
   no_transaksi_pengirim: string[];
   // Data Customer

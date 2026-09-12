@@ -44,6 +44,7 @@ const SCHEMA = {
       'qty',                     // R — dari item
       'fulfillment',             // S — dari item
       'updated_at',              // T
+      'pic_store',               // U
     ]
   },
 
