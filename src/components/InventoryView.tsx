@@ -1685,30 +1685,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
   return (
     <div id="inventoryViewContainer" className="space-y-2 max-w-7xl mx-auto pb-16">
-      {/* Header Banner */}
-      <div className="flex items-center justify-between bg-slate-900 text-white rounded-xl p-3 sm:p-4 mb-1 relative overflow-hidden shadow-md border border-slate-800">
-        <div className="flex items-center gap-3 relative z-10">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
-            <Boxes className="w-4 h-4 sm:w-5 sm:h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm sm:text-base font-black tracking-tight leading-tight">Katalog & Stok Gudang</h2>
-            <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3 h-3" /> WMS Inventori
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            const msg = 'Pantau real-time pergerakan stok, rincian alokasi MAP, stok sampel Live Blok F, serta antrean produk perbaikan & defect di seluruh titik penyimpanan.';
-            alert(msg); // Or standard modal, but standard alert is quick for mobile info
-          }}
-          className="relative z-10 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
-        >
-          <Info className="w-4 h-4" />
-        </button>
-      </div>
-
       {/* ========================================================
           1. TOP KPI STAT CARDS (4-GRID DENGAN INTERACTIVE MODAL)
           ======================================================== */}
