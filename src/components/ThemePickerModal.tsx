@@ -8,6 +8,8 @@ interface ThemePickerModalProps {
   onToggleDarkMode: () => void;
   themeColor: string;
   setThemeColor: (color: string) => void;
+  themeFont?: string;
+  setThemeFont?: (font: string) => void;
 }
 
 export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
@@ -17,6 +19,8 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
   onToggleDarkMode,
   themeColor,
   setThemeColor,
+  themeFont = 'sans',
+  setThemeFont = () => {},
 }) => {
   if (!isOpen) return null;
 
@@ -26,6 +30,13 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
     { id: 'emerald', name: 'Emerald', colorClass: 'bg-emerald-500' },
     { id: 'purple', name: 'Purple', colorClass: 'bg-purple-500' },
     { id: 'orange', name: 'Orange', colorClass: 'bg-orange-500' },
+    { id: 'grey', name: 'Grey (Monokrom)', colorClass: 'bg-slate-500' },
+  ];
+
+  const fonts = [
+    { id: 'sans', name: 'Default (Plus Jakarta)', class: 'font-sans' },
+    { id: 'inter', name: 'Inter (Modern)', class: 'font-inter' },
+    { id: 'mono', name: 'Monospace (Tech)', class: 'font-mono' },
   ];
 
   return (
@@ -95,6 +106,29 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
                 >
                   <span className={`w-3.5 h-3.5 rounded-full ${theme.colorClass}`}></span>
                   {theme.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Font Selection */}
+          <div>
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
+              Jenis Huruf (Font)
+            </label>
+            <div className="grid grid-cols-1 gap-2">
+              {fonts.map((font) => (
+                <button
+                  key={font.id}
+                  type="button"
+                  onClick={() => setThemeFont(font.id)}
+                  className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs border cursor-pointer transition-all ${
+                    themeFont === font.id
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm font-bold'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 font-medium'
+                  } ${font.class}`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${themeFont === font.id ? 'bg-primary-500' : 'bg-transparent'}`}></span>
+                  {font.name}
                 </button>
               ))}
             </div>

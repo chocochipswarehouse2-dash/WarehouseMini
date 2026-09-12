@@ -69,6 +69,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const getPageInfo = () => {
     switch (activePage) {
+      case 'dashboard':
+        return { title: 'Dashboard', subtitle: 'Ringkasan Aktivitas Gudang', icon: BarChart3 };
+      case 'penerimaan_barang':
+        return { title: 'Penerimaan Barang', subtitle: 'Laporan Pendataan Loading Dock', icon: Truck };
+      case 'packing':
+        return { title: 'Packing Area', subtitle: 'Pengecekan & Pengemasan Pesanan', icon: Package };
       case 'penerimaan':
         return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
       case 'scanner':

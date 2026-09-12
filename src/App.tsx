@@ -81,6 +81,9 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 }
 
 // Lazy load large components with resilient retry
+const DashboardView = lazyWithRetry(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const PenerimaanBarangView = lazyWithRetry(() => import('./components/PenerimaanBarangView').then(m => ({ default: m.PenerimaanBarangView })));
+const PackingView = lazyWithRetry(() => import('./components/PackingView').then(m => ({ default: m.PackingView })));
 const PenerimaanProduksiView = lazyWithRetry(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
 const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
 const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
@@ -165,6 +168,7 @@ export default function App() {
 
   // Dark / Light Theme Mode
   const [themeColor, setThemeColor] = useState<string>(() => localStorage.getItem("wms_theme_color") || "rose");
+  const [themeFont, setThemeFont] = useState<string>(() => localStorage.getItem("wms_theme_font") || "sans");
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('wms_dark_mode');
@@ -399,7 +403,13 @@ export default function App() {
     localStorage.setItem('wms_dark_mode', String(darkMode));
     document.documentElement.setAttribute('data-theme-color', themeColor);
     localStorage.setItem('wms_theme_color', themeColor);
-  }, [darkMode, themeColor]);
+    document.documentElement.setAttribute('data-theme-font', themeFont);
+    localStorage.setItem('wms_theme_font', themeFont);
+    
+    // Remove previous font classes
+    document.documentElement.classList.remove('font-sans', 'font-inter', 'font-mono');
+    document.documentElement.classList.add(`font-${themeFont}`);
+  }, [darkMode, themeColor, themeFont]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => !prev);
@@ -1322,6 +1332,15 @@ export default function App() {
 
           <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
             <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
+              {activePage === 'dashboard' && (
+                  <DashboardView />
+              )}
+              {activePage === 'penerimaan_barang' && (
+                  <PenerimaanBarangView />
+              )}
+              {activePage === 'packing' && (
+                  <PackingView />
+              )}
               {activePage === 'penerimaan' && (
                   <PenerimaanProduksiView
                     session={session}
@@ -1466,6 +1485,8 @@ export default function App() {
         onToggleDarkMode={toggleDarkMode}
         themeColor={themeColor}
         setThemeColor={setThemeColor}
+        themeFont={themeFont}
+        setThemeFont={setThemeFont}
       />
       <SettingsModal
         isOpen={isSettingsOpen}

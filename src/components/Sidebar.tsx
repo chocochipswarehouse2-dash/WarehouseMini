@@ -76,6 +76,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   hasNewPickingAlert = false,
 }) => {
   const userIsAdmin = isSuperadmin(session);
+  const canViewDashboard = userIsAdmin || hasPermission(session, 'can_view_dashboard');
+  const canPenerimaanBarang = userIsAdmin || hasPermission(session, 'can_penerimaan_barang');
+  const canPacking = userIsAdmin || hasPermission(session, 'can_packing');
   const canScan = userIsAdmin || hasPermission(session, 'can_scan');
   const canPenerimaan = userIsAdmin || hasPermission(session, 'can_penerimaan') || hasPermission(session, 'can_scan');
   const canPicking = userIsAdmin || hasPermission(session, 'can_picking');
@@ -90,6 +93,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
+    {
+      id: 'dashboard' as ActivePage,
+      label: 'Dashboard',
+      shortLabel: 'Dashboard',
+      icon: BarChart3,
+      description: 'Ringkasan & Aktivitas',
+      access: canViewDashboard,
+    },
+    {
+      id: 'penerimaan_barang' as ActivePage,
+      label: 'Penerimaan Barang',
+      shortLabel: 'Penerimaan Barang',
+      icon: Truck,
+      description: 'Laporan Loading Dock',
+      access: canPenerimaanBarang,
+    },
+    {
+      id: 'packing' as ActivePage,
+      label: 'Packing',
+      shortLabel: 'Packing',
+      icon: Package,
+      description: 'Scan SJ/Pesanan Area Packing',
+      access: canPacking,
+    },
     {
       id: 'penerimaan' as ActivePage,
       label: 'Penerimaan Produksi',

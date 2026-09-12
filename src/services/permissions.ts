@@ -21,6 +21,45 @@ export const TOTAL_PERMISSIONS_COUNT = 24;
 
 export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
+    id: 'dashboard',
+    title: 'Dashboard Dummy',
+    badge: '📊',
+    description: 'Akses halaman dummy Dashboard',
+    permissions: [
+      {
+        key: 'can_view_dashboard',
+        label: 'Lihat Dashboard',
+        description: 'Akses ke halaman Dashboard dummy',
+      },
+    ]
+  },
+  {
+    id: 'penerimaan_barang',
+    title: 'Penerimaan Barang Dummy',
+    badge: '📦',
+    description: 'Akses halaman dummy Penerimaan Barang',
+    permissions: [
+      {
+        key: 'can_penerimaan_barang',
+        label: 'Penerimaan Barang',
+        description: 'Input penerimaan barang loading dock',
+      },
+    ]
+  },
+  {
+    id: 'packing',
+    title: 'Packing Dummy',
+    badge: '📦',
+    description: 'Akses halaman dummy Packing',
+    permissions: [
+      {
+        key: 'can_packing',
+        label: 'Packing',
+        description: 'Scan SJ/Pesanan di area packing',
+      },
+    ]
+  },
+  {
     id: 'operasional',
     title: 'Operasional Gudang & Scanner',
     badge: '📦',
@@ -187,6 +226,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
   Superadmin: {
+    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true,
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
@@ -200,6 +240,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_cetak_label: true,
   },
   'All': {
+    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true,
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
@@ -293,6 +334,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Operator': {
+    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true,
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
@@ -372,6 +414,12 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
   if (isSuperadmin(session)) return true;
 
   switch (page) {
+    case 'dashboard':
+      return hasPermission(session, 'can_view_dashboard');
+    case 'penerimaan_barang':
+      return hasPermission(session, 'can_penerimaan_barang');
+    case 'packing':
+      return hasPermission(session, 'can_packing');
     case 'scanner':
       return hasPermission(session, 'can_scan');
     case 'penerimaan':
@@ -423,10 +471,11 @@ export const canAccessSettings = (session: UserSession | null): boolean => {
  * Mendapatkan halaman pertama yang sah untuk user berdasarkan hak akses yang dimiliki
  */
 export const getDefaultPageForSession = (session: UserSession | null): import('../types').ActivePage => {
-  if (!session) return 'inventory';
-  if (isSuperadmin(session)) return 'inventory';
+  if (!session) return 'dashboard';
+  if (isSuperadmin(session)) return 'dashboard';
 
   // Urutan prioritas modul yang dapat diakses:
+  if (hasPermission(session, 'can_view_dashboard')) return 'dashboard';
   if (hasPermission(session, 'can_peminjaman')) return 'peminjaman';
   if (hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action')) return 'manual_shipment';
   if (hasPermission(session, 'can_tarikan_md')) return 'tarikan_md';
