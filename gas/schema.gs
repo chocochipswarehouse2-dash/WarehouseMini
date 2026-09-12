@@ -22,8 +22,9 @@ const WEBHOOK_SECRET = 'wms-webhook-secret-2026';
 const SCHEMA = {
   'Manual Shipment': {
     supabaseTable: 'manual_shipment',
+    flattenItems: true,
     columns: [
-      'id',                      // A — UUID Supabase (WAJIB di kolom A)
+      'id',                      // A — UUID Supabase (wajib)
       'no_pesanan',              // B
       'created_at',              // C
       'nama_pengirim',           // D
@@ -34,33 +35,39 @@ const SCHEMA = {
       'alamat_tujuan',           // I
       'jasa_kirim',              // J
       'no_resi',                 // K
-      'status',                  // L — diterima | diproses | dikirim | batal | DELETED
+      'status',                  // L — status dari order
       'notes_paket',             // M
       'submitted_by',            // N
-      'items',                   // O — JSON string dari array items
-      'updated_at',              // P
+      'sku',                     // O — dari item
+      'nama_produk',             // P — dari item
+      'size',                    // Q — dari item
+      'qty',                     // R — dari item
+      'fulfillment',             // S — dari item
+      'updated_at',              // T
     ]
   },
 
   'Tarikan MD': {
     supabaseTable: 'pengecekan_sj',
+    flattenItems: true,
     columns: [
-      'id',                 // A — UUID Supabase (WAJIB di kolom A)
+      'id',                 // A — UUID Supabase (wajib)
       'no_sj',              // B
       'tanggal_sj',         // C
       'source',             // D — Gudang asal
       'destination',        // E — Outlet tujuan
-      'status',             // F — pending | selesai | DELETED
-      'status_komparasi',   // G — COCOK | SELISIH
-      'total_qty_sj',       // H
-      'total_qty_terima',   // I
-      'total_sku',          // J
-      'submitted_by',       // K
-      'catatan',            // L
-      'items',              // M — JSON string dari array items
-      'sync_status',        // N — synced | pending_sync
-      'created_at',         // O
-      'updated_at',         // P
+      'sku',                // F — dari item
+      'nama_produk',        // G — dari item
+      'category',           // H — dari item
+      'qty_sj',             // I — dari item
+      'qty_scan',           // J — dari item
+      'selisih',            // K — dari item
+      'status_item',        // L — dari item (COCOK/KURANG/LEBIH)
+      'status',             // M — dari record (pending/selesai)
+      'submitted_by',       // N — dari record
+      'is_unexpected',      // O — dari item
+      'created_at',         // P
+      'updated_at',         // Q
     ]
   },
 

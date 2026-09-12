@@ -113,19 +113,72 @@ function getColumnIndex(sheet, columnName) {
 }
 
 /**
- * Konversi record Supabase menjadi array baris sesuai urutan kolom di SCHEMA.
- * Field JSONB (object/array) di-stringify.
+ * Konversi record Supabase menjadi array of baris sesuai urutan kolom di SCHEMA.
+ * Jika flattenItems = true, akan mengembalikan 1 baris per item di record.items.
  */
-function recordToRow(record, sheetName) {
+function recordToRows(record, sheetName) {
   var schema = getSchema(sheetName);
   if (!schema) return [];
 
-  return schema.columns.map(function(col) {
-    var val = record[col];
-    if (val === null || val === undefined) return '';
-    if (typeof val === 'object') return JSON.stringify(val);
-    return String(val);
-  });
+  // Jika tidak di-flatten atau tidak punya items
+  if (!schema.flattenItems || !record.items || record.items.length === 0) {
+    var row = schema.columns.map(function(col) {
+      var val = record[col];
+      if (val === null || val === undefined) return '';
+      if (typeof val === 'object') return JSON.stringify(val);
+      return String(val);
+    });
+    return [row];
+  }
+
+  // Flattened approach
+  var items = record.items;
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items); } catch(e) { items = []; }
+  }
+  
+  if (!Array.isArray(items)) items = [items];
+  if (items.length === 0) items = [{}]; // fallback empty item
+
+  var rows = [];
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var row = schema.columns.map(function(col) {
+      var val;
+      if (col === 'id') {
+        val = record.id; // UUID induk wajib dipertahankan
+      } else {
+        // Ambil dari item dulu, jika tidak ada fallback ke record induk
+        val = item[col] !== undefined ? item[col] : record[col];
+      }
+      
+      if (val === null || val === undefined) return '';
+      if (typeof val === 'object') return JSON.stringify(val);
+      return String(val);
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * Cari semua nomor baris berdasarkan nilai UUID di kolom A (kolom 1).
+ * Returns: Array of row numbers (1-indexed).
+ */
+function findAllRowsByUUID(sheet, uuid) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var idValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  var uuidStr = String(uuid || '').trim();
+  
+  var result = [];
+  for (var i = 0; i < idValues.length; i++) {
+    if (String(idValues[i][0] || '').trim() === uuidStr) {
+      result.push(i + 2);
+    }
+  }
+  return result;
 }
 
 /**
@@ -133,25 +186,41 @@ function recordToRow(record, sheetName) {
  */
 function insertRow(sheet, sheetName, record) {
   ensureSheetHeader(sheet, sheetName);
-  var row = recordToRow(record, sheetName);
-  sheet.appendRow(row);
+  var rows = recordToRows(record, sheetName);
+  
+  if (rows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  }
   return true;
 }
 
 /**
  * UPDATE: Cari baris berdasarkan UUID, lalu update seluruh baris.
- * Jika tidak ditemukan, insert sebagai baris baru (upsert).
+ * Jika flattenItems = true, kita harus me-replace (delete & insert ulang) karena jumlah item bisa berubah.
  */
 function updateRow(sheet, sheetName, record) {
-  var rowNum = findRowByUUID(sheet, record.id);
-  if (!rowNum) {
-    // Upsert: tidak ditemukan → insert baru
+  var schema = getSchema(sheetName);
+  
+  if (schema && schema.flattenItems) {
+    // Cari semua baris dan hapus dari bawah ke atas agar index tidak bergeser
+    var existingRows = findAllRowsByUUID(sheet, record.id);
+    for (var i = existingRows.length - 1; i >= 0; i--) {
+      sheet.deleteRow(existingRows[i]);
+    }
+    // Insert ulang data ter-update
     return insertRow(sheet, sheetName, record);
   }
 
-  var row = recordToRow(record, sheetName);
-  var schema = getSchema(sheetName);
-  sheet.getRange(rowNum, 1, 1, row.length).setValues([row]);
+  // Logic lama untuk non-flatten
+  var rowNum = findRowByUUID(sheet, record.id);
+  if (!rowNum) {
+    return insertRow(sheet, sheetName, record);
+  }
+
+  var rows = recordToRows(record, sheetName);
+  if (rows.length > 0) {
+    sheet.getRange(rowNum, 1, 1, rows[0].length).setValues([rows[0]]);
+  }
   return true;
 }
 
@@ -160,16 +229,18 @@ function updateRow(sheet, sheetName, record) {
  * Tidak menghapus baris secara fisik untuk keamanan data.
  */
 function softDeleteRow(sheet, uuid) {
-  var rowNum = findRowByUUID(sheet, uuid);
-  if (!rowNum) return false;
+  var existingRows = findAllRowsByUUID(sheet, uuid);
+  if (existingRows.length === 0) return false;
 
   var statusColIdx = getColumnIndex(sheet, 'status');
-  if (statusColIdx > 0) {
-    sheet.getRange(rowNum, statusColIdx).setValue('DELETED');
-  } else {
-    // Jika tidak ada kolom status, tandai di kolom UUID dengan prefix DELETED-
-    var currentId = sheet.getRange(rowNum, 1).getValue();
-    sheet.getRange(rowNum, 1).setValue('DELETED-' + currentId);
+  for (var i = 0; i < existingRows.length; i++) {
+    var rowNum = existingRows[i];
+    if (statusColIdx > 0) {
+      sheet.getRange(rowNum, statusColIdx).setValue('DELETED');
+    } else {
+      var currentId = sheet.getRange(rowNum, 1).getValue();
+      sheet.getRange(rowNum, 1).setValue('DELETED-' + currentId);
+    }
   }
   return true;
 }
