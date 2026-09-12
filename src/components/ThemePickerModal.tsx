@@ -10,6 +10,8 @@ interface ThemePickerModalProps {
   setThemeColor: (color: string) => void;
   themeFont?: string;
   setThemeFont?: (font: string) => void;
+  themeIconStyle?: string;
+  setThemeIconStyle?: (style: string) => void;
 }
 
 export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
@@ -21,27 +23,40 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
   setThemeColor,
   themeFont = 'sans',
   setThemeFont = () => {},
+  themeIconStyle = 'regular',
+  setThemeIconStyle = () => {},
 }) => {
   if (!isOpen) return null;
 
   const themes = [
     { id: 'rose', name: 'Rose / Pink', colorClass: 'bg-rose-500' },
-    { id: 'blue', name: 'Blue', colorClass: 'bg-blue-500' },
+    { id: 'blue', name: 'Ocean Blue', colorClass: 'bg-blue-500' },
+    { id: 'teal', name: 'Teal Forest', colorClass: 'bg-teal-500' },
     { id: 'emerald', name: 'Emerald', colorClass: 'bg-emerald-500' },
     { id: 'purple', name: 'Purple', colorClass: 'bg-purple-500' },
+    { id: 'indigo', name: 'Midnight Indigo', colorClass: 'bg-indigo-500' },
     { id: 'orange', name: 'Orange', colorClass: 'bg-orange-500' },
+    { id: 'amber', name: 'Amber Sunset', colorClass: 'bg-amber-500' },
     { id: 'grey', name: 'Grey (Monokrom)', colorClass: 'bg-slate-500' },
   ];
 
   const fonts = [
     { id: 'sans', name: 'Default (Plus Jakarta)', class: 'font-sans' },
+    { id: 'rounded', name: 'Rounded (Quicksand)', class: 'font-rounded' },
     { id: 'inter', name: 'Inter (Modern)', class: 'font-inter' },
+    { id: 'serif', name: 'Serif (Playfair)', class: 'font-serif' },
     { id: 'mono', name: 'Monospace (Tech)', class: 'font-mono' },
+  ];
+
+  const iconStyles = [
+    { id: 'light', name: 'Light (Tipis)' },
+    { id: 'regular', name: 'Regular (Default)' },
+    { id: 'bold', name: 'Bold (Tebal)' },
   ];
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-5 w-full max-w-md shadow-xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary-500" />
@@ -92,7 +107,7 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
               Warna Aksen
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {themes.map((theme) => (
                 <button
                   key={theme.id}
@@ -115,20 +130,44 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
               Jenis Huruf (Font)
             </label>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {fonts.map((font) => (
                 <button
                   key={font.id}
                   type="button"
                   onClick={() => setThemeFont(font.id)}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs border cursor-pointer transition-all ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border cursor-pointer transition-all ${
                     themeFont === font.id
                       ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm font-bold'
                       : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 font-medium'
                   } ${font.class}`}
                 >
-                  <span className={`w-2 h-2 rounded-full ${themeFont === font.id ? 'bg-primary-500' : 'bg-transparent'}`}></span>
-                  {font.name}
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${themeFont === font.id ? 'bg-primary-500' : 'bg-transparent'}`}></span>
+                  <span className="truncate">{font.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* Icon Style Selection */}
+          <div>
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
+              Gaya Ikon (Icon Pack)
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {iconStyles.map((style) => (
+                <button
+                  key={style.id}
+                  type="button"
+                  onClick={() => setThemeIconStyle(style.id)}
+                  className={`flex items-center justify-center gap-2 px-2 py-2.5 rounded-xl text-xs border cursor-pointer transition-all ${
+                    themeIconStyle === style.id
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold shadow-sm'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  <Sparkles className={`w-4 h-4 ${themeIconStyle === style.id ? 'text-primary-500' : ''}`} style={{ strokeWidth: style.id === 'light' ? 1.25 : style.id === 'bold' ? 2.75 : 2 }} />
+                  <span className="hidden sm:inline">{style.name.split(' ')[0]}</span>
                 </button>
               ))}
             </div>

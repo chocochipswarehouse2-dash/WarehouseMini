@@ -171,6 +171,7 @@ export default function App() {
   // Dark / Light Theme Mode
   const [themeColor, setThemeColor] = useState<string>(() => localStorage.getItem("wms_theme_color") || "rose");
   const [themeFont, setThemeFont] = useState<string>(() => localStorage.getItem("wms_theme_font") || "sans");
+  const [themeIconStyle, setThemeIconStyle] = useState<string>(() => localStorage.getItem("wms_theme_icon") || "regular");
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('wms_dark_mode');
@@ -409,9 +410,12 @@ export default function App() {
     localStorage.setItem('wms_theme_font', themeFont);
     
     // Remove previous font classes
-    document.documentElement.classList.remove('font-sans', 'font-inter', 'font-mono');
+    document.documentElement.classList.remove('font-sans', 'font-inter', 'font-mono', 'font-serif', 'font-rounded');
     document.documentElement.classList.add(`font-${themeFont}`);
-  }, [darkMode, themeColor, themeFont]);
+    
+    document.documentElement.setAttribute('data-theme-icon', themeIconStyle);
+    localStorage.setItem('wms_theme_icon', themeIconStyle);
+  }, [darkMode, themeColor, themeFont, themeIconStyle]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => !prev);
@@ -1495,6 +1499,8 @@ export default function App() {
         setThemeColor={setThemeColor}
         themeFont={themeFont}
         setThemeFont={setThemeFont}
+        themeIconStyle={themeIconStyle}
+        setThemeIconStyle={setThemeIconStyle}
       />
       <SettingsModal
         isOpen={isSettingsOpen}
