@@ -27,15 +27,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install --no-audit --prefer-offline
+          else
+            npm install --no-audit --prefer-offline
+          fi
 
       - name: Build project
         env:
           GITHUB_PAGES: 'true'
+          NODE_OPTIONS: '--max_old_space_size=4096'
         run: npm run build
+
+      - name: Verify build artifact
+        run: |
+          ls -la ./dist
+          if [ ! -f ./dist/index.html ]; then
+            echo "::error::File ./dist/index.html was not generated!"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

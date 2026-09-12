@@ -198,10 +198,14 @@ export default defineConfig(({ command }) => {
               if (id.includes('html5-qrcode')) {
                 return 'vendor-scanner';
               }
-              if (id.includes('react') || id.includes('react-dom')) {
+              if (
+                id.includes('/node_modules/react/') ||
+                id.includes('/node_modules/react-dom/') ||
+                id.includes('/node_modules/scheduler/')
+              ) {
                 return 'vendor-react';
               }
-              return 'vendor-core'; // all other deps
+              return 'vendor-core';
             }
           }
         }

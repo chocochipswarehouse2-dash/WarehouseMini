@@ -2703,6 +2703,213 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ========================================================
+          MODAL 5: CETAK / PRATINJAU DOKUMEN SURAT JALAN FULL
+          ======================================================== */}
+      {printSJData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static print:overflow-visible">
+          <div className="bg-white text-slate-900 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-auto flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:rounded-none print:w-full print:border-none">
+            {/* Modal Header Controls (Hidden during print) */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between gap-3 print:hidden shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Printer className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black truncate">Cetak Dokumen Surat Jalan</h3>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    No. SJ: {printSJData.no_surat_jalan} • {printSJData.totalPcs.toLocaleString()} pcs
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 transition cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak / PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintSJData(null)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                  title="Tutup"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content Area */}
+            <div
+              id="surat-jalan-print-area"
+              className="p-6 sm:p-10 overflow-y-auto text-slate-900 bg-white font-sans text-xs print:p-0 print:overflow-visible"
+            >
+              {/* Kop Surat / Header */}
+              <div className="border-b-2 border-slate-900 pb-4 mb-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 block">
+                      WAREHOUSE MANAGEMENT SYSTEM
+                    </span>
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      BUKTI PENERIMAAN PRODUKSI
+                    </h1>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Dokumen Verifikasi Kedatangan Barang Masuk Gudang
+                    </p>
+                  </div>
+
+                  {printSJData.qrCodeUrl && (
+                    <div className="text-center shrink-0">
+                      <img
+                        src={printSJData.qrCodeUrl}
+                        alt="QR Code SJ"
+                        className="w-20 h-20 sm:w-24 sm:h-24 mx-auto border border-slate-200 p-1 rounded-lg"
+                      />
+                      <span className="block text-[9px] font-mono font-bold text-slate-500 mt-1">
+                        SCAN VERIFIKASI
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Metadata Box */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 mb-6 text-xs">
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    No. Surat Jalan
+                  </span>
+                  <span className="font-mono font-black text-sm text-slate-900 break-all">
+                    {printSJData.no_surat_jalan}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Tanggal Terima
+                  </span>
+                  <span className="font-bold text-slate-900">
+                    {printSJData.tanggal_penerimaan}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Kategori Asal
+                  </span>
+                  <span className="inline-flex items-center gap-1 font-bold text-indigo-700">
+                    {printSJData.kategori}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Operator Penerima
+                  </span>
+                  <span className="font-bold text-slate-900">
+                    {printSJData.operator || '-'}
+                  </span>
+                </div>
+              </div>
+
+              {printSJData.keterangan && (
+                <div className="mb-4 p-3 bg-amber-50/60 border border-amber-200 rounded-lg text-xs text-amber-900">
+                  <span className="font-bold uppercase text-[10px] block text-amber-700">Catatan Penerimaan:</span>
+                  <span>{printSJData.keterangan}</span>
+                </div>
+              )}
+
+              {/* Table of Items */}
+              <div className="border border-slate-300 rounded-lg overflow-hidden mb-6">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-300 text-[11px] font-black text-slate-700 uppercase">
+                      <th className="py-2.5 px-3 w-10 text-center">No</th>
+                      <th className="py-2.5 px-3">Kode Produksi</th>
+                      <th className="py-2.5 px-3">Warna</th>
+                      <th className="py-2.5 px-3 text-center">Size</th>
+                      <th className="py-2.5 px-3 text-right">Qty (Pcs)</th>
+                      <th className="py-2.5 px-3">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {printSJData.items.map((item, idx) => (
+                      <tr key={item.id || idx} className="hover:bg-slate-50">
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="py-2 px-3 font-mono font-bold text-slate-900">
+                          {item.kode_produksi}
+                        </td>
+                        <td className="py-2 px-3 text-slate-700">
+                          {item.warna || '-'}
+                        </td>
+                        <td className="py-2 px-3 text-center font-bold text-indigo-700">
+                          {item.size || 'Default'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-black font-mono text-slate-900">
+                          {(Number(item.qty) || 0).toLocaleString()}
+                        </td>
+                        <td className="py-2 px-3 text-slate-600 text-[11px]">
+                          {item.keterangan || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-black border-t-2 border-slate-400 text-slate-900">
+                      <td colSpan={4} className="py-2.5 px-3 text-right uppercase">
+                        Total Keseluruhan ({printSJData.uniqueKodeCount} Model • {printSJData.items.length} Baris):
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-sm font-mono font-black text-emerald-700">
+                        {printSJData.totalPcs.toLocaleString()} pcs
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Signature Blocks */}
+              <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-200 text-center text-xs">
+                <div>
+                  <span className="block text-slate-500 text-[10px] uppercase font-bold mb-14">
+                    Diserahkan Oleh (Pengirim / CMT)
+                  </span>
+                  <div className="border-t border-slate-400 w-36 mx-auto pt-1 font-bold text-slate-700">
+                    ( ............................... )
+                  </div>
+                </div>
+
+                <div>
+                  <span className="block text-slate-500 text-[10px] uppercase font-bold mb-14">
+                    Diterima Oleh (Gudang / QC)
+                  </span>
+                  <div className="border-t border-slate-400 w-36 mx-auto pt-1 font-bold text-slate-900">
+                    ( {printSJData.operator || '...............................'} )
+                  </div>
+                </div>
+
+                <div>
+                  <span className="block text-slate-500 text-[10px] uppercase font-bold mb-14">
+                    Diketahui Oleh (Supervisor)
+                  </span>
+                  <div className="border-t border-slate-400 w-36 mx-auto pt-1 font-bold text-slate-700">
+                    ( ............................... )
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Note */}
+              <div className="mt-8 pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400 flex items-center justify-between">
+                <span>Dicetak otomatis dari WMS Warehouse Mini</span>
+                <span>Waktu Cetak: {new Date().toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
