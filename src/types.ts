@@ -84,6 +84,7 @@ export interface UserPermissions {
   can_manual_shipment_view?: boolean;
   can_manual_shipment_action?: boolean;
   can_tarikan_md?: boolean;
+  can_cetak_label?: boolean;
 }
 
 export interface WmsUser {

@@ -17,7 +17,7 @@ export interface PermissionGroup {
   permissions: PermissionItem[];
 }
 
-export const TOTAL_PERMISSIONS_COUNT = 21;
+export const TOTAL_PERMISSIONS_COUNT = 24;
 
 export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
@@ -55,6 +55,21 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         key: 'can_tarikan_md',
         label: 'Pengecekan Surat Jalan',
         description: 'Import CSV SJ, antrean pengecekan draft, scan komparasi, riwayat, dan export data',
+      },
+      {
+        key: 'can_manual_shipment_view',
+        label: 'Lihat Manual Shipment',
+        description: 'Melihat daftar pesanan dan riwayat Manual Shipment',
+      },
+      {
+        key: 'can_manual_shipment_action',
+        label: 'Aksi Manual Shipment',
+        description: 'Menambah, mengedit, dan menghapus pesanan Manual Shipment',
+      },
+      {
+        key: 'can_cetak_label',
+        label: 'Cetak Label (A6)',
+        description: 'Akses halaman khusus untuk memformat dan mencetak label resi pengiriman',
       },
     ],
   },
@@ -182,6 +197,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: true,
     can_manual_shipment_view: true, can_manual_shipment_action: true,
     can_tarikan_md: true,
+    can_cetak_label: true,
   },
   'All': {
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
@@ -194,6 +210,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: true,
     can_manual_shipment_view: true, can_manual_shipment_action: true,
     can_tarikan_md: true,
+    can_cetak_label: true,
   },
   'Perbaikan': {
     can_scan: true, can_penerimaan: true, can_picking: false, can_peminjaman: false,
@@ -387,7 +404,7 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
     case 'tarikan_md':
       return hasPermission(session, 'can_tarikan_md');
     case 'cetak_label':
-      return true;
+      return hasPermission(session, 'can_cetak_label');
     default:
       return false;
   }
