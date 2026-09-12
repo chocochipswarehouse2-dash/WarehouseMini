@@ -52,6 +52,7 @@ import {
   getSupabaseClient,
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
+import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
 
 interface PerbaikanViewProps {
   session: UserSession | null;
@@ -387,7 +388,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   // Modal Sortir Kepala QC
   const [sortirModalTicket, setSortirModalTicket] = useState<PerbaikanTicket | null>(null);
   const [sortirTargetTahap, setSortirTargetTahap] = useState<'CUCI' | 'PERMAK' | 'DEFECT'>('CUCI');
-  const [sortirPic, setSortirPic] = useState(session?.name || session?.username || 'Kepala QC');
+  const [sortirPic, setSortirPic] = useState(session?.name || getUserPersonName(session?.username) || 'Kepala QC');
   const [sortirCatatan, setSortirCatatan] = useState('');
   const [sortirPetugas, setSortirPetugas] = useState('');
 
@@ -631,7 +632,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               : item.tahap === 'PERMAK'
               ? 'Penjahit Gudang'
               : undefined,
-          operator_input: session?.username || 'System',
+          operator_input: session?.name || getUserPersonName(session?.username) || 'System',
           created_at: new Date().toISOString(),
         };
 
@@ -759,7 +760,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
     // Jika lokasi fisik rak diedit berpindah, catat mutasi di log_produk
     if (editModalTicket.lokasi_sekarang.toUpperCase() !== newTargetLokasi) {
-      const operatorName = session?.name || session?.username || 'Operator';
+      const operatorName = session?.name || getUserPersonName(session?.username) || 'Operator';
       recordPerbaikanStockMutation({
         type: 'OUT',
         invoice: `EDIT-${editModalTicket.ticket_no}`,
@@ -942,7 +943,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       foto_urls: uploadedPhotoUrls,
       tahap: targetTahap,
       status_pengerjaan: targetStatus,
-      qc_pic: session?.name || session?.username || 'Kepala QC',
+      qc_pic: session?.name || getUserPersonName(session?.username) || 'Kepala QC',
       qc_tanggal: new Date().toLocaleString('id-ID'),
       qc_catatan:
         formInstruksiSortir.trim() ||
@@ -954,7 +955,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         targetTahap === 'CUCI' || targetTahap === 'PERMAK'
           ? new Date().toLocaleString('id-ID')
           : undefined,
-      operator_input: session?.name || session?.username || 'Operator',
+      operator_input: session?.name || getUserPersonName(session?.username) || 'Operator',
       created_at: new Date().toISOString(),
     };
 
@@ -1220,7 +1221,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         ...accModalTicket,
         tahap: 'SELESAI_DEFECT_SALE',
         acc_harga_defect: Number(accHargaValue) || 0,
-        acc_harga_by: session?.name || session?.username || 'Manager Gudang',
+        acc_harga_by: session?.name || getUserPersonName(session?.username) || 'Manager Gudang',
         acc_harga_tanggal: new Date().toLocaleString('id-ID'),
         acc_harga_catatan: accCatatan.trim() || 'ACC Defect Sale disetujui',
         updated_at: new Date().toISOString(),
@@ -1239,7 +1240,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       const updated: PerbaikanTicket = {
         ...accModalTicket,
         tahap: 'SELESAI_SCRAP',
-        acc_harga_by: session?.name || session?.username || 'Manager Gudang',
+        acc_harga_by: session?.name || getUserPersonName(session?.username) || 'Manager Gudang',
         acc_harga_tanggal: new Date().toLocaleString('id-ID'),
         acc_harga_catatan: accCatatan.trim() || 'Barang dimusnahkan (write-off scrap)',
         updated_at: new Date().toISOString(),
@@ -1250,7 +1251,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       updatePerbaikanTicketInSupabase(accModalTicket.id || accModalTicket.ticket_no, updated).catch(console.warn);
 
       // Mutasi Pemusnahan (Scrap) keluar dari inventori aktif
-      const operatorName = session?.name || session?.username || 'Manager Gudang';
+      const operatorName = session?.name || getUserPersonName(session?.username) || 'Manager Gudang';
       recordPerbaikanStockMutation({
         type: 'ADJ_OUT',
         invoice: `SCRAP-${accModalTicket.ticket_no}`,

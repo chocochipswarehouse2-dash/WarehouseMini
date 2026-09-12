@@ -23,6 +23,7 @@ import {
   getStoreCode,
   generateShortOrderId,
 } from '../utils/transactionGenerator';
+import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
 
 interface ManualShipmentViewProps {
   session: UserSession | null;
@@ -196,7 +197,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       status: editingOrder ? editingOrder.status : 'diterima',
       no_resi: editingOrder ? (editingOrder.no_resi || '') : '',
       created_at: editingOrder ? editingOrder.created_at : new Date().toISOString(),
-      submitted_by: editingOrder ? editingOrder.submitted_by : (session?.username || 'Unknown')
+      submitted_by: editingOrder ? editingOrder.submitted_by : (session?.name || getUserPersonName(session?.username) || 'Petugas')
     };
 
     let success = false;
@@ -650,7 +651,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             <div>
               <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: #6366f1;">CHOCOCHIPS WMS</div>
               <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING MANUAL SHIPMENT</div>
-              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${todayStr}</b> • Admin: <b>${session?.username || 'admin'}</b></div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${todayStr}</b> • Admin: <b>${session?.name || getUserPersonName(session?.username) || 'Admin'}</b></div>
             </div>
             <div style="text-align: right; display: flex; align-items: flex-start; gap: 12px; justify-content: flex-end;">
               <div>
@@ -693,7 +694,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             <div style="display: flex; gap: 40px; text-align: center; font-size: 11px;">
               <div>
                 <div style="margin-bottom: 35px; color: #64748b;">Petugas Picking</div>
-                <div style="font-weight: 700; border-top: 1px solid #94a3b8; padding-top: 4px; min-width: 90px;">(${session?.username || 'admin'})</div>
+                <div style="font-weight: 700; border-top: 1px solid #94a3b8; padding-top: 4px; min-width: 90px;">(${session?.name || getUserPersonName(session?.username) || 'Petugas'})</div>
               </div>
               <div>
                 <div style="margin-bottom: 35px; color: #64748b;">Checker / QC</div>
@@ -845,7 +846,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">History</h3>
                   <div className="text-xs text-slate-500 space-y-2">
                     <div>Order was placed on <span className="font-semibold text-slate-700">{new Date(order.created_at || '').toLocaleString('id-ID')}</span></div>
-                    {order.submitted_by && <div>Submitted by <span className="font-semibold text-slate-700">{order.submitted_by}</span></div>}
+                    {order.submitted_by && <div>Submitted by <span className="font-semibold text-slate-700 dark:text-slate-300">{formatOperatorWithPersonName(order.submitted_by)}</span></div>}
                     <div className="inline-block mt-2">
                       <span className={`px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider border ${
                         order.status === 'diterima' ? 'border-slate-300 text-slate-600 bg-slate-50' : 

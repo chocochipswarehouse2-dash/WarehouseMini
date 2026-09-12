@@ -29,6 +29,7 @@ import {
   SimpanPenerimaanPayload,
 } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
+import { registerUserNames, getUserPersonName } from '../utils/userResolver';
 
 
 export const DEFAULT_SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
@@ -1746,12 +1747,17 @@ export async function verifySupabaseLogin(
         localStorage.setItem('wms_user_nik', u.nik);
       }
 
+      const resolvedName =
+        u.name && u.name.toLowerCase() !== u.username.toLowerCase() && !u.name.toLowerCase().startsWith('wh00')
+          ? u.name
+          : getUserPersonName(u.username) || getUserPersonName(u.nik) || u.name || u.username;
+
       const token = `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       return {
         success: true,
         token,
         user: u.username,
-        name: u.name || u.username,
+        name: resolvedName,
         role: u.role || 'Operator',
         permissions: u.permissions || {},
         nik: u.nik,
@@ -1790,6 +1796,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
         seen.set(key, u);
       }
       const deduplicated = Array.from(seen.values());
+      registerUserNames(deduplicated);
       try {
         localStorage.setItem('wms_local_users', JSON.stringify(deduplicated));
       } catch {}
@@ -4169,6 +4176,9 @@ export async function updateCutiStatus(
 export async function fetchKaryawanDirectory(): Promise<KaryawanRecord[]> {
   try {
     const data = await supabaseFetch<KaryawanRecord[]>('karyawan', 'GET', null, 'order=nik.asc&limit=1000');
+    if (data && Array.isArray(data)) {
+      registerUserNames(data);
+    }
     return data || [];
   } catch (err) {
     console.warn('fetchKaryawanDirectory error:', err);

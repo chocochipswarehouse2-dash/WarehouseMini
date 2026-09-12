@@ -81,6 +81,7 @@ import {
   vibrateDevice,
 } from '../services/audio';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize , cleanProductName } from '../utils/sortUtils';
+import { formatOperatorWithPersonName, getUserPersonName } from '../utils/userResolver';
 
 
 interface PickingTasksViewProps {
@@ -3021,7 +3022,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       {group.picker_name && (
                         <>
                           <span>•</span>
-                          <span>Picker: <b>{group.picker_name}</b></span>
+                          <span>Picker: <b>{formatOperatorWithPersonName(group.picker_name)}</b></span>
                         </>
                       )}
                     </div>
@@ -3139,7 +3140,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase">
                   {viewCompletedSJ.no_sj}
                 </h2>
-                <p className="text-xs text-slate-500 font-medium">Tujuan: {viewCompletedSJ.tujuan} • Picker: {viewCompletedSJ.picker_name || '-'}</p>
+                <p className="text-xs text-slate-500 font-medium">Tujuan: {viewCompletedSJ.tujuan} • Picker: {formatOperatorWithPersonName(viewCompletedSJ.picker_name)}</p>
               </div>
               <button
                 onClick={() => setViewCompletedSJ(null)}

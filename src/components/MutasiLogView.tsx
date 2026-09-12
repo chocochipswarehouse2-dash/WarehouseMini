@@ -47,6 +47,7 @@ import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
+import { formatOperatorWithPersonName } from '../utils/userResolver';
 
 interface MutasiLogViewProps {
   session?: UserSession | null;
@@ -88,7 +89,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   // View Mode: 'CARD' (Mobile / Smartphone optimized) | 'TABLE' (Spreadsheet multi-column)
   const [viewMode, setViewMode] = useState<'TABLE' | 'CARD'>(() => {
     try {
+      const isMobileScreen = typeof window !== 'undefined' && window.innerWidth <= 768;
       const saved = localStorage.getItem('wms_mutasi_view_mode');
+      if (isMobileScreen) {
+        return saved === 'TABLE' ? 'TABLE' : 'CARD';
+      }
       if (saved === 'TABLE' || saved === 'CARD') return saved;
     } catch {}
     return typeof window !== 'undefined' && window.innerWidth <= 768 ? 'CARD' : 'TABLE';
@@ -1007,13 +1012,13 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                         {/* 5. Footer: Operator & Catatan */}
                         <div className="border-t border-slate-100 dark:border-slate-800/80 pt-2 flex flex-col gap-1 text-[11px]">
                           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                            <User className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate">
-                              Operator: <b className="text-slate-800 dark:text-slate-200">{item.operator || '-'}</b>
+                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate text-xs">
+                              Operator: <b className="text-slate-800 dark:text-slate-200 font-semibold">{formatOperatorWithPersonName(item.operator)}</b>
                             </span>
                           </div>
                           {item.keterangan && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-900/40 px-2 py-1 rounded-md border border-slate-100 dark:border-slate-800/60 truncate">
+                            <div className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-slate-50 dark:bg-slate-900/40 px-2 py-1 rounded-md border border-slate-100 dark:border-slate-800/60 truncate">
                               "{item.keterangan}"
                             </div>
                           )}
@@ -1025,7 +1030,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[880px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                       <th className="py-3 px-4 w-10 text-center">
@@ -1142,9 +1147,9 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           </td>
 
                           {/* Operator & Note */}
-                          <td className="py-3 px-4 max-w-[200px]">
-                            <div className="font-medium text-slate-700 dark:text-slate-300 truncate text-[11px]">
-                              {item.operator || '-'}
+                          <td className="py-3 px-4 max-w-[220px]">
+                            <div className="font-semibold text-slate-800 dark:text-slate-200 truncate text-[11px]">
+                              {formatOperatorWithPersonName(item.operator)}
                             </div>
                             {item.keterangan && (
                               <div className="text-[10px] text-slate-600 dark:text-slate-400 truncate italic">

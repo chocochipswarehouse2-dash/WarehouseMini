@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { UserSession, PresensiRecord, RosterShiftRecord, MasterShiftRecord } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
+import { getUserPersonName } from '../../utils/userResolver';
 import {
   fetchPresensiToday,
   fetchPresensiRange,
@@ -283,7 +284,9 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
               {session?.name ? session.name.charAt(0).toUpperCase() : session?.username.charAt(0).toUpperCase()}
             </div>
             <div>
-              <div className="font-extrabold text-sm text-white">{session?.name || session?.username}</div>
+              <div className="font-extrabold text-sm text-white">
+                {session?.name || getUserPersonName(session?.username) || session?.username}
+              </div>
               <div className="text-xs text-slate-300 font-mono">NIK: {userNik}</div>
               <div className="text-[11px] font-semibold text-primary-500">{session?.role}</div>
             </div>

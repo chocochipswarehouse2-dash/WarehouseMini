@@ -31,6 +31,7 @@ import {
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
+import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
 
 import { globalRealtimeStore } from '../services/store';
 
@@ -653,7 +654,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
         ) : (
           <div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full min-w-[850px] text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     <th className="py-3 px-4 w-10 text-center">
@@ -794,8 +795,8 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                               Pending
                             </span>
                           )}
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-[130px]">
-                            {item.operator}
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[130px]" title={formatOperatorWithPersonName(item.operator)}>
+                            {formatOperatorWithPersonName(item.operator)}
                           </div>
                         </td>
 

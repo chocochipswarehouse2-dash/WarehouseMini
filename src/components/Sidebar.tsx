@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
+import { getUserPersonName } from '../utils/userResolver';
 
 interface SidebarProps {
   session: UserSession | null;
@@ -609,10 +610,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                      {session.username}
+                      {session.name || getUserPersonName(session.username) || session.username}
                     </div>
-                    <div className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
-                      Role: {session.role}
+                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                      @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
                     </div>
                   </div>
                 </div>
@@ -721,10 +722,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                      {session.username}
+                      {session.name || getUserPersonName(session.username) || session.username}
                     </div>
-                    <div className="text-[9px] font-extrabold text-primary-500 uppercase tracking-wider">
-                      {session.role}
+                    <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                      @{session.username} • <span className="text-primary-500 font-bold uppercase">{session.role}</span>
                     </div>
                   </div>
                 </div>

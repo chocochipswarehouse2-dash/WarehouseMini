@@ -66,9 +66,11 @@ import {
   verifySupabaseLogin,
   isDummyProduct,
   supabaseFetch,
+  fetchWmsUsersFromSupabase,
 } from './services/supabase';
 import { WmsUser } from './types';
 import { getDefaultPageForSession, canAccessPage, canAccessSettings } from './services/permissions';
+import { getUserPersonName, registerUserNames } from './utils/userResolver';
 import {
   playCategoryBeep,
   playErrorBeep,
@@ -111,7 +113,9 @@ export default function App() {
         if (permissionsStr) permissions = JSON.parse(permissionsStr);
       } catch (e) {}
       const nik = localStorage.getItem('wms_user_nik') || undefined;
-      return { token, username, role: role as any, permissions, nik, endpointUrl: endpointUrl || '' };
+      const storedName = localStorage.getItem('wms_session_name');
+      const name = storedName || getUserPersonName(username);
+      return { token, username, name, role: role as any, permissions, nik, endpointUrl: endpointUrl || '' };
     }
     return null;
   });
@@ -674,9 +678,11 @@ export default function App() {
     const res = await verifySupabaseLogin(user, pass);
     if (res.success && res.token) {
       const sharedGasEndpoint = getStoredGasEndpoint();
+      const resolvedName = res.name || getUserPersonName(res.user || user) || res.user || user;
       const newSession: UserSession = {
         token: res.token,
         username: res.user || user,
+        name: resolvedName,
         role: res.role || 'Operator',
         permissions: res.permissions,
         nik: res.nik,
@@ -685,6 +691,7 @@ export default function App() {
       setSession(newSession);
       localStorage.setItem('wms_session_token', res.token);
       localStorage.setItem('wms_session_username', res.user || user);
+      localStorage.setItem('wms_session_name', resolvedName);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
       if (sharedGasEndpoint) {
         localStorage.setItem('wms_endpoint_url', sharedGasEndpoint);
@@ -708,7 +715,7 @@ export default function App() {
       const firstPage = getDefaultPageForSession(newSession);
       setActivePage(firstPage);
 
-      showToast(`Selamat datang, ${res.user || user} (${res.role || 'Operator'})!`, 'success');
+      showToast(`Selamat datang, ${resolvedName} (${res.role || 'Operator'})!`, 'success');
       playSuccessBeep();
       vibrateDevice(50);
       requestScreenWakeLock();
@@ -721,6 +728,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('wms_session_token');
     localStorage.removeItem('wms_session_username');
+    localStorage.removeItem('wms_session_name');
     localStorage.removeItem('wms_user_role');
     localStorage.removeItem('wms_session_expiry');
     localStorage.removeItem('wms_user_permissions');
@@ -929,7 +937,8 @@ export default function App() {
       const soFisik: Record<string, Record<string, number>> = {};
 
       const waktuPesan = new Date();
-      const operatorName = `${session?.username || 'ScannerWeb'} | Staging`;
+      const personName = session?.name || getUserPersonName(session?.username) || 'Petugas';
+      const operatorName = `${personName} | Staging`;
       const invoiceBase = `WEB-${waktuPesan.getTime()}`;
 
       for (let i = 0; i < scannedData.length; i++) {
@@ -1313,7 +1322,7 @@ export default function App() {
             {activePage === 'picking_tasks' && (
                 <PickingTasksView
                   onNotify={showToast}
-                  currentUser={session?.username || 'Operator'}
+                  currentUser={session?.name || getUserPersonName(session?.username) || 'Operator'}
                   productCatalog={productDatabase}
                 />
             )}

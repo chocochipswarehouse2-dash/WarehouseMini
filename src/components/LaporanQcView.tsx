@@ -46,6 +46,7 @@ import {
 } from '../types';
 import { compressImage, formatBytes } from '../utils/imageCompressor';
 import { playSuccessBeep, playErrorBeep, vibrateDevice } from '../services/audio';
+import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
 import {
   fetchQcReportsFromSupabase,
   saveQcReportsBatchToSupabase,
@@ -217,7 +218,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
   // PIC Pemeriksa = User Login (strictly locked)
   const currentPicName = useMemo(() => {
-    return session?.name || session?.username || 'Operator QC';
+    return session?.name || getUserPersonName(session?.username) || 'Operator QC';
   }, [session]);
 
   // Multi-Variant List State
@@ -885,7 +886,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     setEditTargetPenanganan(rep.target_penanganan || 'REJECT');
     setEditCatatan(rep.catatan || '');
     setEditGdriveLink(rep.gdrive_link || '');
-    setEditPicQc(rep.pic_qc || session?.name || session?.username || 'Admin QC');
+    setEditPicQc(rep.pic_qc || session?.name || getUserPersonName(session?.username) || 'Admin QC');
     setEditPhotos(
       (rep.foto_urls || []).map((url) => ({
         dataUrl: url,
@@ -1194,17 +1195,17 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       {/* 2. Collapsible Form Input Laporan QC (Multi-Variant Support) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all">
         {/* Header Accordion Bar */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/40">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 bg-slate-50/60 dark:bg-slate-800/40">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
               <PackageCheck className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-bold text-slate-900 dark:text-white text-base">
                   Form Laporan Inspeksi QC (Multi-Variant)
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0">
                   {variants.length} Variant
                 </span>
               </div>
@@ -1216,7 +1217,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           <button
             type="button"
             onClick={() => setShowForm(!showForm)}
-            className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+            className="w-full sm:w-auto px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap text-center shrink-0 cursor-pointer shadow-2xs"
           >
             {showForm ? 'Sembunyikan Form' : '+ Buka Form Input'}
           </button>
@@ -2100,7 +2101,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
         {/* Reports Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full min-w-[880px] text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-semibold">
                 <th className="py-3 px-4">No. Laporan &amp; Tanggal</th>
@@ -2300,9 +2301,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
                       {/* PIC QC */}
                       <td className="py-3.5 px-4">
-                        <div className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                          <User className="w-3 h-3 text-slate-400" />
-                          <span>{r.pic_qc || '-'}</span>
+                        <div className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-semibold">{formatOperatorWithPersonName(r.pic_qc)}</span>
                         </div>
                       </td>
 

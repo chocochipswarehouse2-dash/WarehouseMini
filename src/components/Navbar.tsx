@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
+import { getUserPersonName } from '../utils/userResolver';
 
 interface NavbarProps {
   session: UserSession | null;
@@ -224,10 +225,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        {/* User Role Tag & Logout on Desktop */}
+        {/* User Role Tag & Name on Desktop */}
         {session && (
-          <div className="hidden md:flex items-center gap-1.5 pl-1.5 border-l border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+          <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+              <span className="truncate max-w-[130px] text-slate-800 dark:text-slate-200 font-bold" title={session.name || getUserPersonName(session.username) || session.username}>
+                {session.name || getUserPersonName(session.username) || session.username}
+              </span>
               <span className="px-2 py-0.5 rounded-lg bg-primary-500/10 text-primary-500 font-extrabold border border-primary-500/20 text-[10px] uppercase">
                 {session.role}
               </span>
