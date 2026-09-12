@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft
 } from 'lucide-react';
 import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../types';
 import { hasPermission, isSuperadmin } from '../services/permissions';
@@ -46,8 +46,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStore, setFilterStore] = useState<string>('all');
+  const [filterJasaKirim, setFilterJasaKirim] = useState<string>('all');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<ManualShipmentOrder | null>(null);
 
   const [editingOrder, setEditingOrder] = useState<ManualShipmentOrder | null>(null);
 
@@ -583,109 +587,267 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
     const todayStr = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-    printWin.document.write(`
-      <html>
-        <head>
-          <title>Picking List - Manual Shipment</title>
-          <style>
-            body { font-family: 'Courier New', Courier, monospace; font-size: 11px; margin: 0; padding: 15px; color: #000; }
-            h2 { margin: 0 0 10px 0; font-size: 14px; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; text-transform: uppercase; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; table-layout: fixed; }
-            th, td { border: none; border-bottom: 1px solid #ccc; padding: 6px 4px; text-align: left; vertical-align: top; word-wrap: break-word; }
-            th { border-bottom: 2px solid #000; font-weight: bold; }
-            .header-info { margin-bottom: 20px; font-size: 10px; color: #333; }
-            .order-header { margin-bottom: 8px; line-height: 1.4; font-size: 11px; }
-            .order-header strong { display: inline-block; width: 90px; }
-            .item-name { font-weight: 500; margin-bottom: 2px; }
-            .item-sku { color: #555; font-size: 10px; }
-            .text-center { text-align: center; }
-            .page-container { max-width: 800px; margin: 0 auto; }
-            
-            @media print {
-              body { margin: 0; padding: 5mm; }
-              @page { size: portrait; margin: 5mm; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="page-container">
-            <h2>PICKING LIST - MANUAL SHIPMENT</h2>
-            <div class="header-info">Dicetak: ${todayStr}<br/>Admin: ${session?.username || 'admin'}</div>
-    `);
+    let pagesHtml = '';
 
     itemsToPrint.forEach((order) => {
-      printWin.document.write(`
-        <div>
-          <div class="order-header">
-            <strong>No Pesanan:</strong> ${order.no_pesanan} <br/>
-            <strong>Order ID:</strong> ${order.no_transaksi_customer || '-'} <br/>
-            <strong>Jasa Kirim:</strong> ${order.jasa_kirim || '-'} <br/>
-            <strong>DealPOS:</strong> ${(order.no_transaksi_pengirim || []).join(', ') || '-'} <br/>
-            <strong>Dari:</strong> ${order.nama_pengirim} <br/>
-            <strong>Tujuan:</strong> ${order.nama_tujuan}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 5%" class="text-center">#</th>
-                <th style="width: 35%">Nama Produk</th>
-                <th style="width: 25%">SKU</th>
-                <th style="width: 15%">Variasi</th>
-                <th style="width: 8%" class="text-center">Qty</th>
-                <th style="width: 12%">Lokasi</th>
-              </tr>
-            </thead>
-            <tbody>
-      `);
+      let rowsHtml = '';
+      let totalQty = 0;
 
       order.items.forEach((item, itemIdx) => {
-        // find location and details
         let location = '-';
         let variasi = 'Default';
         
-        // Clean up item name (remove variasi from the end if it exists)
         let cleanName = item.nama_produk;
         const parts = item.nama_produk.split('-');
         if (parts.length > 1) {
           variasi = parts[parts.length - 1].trim();
-          // Assume the rest is the product name
           cleanName = parts.slice(0, parts.length - 1).join('-').trim();
         }
 
         if (item.fulfillment === 'Marketplace') {
           const prod = productCatalog.find(p => p.k === item.sku);
           if (prod && prod.lokasi) location = prod.lokasi;
+        } else {
+          location = item.fulfillment;
         }
 
-        printWin.document.write(`
-          <tr>
-            <td class="text-center">${itemIdx + 1}</td>
-            <td><div class="item-name">${cleanName}</div></td>
-            <td><div class="item-sku">${item.sku}</div></td>
-            <td>${variasi}</td>
-            <td class="text-center"><strong>${item.qty}</strong></td>
-            <td>${location}</td>
+        totalQty += item.qty;
+
+        rowsHtml += `
+          <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+            <td style="padding: 6px 8px; text-align: center; color: #64748b;">${itemIdx + 1}</td>
+            <td style="padding: 6px 8px; font-family: monospace; font-weight: 700; color: #0f172a;">${item.sku}</td>
+            <td style="padding: 6px 8px; color: #1e293b; font-weight: 600;">${cleanName}</td>
+            <td style="padding: 6px 8px; text-align: center; font-weight: 700;">${variasi}</td>
+            <td style="padding: 6px 8px; text-align: center; font-weight: 800; color: #6366f1; font-size: 12px;">${item.qty}</td>
+            <td style="padding: 6px 8px; text-align: center; font-weight: 700; background: #f8fafc; color: #047857;">${location}</td>
+            <td style="padding: 6px 8px; text-align: center; width: 40px;"><div style="width: 14px; height: 14px; border: 1.5px solid #94a3b8; border-radius: 3px; margin: 0 auto;"></div></td>
           </tr>
-        `);
+        `;
       });
 
-      printWin.document.write(`
+      const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
+      
+      pagesHtml += `
+        <div style="page-break-after: always; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; max-width: 800px; margin: 0 auto;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
+            <div>
+              <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: #6366f1;">CHOCOCHIPS WMS</div>
+              <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING MANUAL SHIPMENT</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${todayStr}</b> • Admin: <b>${session?.username || 'admin'}</b></div>
+            </div>
+            <div style="text-align: right; display: flex; align-items: flex-start; gap: 12px; justify-content: flex-end;">
+              <div>
+                <div style="font-size: 18px; font-weight: 900; font-family: monospace; color: #0f172a; border: 1.5px solid #0f172a; padding: 4px 10px; border-radius: 6px; display: inline-block;">
+                  ${order.no_pesanan}
+                </div>
+                <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 4px;">Dari: <span style="color: #6366f1;">${order.nama_pengirim}</span></div>
+                <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 2px;">Tujuan: <span style="color: #059669;">${order.nama_tujuan}</span></div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="margin-bottom: 15px; font-size: 11px; line-height: 1.5;">
+            <strong>Order ID:</strong> ${order.no_transaksi_customer || '-'}<br/>
+            <strong>Jasa Kirim:</strong> ${order.jasa_kirim || '-'}<br/>
+            <strong>DealPOS:</strong> ${dealPosStr}
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+              <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1; font-size: 10px; text-transform: uppercase; color: #475569;">
+                <th style="padding: 8px; text-align: center; width: 30px;">NO</th>
+                <th style="padding: 8px; text-align: left; width: 140px;">SKU / CODE</th>
+                <th style="padding: 8px; text-align: left;">NAMA PRODUK</th>
+                <th style="padding: 8px; text-align: center; width: 50px;">SIZE</th>
+                <th style="padding: 8px; text-align: center; width: 50px;">QTY</th>
+                <th style="padding: 8px; text-align: center; width: 80px;">LOKASI</th>
+                <th style="padding: 8px; text-align: center; width: 40px;">CEK</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
             </tbody>
           </table>
+
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 24px; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+            <div style="font-size: 11px; color: #64748b;">
+              Total Item: <b>${order.items?.length || 0} SKU</b> • Total Qty: <b>${totalQty} Pcs</b>
+            </div>
+            <div style="display: flex; gap: 40px; text-align: center; font-size: 11px;">
+              <div>
+                <div style="margin-bottom: 35px; color: #64748b;">Petugas Picking</div>
+                <div style="font-weight: 700; border-top: 1px solid #94a3b8; padding-top: 4px; min-width: 90px;">(${session?.username || 'admin'})</div>
+              </div>
+              <div>
+                <div style="margin-bottom: 35px; color: #64748b;">Checker / QC</div>
+                <div style="font-weight: 700; border-top: 1px solid #94a3b8; padding-top: 4px; min-width: 90px;">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div>
+              </div>
+            </div>
+          </div>
         </div>
-      `);
+      `;
     });
 
-    printWin.document.write('</div></body></html>');
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Picking List - Manual Shipment</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 0; }
+              @page { margin: 10mm; size: auto; }
+            }
+          </style>
+        </head>
+        <body onload="window.print();">
+          ${pagesHtml}
+        </body>
+      </html>
+    `);
+
     printWin.document.close();
     printWin.focus();
-    setTimeout(() => {
-      printWin.print();
-    }, 500);
     
     setSelectedOrders(new Set());
     onShowToast(`Berhasil mencetak ${itemsToPrint.length} picking list`, 'success');
+  };
+
+  const renderOrderDetailsModal = () => {
+    if (!selectedOrderDetails) return null;
+    const order = selectedOrderDetails;
+    const totalQty = order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0;
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setSelectedOrderDetails(null)} className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors text-slate-500">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h2 className="text-xl font-bold text-slate-800 tracking-tight">ORDER ID #{order.no_pesanan}</h2>
+            </div>
+            <button onClick={() => setSelectedOrderDetails(null)} className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors text-slate-500">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-6 bg-white">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Left Column */}
+              <div className="space-y-8">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Shipping Address</h3>
+                  <div className="text-sm text-slate-600 space-y-1">
+                    <div className="font-semibold text-slate-800">{order.nama_tujuan}</div>
+                    <div>{order.no_telp_tujuan}</div>
+                    <div className="mt-2 whitespace-pre-wrap">{order.alamat_tujuan}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Pengirim / Store Info</h3>
+                  <div className="text-sm text-slate-600 space-y-1">
+                    <div className="font-semibold text-slate-800">{order.nama_pengirim}</div>
+                    {order.no_telp_store && <div>{order.no_telp_store}</div>}
+                    {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
+                      <div className="mt-2">
+                        <span className="font-medium text-slate-800">DealPOS:</span> {order.no_transaksi_pengirim.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Customer Info</h3>
+                  <div className="text-sm text-slate-600 space-y-1">
+                    <div className="font-semibold text-slate-800">{order.nama_tujuan}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column */}
+              <div className="space-y-8">
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold rounded-lg text-sm border border-slate-300 flex items-center transition-colors"
+                  >
+                    <Printer className="w-4 h-4 mr-2" />
+                    Print Label
+                  </button>
+                  <button 
+                    onClick={() => { setSelectedOrderDetails(null); handleEdit(order); }}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold rounded-lg text-sm border border-slate-300 flex items-center transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    onClick={() => { handleUpdateResi(order.no_pesanan!); }}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold rounded-lg text-sm border border-slate-300 flex items-center transition-colors"
+                  >
+                    Resi
+                  </button>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Order Items</h3>
+                  <div className="space-y-3">
+                    {order.items?.map((item, idx) => (
+                      <div key={idx} className="text-sm text-slate-700 flex justify-between items-center border-b border-slate-50 pb-2">
+                        <div>
+                          <div className="font-semibold text-indigo-600">{item.nama_produk}</div>
+                          <div className="text-xs text-slate-500 mt-0.5">SKU: {item.sku} {item.size && item.size !== 'ALL' && item.size !== '-' ? `| Size: ${item.size}` : ''}</div>
+                        </div>
+                        <div className="font-bold bg-slate-100 px-2.5 py-1 rounded-md text-slate-700 border border-slate-200">x{item.qty}</div>
+                      </div>
+                    ))}
+                    <div className="pt-2 font-bold text-slate-800 flex justify-between">
+                      <span>Total</span>
+                      <span>{totalQty} Items</span>
+                    </div>
+                  </div>
+                  <div className="mt-6 text-sm text-slate-600">
+                    <span className="font-medium text-slate-800">Jasa Kirim:</span> {order.jasa_kirim || '-'}
+                  </div>
+                  {order.no_transaksi_customer && (
+                     <div className="mt-2 text-sm text-slate-600">
+                       <span className="font-medium text-slate-800">Order ID:</span> {order.no_transaksi_customer}
+                     </div>
+                  )}
+                  {order.notes_paket && (
+                     <div className="mt-2 text-sm text-slate-600">
+                       <span className="font-medium text-slate-800">Notes:</span> {order.notes_paket}
+                     </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">History</h3>
+                  <div className="text-xs text-slate-500 space-y-2">
+                    <div>Order was placed on <span className="font-semibold text-slate-700">{new Date(order.created_at || '').toLocaleString('id-ID')}</span></div>
+                    {order.submitted_by && <div>Submitted by <span className="font-semibold text-slate-700">{order.submitted_by}</span></div>}
+                    <div className="inline-block mt-2">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider border ${
+                        order.status === 'diterima' ? 'border-slate-300 text-slate-600 bg-slate-50' : 
+                        order.status === 'diproses' ? 'border-yellow-400 text-yellow-700 bg-yellow-50' : 
+                        order.status === 'dikirim' ? 'border-emerald-400 text-emerald-700 bg-emerald-50' : 
+                        order.status === 'batal' ? 'border-red-400 text-red-600 bg-red-50' : 
+                        'border-slate-300 text-slate-600 bg-white'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const escapeHtml = (unsafe: string = '') => {
@@ -965,6 +1127,16 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       result = result.filter(o => o.status === filterStatus);
     }
     
+    // Store filter
+    if (filterStore !== 'all') {
+      result = result.filter(o => o.nama_pengirim === filterStore);
+    }
+
+    // Jasa Kirim filter
+    if (filterJasaKirim !== 'all') {
+      result = result.filter(o => o.jasa_kirim === filterJasaKirim);
+    }
+    
     // Date filter
     if (filterStartDate) {
       const start = new Date(filterStartDate);
@@ -1070,11 +1242,33 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   onClick={() => setSearchTerm('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
                 >
-                  ✕
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
             
+            <select
+              value={filterStore}
+              onChange={(e) => setFilterStore(e.target.value)}
+              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="all">Semua Store</option>
+              {outlets.map((o, idx) => (
+                <option key={idx} value={o.nama}>{o.nama}</option>
+              ))}
+            </select>
+
+            <select
+              value={filterJasaKirim}
+              onChange={(e) => setFilterJasaKirim(e.target.value)}
+              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="all">Semua Jasa Kirim</option>
+              {jasaKirimList.map((jk, idx) => (
+                <option key={idx} value={jk}>{jk}</option>
+              ))}
+            </select>
+
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -1166,7 +1360,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
               <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Customer</th>
               <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Shipping Method</th>
               <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Status</th>
-              <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Items</th>
+              <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Total Items</th>
               {canAction && (
                 <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 capitalize tracking-normal">Aksi</th>
               )}
@@ -1193,7 +1387,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     </td>
                   )}
                   <td className="px-3 py-2.5 whitespace-nowrap align-top">
-                    <div className="text-[11px] font-medium text-[#00a8e8] hover:underline cursor-pointer">{order.no_pesanan}</div>
+                    <div 
+                      className="text-[11px] font-medium text-[#00a8e8] hover:underline cursor-pointer"
+                      onClick={() => setSelectedOrderDetails(order)}
+                    >
+                      {order.no_pesanan}
+                    </div>
                     {order.no_transaksi_customer && (
                       <div className="text-[10px] text-slate-500 mt-0.5">
                         ID: {order.no_transaksi_customer}
@@ -1211,7 +1410,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     </div>
                   </td>
                   <td className="px-3 py-2.5 align-top">
-                    <div className="text-[11px] text-[#00a8e8] hover:underline cursor-pointer inline-flex">{order.nama_tujuan}</div>
+                    <div 
+                      className="text-[11px] font-medium text-slate-800 hover:text-indigo-600 cursor-pointer inline-flex transition-colors"
+                      onClick={() => setSelectedOrderDetails(order)}
+                    >
+                      {order.nama_tujuan}
+                    </div>
                     <div className="text-[10px] text-slate-500 truncate max-w-[160px] mt-0.5" title={order.alamat_tujuan}>
                       {order.alamat_tujuan}
                     </div>
@@ -1235,14 +1439,14 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                       {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 align-top">
-                    <div className="text-[10px] text-slate-600 leading-tight space-y-0.5">
-                      {order.items?.map((item, idx) => (
-                        <div key={idx} className="truncate max-w-[180px]" title={item.nama_produk}>
-                          <span className="text-[#00a8e8]">{item.nama_produk}</span> <span className="font-semibold text-slate-700">x{item.qty}</span>
-                        </div>
-                      ))}
-                    </div>
+                  <td className="px-3 py-2.5 align-top text-center">
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedOrderDetails(order)}
+                      className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-100 transition-colors"
+                    >
+                      {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
+                    </button>
                   </td>
                   {canAction && (
                     <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
@@ -1327,6 +1531,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
           {renderRekap()}
         </div>
       </div>
+      {renderOrderDetailsModal()}
     </div>
   );
 };
