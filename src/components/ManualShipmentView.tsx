@@ -1512,6 +1512,13 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       {printPayload && (
         <style>{`
           @media print {
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              ${printPayload.mode === 'LABEL' ? 'width: 105mm !important; height: 148mm !important;' : ''}
+              overflow: visible !important;
+            }
             body * {
               visibility: hidden !important;
             }
@@ -1522,7 +1529,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
               position: absolute !important;
               left: 0 !important;
               top: 0 !important;
-              width: 100% !important;
+              width: ${printPayload.mode === 'LABEL' ? '105mm' : '100%'} !important;
               margin: 0 !important;
               padding: 0 !important;
               background: #ffffff !important;
@@ -1533,11 +1540,20 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             }
             @page {
               size: ${printPayload.mode === 'LABEL' ? '105mm 148mm' : 'auto'};
-              margin: ${printPayload.mode === 'LABEL' ? '0' : '10mm'};
+              margin: ${printPayload.mode === 'LABEL' ? '0 !important' : '10mm !important'};
             }
             .page-break {
+              box-sizing: border-box !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .page-break:not(:last-child) {
               page-break-after: always !important;
               break-after: page !important;
+            }
+            .page-break:last-child {
+              page-break-after: avoid !important;
+              break-after: avoid !important;
             }
           }
         `}</style>
@@ -1599,17 +1615,19 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
               return (
                 <div
                   key={order.no_pesanan || orderIdx}
-                  className="page-break w-[105mm] min-h-[148mm] h-auto p-[2mm] box-border bg-white relative"
-                  style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
+                  className="page-break w-[105mm] h-[148mm] max-h-[148mm] p-[2mm] box-border bg-white relative overflow-hidden flex flex-col justify-between"
+                  style={{
+                    pageBreakAfter: orderIdx < printPayload.orders.length - 1 ? 'always' : 'avoid',
+                    breakAfter: orderIdx < printPayload.orders.length - 1 ? 'page' : 'avoid',
+                    pageBreakInside: 'avoid',
+                    breakInside: 'avoid',
+                  }}
                 >
-                  <div className="w-full h-full min-h-[calc(148mm-4mm)] border-[3px] border-black flex flex-col bg-white box-border text-black">
+                  <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden justify-between">
                     {/* 1. Header */}
-                    <div className="flex justify-between items-center px-4 py-2.5 border-b-2 border-black">
-                      <div
-                        className="text-[26px] font-normal leading-none text-neutral-800"
-                        style={{ fontFamily: "'Brush Script MT', 'Lucida Handwriting', cursive", letterSpacing: '-1px' }}
-                      >
-                        chocochips
+                    <div className="flex justify-between items-center px-3 py-2 border-b-2 border-black bg-gray-50 shrink-0">
+                      <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black">
+                        CHOCOCHIPS
                       </div>
                       <div className="text-[13px] font-black tracking-wider uppercase text-right leading-tight text-black">
                         {order.jasa_kirim || 'PENGIRIMAN PAKET'}
@@ -1617,56 +1635,60 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     </div>
 
                     {/* 2. Order ID Box */}
-                    <div className="text-center border-b-2 border-black py-1 px-2 text-[12px] font-black uppercase tracking-wider bg-white text-black">
+                    <div className="text-center border-b-2 border-black py-1 px-2 text-[11px] font-black uppercase tracking-wider bg-white text-black shrink-0">
                       ORDER ID: {order.no_pesanan || ''}
                     </div>
 
                     {/* 3. Address Block */}
-                    <div className="flex border-b-2 border-black bg-white">
+                    <div className="flex border-b-2 border-black bg-white shrink-0">
                       {/* Left: Penerima */}
-                      <div className="flex-1 p-2.5 border-r-2 border-black">
-                        <div className="text-[10px] font-black uppercase mb-1">
-                          PENERIMA: <span className="text-[12px] font-black">{order.nama_tujuan || '-'}</span>
+                      <div className="flex-1 p-2 border-r-2 border-black min-w-0">
+                        <div className="text-[9px] font-black uppercase mb-0.5 text-gray-600">
+                          PENERIMA: <span className="text-[11px] font-black text-black">{order.nama_tujuan || '-'}</span>
                         </div>
                         {order.no_telp_tujuan && (
-                          <div className="text-[11px] font-black mb-1 text-black">{order.no_telp_tujuan}</div>
+                          <div className="text-[10px] font-black mb-0.5 text-black font-mono">{order.no_telp_tujuan}</div>
                         )}
-                        <div className="text-[10px] font-bold leading-snug text-black">{order.alamat_tujuan || '-'}</div>
+                        <div className="text-[9.5px] font-bold leading-tight text-black line-clamp-3">{order.alamat_tujuan || '-'}</div>
 
-                        <div className="mt-2 text-[9px] font-black uppercase">NOTE:</div>
-                        <div className="text-[10px] font-bold text-black">{order.notes_paket || '-'}</div>
+                        {order.notes_paket && (
+                          <>
+                            <div className="mt-1 text-[8px] font-black uppercase text-gray-500">NOTE:</div>
+                            <div className="text-[9px] font-bold text-black line-clamp-2">{order.notes_paket}</div>
+                          </>
+                        )}
                       </div>
 
                       {/* Right: Pengirim */}
-                      <div className="w-[140px] flex flex-col p-2.5 text-black">
-                        <div className="text-[10px] font-black uppercase mb-1">PENGIRIM:</div>
-                        <div className="text-[11px] font-black uppercase mb-1">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
+                      <div className="w-[130px] flex flex-col p-2 text-black shrink-0">
+                        <div className="text-[9px] font-black uppercase mb-0.5 text-gray-600">PENGIRIM:</div>
+                        <div className="text-[11px] font-black uppercase mb-0.5 text-black leading-tight">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
                         {order.pic_store && (
-                          <div className="text-[10px] font-black mb-1">PIC: {order.pic_store}</div>
+                          <div className="text-[9px] font-black mb-0.5 text-gray-800">PIC: {order.pic_store}</div>
                         )}
                         {order.no_telp_store && (
-                          <div className="text-[10px] font-black mb-1">{order.no_telp_store}</div>
+                          <div className="text-[9px] font-bold font-mono text-gray-700">{order.no_telp_store}</div>
                         )}
                       </div>
                     </div>
 
                     {/* 4. Warning Box */}
-                    <div className="py-1 px-2 border-b-2 border-black text-[9px] font-black text-center uppercase bg-gray-100 text-black">
+                    <div className="py-1 px-2 border-b-2 border-black text-[8.5px] font-black text-center uppercase bg-gray-100 text-black shrink-0">
                       ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA • WAJIB VIDEO UNBOXING
                     </div>
 
                     {/* 5. Table Box & QR Code */}
-                    <div className="flex flex-1 bg-white">
+                    <div className="flex flex-1 bg-white overflow-hidden min-h-0">
                       {/* Left Table */}
-                      <div className="flex-1 p-2.5 border-r-2 border-black">
-                        <table className="w-full border-collapse text-[10px]">
+                      <div className="flex-1 p-2 border-r-2 border-black overflow-hidden flex flex-col justify-between">
+                        <table className="w-full border-collapse text-[9.5px]">
                           <thead>
                             <tr className="border-b border-dashed border-black">
-                              <th className="text-left py-1 px-0.5 w-[7%] font-normal">No.</th>
-                              <th className="text-left py-1 px-0.5 w-[47%] font-normal">Nama Produk</th>
-                              <th className="text-left py-1 px-0.5 w-[14%] font-normal">Size</th>
-                              <th className="text-left py-1 px-0.5 w-[22%] font-normal">SKU</th>
-                              <th className="text-center py-1 px-0.5 w-[10%] font-normal">Qty</th>
+                              <th className="text-left py-0.5 px-0.5 w-[7%] font-normal">No.</th>
+                              <th className="text-left py-0.5 px-0.5 w-[47%] font-normal">Nama Produk</th>
+                              <th className="text-left py-0.5 px-0.5 w-[14%] font-normal">Size</th>
+                              <th className="text-left py-0.5 px-0.5 w-[22%] font-normal">SKU</th>
+                              <th className="text-center py-0.5 px-0.5 w-[10%] font-normal">Qty</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1681,43 +1703,43 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                                 }
                                 return (
                                   <tr key={idx} className="border-b border-dashed border-black">
-                                    <td className="py-1 px-0.5 align-top">{idx + 1}.</td>
-                                    <td className="py-1 px-0.5 align-top">{cleanName}</td>
-                                    <td className="py-1 px-0.5 align-top">{size}</td>
-                                    <td className="py-1 px-0.5 align-top">{it.sku || ''}</td>
-                                    <td className="py-1 px-0.5 align-top text-center">{it.qty || 1}</td>
+                                    <td className="py-0.5 px-0.5 align-top">{idx + 1}.</td>
+                                    <td className="py-0.5 px-0.5 align-top leading-tight line-clamp-1">{cleanName}</td>
+                                    <td className="py-0.5 px-0.5 align-top">{size}</td>
+                                    <td className="py-0.5 px-0.5 align-top">{it.sku || ''}</td>
+                                    <td className="py-0.5 px-0.5 align-top text-center">{it.qty || 1}</td>
                                   </tr>
                                 );
                               })
                             ) : (
                               <tr>
-                                <td colSpan={5} className="py-2 text-center border-b border-dashed border-black">
+                                <td colSpan={5} className="py-1 text-center border-b border-dashed border-black text-gray-500">
                                   Tidak ada detail produk
                                 </td>
                               </tr>
                             )}
                             <tr>
-                              <td colSpan={4} className="text-right py-2 pr-3 font-normal">TOTAL</td>
-                              <td className="text-center py-2 font-normal">{totalQty}</td>
+                              <td colSpan={4} className="text-right py-1 pr-2 font-normal">TOTAL</td>
+                              <td className="text-center py-1 font-normal">{totalQty}</td>
                             </tr>
                           </tbody>
                         </table>
                       </div>
 
                       {/* Right QR */}
-                      <div className="w-[105px] p-2 flex flex-col items-center justify-start bg-white">
+                      <div className="w-[100px] p-2 flex flex-col items-center justify-start bg-white shrink-0">
                         {qrDataUrl && (
                           <img
                             src={qrDataUrl}
-                            className="w-[75px] h-[75px] object-contain mb-1.5"
+                            className="w-[70px] h-[70px] object-contain mb-1"
                             alt="QR Code"
                           />
                         )}
-                        <div className="text-[8px] font-bold text-center break-all mb-1 text-black">
+                        <div className="text-[8px] font-bold text-center break-all mb-0.5 text-black leading-tight">
                           {order.no_pesanan || ''}
                         </div>
                         {order.no_transaksi_customer && (
-                          <div className="text-[8px] text-center break-all text-neutral-600">
+                          <div className="text-[7.5px] text-center break-all text-neutral-600 leading-tight">
                             {order.no_transaksi_customer}
                           </div>
                         )}

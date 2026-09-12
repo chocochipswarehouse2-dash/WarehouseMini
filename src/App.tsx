@@ -29,6 +29,7 @@ import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { ThemePickerModal } from './components/ThemePickerModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
 import {
   getAllProductsFromLocalDb,
@@ -37,23 +38,65 @@ import {
   bulkUpsertProductsInLocalDb,
 } from './services/localDb';
 
-// Lazy load large components
-const PenerimaanProduksiView = React.lazy(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
-const PeminjamanView = React.lazy(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
-const QualityControlView = React.lazy(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
-const PickingTasksView = React.lazy(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
-const StockOpnameView = React.lazy(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
-const MutasiLogView = React.lazy(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
-const InventoryView = React.lazy(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
-const PresensiView = React.lazy(() => import('./components/hr/PresensiView').then(m => ({ default: m.PresensiView })));
-const KaryawanView = React.lazy(() => import('./components/hr/KaryawanView').then(m => ({ default: m.KaryawanView })));
-const RosterShiftView = React.lazy(() => import('./components/hr/RosterShiftView').then(m => ({ default: m.RosterShiftView })));
-const LemburCutiView = React.lazy(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
-const HrApprovalView = React.lazy(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
-const HrRekapView = React.lazy(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
-const CetakLabelView = React.lazy(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
-const ManualShipmentView = React.lazy(() => import('./components/ManualShipmentView').then(m => ({ default: m.ManualShipmentView })));
-const TarikanMDView = React.lazy(() => import('./components/TarikanMDView').then(m => ({ default: m.TarikanMDView })));
+// Resilient Lazy Loader with auto-retry and cache-busting on network or server-restart glitches
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T } | any>,
+  retries = 3,
+  interval = 800
+): React.LazyExoticComponent<T> {
+  return React.lazy(() =>
+    new Promise<{ default: T }>((resolve, reject) => {
+      const attempt = (remaining: number) => {
+        factory()
+          .then((module) => {
+            const resolved = module?.default ? module : { default: module };
+            resolve(resolved);
+          })
+          .catch((error) => {
+            if (remaining > 0) {
+              setTimeout(() => attempt(remaining - 1), interval);
+            } else {
+              const errorMsg = String(error?.message || '');
+              const isModuleError =
+                errorMsg.includes('Failed to fetch dynamically imported module') ||
+                errorMsg.includes('Importing a module script failed') ||
+                errorMsg.includes('error loading dynamically imported module');
+
+              if (isModuleError && typeof window !== 'undefined') {
+                const reloadKey = 'chunk_reload_' + window.location.pathname;
+                const hasReloaded = sessionStorage.getItem(reloadKey);
+                if (!hasReloaded) {
+                  sessionStorage.setItem(reloadKey, 'true');
+                  window.location.reload();
+                  return;
+                }
+              }
+              reject(error);
+            }
+          });
+      };
+      attempt(retries);
+    })
+  );
+}
+
+// Lazy load large components with resilient retry
+const PenerimaanProduksiView = lazyWithRetry(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
+const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
+const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
+const PickingTasksView = lazyWithRetry(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
+const StockOpnameView = lazyWithRetry(() => import('./components/StockOpnameView').then(m => ({ default: m.StockOpnameView })));
+const MutasiLogView = lazyWithRetry(() => import('./components/MutasiLogView').then(m => ({ default: m.MutasiLogView })));
+const InventoryView = lazyWithRetry(() => import('./components/InventoryView').then(m => ({ default: m.InventoryView })));
+const PresensiView = lazyWithRetry(() => import('./components/hr/PresensiView').then(m => ({ default: m.PresensiView })));
+const KaryawanView = lazyWithRetry(() => import('./components/hr/KaryawanView').then(m => ({ default: m.KaryawanView })));
+const RosterShiftView = lazyWithRetry(() => import('./components/hr/RosterShiftView').then(m => ({ default: m.RosterShiftView })));
+const LemburCutiView = lazyWithRetry(() => import('./components/hr/LemburCutiView').then(m => ({ default: m.LemburCutiView })));
+const HrApprovalView = lazyWithRetry(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
+const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
+const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
+const ManualShipmentView = lazyWithRetry(() => import('./components/ManualShipmentView').then(m => ({ default: m.ManualShipmentView })));
+const TarikanMDView = lazyWithRetry(() => import('./components/TarikanMDView').then(m => ({ default: m.TarikanMDView })));
 
 import {
   fetchStockForLocations,
@@ -192,21 +235,29 @@ export default function App() {
     if (!session || !session.username) return;
     let isMounted = true;
 
-    // Preload lazy components to make navigation smooth
+    // Preload lazy components safely without unhandled rejections
     const preloadTimer = setTimeout(() => {
-      import('./components/PeminjamanView');
-      import('./components/PickingTasksView');
-      import('./components/StockOpnameView');
-      import('./components/MutasiLogView');
-      import('./components/InventoryView');
-      import('./components/hr/PresensiView');
-      import('./components/hr/KaryawanView');
-      import('./components/hr/RosterShiftView');
-      import('./components/hr/LemburCutiView');
-      import('./components/hr/HrApprovalView');
-      import('./components/hr/HrRekapView');
-      import('./components/ManualShipmentView');
-    }, 2000);
+      const safePreload = (factory: () => Promise<any>) => {
+        try {
+          factory().catch(() => {});
+        } catch {
+          // Ignore background preload errors
+        }
+      };
+
+      safePreload(() => import('./components/PeminjamanView'));
+      safePreload(() => import('./components/PickingTasksView'));
+      safePreload(() => import('./components/StockOpnameView'));
+      safePreload(() => import('./components/MutasiLogView'));
+      safePreload(() => import('./components/InventoryView'));
+      safePreload(() => import('./components/hr/PresensiView'));
+      safePreload(() => import('./components/hr/KaryawanView'));
+      safePreload(() => import('./components/hr/RosterShiftView'));
+      safePreload(() => import('./components/hr/LemburCutiView'));
+      safePreload(() => import('./components/hr/HrApprovalView'));
+      safePreload(() => import('./components/hr/HrRekapView'));
+      safePreload(() => import('./components/ManualShipmentView'));
+    }, 2500);
 
     const syncSessionPermissions = async () => {
       try {
@@ -1269,130 +1320,132 @@ export default function App() {
             </div>
           )}
 
-          <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
-            {activePage === 'penerimaan' && (
-                <PenerimaanProduksiView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onShowToast={showToast}
-                />
-            )}
+          <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
+            <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
+              {activePage === 'penerimaan' && (
+                  <PenerimaanProduksiView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'inventory' && (
-                <InventoryView
-                  session={session}
-                  currentLocations={activeLocations}
-                  productCatalog={productDatabase}
-                  onNotify={showToast}
-                  onRefreshCatalog={loadProducts}
-                />
-            )}
+              {activePage === 'inventory' && (
+                  <InventoryView
+                    session={session}
+                    currentLocations={activeLocations}
+                    productCatalog={productDatabase}
+                    onNotify={showToast}
+                    onRefreshCatalog={loadProducts}
+                  />
+              )}
 
-            {activePage === 'stock_opname' && (
-                <StockOpnameView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onNotify={showToast}
-                  onRefreshCatalog={loadProducts}
-                />
-            )}
+              {activePage === 'stock_opname' && (
+                  <StockOpnameView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onNotify={showToast}
+                    onRefreshCatalog={loadProducts}
+                  />
+              )}
 
-            {activePage === 'mutasi_log' && (
-                <MutasiLogView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onNotify={showToast}
-                  onRefreshCatalog={loadProducts}
-                />
-            )}
+              {activePage === 'mutasi_log' && (
+                  <MutasiLogView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onNotify={showToast}
+                    onRefreshCatalog={loadProducts}
+                  />
+              )}
 
-            {activePage === 'peminjaman' && (
-                <PeminjamanView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onShowToast={showToast}
-                  onRefreshCatalog={loadProducts}
-                />
-            )}
+              {activePage === 'peminjaman' && (
+                  <PeminjamanView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onShowToast={showToast}
+                    onRefreshCatalog={loadProducts}
+                  />
+              )}
 
-            {activePage === 'cetak_label' && (
-                <CetakLabelView />
-            )}
+              {activePage === 'cetak_label' && (
+                  <CetakLabelView />
+              )}
 
-            {activePage === 'picking_tasks' && (
-                <PickingTasksView
-                  onNotify={showToast}
-                  currentUser={session?.name || getUserPersonName(session?.username) || 'Operator'}
-                  productCatalog={productDatabase}
-                />
-            )}
+              {activePage === 'picking_tasks' && (
+                  <PickingTasksView
+                    onNotify={showToast}
+                    currentUser={session?.name || getUserPersonName(session?.username) || 'Operator'}
+                    productCatalog={productDatabase}
+                  />
+              )}
 
-            {activePage === 'perbaikan' && (
-                <QualityControlView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'perbaikan' && (
+                  <QualityControlView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'karyawan' && (
-                <KaryawanView
-                  session={session}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'karyawan' && (
+                  <KaryawanView
+                    session={session}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'presensi' && (
-                <PresensiView
-                  session={session}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'presensi' && (
+                  <PresensiView
+                    session={session}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'roster_shift' && (
-                <RosterShiftView
-                  session={session}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'roster_shift' && (
+                  <RosterShiftView
+                    session={session}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'lembur_cuti' && (
-                <LemburCutiView
-                  session={session}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'lembur_cuti' && (
+                  <LemburCutiView
+                    session={session}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'hr_approval' && (
-                <HrApprovalView
-                  session={session}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'hr_approval' && (
+                  <HrApprovalView
+                    session={session}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'hr_rekap' && (
-                <HrRekapView
-                  session={session}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'hr_rekap' && (
+                  <HrRekapView
+                    session={session}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'manual_shipment' && (
-                <ManualShipmentView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onShowToast={showToast}
-                />
-            )}
+              {activePage === 'manual_shipment' && (
+                  <ManualShipmentView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onShowToast={showToast}
+                  />
+              )}
 
-            {activePage === 'tarikan_md' && (
-                <TarikanMDView
-                  session={session}
-                  productCatalog={productDatabase}
-                  onShowToast={showToast}
-                />
-            )}
-          </React.Suspense>
+              {activePage === 'tarikan_md' && (
+                  <TarikanMDView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onShowToast={showToast}
+                  />
+              )}
+            </React.Suspense>
+          </ErrorBoundary>
             </>
           )}
         </main>

@@ -70,7 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const getPageInfo = () => {
     switch (activePage) {
       case 'penerimaan':
-        return { title: 'Penerimaan Barang', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
+        return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
       case 'scanner':
         return { title: 'Scanner Barcode', subtitle: 'Tembak Lokasi & SKU', icon: ScanBarcode };
       case 'inventory':

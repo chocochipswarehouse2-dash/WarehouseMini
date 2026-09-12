@@ -92,7 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     {
       id: 'penerimaan' as ActivePage,
-      label: 'Penerimaan Barang',
+      label: 'Penerimaan Produksi',
       shortLabel: 'Penerimaan',
       icon: Truck,
       description: 'Kedatangan Lokal CMT & Kargo',
