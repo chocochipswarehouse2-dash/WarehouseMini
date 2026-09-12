@@ -27,6 +27,7 @@ import {
   Scissors,
   ClipboardCheck,
   Truck,
+  Send,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -75,6 +76,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Penerimaan Barang', subtitle: 'Laporan Pendataan Loading Dock', icon: Truck };
       case 'packing':
         return { title: 'Packing Area', subtitle: 'Pengecekan & Pengemasan Pesanan', icon: Package };
+      case 'pengiriman':
+        return { title: 'Pengiriman', subtitle: 'Pencatatan Barang Dikirim', icon: Send };
       case 'penerimaan':
         return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
       case 'scanner':

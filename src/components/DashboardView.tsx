@@ -1,9 +1,11 @@
 import React from 'react';
 import { Package, Truck, Boxes, TrendingUp, AlertCircle, Clock } from 'lucide-react';
+import { ConstructionBanner } from './ConstructionBanner';
 
 export const DashboardView: React.FC = () => {
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto pb-24">
+      <ConstructionBanner />
       {/* Header Section */}
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-black text-slate-900 dark:text-white">Dashboard Operasional</h1>

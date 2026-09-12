@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Truck, Search, Camera, Save, X, Plus, PackageOpen } from 'lucide-react';
+import { Truck, Search, Camera, Save, X, Plus, PackageOpen, History } from 'lucide-react';
+import { ConstructionBanner } from './ConstructionBanner';
 
 export const PenerimaanBarangView: React.FC = () => {
   const [items, setItems] = useState([{ id: 1, name: '', qty: '', condition: 'Baik' }]);
+  const [activeTab, setActiveTab] = useState<'input' | 'history'>('input');
 
   const handleAddItem = () => {
     setItems([...items, { id: Date.now(), name: '', qty: '', condition: 'Baik' }]);
@@ -10,6 +12,7 @@ export const PenerimaanBarangView: React.FC = () => {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-4xl mx-auto pb-24">
+      <ConstructionBanner />
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
           <Truck className="w-5 h-5 text-primary-500" />
@@ -20,7 +23,25 @@ export const PenerimaanBarangView: React.FC = () => {
         </p>
       </div>
 
-      <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-5">
+      <div className="flex bg-slate-200/50 dark:bg-slate-800/50 p-1 rounded-xl w-fit">
+        <button 
+          onClick={() => setActiveTab('input')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'input' ? 'bg-white dark:bg-[#1a2332] text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+        >
+          <PackageOpen className="w-4 h-4" />
+          Input Penerimaan
+        </button>
+        <button 
+          onClick={() => setActiveTab('history')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'history' ? 'bg-white dark:bg-[#1a2332] text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+        >
+          <History className="w-4 h-4" />
+          Riwayat Detail
+        </button>
+      </div>
+
+      {activeTab === 'input' ? (
+        <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Nomor Surat Jalan / Resi</label>
@@ -87,6 +108,41 @@ export const PenerimaanBarangView: React.FC = () => {
           </button>
         </div>
       </div>
+      ) : (
+        <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 flex justify-between items-center">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">Riwayat Detail Penerimaan (Hari Ini)</h2>
+          </div>
+          <div className="p-0 overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="px-4 py-3 font-bold">Waktu</th>
+                  <th className="px-4 py-3 font-bold">No. Resi/SJ</th>
+                  <th className="px-4 py-3 font-bold">Supplier</th>
+                  <th className="px-4 py-3 font-bold">Total Item</th>
+                  <th className="px-4 py-3 font-bold">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {[1, 2, 3].map((item) => (
+                  <tr key={item} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">10:{item * 15} WIB</td>
+                    <td className="px-4 py-3 font-mono text-slate-900 dark:text-slate-100 font-bold">RESI-88{item}90{item}</td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">PT. Supplier {item}</td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{item * 2 + 1} Dus</td>
+                    <td className="px-4 py-3">
+                      <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-wider">
+                        Terdokumentasi
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

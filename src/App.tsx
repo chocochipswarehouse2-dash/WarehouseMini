@@ -84,6 +84,7 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 const DashboardView = lazyWithRetry(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
 const PenerimaanBarangView = lazyWithRetry(() => import('./components/PenerimaanBarangView').then(m => ({ default: m.PenerimaanBarangView })));
 const PackingView = lazyWithRetry(() => import('./components/PackingView').then(m => ({ default: m.PackingView })));
+const PengirimanView = lazyWithRetry(() => import('./components/PengirimanView').then(m => ({ default: m.PengirimanView })));
 const PenerimaanProduksiView = lazyWithRetry(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
 const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
 const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
@@ -1340,6 +1341,9 @@ export default function App() {
               )}
               {activePage === 'packing' && (
                   <PackingView />
+              )}
+              {activePage === 'pengiriman' && (
+                  <PengirimanView />
               )}
               {activePage === 'penerimaan' && (
                   <PenerimaanProduksiView

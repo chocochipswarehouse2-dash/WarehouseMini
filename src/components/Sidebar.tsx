@@ -31,6 +31,7 @@ import {
   Scissors,
   Truck,
   Printer,
+  Send,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -79,6 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canViewDashboard = userIsAdmin || hasPermission(session, 'can_view_dashboard');
   const canPenerimaanBarang = userIsAdmin || hasPermission(session, 'can_penerimaan_barang');
   const canPacking = userIsAdmin || hasPermission(session, 'can_packing');
+  const canPengiriman = userIsAdmin || hasPermission(session, 'can_pengiriman');
   const canScan = userIsAdmin || hasPermission(session, 'can_scan');
   const canPenerimaan = userIsAdmin || hasPermission(session, 'can_penerimaan') || hasPermission(session, 'can_scan');
   const canPicking = userIsAdmin || hasPermission(session, 'can_picking');
@@ -116,6 +118,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Package,
       description: 'Scan SJ/Pesanan Area Packing',
       access: canPacking,
+    },
+    {
+      id: 'pengiriman' as ActivePage,
+      label: 'Pengiriman',
+      shortLabel: 'Pengiriman',
+      icon: Send, // Need to add import later if missing, I will check
+      description: 'Kirim Barang & Refill Toko',
+      access: canPengiriman,
     },
     {
       id: 'penerimaan' as ActivePage,
