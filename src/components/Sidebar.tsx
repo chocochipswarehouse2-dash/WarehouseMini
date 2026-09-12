@@ -81,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPenerimaanBarang = userIsAdmin || hasPermission(session, 'can_penerimaan_barang');
   const canPacking = userIsAdmin || hasPermission(session, 'can_packing');
   const canPengiriman = userIsAdmin || hasPermission(session, 'can_pengiriman');
+  const canAgenda = userIsAdmin || hasPermission(session, 'can_agenda');
   const canScan = userIsAdmin || hasPermission(session, 'can_scan');
   const canPenerimaan = userIsAdmin || hasPermission(session, 'can_penerimaan') || hasPermission(session, 'can_scan');
   const canPicking = userIsAdmin || hasPermission(session, 'can_picking');
@@ -126,6 +127,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Send, // Need to add import later if missing, I will check
       description: 'Kirim Barang & Refill Toko',
       access: canPengiriman,
+    },
+    {
+      id: 'agenda' as ActivePage,
+      label: 'Agenda & Project',
+      shortLabel: 'Agenda',
+      icon: Calendar,
+      description: 'Kalender Kerja & Project',
+      access: canAgenda,
     },
     {
       id: 'penerimaan' as ActivePage,

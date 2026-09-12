@@ -85,6 +85,7 @@ const DashboardView = lazyWithRetry(() => import('./components/DashboardView').t
 const PenerimaanBarangView = lazyWithRetry(() => import('./components/PenerimaanBarangView').then(m => ({ default: m.PenerimaanBarangView })));
 const PackingView = lazyWithRetry(() => import('./components/PackingView').then(m => ({ default: m.PackingView })));
 const PengirimanView = lazyWithRetry(() => import('./components/PengirimanView').then(m => ({ default: m.PengirimanView })));
+const AgendaView = lazyWithRetry(() => import('./components/AgendaView').then(m => ({ default: m.AgendaView })));
 const PenerimaanProduksiView = lazyWithRetry(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
 const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
 const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
@@ -1344,6 +1345,9 @@ export default function App() {
               )}
               {activePage === 'pengiriman' && (
                   <PengirimanView />
+              )}
+              {activePage === 'agenda' && (
+                  <AgendaView />
               )}
               {activePage === 'penerimaan' && (
                   <PenerimaanProduksiView

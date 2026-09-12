@@ -73,6 +73,19 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ]
   },
   {
+    id: 'agenda',
+    title: 'Agenda & Project Dummy',
+    badge: '📅',
+    description: 'Akses halaman dummy Agenda & Project',
+    permissions: [
+      {
+        key: 'can_agenda',
+        label: 'Agenda',
+        description: 'Melihat dan input kalender serta project',
+      },
+    ]
+  },
+  {
     id: 'operasional',
     title: 'Operasional Gudang & Scanner',
     badge: '📦',
@@ -239,7 +252,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
   Superadmin: {
-    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true, can_pengiriman: true,
+    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true, can_pengiriman: true, can_agenda: true,
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
@@ -253,7 +266,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_cetak_label: true,
   },
   'All': {
-    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true, can_pengiriman: true,
+    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true, can_pengiriman: true, can_agenda: true,
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: true,
     can_view_inventory: true, can_view_mutasi: true, can_approve_so: true,
     can_export_data: true, can_sync_dealpos: true, can_manage_users: true,
@@ -347,7 +360,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, UserPermissions> = {
     can_perbaikan: false,
   },
   'Operator': {
-    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true, can_pengiriman: true,
+    can_view_dashboard: true, can_penerimaan_barang: true, can_packing: true, can_pengiriman: true, can_agenda: true,
     can_scan: true, can_penerimaan: true, can_picking: true, can_peminjaman: false,
     can_view_inventory: false, can_view_mutasi: false, can_approve_so: false,
     can_export_data: false, can_sync_dealpos: false, can_manage_users: false,
@@ -435,6 +448,8 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
       return hasPermission(session, 'can_packing');
     case 'pengiriman':
       return hasPermission(session, 'can_pengiriman');
+    case 'agenda':
+      return hasPermission(session, 'can_agenda');
     case 'scanner':
       return hasPermission(session, 'can_scan');
     case 'penerimaan':

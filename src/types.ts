@@ -7,6 +7,7 @@ export type ActivePage =
   | 'penerimaan_barang'
   | 'packing'
   | 'pengiriman'
+  | 'agenda'
   | 'scanner'
   | 'penerimaan'
   | 'picking_tasks'
@@ -44,6 +45,7 @@ export type UserPermissionKey =
   | 'can_penerimaan_barang'
   | 'can_packing'
   | 'can_pengiriman'
+  | 'can_agenda'
   | 'can_scan'
   | 'can_penerimaan'
   | 'can_picking'
@@ -74,6 +76,7 @@ export interface UserPermissions {
   can_penerimaan_barang?: boolean;
   can_packing?: boolean;
   can_pengiriman?: boolean;
+  can_agenda?: boolean;
   can_scan: boolean;
   can_penerimaan?: boolean;
   can_picking: boolean;

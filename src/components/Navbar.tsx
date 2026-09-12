@@ -78,6 +78,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Packing Area', subtitle: 'Pengecekan & Pengemasan Pesanan', icon: Package };
       case 'pengiriman':
         return { title: 'Pengiriman', subtitle: 'Pencatatan Barang Dikirim', icon: Send };
+      case 'agenda':
+        return { title: 'Agenda & Project', subtitle: 'Kalender Kerja & Manajemen Project', icon: Calendar };
       case 'penerimaan':
         return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
       case 'scanner':
