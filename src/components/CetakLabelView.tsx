@@ -21,7 +21,8 @@ import {
   RefreshCw,
   Database,
   Truck,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Search
 } from 'lucide-react';
 import Papa from 'papaparse';
 import QRCode from 'qrcode';
@@ -147,6 +148,7 @@ export const CetakLabelView: React.FC = () => {
   // Data Alamat (Google Sheets & Local Cache)
   const [addressBook, setAddressBook] = useState<AddressData[]>([]);
   const [isAddressDropdownOpen, setIsAddressDropdownOpen] = useState(false);
+  const [searchAddress, setSearchAddress] = useState('');
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [isSavingQueue, setIsSavingQueue] = useState(false);
@@ -289,12 +291,12 @@ export const CetakLabelView: React.FC = () => {
     }
   };
 
-  const handleDeleteAddress = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteAddress = async (e: React.MouseEvent, id: string, namaPenerima?: string) => {
     e.stopPropagation();
-    if (!confirm('Hapus alamat ini dari Data Alamat?')) return;
+    if (!confirm(`Hapus alamat ${namaPenerima ? `"${namaPenerima}"` : ''} dari Data Alamat?`)) return;
     try {
-      await deleteDataAlamatItem(id);
-      setAddressBook(prev => prev.filter(item => item.id !== id));
+      await deleteDataAlamatItem(id, namaPenerima);
+      setAddressBook(prev => prev.filter(item => item.id !== id && (!namaPenerima || item.nama_penerima !== namaPenerima)));
     } catch (e) {
       console.error(e);
       alert('Gagal menghapus alamat');
@@ -305,7 +307,7 @@ export const CetakLabelView: React.FC = () => {
     setPenerimaNama(item.nama_penerima);
     setPenerimaTelp(item.no_telp || '');
     setPenerimaAlamat(item.alamat);
-    if (item.keterangan && !deskripsi) {
+    if (item.keterangan) {
       setDeskripsi(item.keterangan);
     }
     if (item.jasa_kirim) {
@@ -318,7 +320,19 @@ export const CetakLabelView: React.FC = () => {
       }
     }
     setIsAddressDropdownOpen(false);
+    setSearchAddress('');
   };
+
+  const filteredAddressBook = addressBook.filter((item) => {
+    if (!searchAddress.trim()) return true;
+    const q = searchAddress.toLowerCase().trim();
+    return (
+      item.nama_penerima.toLowerCase().includes(q) ||
+      item.alamat.toLowerCase().includes(q) ||
+      (item.no_telp && item.no_telp.includes(q)) ||
+      (item.keterangan && item.keterangan.toLowerCase().includes(q))
+    );
+  });
 
   // Tambah Label ke Antrean
   const handleAddLabel = async (e: React.FormEvent) => {
@@ -668,10 +682,10 @@ export const CetakLabelView: React.FC = () => {
           {/* ====================================================
               KOLOM KIRI: FORM INPUT PAKET (Termasuk Import CSV & Auto-Fill)
              ==================================================== */}
-          <div className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
             
             {/* Header Form Input dengan Opsi Import CSV & Auto-Fill */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex flex-wrap justify-between items-center gap-2">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 rounded-t-2xl flex flex-wrap justify-between items-center gap-2">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
@@ -702,72 +716,159 @@ export const CetakLabelView: React.FC = () => {
                   Import CSV
                 </button>
 
-                {/* Dropdown Auto-Fill dari Sheet Data Alamat */}
+                {/* Dropdown Auto-Fill dari Supabase & Sheet Data Alamat */}
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setIsAddressDropdownOpen(!isAddressDropdownOpen)}
+                    onClick={() => {
+                      const next = !isAddressDropdownOpen;
+                      setIsAddressDropdownOpen(next);
+                      if (next && addressBook.length === 0) {
+                        loadAddressBook();
+                      }
+                    }}
                     className="px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Bookmark className="w-3.5 h-3.5 text-amber-500" />
                     Auto-Fill
+                    {addressBook.length > 0 && (
+                      <span className="px-1.5 py-0.2 text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-extrabold rounded-full">
+                        {addressBook.length}
+                      </span>
+                    )}
                     <ChevronDown className="w-3 h-3 text-slate-400" />
                   </button>
                   
                   {isAddressDropdownOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
-                      <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Database className="w-3.5 h-3.5 text-indigo-500" />
-                          <h3 className="text-xs font-black text-slate-700 dark:text-slate-300">Database Alamat (Sheet)</h3>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={loadAddressBook}
-                          disabled={isLoadingAddresses}
-                          className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-                        >
-                          <RefreshCw className={`w-2.5 h-2.5 ${isLoadingAddresses ? 'animate-spin' : ''}`} />
-                          Sinkron
-                        </button>
-                      </div>
-                      <div className="max-h-64 overflow-y-auto p-2">
-                        {isLoadingAddresses ? (
-                          <div className="p-4 flex justify-center">
-                            <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                    <>
+                      {/* Backdrop semi-transparan untuk menutup popup saat klik di luar (mobile & desktop) */}
+                      <div
+                        className="fixed inset-0 z-40 bg-black/10 sm:bg-transparent"
+                        onClick={() => setIsAddressDropdownOpen(false)}
+                      />
+
+                      {/* Dropdown container: left-0 di HP agar tidak terpotong ke kiri layar, sm:right-0 di desktop */}
+                      <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 w-[calc(100vw-2.5rem)] max-w-[340px] sm:max-w-md sm:w-96 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in-50 duration-150">
+                        <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 truncate">
+                              Database Alamat ({addressBook.length})
+                            </h3>
                           </div>
-                        ) : addressBook.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-500">
-                            Belum ada data alamat tersimpan.<br/>Simpan alamat di bawah atau dari antrean cetak.
-                          </div>
-                        ) : (
-                          addressBook.map((item) => (
-                            <div
-                              key={item.id}
-                              onClick={() => handleSelectAddress(item)}
-                              className="p-2.5 hover:bg-indigo-50/50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer group mb-1 border border-transparent hover:border-indigo-100 dark:hover:border-slate-700 transition-colors relative"
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={loadAddressBook}
+                              disabled={isLoadingAddresses}
+                              className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                              title="Sinkronisasi dari Supabase & Google Sheet"
                             >
-                              <div className="flex items-center gap-1.5">
-                                <h4 className="text-xs font-bold text-slate-800 dark:text-white truncate">{item.nama_penerima}</h4>
-                                {item.jasa_kirim && (
-                                  <span className="px-1.5 py-0.2 text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded font-semibold">
-                                    {item.jasa_kirim}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">{item.alamat}</p>
+                              <RefreshCw className={`w-2.5 h-2.5 ${isLoadingAddresses ? 'animate-spin' : ''}`} />
+                              Sinkron
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsAddressDropdownOpen(false)}
+                              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md transition-colors cursor-pointer"
+                              title="Tutup"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div className="p-2 border-b border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800">
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              value={searchAddress}
+                              onChange={(e) => setSearchAddress(e.target.value)}
+                              placeholder="Cari penerima, telepon, alamat..."
+                              className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                            {searchAddress && (
                               <button
-                                onClick={(e) => handleDeleteAddress(e, item.id)}
-                                className="absolute top-2.5 right-2 p-1 bg-white dark:bg-slate-800 rounded text-slate-400 hover:text-rose-500 shadow-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Hapus dari database"
+                                type="button"
+                                onClick={() => setSearchAddress('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <X className="w-3 h-3" />
                               </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* List Alamat */}
+                        <div className="max-h-72 overflow-y-auto p-2 divide-y divide-slate-100 dark:divide-slate-700/50">
+                          {isLoadingAddresses ? (
+                            <div className="p-6 flex flex-col items-center justify-center gap-2 text-slate-400">
+                              <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                              <span className="text-xs font-semibold">Memuat database alamat...</span>
                             </div>
-                          ))
-                        )}
+                          ) : filteredAddressBook.length === 0 ? (
+                            <div className="p-4 text-center text-xs text-slate-500 space-y-1.5">
+                              {searchAddress ? (
+                                <p>Tidak ditemukan alamat cocok dengan "{searchAddress}".</p>
+                              ) : (
+                                <>
+                                  <p className="font-bold text-slate-700 dark:text-slate-300">Belum ada data alamat tersimpan.</p>
+                                  <p className="text-[11px] text-slate-400 leading-snug">
+                                    Simpan alamat di bawah atau dari antrean cetak agar tersimpan di Supabase & bisa auto-fill kapan saja.
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            filteredAddressBook.map((item) => (
+                              <div
+                                key={item.id}
+                                onClick={() => handleSelectAddress(item)}
+                                className="p-2.5 hover:bg-indigo-50/60 dark:hover:bg-slate-700/60 rounded-xl cursor-pointer group transition-colors relative"
+                              >
+                                <div className="flex items-start justify-between gap-2 pr-6">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <h4 className="text-xs font-bold text-slate-800 dark:text-white truncate">
+                                        {item.nama_penerima}
+                                      </h4>
+                                      {item.no_telp && (
+                                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                          ({item.no_telp})
+                                        </span>
+                                      )}
+                                      {item.jasa_kirim && (
+                                        <span className="px-1.5 py-0.2 text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded font-semibold">
+                                          {item.jasa_kirim}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 dark:text-slate-300 line-clamp-2 mt-1 leading-snug">
+                                      {item.alamat}
+                                    </p>
+                                    {item.keterangan && (
+                                      <p className="text-[9px] text-indigo-600 dark:text-indigo-400 truncate mt-0.5 font-medium">
+                                        Note: {item.keterangan}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteAddress(e, item.id, item.nama_penerima)}
+                                  className="absolute top-2.5 right-2 p-1.5 bg-white dark:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-500 shadow-xs opacity-70 sm:opacity-0 group-hover:opacity-100 transition-all hover:scale-105 cursor-pointer"
+                                  title="Hapus dari database"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -1123,6 +1224,24 @@ export const CetakLabelView: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Floating Action Bar khusus Mobile saat ada label dalam antrean */}
+        {labels.length > 0 && (
+          <div className="fixed bottom-4 left-4 right-4 sm:hidden z-30 flex items-center justify-between gap-3 p-3 bg-slate-900/95 text-white backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700">
+            <div className="flex items-center gap-2 pl-1">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-bold">{labels.length} Label Siap Cetak</span>
+            </div>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Cetak A6
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 
