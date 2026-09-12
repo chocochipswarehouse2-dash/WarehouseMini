@@ -355,7 +355,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const deferredFormSku = useDeferredValue(formSku);
   const [formNama, setFormNama] = useState('');
   const [formSize, setFormSize] = useState('Default');
-  const [formQty, setFormQty] = useState(1);
+  const [formQty, setFormQty] = useState<number | ''>(1);
   const [formLokasiAsal, setFormLokasiAsal] = useState('A-01');
   const [formIsAlreadyInRepair, setFormIsAlreadyInRepair] = useState(false);
   const [formSumber, setFormSumber] = useState<PerbaikanTicket['sumber_barang']>('Gudang Fisik');
@@ -374,7 +374,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [editDetailKerusakan, setEditDetailKerusakan] = useState('');
   const [editKategoriRusak, setEditKategoriRusak] = useState<PerbaikanTicket['kategori_rusak']>('Noda / Kotor');
   const [editLokasiSekarang, setEditLokasiSekarang] = useState('');
-  const [editQty, setEditQty] = useState(1);
+  const [editQty, setEditQty] = useState<number | ''>(1);
   const [editPetugasReparasi, setEditPetugasReparasi] = useState('');
   const [editReparasiCatatan, setEditReparasiCatatan] = useState('');
   const [editBiayaReparasi, setEditBiayaReparasi] = useState<number>(0);
@@ -933,7 +933,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       sku: formSku.trim().toUpperCase(),
       nama_produk: formNama.trim() || `Produk ${formSku.toUpperCase()}`,
       size: formSize || 'Default',
-      qty: formQty || 1,
+      qty: Math.max(1, Number(formQty) || 1),
       lokasi_asal: formLokasiAsal.trim().toUpperCase() || 'Warehouse',
       lokasi_sekarang: targetLokasi,
       is_already_in_repair: formIsAlreadyInRepair,
@@ -1742,7 +1742,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     type="number"
                     min={1}
                     value={formQty}
-                    onChange={(e) => setFormQty(Number(e.target.value) || 1)}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                    }}
+                    onBlur={() => {
+                      if (formQty === '' || Number(formQty) < 1) {
+                        setFormQty(1);
+                      }
+                    }}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-black text-center text-slate-900 dark:text-white outline-none"
                   />
                 </div>
@@ -2739,9 +2748,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <input
                     type="number"
                     min={0}
-                    value={progressBiaya}
-                    onChange={(e) => setProgressBiaya(Number(e.target.value) || 0)}
-                    placeholder="Ongkos jahit / cuci"
+                    value={progressBiaya === 0 ? '' : progressBiaya}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setProgressBiaya(val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
+                    }}
+                    placeholder="0"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                   />
                 </div>
@@ -3081,7 +3094,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     type="number"
                     min={1}
                     value={editQty}
-                    onChange={(e) => setEditQty(Number(e.target.value) || 1)}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                    }}
+                    onBlur={() => {
+                      if (editQty === '' || Number(editQty) < 1) {
+                        setEditQty(1);
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold outline-none"
                   />
                 </div>

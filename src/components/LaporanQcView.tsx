@@ -264,9 +264,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   const [editSize, setEditSize] = useState<string>('');
   const [editSumberBatch, setEditSumberBatch] = useState<string>('Penerimaan CMT');
   const [editStatus, setEditStatus] = useState<QcStatus>('OKE');
-  const [editQtyDiperiksa, setEditQtyDiperiksa] = useState<number>(1);
-  const [editQtyOke, setEditQtyOke] = useState<number>(1);
-  const [editQtyReject, setEditQtyReject] = useState<number>(0);
+  const [editQtyDiperiksa, setEditQtyDiperiksa] = useState<number | ''>(1);
+  const [editQtyOke, setEditQtyOke] = useState<number | ''>(1);
+  const [editQtyReject, setEditQtyReject] = useState<number | ''>(0);
   const [editKategoriRusak, setEditKategoriRusak] = useState<string>('Noda / Kotor');
   const [editDetailKerusakan, setEditDetailKerusakan] = useState<string>('');
   const [editLokasiBarang, setEditLokasiBarang] = useState<string>('');
@@ -2756,9 +2756,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     <input
                       type="number"
                       min="1"
-                      value={editQtyDiperiksa}
+                      value={editQtyDiperiksa === 0 ? '' : editQtyDiperiksa}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => {
-                        const val = Math.max(1, Number(e.target.value) || 1);
+                        const raw = e.target.value;
+                        const val = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
                         setEditQtyDiperiksa(val);
                         if (editStatus === 'OKE') {
                           setEditQtyOke(val);
@@ -2766,6 +2768,18 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         } else {
                           setEditQtyReject(val);
                           setEditQtyOke(0);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!editQtyDiperiksa || editQtyDiperiksa < 1) {
+                          setEditQtyDiperiksa(1);
+                          if (editStatus === 'OKE') {
+                            setEditQtyOke(1);
+                            setEditQtyReject(0);
+                          } else {
+                            setEditQtyReject(1);
+                            setEditQtyOke(0);
+                          }
                         }
                       }}
                       className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -2779,7 +2793,14 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                       type="number"
                       min="0"
                       value={editQtyOke}
-                      onChange={(e) => setEditQtyOke(Math.max(0, Number(e.target.value) || 0))}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setEditQtyOke(raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0));
+                      }}
+                      onBlur={() => {
+                        if (editQtyOke === '') setEditQtyOke(0);
+                      }}
                       className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
                     />
                   </div>
@@ -2791,7 +2812,14 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                       type="number"
                       min="0"
                       value={editQtyReject}
-                      onChange={(e) => setEditQtyReject(Math.max(0, Number(e.target.value) || 0))}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setEditQtyReject(raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0));
+                      }}
+                      onBlur={() => {
+                        if (editQtyReject === '') setEditQtyReject(0);
+                      }}
                       className="w-full px-2.5 py-1.5 text-xs text-center font-bold rounded-lg border border-rose-300 dark:border-rose-700 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300"
                     />
                   </div>

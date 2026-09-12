@@ -1262,7 +1262,11 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                                 <input
                                   type="number"
                                   value={item.qty_scan}
-                                  onChange={e => handleManualQty(item.sku, parseInt(e.target.value, 10) || 0)}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    handleManualQty(item.sku, val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
+                                  }}
                                   className="w-11 text-center font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-0.5"
                                   min={0}
                                 />
@@ -1849,8 +1853,10 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                                           <input
                                             type="number"
                                             value={item.qty_scan}
+                                            onFocus={e => e.target.select()}
                                             onChange={e => {
-                                              const newQty = parseInt(e.target.value, 10) || 0;
+                                              const raw = e.target.value;
+                                              const newQty = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
                                               const newItems = [...editFormData.items];
                                               newItems[i] = {
                                                 ...newItems[i],

@@ -64,7 +64,7 @@ interface EditableLogItem {
   size: string;
   lokasi: string;
   area: string;
-  qty: number;
+  qty: number | string;
   keterangan: string;
 }
 
@@ -351,7 +351,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setIsSavingEdit(true);
     showGlobalLoading('Menyimpan Perubahan...');
     try {
-      const res = await updateLogProdukInvoiceBatch(editInvoiceItems);
+      const cleanedItems = editInvoiceItems.map((item) => ({
+        ...item,
+        qty: Math.max(1, Number(item.qty) || 1),
+      }));
+      const res = await updateLogProdukInvoiceBatch(cleanedItems as any);
       if (res.success) {
         if (onNotify) onNotify(`Invoice ${editingInvoice} berhasil diperbarui (${res.count} item)!`, 'success');
         setEditingInvoice(null);
@@ -1345,8 +1349,17 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           <input
                             type="number"
                             min="1"
-                            value={item.qty}
-                            onChange={(e) => handleItemFieldChange(idx, 'qty', parseInt(e.target.value) || 1)}
+                            value={item.qty ?? ''}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              handleItemFieldChange(idx, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                            }}
+                            onBlur={() => {
+                              if (item.qty === '' || Number(item.qty) < 1) {
+                                handleItemFieldChange(idx, 'qty', 1);
+                              }
+                            }}
                             className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary-500"
                           />
                         </div>

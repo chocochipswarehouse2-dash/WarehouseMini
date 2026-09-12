@@ -136,7 +136,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Manual Search & Autocomplete States
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchQty, setSearchQty] = useState(1);
+  const [searchQty, setSearchQty] = useState<number | ''>(1);
   const [searchLocation, setSearchLocation] = useState('');
   const [searchSelectedProduct, setSearchSelectedProduct] = useState<ProductItem | null>(null);
   const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
@@ -155,7 +155,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const [newSjSkuNama, setNewSjSkuNama] = useState('');
   const [newSjSkuSize, setNewSjSkuSize] = useState('');
   const [newSjSkuLoc, setNewSjSkuLoc] = useState('');
-  const [newSjSkuQty, setNewSjSkuQty] = useState(1);
+  const [newSjSkuQty, setNewSjSkuQty] = useState<number | ''>(1);
   const [isSavingSjEdit, setIsSavingSjEdit] = useState(false);
 
   const [selectedSJs, setSelectedSJs] = useState<string[]>([]);
@@ -2188,7 +2188,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           type="number"
                           min={1}
                           value={searchQty}
-                          onChange={(e) => setSearchQty(Math.max(1, parseInt(e.target.value) || 1))}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSearchQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                          }}
+                          onBlur={() => {
+                            if (searchQty === '' || Number(searchQty) < 1) {
+                              setSearchQty(1);
+                            }
+                          }}
                           className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 rounded-xl text-xs font-black text-center text-slate-800 dark:text-white outline-none"
                         />
                       </div>
@@ -3319,7 +3328,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       min="1"
                       placeholder="Qty"
                       value={newSjSkuQty}
-                      onChange={(e) => setNewSjSkuQty(Math.max(1, Number(e.target.value) || 1))}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewSjSkuQty(val === '' ? '' : Math.max(0, Number(val) || 0));
+                      }}
+                      onBlur={() => {
+                        if (newSjSkuQty === '' || Number(newSjSkuQty) < 1) {
+                          setNewSjSkuQty(1);
+                        }
+                      }}
                       className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
                     />
                   </div>
@@ -3399,10 +3417,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           required
                           placeholder="Qty"
                           value={row.qty_req}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => {
+                            const val = e.target.value;
                             const updated = [...editSjRows];
-                            updated[idx].qty_req = Math.max(1, Number(e.target.value) || 1);
+                            updated[idx].qty_req = val === '' ? ('' as any) : Math.max(0, Number(val) || 0);
                             setEditSjRows(updated);
+                          }}
+                          onBlur={() => {
+                            if (row.qty_req === '' || Number(row.qty_req) < 1) {
+                              const updated = [...editSjRows];
+                              updated[idx].qty_req = 1;
+                              setEditSjRows(updated);
+                            }
                           }}
                           className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
                         />
@@ -3538,12 +3565,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       type="number"
                       min="0"
                       value={editingItemData.qty_picked}
-                      onChange={(e) =>
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value;
                         setEditingItemData({
                           ...editingItemData,
-                          qty_picked: Math.max(0, Number(e.target.value) || 0),
-                        })
-                      }
+                          qty_picked: val === '' ? ('' as any) : Math.max(0, parseInt(val, 10) || 0),
+                        });
+                      }}
+                      onBlur={() => {
+                        if (editingItemData.qty_picked === '') {
+                          setEditingItemData({
+                            ...editingItemData,
+                            qty_picked: 0,
+                          });
+                        }
+                      }}
                       className="flex-1 py-2 text-center bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none"
                     />
                     <button

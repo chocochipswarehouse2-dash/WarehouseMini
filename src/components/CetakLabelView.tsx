@@ -174,7 +174,7 @@ export const CetakLabelView: React.FC = () => {
   const [penerimaAlamat, setPenerimaAlamat] = useState('');
   
   const [deskripsi, setDeskripsi] = useState('');
-  const [qty, setQty] = useState<number>(1);
+  const [qty, setQty] = useState<number | ''>(1);
 
   // Fetch initial data
   useEffect(() => {
@@ -345,9 +345,10 @@ export const CetakLabelView: React.FC = () => {
     const effectiveJasaKirim = getEffectiveJasaKirim();
     const newLabels: LabelItem[] = [];
     const baseId = idPaket.trim() || generatePackageId();
+    const totalQty = Math.max(1, Number(qty) || 1);
 
-    for (let i = 0; i < qty; i++) {
-      const currentId = qty > 1 ? `${baseId}-${i + 1}` : baseId;
+    for (let i = 0; i < totalQty; i++) {
+      const currentId = totalQty > 1 ? `${baseId}-${i + 1}` : baseId;
       const qrText = `Manual paket + ID: ${currentId}`;
       const qrDataUrl = await createQrDataUrl(qrText);
 
@@ -1092,7 +1093,16 @@ export const CetakLabelView: React.FC = () => {
                     type="number"
                     min={1}
                     value={qty}
-                    onChange={e => setQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setQty(val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                    }}
+                    onBlur={() => {
+                      if (qty === '' || Number(qty) < 1) {
+                        setQty(1);
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-center font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>

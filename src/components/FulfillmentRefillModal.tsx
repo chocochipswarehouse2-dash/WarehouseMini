@@ -176,7 +176,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
   const [manualSJ, setManualSJ] = useState('');
   const [manualTujuan, setManualTujuan] = useState('');
   const [manualRows, setManualRows] = useState<
-    Array<{ sku: string; nama_produk: string; size: string; lokasi: string; qty: number }>
+    Array<{ sku: string; nama_produk: string; size: string; lokasi: string; qty: number | string }>
   >([{ sku: '', nama_produk: '', size: '', lokasi: '', qty: 1 }]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1176,7 +1176,16 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
                           required
                           placeholder="Qty"
                           value={row.qty}
-                          onChange={(e) => handleManualRowChange(idx, 'qty', Number(e.target.value))}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleManualRowChange(idx, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                          }}
+                          onBlur={() => {
+                            if (row.qty === '' || Number(row.qty) < 1) {
+                              handleManualRowChange(idx, 'qty', 1);
+                            }
+                          }}
                           className="w-full p-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white"
                         />
                       </div>

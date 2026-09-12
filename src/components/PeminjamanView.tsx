@@ -789,7 +789,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       return;
     }
 
-    const validItems = items.filter((it) => it.produk.trim() && it.qty > 0);
+    const validItems = items
+      .filter((it) => it.produk.trim() && Number(it.qty) > 0)
+      .map((it) => ({
+        ...it,
+        qty: Math.max(1, Number(it.qty) || 1),
+      }));
     if (validItems.length === 0) {
       onShowToast('Pilih minimal 1 item produk yang valid', 'error');
       return;
@@ -1489,7 +1494,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   const hasSelected = Boolean(item.sku || item.produk);
                   const mapStok = item.stokMap || 0;
                   const isKosong = mapStok <= 0;
-                  const isKurang = item.qty > mapStok;
+                  const isKurang = Number(item.qty) > mapStok;
 
                   return (
                     <div
@@ -1633,7 +1638,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <div className="flex items-center border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-[#09090B] overflow-hidden">
                             <button
                               type="button"
-                              onClick={() => handleItemChange(item.id, { qty: Math.max(1, item.qty - 1) })}
+                              onClick={() => handleItemChange(item.id, { qty: Math.max(1, (Number(item.qty) || 1) - 1) })}
                               className="px-2.5 py-2 text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold"
                             >
                               −
@@ -1641,10 +1646,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             <input
                               type="number"
                               min="1"
-                              value={item.qty || ''}
+                              value={item.qty ?? ''}
+                              onFocus={(e) => e.target.select()}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                handleItemChange(item.id, { qty: val === '' ? 0 : Math.max(1, parseInt(val, 10) || 1) });
+                                handleItemChange(item.id, { qty: val === '' ? '' : Math.max(0, parseInt(val, 10) || 0) });
                               }}
                               onBlur={(e) => {
                                 const val = e.target.value;
@@ -1656,7 +1662,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             />
                             <button
                               type="button"
-                              onClick={() => handleItemChange(item.id, { qty: item.qty + 1 })}
+                              onClick={() => handleItemChange(item.id, { qty: (Number(item.qty) || 0) + 1 })}
                               className="px-2.5 py-2 text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold"
                             >
                               +

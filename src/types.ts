@@ -281,7 +281,7 @@ export interface PeminjamanItemForm {
   nama?: string;
   size?: string;
   lokasi: string;
-  qty: number;
+  qty: number | string;
   qtyKembali?: number;
   stokMap?: number;
   stokStudio?: number;
@@ -395,7 +395,7 @@ export interface StockOpnameQueueItem {
 export interface PenerimaanVariantItem {
   warna: string;
   size: string;
-  qty: number;
+  qty: number | string;
   timestamp?: number;
 }
 
@@ -403,7 +403,7 @@ export interface ManualShipmentItem {
   id: string;
   nama_produk: string;
   sku: string;
-  qty: number;
+  qty: number | string;
   fulfillment: string;
   size?: string;
 }

@@ -575,7 +575,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
       const v = { ...target.variants[variantIndex] };
       if (field === 'qty') {
-        v.qty = Math.max(1, Number(val) || 1);
+        v.qty = val === '' ? ('' as any) : Math.max(0, parseInt(String(val), 10) || 0);
       } else if (field === 'warna') {
         v.warna = String(val).toUpperCase();
       } else {
@@ -644,11 +644,19 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           onShowToast(`Warna pada ${kode} baris #${j + 1} belum diisi!`, 'warning');
           return;
         }
+        if (!v.qty || Number(v.qty) < 1) {
+          onShowToast(`Qty pada ${kode} (${v.warna} / ${v.size}) minimal 1 pcs!`, 'warning');
+          return;
+        }
       }
 
       cleanedBlocks.push({
         ...b,
         kode_produksi: kode.toUpperCase(),
+        variants: b.variants.map((v) => ({
+          ...v,
+          qty: Math.max(1, Number(v.qty) || 1),
+        })),
       });
     }
 
@@ -1403,9 +1411,15 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                 type="number"
                                 min={1}
                                 value={v.qty}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) =>
                                   updateVariantInBlock(blockIdx, vIdx, 'qty', e.target.value)
                                 }
+                                onBlur={() => {
+                                  if (v.qty === '' || Number(v.qty) < 1) {
+                                    updateVariantInBlock(blockIdx, vIdx, 'qty', 1);
+                                  }
+                                }}
                                 required
                                 className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-black text-center text-slate-900 dark:text-white focus:ring-1 focus:ring-emerald-500"
                               />
@@ -2456,11 +2470,20 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                             <input
                               type="number"
                               min={1}
-                              value={it.qty}
+                              value={it.qty ?? ''}
+                              onFocus={(e) => e.target.select()}
                               onChange={(e) => {
+                                const val = e.target.value;
                                 const updated = [...editingBatch.items];
-                                updated[idx].qty = Math.max(1, Number(e.target.value) || 1);
+                                updated[idx].qty = val === '' ? ('' as any) : Math.max(0, parseInt(val, 10) || 0);
                                 setEditingBatch({ ...editingBatch, items: updated });
+                              }}
+                              onBlur={() => {
+                                if ((it.qty as any) === '' || Number(it.qty) < 1) {
+                                  const updated = [...editingBatch.items];
+                                  updated[idx].qty = 1;
+                                  setEditingBatch({ ...editingBatch, items: updated });
+                                }
                               }}
                               className="w-16 px-2 py-1 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-black"
                             />
