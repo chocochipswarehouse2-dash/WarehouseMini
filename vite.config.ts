@@ -6,9 +6,17 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(({ command }) => {
   const isGithubPages = process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_PAGES === 'true';
-  // Automatically detect Vercel environment (VERCEL=1)
   const isVercel = !!process.env.VERCEL;
-  const base = process.env.VITE_BASE || (command === 'serve' || isVercel ? '/' : (isGithubPages ? '/WarehouseMini/' : './'));
+  
+  // In development (serve), always use '/' so the reverse proxy can route properly.
+  // In production, use VITE_BASE or auto-detect Github Pages/Vercel.
+  let base = '/';
+  if (command !== 'serve') {
+    base = process.env.VITE_BASE 
+      ? (process.env.VITE_BASE.startsWith('/') ? process.env.VITE_BASE : `/${process.env.VITE_BASE}/`)
+      : (isVercel ? '/' : (isGithubPages ? '/WarehouseMini/' : './'));
+  }
+
 
   return {
     base,

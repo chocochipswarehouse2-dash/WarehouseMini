@@ -497,6 +497,9 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     let pagesHtml = '';
 
     groups.forEach((g) => {
+      const qrText = encodeURIComponent(`${g.tujuan}+${g.noSJ}`);
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${qrText}`;
+
       let rowsHtml = '';
       g.items.forEach((it, idx) => {
         const cleanSku = it.sku.toUpperCase().trim();
@@ -534,11 +537,14 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
               <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING REFILL</div>
               <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${g.date}</b> • Dicetak oleh: <b>${currentUser}</b></div>
             </div>
-            <div style="text-align: right;">
-              <div style="font-size: 18px; font-weight: 900; font-family: monospace; color: #0f172a; border: 1.5px solid #0f172a; padding: 4px 10px; border-radius: 6px; display: inline-block;">
-                ${g.noSJ}
+            <div style="text-align: right; display: flex; align-items: flex-start; gap: 12px; justify-content: flex-end;">
+              <div>
+                <div style="font-size: 18px; font-weight: 900; font-family: monospace; color: #0f172a; border: 1.5px solid #0f172a; padding: 4px 10px; border-radius: 6px; display: inline-block;">
+                  ${g.noSJ}
+                </div>
+                <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 4px;">Tujuan: <span style="color: var(--theme-500);">${g.tujuan}</span></div>
               </div>
-              <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 4px;">Tujuan: <span style="color: var(--theme-500);">${g.tujuan}</span></div>
+              <img src="${qrUrl}" width="60" height="60" alt="QR" style="display:block; border: 1px solid #cbd5e1; border-radius: 4px;" />
             </div>
           </div>
 

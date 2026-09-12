@@ -922,7 +922,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const handleEdit = (order: ManualShipmentOrder) => {
     setEditingOrder(order);
     setPengirim(order.nama_pengirim || '');
-    setTelpPengirim(order.no_telp_store || order.no_telp_pengirim || '');
+    setTelpPengirim(order.no_telp_store || '');
     setTransPengirim((order.no_transaksi_pengirim || []).join(', '));
     
     if (jasaKirimList.includes(order.jasa_kirim || '')) {
@@ -1018,7 +1018,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         o.no_pesanan,
         new Date(o.created_at || '').toLocaleDateString('en-US'),
         o.nama_pengirim,
-        o.no_telp_store || o.no_telp_pengirim || '',
+        o.no_telp_store || '',
         o.nama_tujuan,
         o.no_telp_tujuan,
         `"${(o.alamat_tujuan || '').replace(/"/g, '""')}"`,
@@ -1229,7 +1229,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                       order.status === 'diterima' ? 'border-slate-300 text-slate-600 bg-white' : 
                       order.status === 'diproses' ? 'border-yellow-400 text-yellow-600 bg-white' : 
                       order.status === 'dikirim' ? 'border-emerald-400 text-emerald-600 bg-white' : 
-                      order.status === 'pending' || order.status === 'open' ? 'border-red-400 text-red-500 bg-white' : 
+                      order.status === 'batal' ? 'border-red-400 text-red-500 bg-white' : 
                       'border-slate-300 text-slate-600 bg-white'
                     }`}>
                       {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
