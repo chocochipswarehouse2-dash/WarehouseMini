@@ -3425,7 +3425,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             setEditSjRows(updated);
                           }}
                           onBlur={() => {
-                            if (row.qty_req === '' || Number(row.qty_req) < 1) {
+                            if ((row.qty_req as any) === '' || Number(row.qty_req) < 1) {
                               const updated = [...editSjRows];
                               updated[idx].qty_req = 1;
                               setEditSjRows(updated);
@@ -3574,7 +3574,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         });
                       }}
                       onBlur={() => {
-                        if (editingItemData.qty_picked === '') {
+                        if ((editingItemData.qty_picked as any) === '') {
                           setEditingItemData({
                             ...editingItemData,
                             qty_picked: 0,
