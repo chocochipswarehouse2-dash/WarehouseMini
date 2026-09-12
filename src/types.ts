@@ -58,7 +58,8 @@ export type UserPermissionKey =
   | 'can_perbaikan'
   | 'can_manual_shipment_view'
   | 'can_manual_shipment_action'
-  | 'can_tarikan_md';
+  | 'can_tarikan_md'
+  | 'can_cetak_label';
 
 export interface UserPermissions {
   can_scan: boolean;

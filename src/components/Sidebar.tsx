@@ -85,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPerbaikan = userIsAdmin || hasPermission(session, 'can_perbaikan');
   const canManualShipment = userIsAdmin || hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
   const canTarikanMD = userIsAdmin || hasPermission(session, 'can_tarikan_md');
+  const canCetakLabel = userIsAdmin || hasPermission(session, 'can_cetak_label');
   const userCanAccessSettings = canAccessSettings(session);
 
   const navItems = [
@@ -150,7 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Label A6',
       icon: Printer,
       description: 'Cetak resi pengiriman manual',
-      access: true,
+      access: canCetakLabel,
     },
     {
       id: 'perbaikan' as ActivePage,

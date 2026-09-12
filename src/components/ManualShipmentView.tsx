@@ -39,7 +39,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const canAction = userIsAdmin || hasPermission(session, 'can_manual_shipment_action');
 
   const [activeTab, setActiveTab] = useState<'form' | 'rekap'>('form');
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
   const [loading, setLoading] = useState(false);
   const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string }[]>([]);
   const [jasaKirimList, setJasaKirimList] = useState<string[]>([]);
@@ -266,9 +266,9 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
   const renderForm = () => (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="p-6">
-        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
-          <Package className="w-6 h-6 mr-2 text-indigo-600" />
+      <div className="p-3.5 sm:p-6">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4 sm:mb-6 flex items-center">
+          <Package className="w-5 h-5 sm:w-6 sm:h-6 mr-2 text-indigo-600 shrink-0" />
           {editingOrder ? 'Edit Manual Shipment' : 'Form Manual Shipment'}
         </h2>
 
@@ -525,13 +525,15 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                       </div>
 
                       {/* Remove */}
-                      <div className="md:col-span-1 flex items-end justify-center pb-1">
+                      <div className="md:col-span-1 flex items-center md:items-end justify-end md:justify-center">
                         <button
                           type="button"
                           onClick={() => handleRemoveItem(item.id)}
-                          className="p-2 rounded-md transition-colors text-red-500 hover:bg-red-50"
+                          className="p-2 rounded-lg transition-colors text-red-500 hover:bg-red-50 flex items-center gap-1 text-xs font-semibold cursor-pointer"
+                          title="Hapus item"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <Trash2 className="w-4 h-4" />
+                          <span className="md:hidden">Hapus</span>
                         </button>
                       </div>
                     </div>
@@ -1199,75 +1201,192 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       return;
     }
     
-    const headers = ['Order ID', 'Tanggal', 'Pengirim', 'No Telp Pengirim', 'Tujuan', 'No Telp Tujuan', 'Alamat Tujuan', 'Jasa Kirim', 'Resi', 'Status', 'Items'];
-    
-    const rows = filteredOrders.map(o => {
-      const itemsStr = o.items ? o.items.map(i => `${i.nama_produk} (x${i.qty})`).join('; ') : '';
-      return [
-        o.no_pesanan,
-        new Date(o.created_at || '').toLocaleDateString('en-US'),
-        o.nama_pengirim,
+    // Standar format database seperti yang diterapkan di sheet:
+    // Setiap baris merepresentasikan 1 item produk dengan kolom terpisah:
+    // SKU | Nama produk | size | qty
+    const headers = [
+      'Order ID',
+      'Tanggal',
+      'Pengirim',
+      'PIC Store',
+      'No Telp Pengirim',
+      'No Transaksi DealPOS',
+      'Nama Tujuan',
+      'No Telp Tujuan',
+      'Alamat Tujuan',
+      'Jasa Kirim',
+      'No Resi',
+      'Status',
+      'Notes Paket',
+      'Submitted By',
+      'SKU',
+      'Nama Produk',
+      'Size',
+      'Qty',
+      'Fulfillment',
+    ];
+
+    const escapeCsv = (val: any): string => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    const rows: string[] = [];
+
+    filteredOrders.forEach((o) => {
+      const orderDate = o.created_at ? new Date(o.created_at).toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }) : '';
+
+      const dealposStr = Array.isArray(o.no_transaksi_pengirim)
+        ? o.no_transaksi_pengirim.join('; ')
+        : (o.no_transaksi_pengirim || '');
+
+      const baseOrderCols = [
+        o.no_pesanan || '',
+        orderDate,
+        o.nama_pengirim || '',
+        o.pic_store || '',
         o.no_telp_store || '',
-        o.nama_tujuan,
-        o.no_telp_tujuan,
-        `"${(o.alamat_tujuan || '').replace(/"/g, '""')}"`,
-        o.jasa_kirim,
+        dealposStr,
+        o.nama_tujuan || '',
+        o.no_telp_tujuan || '',
+        o.alamat_tujuan || '',
+        o.jasa_kirim || '',
         o.no_resi || '',
-        o.status,
-        `"${itemsStr.replace(/"/g, '""')}"`
-      ].join(',');
+        o.status || '',
+        o.notes_paket || '',
+        o.submitted_by || '',
+      ];
+
+      if (o.items && o.items.length > 0) {
+        o.items.forEach((it) => {
+          let size = it.size || '';
+          if (!size && it.nama_produk) {
+            const parts = it.nama_produk.split('-');
+            if (parts.length > 1) {
+              size = parts[parts.length - 1].trim();
+            }
+          }
+
+          const rowCols = [
+            ...baseOrderCols,
+            it.sku || '',
+            it.nama_produk || '',
+            size,
+            it.qty || 1,
+            it.fulfillment || '',
+          ];
+
+          rows.push(rowCols.map(escapeCsv).join(','));
+        });
+      } else {
+        const rowCols = [
+          ...baseOrderCols,
+          '',
+          '',
+          '',
+          '',
+          '',
+        ];
+        rows.push(rowCols.map(escapeCsv).join(','));
+      }
     });
-    
-    const csvContent = [headers.join(','), ...rows].join('\n');
+
+    // Tambahkan UTF-8 BOM (\uFEFF) agar terbaca sempurna di Microsoft Excel dan Google Sheets
+    const csvContent = '\uFEFF' + [headers.map(escapeCsv).join(','), ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `manual_shipment_export_${new Date().getTime()}.csv`);
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `manual_shipment_database_${dateStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    onShowToast(`Berhasil mengekspor ${rows.length} baris data ke format database`, 'success');
   };
 
   const renderRekap = () => (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[600px]">
-      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 flex-wrap gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center">
-            <FileText className="w-5 h-5 mr-2 text-indigo-600" />
-            Rekap Manual Shipment
-          </h2>
-          <span className="text-xs font-medium text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full">
-            {filteredOrders.length} Order
-          </span>
+      <div className="p-3 sm:p-4 border-b border-slate-200 flex flex-col gap-3 bg-slate-50">
+        <div className="flex justify-between items-center flex-wrap gap-2">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center">
+              <FileText className="w-5 h-5 mr-1.5 sm:mr-2 text-indigo-600 shrink-0" />
+              Rekap Manual Shipment
+            </h2>
+            <span className="text-xs font-semibold text-slate-600 bg-slate-200/80 px-2.5 py-0.5 rounded-full">
+              {filteredOrders.length} Order
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              onClick={handleExportCSV}
+              className="px-2.5 py-1.5 text-slate-700 hover:text-emerald-700 bg-white hover:bg-emerald-50 border border-slate-200 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+              title="Export CSV Format Database (SKU, Nama, Size, Qty)"
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">Export</span>
+            </button>
+            <button
+              onClick={loadOrders}
+              className="p-1.5 text-slate-600 hover:text-indigo-600 bg-white hover:bg-indigo-50 border border-slate-200 rounded-lg shadow-xs transition-colors cursor-pointer"
+              title="Refresh Data"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            
+            <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${viewMode === 'table' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                Tabel
+              </button>
+              <button
+                onClick={() => setViewMode('card')}
+                className={`px-2.5 py-1.5 text-xs font-semibold border-l border-slate-200 transition-colors ${viewMode === 'card' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                Kartu
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative w-full max-w-xs min-w-[200px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
-                className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            
+        {/* Filter Toolbar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5">
             <select
               value={filterStore}
               onChange={(e) => setFilterStore(e.target.value)}
-              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate"
             >
               <option value="all">Semua Store</option>
               {outlets.map((o, idx) => (
@@ -1278,7 +1397,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             <select
               value={filterJasaKirim}
               onChange={(e) => setFilterJasaKirim(e.target.value)}
-              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate"
             >
               <option value="all">Semua Jasa Kirim</option>
               {jasaKirimList.map((jk, idx) => (
@@ -1299,75 +1418,43 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
               <option value="batal">Batal</option>
             </select>
             
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 col-span-2 sm:col-span-1">
               <input
                 type="date"
                 value={filterStartDate}
                 onChange={(e) => setFilterStartDate(e.target.value)}
-                className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
               />
               <span className="text-xs text-slate-500">-</span>
               <input
                 type="date"
                 value={filterEndDate}
                 onChange={(e) => setFilterEndDate(e.target.value)}
-                className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
               />
             </div>
           </div>
         </div>
-        
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={handleExportCSV}
-            className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
-            title="Export CSV"
-          >
-            <span className="text-[11px] font-semibold flex items-center gap-1"><FileText className="w-4 h-4" /> Export</span>
-          </button>
-          <button
-            onClick={loadOrders}
-            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-            title="Refresh Data"
-          >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          
-          <div className="flex border border-slate-300 rounded-md overflow-hidden">
+
+        {canAction && selectedOrders.size > 0 && (
+          <div className="flex items-center gap-2 pt-2 border-t border-slate-200 flex-wrap">
             <button
-              onClick={() => setViewMode('table')}
-              className={`px-3 py-1.5 text-xs font-semibold ${viewMode === 'table' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              onClick={handlePrintPickingList}
+              className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 text-xs font-semibold flex items-center transition-colors cursor-pointer"
             >
-              Tabel
+              <FileText className="w-3.5 h-3.5 mr-1.5" />
+              Cetak Picking ({selectedOrders.size})
             </button>
             <button
-              onClick={() => setViewMode('card')}
-              className={`px-3 py-1.5 text-xs font-semibold border-l border-slate-300 ${viewMode === 'card' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => handlePrintLabel()}
+              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-semibold flex items-center transition-colors cursor-pointer shadow-xs"
+              title="Cetak Label Paket A6 untuk pesanan yang dipilih"
             >
-              Kartu
+              <Printer className="w-3.5 h-3.5 mr-1.5" />
+              Cetak Label A6 ({selectedOrders.size})
             </button>
           </div>
-
-          {canAction && selectedOrders.size > 0 && (
-            <>
-              <button
-                onClick={handlePrintPickingList}
-                className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 text-sm font-medium flex items-center transition-colors"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Cetak Picking ({selectedOrders.size})
-              </button>
-              <button
-                onClick={() => handlePrintLabel()}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm font-medium flex items-center transition-colors cursor-pointer shadow-xs"
-                title="Cetak Label Paket A6 untuk pesanan yang dipilih"
-              >
-                <Printer className="w-4 h-4 mr-2" />
-                Cetak Label A6 ({selectedOrders.size})
-              </button>
-            </>
-          )}
-        </div>
+        )}
       </div>
       
       <div className="flex-1 overflow-auto bg-slate-50/50">
@@ -1640,32 +1727,38 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   );
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-300">
+    <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300">
       {/* Tab Navigation */}
-      <div className="flex mb-6 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+      <div className="grid grid-cols-2 gap-1.5 p-1.5 mb-4 sm:mb-6 bg-slate-100 rounded-xl border border-slate-200">
         <button
-          className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-colors flex justify-center items-center gap-2 ${
-            activeTab === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          type="button"
+          className={`w-full py-2.5 px-2 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
+            activeTab === 'form'
+              ? 'bg-white text-indigo-600 shadow-xs border border-slate-200 font-extrabold'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
           onClick={() => {
             if (editingOrder) resetForm();
             setActiveTab('form');
           }}
         >
-          <Package className="w-4 h-4" />
-          {editingOrder ? 'Edit Pesanan' : 'Form Input Pesanan'}
+          <Package className="w-4 h-4 shrink-0" />
+          <span className="truncate">{editingOrder ? 'Edit Pesanan' : 'Form Input Pesanan'}</span>
         </button>
         <button
-          className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-colors flex justify-center items-center gap-2 ${
-            activeTab === 'rekap' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          type="button"
+          className={`w-full py-2.5 px-2 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
+            activeTab === 'rekap'
+              ? 'bg-white text-indigo-600 shadow-xs border border-slate-200 font-extrabold'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
           onClick={() => {
             setActiveTab('rekap');
             loadOrders();
           }}
         >
-          <History className="w-4 h-4" />
-          Order (Rekap Pesanan)
+          <History className="w-4 h-4 shrink-0" />
+          <span className="truncate">Rekap Pesanan</span>
         </button>
       </div>
 

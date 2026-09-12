@@ -428,6 +428,11 @@ export const getDefaultPageForSession = (session: UserSession | null): import('.
 
   // Urutan prioritas modul yang dapat diakses:
   if (hasPermission(session, 'can_peminjaman')) return 'peminjaman';
+  if (hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action')) return 'manual_shipment';
+  if (hasPermission(session, 'can_tarikan_md')) return 'tarikan_md';
+  if (hasPermission(session, 'can_cetak_label')) return 'cetak_label';
+  if (hasPermission(session, 'can_penerimaan')) return 'penerimaan';
+  if (hasPermission(session, 'can_perbaikan')) return 'perbaikan';
   if (hasPermission(session, 'can_scan')) return 'scanner';
   if (hasPermission(session, 'can_view_inventory')) return 'inventory';
   if (hasPermission(session, 'can_picking')) return 'picking_tasks';
@@ -439,5 +444,7 @@ export const getDefaultPageForSession = (session: UserSession | null): import('.
   if (hasPermission(session, 'can_view_lembur_cuti')) return 'lembur_cuti';
   if (hasPermission(session, 'can_approve_hr')) return 'hr_approval';
 
-  return 'peminjaman';
+  // Jika tidak punya peminjaman, arahkan ke manual shipment jika ada, atau scanner
+  if (hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action')) return 'manual_shipment';
+  return 'scanner';
 };
