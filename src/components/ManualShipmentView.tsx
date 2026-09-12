@@ -312,16 +312,13 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 placeholder="Pilih store pengirim..."
                 className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold sm:text-base cursor-not-allowed select-all shadow-sm py-2 px-3 tracking-wide"
               />
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                Nomor unik dibuat otomatis oleh sistem berdasarkan store yang dipilih
-              </p>
             </div>
 
             {/* Pilihan Jasa Kirim (Dibawah Order ID Manual Shipment) */}
             <div className="max-w-md">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Pilihan Jasa Kirim <span className="text-xs font-normal text-slate-500 dark:text-slate-400">(Sheet outlet kolom C)</span>
+                  Pilihan Jasa Kirim
                 </label>
                 <button
                   type="button"
@@ -330,11 +327,10 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     onShowToast('Daftar jasa kirim disinkronkan dari sheet outlet kolom C', 'info');
                   }}
                   disabled={loadingJasaKirim}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  title="Sinkronkan data jasa kirim dari sheet outlet kolom C"
+                  className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors disabled:opacity-50"
+                  title="Sinkronkan data jasa kirim"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingJasaKirim ? 'animate-spin' : ''}`} />
-                  <span>Sinkron Sheet</span>
+                  <RefreshCw className={`w-4 h-4 ${loadingJasaKirim ? 'animate-spin' : ''}`} />
                 </button>
               </div>
 
@@ -412,6 +408,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   onChange={(e) => setPicStore(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
                   placeholder="Nama PIC"
+                  required
                 />
               </div>
               <div>
@@ -422,6 +419,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   onChange={(e) => setTelpPengirim(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
                   placeholder="08..."
+                  required
                 />
               </div>
               <div className="md:col-span-3">
@@ -432,6 +430,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   onChange={(e) => setTransPengirim(e.target.value)}
                   placeholder="Contoh: POS-260901-001, POS-260901-002"
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
+                  required
                 />
               </div>
             </div>
