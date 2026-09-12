@@ -57,6 +57,27 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
 
   const [editingOrder, setEditingOrder] = useState<ManualShipmentOrder | null>(null);
 
+  // State untuk cetak in-page A6 & Picking List (100% kompatibel di HP / mobile dan desktop tanpa popup blocker)
+  const [printPayload, setPrintPayload] = useState<{
+    mode: 'LABEL' | 'PICKING';
+    orders: ManualShipmentOrder[];
+    qrMap: Record<string, string>;
+    timestamp: number;
+  } | null>(null);
+
+  // Auto-trigger window.print saat payload cetak siap
+  useEffect(() => {
+    if (!printPayload) return;
+    const timer = setTimeout(() => {
+      try {
+        window.print();
+      } catch (err) {
+        console.warn('Window print direct error:', err);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [printPayload?.timestamp]);
+
   // Form State - langsung terisi Order ID Manual Shipment unik anti-collision
   const [pengirim, setPengirim] = useState('');
   const [picStore, setPicStore] = useState('');
@@ -584,8 +605,12 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   };
 
   const handlePrintPickingList = async () => {
-    if (selectedOrders.size === 0) return;
-    const itemsToPrint = orders.filter(o => selectedOrders.has(o.no_pesanan));
+    if (selectedOrders.size === 0) {
+      onShowToast('Pilih setidaknya satu pesanan untuk mencetak picking list', 'info');
+      return;
+    }
+    const itemsToPrint = orders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
+    if (itemsToPrint.length === 0) return;
     
     // Update status to diproses
     setLoading(true);
@@ -595,140 +620,16 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     loadOrders();
     setLoading(false);
 
-    // Build print HTML for Picking List
-    const printWin = window.open('', '_blank');
-    if (!printWin) {
-      onShowToast('Izinkan pop-ups untuk mencetak', 'error');
-      return;
-    }
-
-    const todayStr = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-    let pagesHtml = '';
-
-    itemsToPrint.forEach((order) => {
-      let rowsHtml = '';
-      let totalQty = 0;
-
-      order.items.forEach((item, itemIdx) => {
-        let location = '-';
-        let variasi = 'Default';
-        
-        let cleanName = item.nama_produk;
-        const parts = item.nama_produk.split('-');
-        if (parts.length > 1) {
-          variasi = parts[parts.length - 1].trim();
-          cleanName = parts.slice(0, parts.length - 1).join('-').trim();
-        }
-
-        if (item.fulfillment === 'Marketplace') {
-          const prod = productCatalog.find(p => p.k === item.sku);
-          if (prod && prod.lokasi) location = prod.lokasi;
-        } else {
-          location = item.fulfillment;
-        }
-
-        totalQty += item.qty;
-
-        rowsHtml += `
-          <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-            <td style="padding: 6px 8px; text-align: center; color: #64748b;">${itemIdx + 1}</td>
-            <td style="padding: 6px 8px; font-family: monospace; font-weight: 700; color: #0f172a;">${item.sku}</td>
-            <td style="padding: 6px 8px; color: #1e293b; font-weight: 600;">${cleanName}</td>
-            <td style="padding: 6px 8px; text-align: center; font-weight: 700;">${variasi}</td>
-            <td style="padding: 6px 8px; text-align: center; font-weight: 800; color: #6366f1; font-size: 12px;">${item.qty}</td>
-            <td style="padding: 6px 8px; text-align: center; font-weight: 700; background: #f8fafc; color: #047857;">${location}</td>
-            <td style="padding: 6px 8px; text-align: center; width: 40px;"><div style="width: 14px; height: 14px; border: 1.5px solid #94a3b8; border-radius: 3px; margin: 0 auto;"></div></td>
-          </tr>
-        `;
-      });
-
-      const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
-      
-      pagesHtml += `
-        <div style="page-break-after: always; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; max-width: 800px; margin: 0 auto;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
-            <div>
-              <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: #6366f1;">CHOCOCHIPS WMS</div>
-              <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING MANUAL SHIPMENT</div>
-              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${todayStr}</b> • Admin: <b>${session?.name || getUserPersonName(session?.username) || 'Admin'}</b></div>
-            </div>
-            <div style="text-align: right; display: flex; align-items: flex-start; gap: 12px; justify-content: flex-end;">
-              <div>
-                <div style="font-size: 18px; font-weight: 900; font-family: monospace; color: #0f172a; border: 1.5px solid #0f172a; padding: 4px 10px; border-radius: 6px; display: inline-block;">
-                  ${order.no_pesanan}
-                </div>
-                <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 4px;">Dari: <span style="color: #6366f1;">${order.nama_pengirim}</span></div>
-                <div style="font-size: 12px; font-weight: 700; color: #334155; margin-top: 2px;">Tujuan: <span style="color: #059669;">${order.nama_tujuan}</span></div>
-              </div>
-            </div>
-          </div>
-          
-          <div style="margin-bottom: 15px; font-size: 11px; line-height: 1.5;">
-            <strong>Order ID:</strong> ${order.no_transaksi_customer || '-'}<br/>
-            <strong>Jasa Kirim:</strong> ${order.jasa_kirim || '-'}<br/>
-            <strong>DealPOS:</strong> ${dealPosStr}
-          </div>
-
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <thead>
-              <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1; font-size: 10px; text-transform: uppercase; color: #475569;">
-                <th style="padding: 8px; text-align: center; width: 30px;">NO</th>
-                <th style="padding: 8px; text-align: left; width: 140px;">SKU / CODE</th>
-                <th style="padding: 8px; text-align: left;">NAMA PRODUK</th>
-                <th style="padding: 8px; text-align: center; width: 50px;">SIZE</th>
-                <th style="padding: 8px; text-align: center; width: 50px;">QTY</th>
-                <th style="padding: 8px; text-align: center; width: 80px;">LOKASI</th>
-                <th style="padding: 8px; text-align: center; width: 40px;">CEK</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-
-          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 24px; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
-            <div style="font-size: 11px; color: #64748b;">
-              Total Item: <b>${order.items?.length || 0} SKU</b> • Total Qty: <b>${totalQty} Pcs</b>
-            </div>
-            <div style="display: flex; gap: 40px; text-align: center; font-size: 11px;">
-              <div>
-                <div style="margin-bottom: 35px; color: #64748b;">Petugas Picking</div>
-                <div style="font-weight: 700; border-top: 1px solid #94a3b8; padding-top: 4px; min-width: 90px;">(${session?.name || getUserPersonName(session?.username) || 'Petugas'})</div>
-              </div>
-              <div>
-                <div style="margin-bottom: 35px; color: #64748b;">Checker / QC</div>
-                <div style="font-weight: 700; border-top: 1px solid #94a3b8; padding-top: 4px; min-width: 90px;">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+    // Set payload cetak in-page (100% didukung di HP dan desktop)
+    setPrintPayload({
+      mode: 'PICKING',
+      orders: itemsToPrint,
+      qrMap: {},
+      timestamp: Date.now(),
     });
-
-    printWin.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Picking List - Manual Shipment</title>
-          <style>
-            @media print {
-              body { margin: 0; padding: 0; }
-              @page { margin: 10mm; size: auto; }
-            }
-          </style>
-        </head>
-        <body onload="window.print();">
-          ${pagesHtml}
-        </body>
-      </html>
-    `);
-
-    printWin.document.close();
-    printWin.focus();
     
     setSelectedOrders(new Set());
-    onShowToast(`Berhasil mencetak ${itemsToPrint.length} picking list`, 'success');
+    onShowToast(`Menyiapkan cetak ${itemsToPrint.length} picking list`, 'success');
   };
 
   const renderOrderDetailsModal = () => {
@@ -868,15 +769,6 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
     );
   };
 
-  const escapeHtml = (unsafe: string = '') => {
-    return String(unsafe || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  };
-
   const handlePrintLabel = async (singleOrder?: ManualShipmentOrder) => {
     const itemsToPrint = singleOrder
       ? [singleOrder]
@@ -886,203 +778,35 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       onShowToast('Pilih setidaknya satu pesanan untuk dicetak labelnya', 'info');
       return;
     }
-    
-    const printWin = window.open('', '_blank');
-    if (!printWin) {
-      onShowToast('Izinkan pop-ups browser untuk mencetak label', 'error');
-      return;
-    }
 
-    printWin.document.write(`<!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Cetak Label A6 - Manual Shipment</title>
-          <style>
-            @page { 
-              size: 105mm 148mm; 
-              margin: 0; 
-            }
-            * {
-              box-sizing: border-box;
-            }
-            body { 
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-              margin: 0; 
-              padding: 0;
-              width: 105mm;
-              color: #000;
-              background-color: #fff;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            @media print {
-              html, body {
-                width: 105mm !important;
-                height: 148mm !important;
-                margin: 0 !important;
-                padding: 0 !important;
-              }
-              .page-break {
-                page-break-after: always;
-                break-after: page;
-              }
-            }
-          </style>
-        </head>
-        <body>
-    `);
-
+    setLoading(true);
+    const qrMap: Record<string, string> = {};
     for (const order of itemsToPrint) {
-      const qrDataUrl = await QRCode.toDataURL(order.no_pesanan || 'UNKNOWN', { 
-        errorCorrectionLevel: 'M', 
-        margin: 1,
-        width: 180 
-      });
-
-      const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 1;
-      
-      const itemsListStr = (order.items && order.items.length > 0)
-        ? order.items.map(it => `${it.qty}x ${it.nama_produk}`).join(', ')
-        : (order.notes_paket || '-');
-
-      const fullDesc = order.notes_paket && order.items && order.items.length > 0
-        ? `${itemsListStr} (Catatan: ${order.notes_paket})`
-        : itemsListStr;
-
-      const subInfoParts: string[] = [];
-      if (order.no_transaksi_customer) {
-        subInfoParts.push(`Order ID: ${order.no_transaksi_customer}`);
-      } else if (order.jasa_kirim) {
-        subInfoParts.push(`Jasa Kirim: ${order.jasa_kirim}`);
-      }
-      if (order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0) {
-        subInfoParts.push(`DealPOS: ${order.no_transaksi_pengirim.join(', ')}`);
-      }
-      
-      let itemsTableHtml = '';
-      if (order.items && order.items.length > 0) {
-        order.items.forEach((it, idx) => {
-          let cleanName = escapeHtml(it.nama_produk);
-          let size = '';
-          const parts = it.nama_produk.split('-');
-          if (parts.length > 1) {
-            size = escapeHtml(parts[parts.length - 1].trim());
-            cleanName = escapeHtml(parts.slice(0, parts.length - 1).join('-').trim());
-          }
-          itemsTableHtml += `
-            <tr>
-              <td style="border-bottom: 1px dashed #111; padding: 4px 2px; vertical-align: top;">${idx + 1}.</td>
-              <td style="border-bottom: 1px dashed #111; padding: 4px 2px; vertical-align: top;">${cleanName}</td>
-              <td style="border-bottom: 1px dashed #111; padding: 4px 2px; vertical-align: top;">${size}</td>
-              <td style="border-bottom: 1px dashed #111; padding: 4px 2px; vertical-align: top;">${escapeHtml(it.sku || '')}</td>
-              <td style="border-bottom: 1px dashed #111; padding: 4px 2px; vertical-align: top; text-align: center;">${it.qty || 1}</td>
-            </tr>
-          `;
+      try {
+        const qrDataUrl = await QRCode.toDataURL(order.no_pesanan || 'UNKNOWN', { 
+          errorCorrectionLevel: 'M', 
+          margin: 1, 
+          width: 180 
         });
-      } else {
-        itemsTableHtml = `
-          <tr>
-            <td colspan="5" style="border-bottom: 1px dashed #111; padding: 8px 2px; text-align: center;">Tidak ada detail produk</td>
-          </tr>
-        `;
+        qrMap[order.no_pesanan || ''] = qrDataUrl;
+      } catch (err) {
+        console.error('QR generation error:', err);
       }
-      
-      printWin.document.write(`
-        <div class="page-break" style="width: 105mm; min-height: 148mm; height: auto; padding: 2mm; box-sizing: border-box; background: #fff; position: relative; page-break-after: always; break-after: page;">
-          
-          <div style="width: 100%; height: 100%; min-height: calc(148mm - 4mm); border: 3px solid #111; display: flex; flex-direction: column; background: #fff; box-sizing: border-box;">
-            
-            <!-- 1. Header -->
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 2px solid #111;">
-               <div style="font-size: 28px; font-weight: normal; font-family: 'Brush Script MT', 'Lucida Handwriting', cursive; letter-spacing: -1px; line-height: 1; color: #444;">
-                 chocochips
-               </div>
-               <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; text-align: right; line-height: 1.2; color: #000;">
-                 ${escapeHtml(order.jasa_kirim || 'PENGIRIMAN PAKET')}
-               </div>
-            </div>
-
-            <!-- 2. Order ID Box -->
-            <div style="text-align: center; border-bottom: 2px solid #111; padding: 6px; font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; background: #fff;">
-               ORDER ID: ${escapeHtml(order.no_pesanan || '')}
-            </div>
-
-            <!-- 3. Address Block (Left/Right) -->
-            <div style="display: flex; border-bottom: 2px solid #111; background: #fff;">
-              <!-- Left: Penerima -->
-              <div style="flex: 1; padding: 12px; border-right: 2px solid #111;">
-                 <div style="font-size: 11px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;">PENERIMA: <span style="font-size: 13px;">${escapeHtml(order.nama_tujuan || '-')}</span></div>
-                 ${order.no_telp_tujuan ? `<div style="font-size: 12px; font-weight: 900; margin-bottom: 4px;">${escapeHtml(order.no_telp_tujuan)}</div>` : ''}
-                 <div style="font-size: 11px; font-weight: 700; line-height: 1.35;">${escapeHtml(order.alamat_tujuan || '-')}</div>
-                 
-                 <div style="margin-top: 12px; font-size: 10px; font-weight: 900; text-transform: uppercase;">NOTE:</div>
-                 <div style="font-size: 11px; font-weight: 700;">${escapeHtml(order.notes_paket || '-')}</div>
-              </div>
-              <!-- Right: Pengirim -->
-              <div style="width: 145px; display: flex; flex-direction: column;">
-                 <div style="padding: 12px; flex: 1;">
-                    <div style="font-size: 11px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;">PENGIRIM:</div>
-                    <div style="font-size: 12px; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;">${escapeHtml(order.nama_pengirim || 'CHOCOCHIPS')}</div>
-                    ${order.pic_store ? `<div style="font-size: 11px; font-weight: 900; margin-bottom: 4px;">PIC: ${escapeHtml(order.pic_store)}</div>` : ''}
-                    ${order.no_telp_store ? `<div style="font-size: 11px; font-weight: 900; margin-bottom: 4px;">${escapeHtml(order.no_telp_store)}</div>` : ''}
-                 </div>
-              </div>
-            </div>
-
-            <!-- 4. Warning Box -->
-            <div style="padding: 8px 10px; border-bottom: 2px solid #111; font-size: 10px; font-weight: 900; text-align: center; text-transform: uppercase; background: #f3f4f6;">
-               ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
-            </div>
-
-            <!-- 5. Table Box & QR Code -->
-            <div style="display: flex; flex: 1; background: #fff;">
-               <!-- Left Table -->
-               <div style="flex: 1; padding: 12px; border-right: 2px solid #111;">
-                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-                    <thead>
-                      <tr>
-                        <th style="border-bottom: 1px dashed #111; text-align: left; padding: 4px 2px; width: 6%; font-weight: normal;">No.</th>
-                        <th style="border-bottom: 1px dashed #111; text-align: left; padding: 4px 2px; width: 48%; font-weight: normal;">Nama Produk</th>
-                        <th style="border-bottom: 1px dashed #111; text-align: left; padding: 4px 2px; width: 14%; font-weight: normal;">Size</th>
-                        <th style="border-bottom: 1px dashed #111; text-align: left; padding: 4px 2px; width: 22%; font-weight: normal;">SKU</th>
-                        <th style="border-bottom: 1px dashed #111; text-align: center; padding: 4px 2px; width: 10%; font-weight: normal;">Qty</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${itemsTableHtml}
-                      <tr>
-                        <td colspan="4" style="text-align: right; padding: 8px 12px 8px 0; font-weight: normal;">TOTAL</td>
-                        <td style="text-align: center; padding: 8px 2px; font-weight: normal;">${totalQty}</td>
-                      </tr>
-                    </tbody>
-                 </table>
-               </div>
-               
-               <!-- Right QR -->
-               <div style="width: 110px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; background: #fff;">
-                 <img src="${qrDataUrl}" style="width: 80px; height: 80px; object-fit: contain; margin-bottom: 8px;" alt="QR Code" />
-                 <div style="font-size: 9px; font-weight: bold; text-align: center; word-break: break-all; margin-bottom: 4px;">${escapeHtml(order.no_pesanan || '')}</div>
-                 <div style="font-size: 9px; text-align: center; word-break: break-all; color: #555;">${escapeHtml(order.no_transaksi_customer || '')}</div>
-               </div>
-            </div>
-
-          </div>
-        </div>
-      `);
     }
+    setLoading(false);
 
-    printWin.document.write('</body></html>');
-    printWin.document.close();
-    printWin.focus();
-    // Wait for images and layout to settle before printing
-    setTimeout(() => {
-      printWin.print();
-    }, 600);
-    
+    // Set payload cetak in-page (100% didukung di HP / mobile dan desktop)
+    setPrintPayload({
+      mode: 'LABEL',
+      orders: itemsToPrint,
+      qrMap,
+      timestamp: Date.now(),
+    });
+
     if (!singleOrder) {
       setSelectedOrders(new Set());
     }
+    onShowToast(`Menyiapkan cetak label A6 ${itemsToPrint.length} paket`, 'success');
   };
 
   const handleUpdateResi = async (no_pesanan: string) => {
@@ -1695,27 +1419,37 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     </button>
                     
                     {canAction && (
-                      <select
-                        className="text-xs text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium w-24"
-                        onChange={(e) => {
-                          const action = e.target.value;
-                          if (action === 'print') handlePrintLabel(order);
-                          if (action === 'edit') {
-                            handleEdit(order);
-                            setActiveTab('form');
-                          }
-                          if (action === 'resi') handleUpdateResi(order.no_pesanan!);
-                          if (action === 'delete') handleDelete(order.no_pesanan!);
-                          e.target.value = ''; // reset after selection
-                        }}
-                        defaultValue=""
-                      >
-                        <option value="" disabled>Aksi</option>
-                        <option value="print">Print Label</option>
-                        <option value="edit">Edit</option>
-                        <option value="resi">Update Resi</option>
-                        <option value="delete">Hapus</option>
-                      </select>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handlePrintLabel(order)}
+                          title="Print Label A6"
+                          className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                        <select
+                          className="text-xs text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium w-24"
+                          onChange={(e) => {
+                            const action = e.target.value;
+                            if (action === 'print') handlePrintLabel(order);
+                            if (action === 'edit') {
+                              handleEdit(order);
+                              setActiveTab('form');
+                            }
+                            if (action === 'resi') handleUpdateResi(order.no_pesanan!);
+                            if (action === 'delete') handleDelete(order.no_pesanan!);
+                            e.target.value = ''; // reset after selection
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Aksi</option>
+                          <option value="print">Print Label</option>
+                          <option value="edit">Edit</option>
+                          <option value="resi">Update Resi</option>
+                          <option value="delete">Hapus</option>
+                        </select>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1773,6 +1507,344 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         </div>
       </div>
       {renderOrderDetailsModal()}
+
+      {/* CSS @media print terisolasi ke #manual-shipment-print-area untuk keandalan cetak di HP / mobile & desktop */}
+      {printPayload && (
+        <style>{`
+          @media print {
+            body * {
+              visibility: hidden !important;
+            }
+            #manual-shipment-print-area, #manual-shipment-print-area * {
+              visibility: visible !important;
+            }
+            #manual-shipment-print-area {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+              z-index: 999999 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            @page {
+              size: ${printPayload.mode === 'LABEL' ? '105mm 148mm' : 'auto'};
+              margin: ${printPayload.mode === 'LABEL' ? '0' : '10mm'};
+            }
+            .page-break {
+              page-break-after: always !important;
+              break-after: page !important;
+            }
+          }
+        `}</style>
+      )}
+
+      {/* Floating Action Bar jika dialog cetak perlu dipicu manual di HP */}
+      {printPayload && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 bg-slate-900 text-white p-3 sm:p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-slate-700 print:hidden animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-indigo-600 text-white shrink-0">
+              <Printer className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold truncate">
+                {printPayload.mode === 'LABEL'
+                  ? `Siap Cetak Label A6 (${printPayload.orders.length} Paket)`
+                  : `Siap Cetak Picking List (${printPayload.orders.length} Pesanan)`}
+              </div>
+              <div className="text-[10px] text-slate-300 truncate">
+                Tekan Cetak jika dialog belum muncul di HP
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  window.print();
+                } catch (err) {
+                  console.error('Print error:', err);
+                }
+              }}
+              className="px-3.5 py-1.5 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Cetak
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintPayload(null)}
+              className="p-1.5 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer"
+              title="Tutup banner cetak"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden In-Page Print Area (sama persis dengan arsitektur CetakLabelView yang terbukti bisa via HP) */}
+      {printPayload && (
+        <div id="manual-shipment-print-area" className="hidden print:block bg-white w-full text-black">
+          {printPayload.mode === 'LABEL' ? (
+            printPayload.orders.map((order, orderIdx) => {
+              const qrDataUrl = printPayload.qrMap[order.no_pesanan || ''] || '';
+              const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 1;
+
+              return (
+                <div
+                  key={order.no_pesanan || orderIdx}
+                  className="page-break w-[105mm] min-h-[148mm] h-auto p-[2mm] box-border bg-white relative"
+                  style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
+                >
+                  <div className="w-full h-full min-h-[calc(148mm-4mm)] border-[3px] border-black flex flex-col bg-white box-border text-black">
+                    {/* 1. Header */}
+                    <div className="flex justify-between items-center px-4 py-2.5 border-b-2 border-black">
+                      <div
+                        className="text-[26px] font-normal leading-none text-neutral-800"
+                        style={{ fontFamily: "'Brush Script MT', 'Lucida Handwriting', cursive", letterSpacing: '-1px' }}
+                      >
+                        chocochips
+                      </div>
+                      <div className="text-[13px] font-black tracking-wider uppercase text-right leading-tight text-black">
+                        {order.jasa_kirim || 'PENGIRIMAN PAKET'}
+                      </div>
+                    </div>
+
+                    {/* 2. Order ID Box */}
+                    <div className="text-center border-b-2 border-black py-1 px-2 text-[12px] font-black uppercase tracking-wider bg-white text-black">
+                      ORDER ID: {order.no_pesanan || ''}
+                    </div>
+
+                    {/* 3. Address Block */}
+                    <div className="flex border-b-2 border-black bg-white">
+                      {/* Left: Penerima */}
+                      <div className="flex-1 p-2.5 border-r-2 border-black">
+                        <div className="text-[10px] font-black uppercase mb-1">
+                          PENERIMA: <span className="text-[12px] font-black">{order.nama_tujuan || '-'}</span>
+                        </div>
+                        {order.no_telp_tujuan && (
+                          <div className="text-[11px] font-black mb-1 text-black">{order.no_telp_tujuan}</div>
+                        )}
+                        <div className="text-[10px] font-bold leading-snug text-black">{order.alamat_tujuan || '-'}</div>
+
+                        <div className="mt-2 text-[9px] font-black uppercase">NOTE:</div>
+                        <div className="text-[10px] font-bold text-black">{order.notes_paket || '-'}</div>
+                      </div>
+
+                      {/* Right: Pengirim */}
+                      <div className="w-[140px] flex flex-col p-2.5 text-black">
+                        <div className="text-[10px] font-black uppercase mb-1">PENGIRIM:</div>
+                        <div className="text-[11px] font-black uppercase mb-1">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
+                        {order.pic_store && (
+                          <div className="text-[10px] font-black mb-1">PIC: {order.pic_store}</div>
+                        )}
+                        {order.no_telp_store && (
+                          <div className="text-[10px] font-black mb-1">{order.no_telp_store}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 4. Warning Box */}
+                    <div className="py-1 px-2 border-b-2 border-black text-[9px] font-black text-center uppercase bg-gray-100 text-black">
+                      ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA • WAJIB VIDEO UNBOXING
+                    </div>
+
+                    {/* 5. Table Box & QR Code */}
+                    <div className="flex flex-1 bg-white">
+                      {/* Left Table */}
+                      <div className="flex-1 p-2.5 border-r-2 border-black">
+                        <table className="w-full border-collapse text-[10px]">
+                          <thead>
+                            <tr className="border-b border-dashed border-black">
+                              <th className="text-left py-1 px-0.5 w-[7%] font-normal">No.</th>
+                              <th className="text-left py-1 px-0.5 w-[47%] font-normal">Nama Produk</th>
+                              <th className="text-left py-1 px-0.5 w-[14%] font-normal">Size</th>
+                              <th className="text-left py-1 px-0.5 w-[22%] font-normal">SKU</th>
+                              <th className="text-center py-1 px-0.5 w-[10%] font-normal">Qty</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {order.items && order.items.length > 0 ? (
+                              order.items.map((it, idx) => {
+                                let cleanName = it.nama_produk;
+                                let size = '';
+                                const parts = it.nama_produk.split('-');
+                                if (parts.length > 1) {
+                                  size = parts[parts.length - 1].trim();
+                                  cleanName = parts.slice(0, parts.length - 1).join('-').trim();
+                                }
+                                return (
+                                  <tr key={idx} className="border-b border-dashed border-black">
+                                    <td className="py-1 px-0.5 align-top">{idx + 1}.</td>
+                                    <td className="py-1 px-0.5 align-top">{cleanName}</td>
+                                    <td className="py-1 px-0.5 align-top">{size}</td>
+                                    <td className="py-1 px-0.5 align-top">{it.sku || ''}</td>
+                                    <td className="py-1 px-0.5 align-top text-center">{it.qty || 1}</td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="py-2 text-center border-b border-dashed border-black">
+                                  Tidak ada detail produk
+                                </td>
+                              </tr>
+                            )}
+                            <tr>
+                              <td colSpan={4} className="text-right py-2 pr-3 font-normal">TOTAL</td>
+                              <td className="text-center py-2 font-normal">{totalQty}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Right QR */}
+                      <div className="w-[105px] p-2 flex flex-col items-center justify-start bg-white">
+                        {qrDataUrl && (
+                          <img
+                            src={qrDataUrl}
+                            className="w-[75px] h-[75px] object-contain mb-1.5"
+                            alt="QR Code"
+                          />
+                        )}
+                        <div className="text-[8px] font-bold text-center break-all mb-1 text-black">
+                          {order.no_pesanan || ''}
+                        </div>
+                        {order.no_transaksi_customer && (
+                          <div className="text-[8px] text-center break-all text-neutral-600">
+                            {order.no_transaksi_customer}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            // Picking List Mode
+            printPayload.orders.map((order, oIdx) => {
+              const todayStr = new Date().toLocaleDateString('id-ID', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
+              const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+
+              return (
+                <div
+                  key={order.no_pesanan || oIdx}
+                  className="page-break p-5 max-w-[800px] mx-auto text-slate-900 bg-white"
+                  style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
+                >
+                  <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
+                    <div>
+                      <div className="text-lg font-black tracking-wide text-indigo-600">CHOCOCHIPS WMS</div>
+                      <div className="text-sm font-extrabold mt-0.5">SURAT JALAN PICKING MANUAL SHIPMENT</div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        Tanggal: <b>{todayStr}</b> • Admin: <b>{session?.name || getUserPersonName(session?.username) || 'Admin'}</b>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-black font-mono border-2 border-slate-900 px-2.5 py-1 rounded-md inline-block">
+                        {order.no_pesanan}
+                      </div>
+                      <div className="text-xs font-bold text-slate-700 mt-1">
+                        Dari: <span className="text-indigo-600">{order.nama_pengirim}</span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-700 mt-0.5">
+                        Tujuan: <span className="text-emerald-700">{order.nama_tujuan}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-3 text-[11px] leading-relaxed">
+                    <div><strong>Order ID:</strong> {order.no_transaksi_customer || '-'}</div>
+                    <div><strong>Jasa Kirim:</strong> {order.jasa_kirim || '-'}</div>
+                    <div><strong>DealPOS:</strong> {dealPosStr}</div>
+                  </div>
+
+                  <table className="w-full border-collapse mb-5 text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 border-b-2 border-slate-300 text-[10px] uppercase text-slate-600">
+                        <th className="p-2 text-center w-8">NO</th>
+                        <th className="p-2 text-left w-36">SKU / CODE</th>
+                        <th className="p-2 text-left">NAMA PRODUK</th>
+                        <th className="p-2 text-center w-14">SIZE</th>
+                        <th className="p-2 text-center w-14">QTY</th>
+                        <th className="p-2 text-center w-20">LOKASI</th>
+                        <th className="p-2 text-center w-10">CEK</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.items?.map((item, itemIdx) => {
+                        let location = '-';
+                        let variasi = 'Default';
+                        let cleanName = item.nama_produk;
+                        const parts = item.nama_produk.split('-');
+                        if (parts.length > 1) {
+                          variasi = parts[parts.length - 1].trim();
+                          cleanName = parts.slice(0, parts.length - 1).join('-').trim();
+                        }
+
+                        if (item.fulfillment === 'Marketplace') {
+                          const prod = productCatalog.find(p => p.k === item.sku);
+                          if (prod && prod.lokasi) location = prod.lokasi;
+                        } else {
+                          location = item.fulfillment;
+                        }
+
+                        return (
+                          <tr key={itemIdx} className="border-b border-slate-200 text-[11px]">
+                            <td className="p-1.5 text-center text-slate-500">{itemIdx + 1}</td>
+                            <td className="p-1.5 font-mono font-bold text-slate-900">{item.sku}</td>
+                            <td className="p-1.5 font-semibold text-slate-800">{cleanName}</td>
+                            <td className="p-1.5 text-center font-bold">{variasi}</td>
+                            <td className="p-1.5 text-center font-extrabold text-indigo-600 text-xs">{item.qty}</td>
+                            <td className="p-1.5 text-center font-bold bg-slate-50 text-emerald-700">{location}</td>
+                            <td className="p-1.5 text-center">
+                              <div className="w-3.5 h-3.5 border-2 border-slate-400 rounded-xs mx-auto" />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div className="flex justify-between items-end mt-6 pt-3 border-t border-dashed border-slate-300 text-[11px]">
+                    <div className="text-slate-500">
+                      Total Item: <b>{order.items?.length || 0} SKU</b> • Total Qty: <b>{totalQty} Pcs</b>
+                    </div>
+                    <div className="flex gap-10 text-center">
+                      <div>
+                        <div className="mb-9 text-slate-500">Petugas Picking</div>
+                        <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
+                          ({session?.name || getUserPersonName(session?.username) || 'Petugas'})
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-9 text-slate-500">Checker / QC</div>
+                        <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
+                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 };
