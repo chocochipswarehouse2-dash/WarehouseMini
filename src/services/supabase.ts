@@ -18,6 +18,7 @@ import {
   PeminjamanRecord,
   UserRole,
   UserPermissions,
+  RoadmapItem,
   KaryawanRecord,
   MasterShiftRecord,
   RosterShiftRecord,
@@ -5713,5 +5714,44 @@ export async function fetchLogsBySearch(keyword: string, limit = 1000): Promise<
   } catch (err) {
     console.warn('Error fetching logs by search:', err);
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ROADMAP & FEATURE REQUEST MODULE
+// ---------------------------------------------------------------------------
+
+export async function getRoadmaps(): Promise<RoadmapItem[]> {
+  try {
+    const data = await supabaseFetch<RoadmapItem[]>('wms_roadmap', 'GET', null, 'order=created_at.desc');
+    return data || [];
+  } catch (err) {
+    console.error('Error fetching roadmaps:', err);
+    return [];
+  }
+}
+
+export async function saveRoadmap(item: Partial<RoadmapItem>): Promise<void> {
+  try {
+    if (item.id) {
+      const payload = { ...item, updated_at: new Date().toISOString() };
+      delete payload.id;
+      await supabaseFetch('wms_roadmap', 'PATCH', payload, `id=eq.${item.id}`);
+    } else {
+      const payload = { ...item, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      await supabaseFetch('wms_roadmap', 'POST', [payload]);
+    }
+  } catch (err) {
+    console.error('Error saving roadmap:', err);
+    throw err;
+  }
+}
+
+export async function deleteRoadmap(id: string): Promise<void> {
+  try {
+    await supabaseFetch('wms_roadmap', 'DELETE', null, `id=eq.${id}`);
+  } catch (err) {
+    console.error('Error deleting roadmap:', err);
+    throw err;
   }
 }

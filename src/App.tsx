@@ -15,6 +15,7 @@ import {
   UserSession,
   ActivePage,
 } from './types';
+import RoadmapView from "./components/RoadmapView";
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { LoginModal } from './components/LoginModal';
@@ -1472,6 +1473,12 @@ export default function App() {
                   <TarikanMDView
                     session={session}
                     productCatalog={productDatabase}
+                    onShowToast={showToast}
+                  />
+              )}
+              {activePage === 'roadmap' && (
+                  <RoadmapView
+                    session={session}
                     onShowToast={showToast}
                   />
               )}

@@ -662,6 +662,20 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
 
   const handleCopySql = () => {
     const sql = `-- TABEL MASTER PRODUK WMS & OUTLET STORE
+-- TABEL ROADMAP CREATE TABLE IF NOT EXISTS public.master_produk FEATURE REQUEST
+CREATE TABLE IF NOT EXISTS public.wms_roadmap (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'ideation',
+  priority TEXT DEFAULT 'medium',
+  type TEXT DEFAULT 'feature',
+  created_by TEXT,
+  target_date DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.master_produk (
   sku TEXT PRIMARY KEY,
   nama_produk TEXT NOT NULL,
@@ -795,7 +809,21 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                 </button>
               </div>
               <pre className="text-[11px] font-mono p-3 bg-slate-950 rounded-lg overflow-x-auto text-emerald-300">
-{`CREATE TABLE IF NOT EXISTS public.master_produk (
+{`-- TABEL ROADMAP CREATE TABLE IF NOT EXISTS public.master_produk FEATURE REQUEST
+CREATE TABLE IF NOT EXISTS public.wms_roadmap (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'ideation',
+  priority TEXT DEFAULT 'medium',
+  type TEXT DEFAULT 'feature',
+  created_by TEXT,
+  target_date DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.master_produk (
   sku TEXT PRIMARY KEY,
   nama_produk TEXT NOT NULL,
   kategori TEXT DEFAULT 'Apparel',

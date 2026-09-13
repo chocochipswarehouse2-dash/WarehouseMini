@@ -32,6 +32,7 @@ import {
   Truck,
   Printer,
   Send,
+  Map,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -282,6 +283,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Rekap lembur, cuti & absensi',
       access: canApproveHr,
       badge: 'REKAP',
+    },
+    {
+      id: 'roadmap' as ActivePage,
+      label: 'Roadmap & Fitur',
+      shortLabel: 'Roadmap',
+      icon: Map,
+      description: 'Request fitur & pantau dev',
+      access: true,
+      badge: 'NEW',
     },
   ].filter((item) => item.access);
 

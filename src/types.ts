@@ -24,7 +24,8 @@ export type ActivePage =
   | 'hr_rekap'
   | 'cetak_label'
   | 'manual_shipment'
-  | 'tarikan_md';
+  | 'tarikan_md'
+  | 'roadmap';
 
 export type UserRole =
   | 'Superadmin'
@@ -713,3 +714,23 @@ export interface PengecekanSJRecord {
 }
 
 export type TarikanMDRecord = PengecekanSJRecord;
+
+// ------------------------------------------------------------
+// MODUL ROADMAP & FEATURE REQUEST (AI & TEAM COLLABORATION)
+// ------------------------------------------------------------
+export type RoadmapStatus = 'ideation' | 'planned' | 'in_progress' | 'completed' | 'rejected';
+export type RoadmapPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type RoadmapType = 'feature' | 'bug' | 'enhancement' | 'maintenance';
+
+export interface RoadmapItem {
+  id?: string;
+  title: string;
+  description: string;
+  status: RoadmapStatus;
+  priority: RoadmapPriority;
+  type: RoadmapType;
+  created_by?: string;
+  target_date?: string;
+  created_at?: string;
+  updated_at?: string;
+}

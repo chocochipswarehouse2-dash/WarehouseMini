@@ -12,7 +12,7 @@ import {
   WifiOff,
   User,
   Menu,
-  ScanBarcode,
+  ScanBarcode, Map,
   Package,
   FileText,
   PanelLeft,
@@ -108,6 +108,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Persetujuan HR (Admin)', subtitle: 'Approval Lembur & Cuti Karyawan', icon: ShieldCheck };
       case 'hr_rekap':
         return { title: 'Rekap & Laporan HR', subtitle: 'Rekap Lembur, Cuti & Absensi Karyawan', icon: BarChart3 };
+      case 'roadmap':
+        return { title: 'Roadmap & Fitur', subtitle: 'Pantau & Request Fitur', icon: Map };
       default:
         return { title: 'WMS Chocochips', subtitle: 'Warehouse System', icon: ScanBarcode };
     }
