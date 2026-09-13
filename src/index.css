@@ -3,23 +3,19 @@
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
-  body {
-    font-family: inherit;
-  }
-  
-  html.font-sans {
+  html.font-sans, html.font-sans body {
     font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;
   }
-  html.font-inter {
+  html.font-inter, html.font-inter body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
-  html.font-mono {
+  html.font-mono, html.font-mono body {
     font-family: 'JetBrains Mono', monospace;
   }
-  html.font-serif {
+  html.font-serif, html.font-serif body {
     font-family: 'Playfair Display', serif;
   }
-  html.font-rounded {
+  html.font-rounded, html.font-rounded body {
     font-family: 'Quicksand', system-ui, -apple-system, sans-serif;
   }
 
