@@ -42,32 +42,8 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
 
   return (
     <div className="space-y-3 pb-12">
-      {/* 1. Header Quality Control & Tabs */}
+      {/* Tabs */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between bg-white dark:bg-[#09090b] p-3 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center flex-shrink-0">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h1 className="text-sm font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-                Quality Control
-              </h1>
-              <div className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">
-                WMS Mutu
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              alert('Inspeksi Laporan QC (OKE / REJECT), Dokumentasi Foto Kompresi, dan Alur Perbaikan & Defect');
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 transition-colors"
-          >
-            <Info className="w-4 h-4" />
-          </button>
-        </div>
-
         {/* Compact Tabs */}
         <div className="flex bg-slate-100/50 dark:bg-[#09090b] p-1 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
           <button

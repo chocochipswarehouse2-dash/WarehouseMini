@@ -18,6 +18,7 @@ import {
 import RoadmapView from "./components/RoadmapView";
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
+import { OperasiStokView } from './components/OperasiStokView';
 import { LoginModal } from './components/LoginModal';
 import { ScanMethodSelector } from './components/ScanMethodSelector';
 import { PhysicalScanInput } from './components/PhysicalScanInput';
@@ -138,6 +139,7 @@ import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
 // URL Path mapping untuk mendukung Deep-linking dan sinkronisasi address bar browser
 const PAGE_TO_PATH: Record<ActivePage, string> = {
   dashboard: 'dashboard',
+  operasi_stok: 'operasi-stok',
   agenda: 'agenda',
   pesanan_saya: 'pesanan-saya',
   loading_dock: 'loading-dock',
@@ -167,6 +169,7 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
+  'operasi-stok': 'operasi_stok',
   '': 'dashboard',
   'dashboard': 'dashboard',
   'agenda': 'agenda',
@@ -507,6 +510,8 @@ export default function App() {
     title: string;
     message: string;
     onConfirm: () => void;
+    cancelText?: string;
+    confirmText?: string;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   const showConfirmDialog = (title: string, message: string, onConfirm: () => void) => {
@@ -1418,64 +1423,75 @@ export default function App() {
             </div>
           ) : (
             <>
-              {activePage === 'scanner' && (
-            <div className="block">
-              <div className="max-w-2xl mx-auto space-y-4">
-                <div className="space-y-2">
-                  {/* STICKY SCANNER CONTAINER ON MAIN SCANNER PAGE */}
-                  <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
-                    <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md">
-                      <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
-
-                      {(scanMode === 'fisik' || scanMode === 'manual') && (
-                        <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                      )}
-
-                      {scanMode === 'kamera' && (
-                        <CameraScanner
-                          onScan={handleScannedItem}
-                          onRequestWakeLock={requestScreenWakeLock}
-                        />
-                      )}
-
-                      <QuickTagToolbar
-                        currentCategory={currentCategory}
-                        currentLocation={currentLocation}
-                        onSelectCategory={handleSelectQuickCategory}
-                        onSelectLocation={handleSelectQuickLocation}
-                      />
+              {activePage === 'operasi_stok' && (
+                <OperasiStokView
+                  scannerComponent={
+                    <div className="block">
+                      <div className="max-w-2xl mx-auto space-y-4">
+                        <div className="space-y-2">
+                          <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
+                            <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md">
+                              <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                              {(scanMode === 'fisik' || scanMode === 'manual') && (
+                                <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                              )}
+                              {scanMode === 'kamera' && (
+                                <CameraScanner
+                                  onScan={handleScannedItem}
+                                  onRequestWakeLock={requestScreenWakeLock}
+                                />
+                              )}
+                              <QuickTagToolbar
+                                currentCategory={currentCategory}
+                                currentLocation={currentLocation}
+                                onSelectCategory={handleSelectQuickCategory}
+                                onSelectLocation={handleSelectQuickLocation}
+                              />
+                            </div>
+                          </div>
+                          <ScannedItemsList
+                            items={scannedData}
+                            onRemoveItem={handleRemoveItem}
+                            onClearAll={handleClearAll}
+                            onUpdateCategory={handleUpdateItemCategory}
+                          />
+                          <BottomSaveBar
+                            items={scannedData}
+                            keterangan={keterangan}
+                            onChangeKeterangan={setKeterangan}
+                            onSave={handleSaveData}
+                            isSaving={isSaving}
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-
-                  <ScannedItemsList
-                    items={scannedData}
-                    onRemoveItem={handleRemoveItem}
-                    onClearAll={handleClearAll}
-                    onUpdateCategory={handleUpdateItemCategory}
-                  />
-                  
-                  <BottomSaveBar
-                    items={scannedData}
-                    keterangan={keterangan}
-                    onChangeKeterangan={setKeterangan}
-                    onSave={handleSaveData}
-                    isSaving={isSaving}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
+                  }
+                  mutasiLogComponent={
+                    <MutasiLogView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onNotify={showToast}
+                      onRefreshCatalog={loadProducts}
+                    />
+                  }
+                  stockOpnameComponent={
+                    <StockOpnameView
+                      session={session}
+                      productCatalog={productDatabase}
+                      onNotify={showToast}
+                      onRefreshCatalog={loadProducts}
+                    />
+                  }
+                />
+              )}
           <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
             <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
               {activePage === 'dashboard' && (
                   <DashboardView />
               )}
-              
               {activePage === 'packing' && (
                   <PackingView />
               )}
-              
               {activePage === 'agenda' && (
                   <AgendaView />
               )}
@@ -1486,7 +1502,6 @@ export default function App() {
                     onShowToast={showToast}
                   />
               )}
-
               {activePage === 'inventory' && (
                   <InventoryView
                     session={session}
@@ -1496,25 +1511,6 @@ export default function App() {
                     onRefreshCatalog={loadProducts}
                   />
               )}
-
-              {activePage === 'stock_opname' && (
-                  <StockOpnameView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onNotify={showToast}
-                    onRefreshCatalog={loadProducts}
-                  />
-              )}
-
-              {activePage === 'mutasi_log' && (
-                  <MutasiLogView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onNotify={showToast}
-                    onRefreshCatalog={loadProducts}
-                  />
-              )}
-
               {activePage === 'peminjaman' && (
                   <PeminjamanView
                     session={session}
@@ -1523,11 +1519,9 @@ export default function App() {
                     onRefreshCatalog={loadProducts}
                   />
               )}
-
               {activePage === 'cetak_label' && (
                   <CetakLabelView />
               )}
-
               {activePage === 'picking_tasks' && (
                   <PickingTasksView
                     onNotify={showToast}
@@ -1535,77 +1529,70 @@ export default function App() {
                     productCatalog={productDatabase}
                   />
               )}
-
               {activePage === 'perbaikan' && (
                   <QualityControlView
                     session={session}
                     productCatalog={productDatabase}
-                    onShowToast={showToast}
+                    onNotify={showToast}
+                    onRefreshCatalog={loadProducts}
                   />
               )}
-
               {activePage === 'karyawan' && (
                   <KaryawanView
                     session={session}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'presensi' && (
                   <PresensiView
                     session={session}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'roster_shift' && (
                   <RosterShiftView
                     session={session}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'lembur_cuti' && (
                   <LemburCutiView
                     session={session}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'hr_approval' && (
                   <HrApprovalView
                     session={session}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'hr_rekap' && (
                   <HrRekapView
                     session={session}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'pesanan_saya' && (
                   <PesananSayaView
                     session={session}
                     productCatalog={productDatabase}
-                    onShowToast={showToast}
+                    onNotify={showToast}
                   />
               )}
-
               {activePage === 'pusat_resolusi' && (
-                  <PusatResolusiView />
+                  <PusatResolusiView
+                    session={session}
+                    onNotify={showToast}
+                  />
               )}
               {activePage === 'roadmap' && (
-                  <RoadmapView
-                    session={session}
-                    onShowToast={showToast}
-                  />
+                  <RoadmapView session={session} onShowToast={showToast} />
               )}
               {activePage === 'supabase_migration' && (
                   <SupabaseMigrationView
-                    onShowToast={showToast}
+                    session={session}
+                    onNotify={showToast}
                   />
               )}
             </React.Suspense>
@@ -1635,6 +1622,7 @@ export default function App() {
         themeIconStyle={themeIconStyle}
         setThemeIconStyle={setThemeIconStyle}
       />
+
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -1678,15 +1666,18 @@ export default function App() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
               >
-                Batal
+                {confirmDialog.cancelText || 'Batal'}
               </button>
               <button
-                onClick={confirmDialog.onConfirm}
-                className="px-4 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
+                onClick={() => {
+                  if (confirmDialog.onConfirm) confirmDialog.onConfirm();
+                  setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                }}
+                className="px-4 py-2 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-sm shadow-red-500/20 cursor-pointer"
               >
-                Ya, Lanjutkan
+                {confirmDialog.confirmText || 'Ya, Lanjutkan'}
               </button>
             </div>
           </div>
@@ -1695,3 +1686,5 @@ export default function App() {
     </div>
   );
 }
+
+

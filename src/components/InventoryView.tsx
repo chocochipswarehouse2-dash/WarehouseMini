@@ -1772,9 +1772,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           2. MAIN TOOLBAR & CONTROLS (SEARCH, AREA MULTISELECT, VIEW TABS)
           ======================================================== */}
       <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           {/* Search Bar */}
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative w-full lg:flex-1 lg:min-w-[200px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               id="inputSearchInventory"
@@ -1796,33 +1796,30 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           </div>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 w-full lg:w-auto mt-2 lg:mt-0">
             {/* ADA STOK FILTER TOGGLE */}
             <button
               type="button"
               id="btnFilterOnlyWithStock"
               onClick={() => setOnlyWithStock(!onlyWithStock)}
-              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-none ${
                 onlyWithStock
                   ? 'bg-amber-500 text-black border-amber-500 shadow-xs'
                   : 'bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
               }`}
               title={onlyWithStock ? 'Menampilkan HANYA produk yang memiliki stok. Klik untuk menampilkan semua katalog.' : 'Klik untuk memfilter hanya produk yang memiliki stok'}
             >
-              <span>📦</span>
+              <Package className="w-4 h-4" />
               <span className="hidden sm:inline">ADA STOK</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${onlyWithStock ? 'bg-black/20 text-black font-black' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                {itemsWithStockCount.toLocaleString('id-ID')}
-              </span>
             </button>
 
             {/* MULTISELECT FILTER AREA DROPDOWN */}
-            <div className="relative" ref={areaDropdownRef}>
+            <div className="relative flex-1 sm:flex-none" ref={areaDropdownRef}>
               <button
                 type="button"
                 id="btnFilterArea"
                 onClick={() => setIsAreaDropdownOpen(!isAreaDropdownOpen)}
-                className="px-3 py-2 text-xs font-extrabold bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-800 rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+                className="w-full px-3 py-2 text-xs font-extrabold bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-800 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
                 title="Pilih area kolom data yang ingin ditampilkan"
               >
                 <Filter className="w-3.5 h-3.5" />
@@ -1899,25 +1896,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               )}
             </div>
 
-            {/* REALTIME STATUS BADGE */}
-            <span
-              className={`px-2.5 py-1.5 text-[11px] font-extrabold rounded-xl border flex items-center gap-1.5 ${
-                isRealtimeActive
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-              }`}
-              title="Realtime sync otomatis Supabase aktif"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="hidden sm:inline">REALTIME SYNC</span>
-            </span>
-
             {/* VIEW MODE TOGGLE BUTTON */}
             <button
               type="button"
               id="btnToggleViewMode"
               onClick={() => setViewMode(viewMode === 'CARD' ? 'TABLE' : 'CARD')}
-              className="px-3 py-2 text-xs font-extrabold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              className="flex-1 sm:flex-none px-3 py-2 text-xs font-extrabold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               title={viewMode === 'CARD' ? 'Ganti ke Mode Tabel Spreadsheet' : 'Ganti ke Mode Kartu Seluler'}
             >
               {viewMode === 'CARD' ? (
@@ -1938,7 +1922,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               type="button"
               disabled={isLoading || isSyncingBackground}
               onClick={() => loadStockData(true)}
-              className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 flex-1 sm:flex-none"
               title="Perbarui Data Inventori dari Database"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading || isSyncingBackground ? 'animate-spin' : ''}`} />
@@ -1952,57 +1936,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={handleExportFullCSV}
-                className="px-3 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-none"
                 title="Unduh CSV Inventory Lengkap"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">CSV</span>
               </button>
             )}
-          </div>
-        </div>
-
-        {/* Info bar: Total filtered vs total */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-mono pt-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div>
-              Menampilkan <b className="text-slate-800 dark:text-slate-200">{Math.min(displayLimit, filteredInventory.length)}</b> dari{' '}
-              <b className="text-amber-500">{filteredInventory.length}</b> Produk
-            </div>
-            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md font-sans">
-              💾 100% Tersimpan di DB Lokal ({productCatalog.length.toLocaleString('id-ID')} SKU)
-            </span>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-md font-sans flex items-center gap-1 ${
-                stockList.length > 0
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold'
-                  : isLoading || isSyncingBackground
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 animate-pulse'
-                  : 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
-              }`}
-            >
-              <span>📦</span>
-              <span>
-                {stockList.length > 0
-                  ? `${stockList.length.toLocaleString('id-ID')} Baris Stok Fisik Terhubung`
-                  : isLoading || isSyncingBackground
-                  ? 'Menyinkronkan Stok Fisik...'
-                  : 'Stok Fisik Belum Termuat'}
-              </span>
-            </span>
-          </div>
-          <div className="hidden sm:flex items-center gap-3">
-            <span>
-              MAP Fisik: <b className="text-emerald-500 font-bold">{kpiStats.totalMap} pcs</b>
-            </span>
-            <span>&bull;</span>
-            <span>
-              Blok F: <b className="text-blue-500 font-bold">{kpiStats.totalBlokF} pcs</b>
-            </span>
-            <span>&bull;</span>
-            <span>
-              Perbaikan: <b className="text-primary-500 font-bold">{kpiStats.totalPerbaikan} pcs</b>
-            </span>
           </div>
         </div>
       </div>

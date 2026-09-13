@@ -15,6 +15,7 @@ export type ActivePage =
   | 'peminjaman'
   | 'stock_opname'
   | 'mutasi_log'
+  | 'operasi_stok'
   | 'inventory'
   | 'perbaikan'
   | 'karyawan'

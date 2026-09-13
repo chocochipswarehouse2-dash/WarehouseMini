@@ -14,7 +14,7 @@ export const PengirimanView: React.FC = () => {
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-4xl mx-auto pb-24">
       <ConstructionBanner />
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 hidden">
         <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
           <Send className="w-5 h-5 text-primary-500" />
           Pengiriman Barang

@@ -609,24 +609,13 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
   return (
     <div id="mutasiLogViewContainer" className="space-y-4 max-w-7xl mx-auto pb-12">
-      {/* Top Header Card */}
-      <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-sm">
+      {/* Toolbar Controls */}
+      <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-primary-500/10 text-primary-500 border border-primary-500/20 flex items-center justify-center shrink-0 shadow-xs">
-              <ArrowRightLeft className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                Mutasi Log Produk
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                  {logs.length.toLocaleString('id-ID')} Total Baris
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Riwayat pergerakan stok IN, OUT, & penyesuaian SO. Dilengkapi fitur Edit Invoice & Hapus Baris.
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-xs">
+              {logs.length.toLocaleString('id-ID')} Baris Data
+            </span>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
@@ -664,24 +653,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               id="btnRefreshMutasiLogs"
               type="button"
               disabled={isLoading}
-              onClick={loadLogs}
-              className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
-              title="Refresh delta (hanya data baru)"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">Refresh Data</span>
-            </button>
-
-            <button
-              id="btnForceReloadMutasiLogs"
-              type="button"
-              disabled={isLoading}
               onClick={forceReloadLogs}
-              className="px-3.5 py-2 text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-800/60 text-amber-700 dark:text-amber-300 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
-              title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+              className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              title="Muat ulang seluruh data"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">Muat Ulang Penuh</span>
+              <span className="hidden xs:inline">Refresh</span>
             </button>
 
             {canExportData && (
@@ -692,7 +669,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 className="px-3.5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Ekspor CSV</span>
+                <span className="hidden xs:inline">Ekspor</span>
               </button>
             )}
             
@@ -706,7 +683,6 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Bulk Delete</span>
                 </button>
-
                 {isBulkMenuOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 py-1 overflow-hidden">
                     <button
@@ -734,7 +710,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         </div>
 
         {/* Filter Toolbar */}
-        <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
           {/* Search Bar */}
           <div className="lg:col-span-6 relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
