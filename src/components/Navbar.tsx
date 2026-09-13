@@ -207,15 +207,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        {/* APK / PWA Install Button */}
+        {/* PWA Install Button (Android & iOS) */}
         <button
           id="btnOpenApkModal"
           onClick={onOpenApkModal}
-          title="Download APK / Install ke Android"
+          title="Pasang Aplikasi ke HP (PWA Android & iPhone)"
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 hover:text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all text-xs font-bold border border-slate-200 dark:border-slate-800 cursor-pointer shadow-xs"
         >
           <Smartphone className="w-3.5 h-3.5 text-primary-500" />
-          <span>APK</span>
+          <span>Install App</span>
         </button>
 
         {/* Dark / Light Mode Toggle */}

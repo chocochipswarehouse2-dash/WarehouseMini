@@ -435,14 +435,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         Alat & Utilitas
       </div>
 
-      {/* APK / PWA Modal */}
+      {/* PWA App Install Modal (Android & iPhone) */}
       <button
         type="button"
         onClick={() => {
           onOpenApkModal();
           onCloseMobile();
         }}
-        title="Download APK / Install ke Android"
+        title="Pasang Aplikasi ke Android & iPhone (PWA Instan)"
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
           collapsed ? 'justify-center px-2' : ''
         }`}
@@ -450,7 +450,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
           <Smartphone className="w-4 h-4 text-primary-500" />
         </div>
-        {!collapsed && <span className="truncate">Download APK Android</span>}
+        {!collapsed && <span className="truncate">Install Aplikasi HP (PWA)</span>}
       </button>
 
       {/* Push Notification Toggle */}
