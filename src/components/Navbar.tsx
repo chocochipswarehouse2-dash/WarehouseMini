@@ -29,6 +29,7 @@ import {
   Truck,
   Send,
   Database,
+  Printer,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -82,7 +83,10 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'pengiriman':
         return { title: 'Pengiriman', subtitle: 'Pencatatan Barang Dikirim', icon: Send };
       case 'agenda':
-        return { title: 'Agenda & Project', subtitle: 'Kalender Kerja & Manajemen Project', icon: Calendar };
+        return { title: 'Agenda dan Project', subtitle: 'Kalender Kerja & Manajemen Project', icon: Calendar };
+      case 'pesanan_saya':
+      case 'manual_shipment':
+        return { title: 'Pesanan Saya', subtitle: 'Form Pesanan & Rekap Pengiriman', icon: Package };
       case 'penerimaan':
         return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
       case 'scanner':
@@ -115,6 +119,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Roadmap & Fitur', subtitle: 'Pantau & Request Fitur', icon: Map };
       case 'supabase_migration':
         return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
+      case 'cetak_label':
+        return { title: 'Cetak Label A6', subtitle: 'Cetak Resi Pengiriman Manual', icon: Printer };
+      case 'tarikan_md':
+        return { title: 'Pengecekan Surat Jalan', subtitle: 'Pengecekan Penerimaan vs Surat Jalan', icon: ClipboardCheck };
       default:
         return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
     }

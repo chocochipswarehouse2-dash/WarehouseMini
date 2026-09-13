@@ -107,23 +107,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Ringkasan & Aktivitas',
       access: canViewDashboard,
     },
-    
-    {
-      id: 'packing' as ActivePage,
-      label: 'Packing',
-      shortLabel: 'Packing',
-      icon: Package,
-      description: 'Scan SJ/Pesanan Area Packing',
-      access: canPacking,
-    },
-    
     {
       id: 'agenda' as ActivePage,
-      label: 'Agenda & Project',
+      label: 'Agenda dan Project',
       shortLabel: 'Agenda',
       icon: Calendar,
       description: 'Kalender Kerja & Project',
       access: canAgenda,
+    },
+    {
+      id: 'pesanan_saya' as ActivePage,
+      label: 'Pesanan Saya',
+      shortLabel: 'Pesanan',
+      icon: Package,
+      description: 'Manajemen semua pesanan',
+      access: canManualShipment || canTarikanMD,
     },
     {
       id: 'loading_dock' as ActivePage,
@@ -134,12 +132,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
       access: canPenerimaanBarang || canPengiriman || canPenerimaan,
     },
     {
+      id: 'perbaikan' as ActivePage,
+      label: 'Quality Control',
+      shortLabel: 'QC',
+      icon: ClipboardCheck,
+      description: 'Laporan QC, Perbaikan & Defect',
+      access: canPerbaikan,
+    },
+    {
       id: 'scanner' as ActivePage,
       label: 'Scanner',
       shortLabel: 'Scan',
       icon: ScanBarcode,
       description: 'Tembak lokasi rak & SKU',
       access: canScan,
+    },
+    {
+      id: 'mutasi_log' as ActivePage,
+      label: 'Mutasi Log',
+      shortLabel: 'Mutasi',
+      icon: ArrowRightLeft,
+      description: 'Riwayat IN/OUT & edit invoice',
+      access: canViewMutasi,
     },
     {
       id: 'inventory' as ActivePage,
@@ -156,14 +170,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ClipboardList,
       description: 'Audit fisik & antrean approval',
       access: canApproveSo,
-    },
-    {
-      id: 'mutasi_log' as ActivePage,
-      label: 'Mutasi Log',
-      shortLabel: 'Mutasi',
-      icon: ArrowRightLeft,
-      description: 'Riwayat IN/OUT & edit invoice',
-      access: canViewMutasi,
     },
     {
       id: 'picking_tasks' as ActivePage,
@@ -188,22 +194,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Printer,
       description: 'Cetak resi pengiriman manual',
       access: canCetakLabel,
-    },
-    {
-      id: 'perbaikan' as ActivePage,
-      label: 'Quality Control',
-      shortLabel: 'QC',
-      icon: ClipboardCheck,
-      description: 'Laporan QC, Perbaikan & Defect',
-      access: canPerbaikan,
-    },
-    {
-      id: 'pesanan_saya' as ActivePage,
-      label: 'Pesanan Saya',
-      shortLabel: 'Pesanan',
-      icon: Package,
-      description: 'Manajemen semua pesanan',
-      access: canManualShipment || canTarikanMD,
     },
   ].filter((item) => item.access);
 
@@ -579,6 +569,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </div>
           )}
+        </button>
+      )}
+
+      {/* Pengecekan Surat Jalan (Audit SJ vs Fisik) */}
+      {canTarikanMD && (
+        <button
+          type="button"
+          onClick={() => {
+            handleNavClick('tarikan_md');
+            onCloseMobile();
+          }}
+          title="Pengecekan Surat Jalan vs Fisik Penerimaan"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activePage === 'tarikan_md'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+          } ${collapsed ? 'justify-center px-2' : ''}`}
+        >
+          <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+            <ClipboardCheck className="w-4 h-4 text-primary-500" />
+          </div>
+          {!collapsed && <span className="truncate">Pengecekan Surat Jalan</span>}
         </button>
       )}
 
