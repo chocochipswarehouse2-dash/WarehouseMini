@@ -2010,7 +2010,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div>
                           <div className="text-sm font-black text-slate-800 dark:text-white leading-none mb-1">{r.name}</div>
                           <div className="text-[10px] text-slate-500 font-medium">
-                            {Object.values(r.permissions).filter(Boolean).length} izin akses
+                            {r.name.toLowerCase() === 'superadmin' 
+                              ? 'Akses Penuh (Sistem)' 
+                              : `${Object.values(r.permissions).filter(Boolean).length} izin akses`}
                           </div>
                         </div>
                       </div>
