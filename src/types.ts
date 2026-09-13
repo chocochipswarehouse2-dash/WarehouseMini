@@ -633,6 +633,7 @@ export interface WmsSettings {
   fonnte_group_target?: string;
   fonnte_auto_send?: boolean;
   config_json?: string;
+  roles?: Record<string, any>;
   updated_at?: string;
 }
 

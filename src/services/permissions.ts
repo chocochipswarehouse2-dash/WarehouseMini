@@ -82,7 +82,7 @@ export const canPenerimaan = (session: UserSession | null) => hasPermission(sess
 export const canViewDashboard = (session: UserSession | null) => hasPermission(session, 'can_view_dashboard') || isSuperadmin(session);
 export const canPeminjaman = (session: UserSession | null) => hasPermission(session, 'can_peminjaman') || isSuperadmin(session);
 
-export const ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<import("../types").UserPermissions>> = {
+export let ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<import("../types").UserPermissions>> = {
   Superadmin: {},
   Manager: {},
   Operator: {},
@@ -90,12 +90,30 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<import("../types")
   'QC/Repair': {}
 };
 
-export const ROLE_DETAILS: Record<string, any> = {
+export let ROLE_DETAILS: Record<string, any> = {
   Superadmin: { badge: 'bg-red-500', icon: '👑', name: 'Superadmin' },
   Manager: { badge: 'bg-purple-500', icon: '📊', name: 'Manager' },
   Operator: { badge: 'bg-blue-500', icon: '📦', name: 'Operator' },
   HR: { badge: 'bg-emerald-500', icon: '👥', name: 'HR' },
   'QC/Repair': { badge: 'bg-amber-500', icon: '🔧', name: 'QC/Repair' },
+};
+
+export const updateRoleTemplates = (roles: Record<string, any>) => {
+  const newPerms: Record<string, any> = {};
+  const newDetails: Record<string, any> = {};
+  
+  Object.keys(roles).forEach(key => {
+    const role = roles[key];
+    newPerms[key] = role.permissions || {};
+    newDetails[key] = {
+      badge: role.badge || 'bg-slate-500',
+      icon: role.icon || '📦',
+      name: role.name || key
+    };
+  });
+
+  ROLE_DEFAULT_PERMISSIONS = newPerms;
+  ROLE_DETAILS = newDetails;
 };
 
 export const PERMISSION_GROUPS = [

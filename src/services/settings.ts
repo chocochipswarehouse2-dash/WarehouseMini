@@ -43,6 +43,14 @@ function initCacheFromLocalStorage(): WmsSettings {
     const fonnteToken = localStorage.getItem('wms_fonnte_token') || '';
     const fonnteTarget = localStorage.getItem('wms_fonnte_group_target') || '';
     const fonnteAuto = localStorage.getItem('wms_fonnte_auto_send') !== 'false';
+    const rolesConfig = localStorage.getItem('wms_roles_config');
+    let parsedRoles = null;
+    if (rolesConfig) {
+      try {
+        parsedRoles = JSON.parse(rolesConfig);
+        import('./permissions').then(m => m.updateRoleTemplates(parsedRoles));
+      } catch {}
+    }
 
     cachedSettings = {
       gas_endpoint: gasEndpoint,
@@ -52,6 +60,7 @@ function initCacheFromLocalStorage(): WmsSettings {
       fonnte_token: fonnteToken,
       fonnte_group_target: fonnteTarget,
       fonnte_auto_send: fonnteAuto,
+      roles: parsedRoles,
     };
   } catch {
     cachedSettings = {
@@ -129,12 +138,18 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     manual_shipment_gas_url: safeManualGas,
     gdrive_gas_url: data.gdrive_gas_url || jsonConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
     gdrive_folder_url: data.gdrive_folder_url || jsonConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
+    roles: data.roles || jsonConfig.roles || null,
   };
 
   cachedSettings = merged;
 
   // Sync to localStorage for immediate offline/startup retrieval
   try {
+    if (merged.roles) {
+      localStorage.setItem('wms_roles_config', JSON.stringify(merged.roles));
+      // Import the dynamic updater dynamically to avoid circular dependencies if any
+      import('./permissions').then(m => m.updateRoleTemplates(merged.roles!));
+    }
     if (merged.gas_endpoint) {
       localStorage.setItem('wms_gas_endpoint', merged.gas_endpoint);
       localStorage.setItem('wms_endpoint_url', merged.gas_endpoint);
@@ -209,6 +224,7 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           manual_shipment_gas_url: row1.manual_shipment_gas_url || gasConfig.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
           gdrive_gas_url: row1.gdrive_gas_url || gasConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
           gdrive_folder_url: row1.gdrive_folder_url || gasConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
+          roles: gasConfig.roles || null,
           updated_at: row1.updated_at || new Date().toISOString(),
         };
 
@@ -246,6 +262,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
       manual_shipment_gas_url: updated.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
       gdrive_gas_url: updated.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
       gdrive_folder_url: updated.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
+      roles: updated.roles || null,
     };
 
     // A. Simpan row id: 1 (Fonnte & kolom spesifik jika sudah ada di database)

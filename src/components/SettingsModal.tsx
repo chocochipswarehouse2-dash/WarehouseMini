@@ -51,6 +51,7 @@ import {
   FileCode,
   CheckCheck, Share2, Loader2, UploadCloud,
   ShieldAlert,
+  Pencil
 } from 'lucide-react';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
@@ -107,7 +108,14 @@ interface SettingsModalProps {
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type SettingsTab = 'database' | 'supabase' | 'users' | 'device' | 'deploy_apk' | 'whatsapp';
+type SettingsTab = 'database' | 'supabase' | 'users' | 'roles' | 'device' | 'deploy_apk' | 'whatsapp';
+
+interface LocalRole {
+  name: string;
+  icon: string;
+  badge: string;
+  permissions: Partial<UserPermissions>;
+}
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -166,6 +174,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isPermissionFormOpen, setIsPermissionFormOpen] = useState<boolean>(false);
+
+  // Role Templates State
+  const [roleList, setRoleList] = useState<LocalRole[]>([]);
+  const [isRoleFormOpen, setIsRoleFormOpen] = useState<boolean>(false);
+  const [editingRoleIndex, setEditingRoleIndex] = useState<number | null>(null);
+  const [newRoleTemplateName, setNewRoleTemplateName] = useState<string>('');
+  const [newRoleTemplateIcon, setNewRoleTemplateIcon] = useState<string>('📦');
+  const [newRoleTemplateBadge, setNewRoleTemplateBadge] = useState<string>('bg-slate-500');
+  const [newRoleTemplatePerms, setNewRoleTemplatePerms] = useState<Partial<UserPermissions>>({});
 
   // Copied helper
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -239,8 +256,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }).catch((err) => console.warn('Gagal memuat konfigurasi dari Supabase:', err));
 
       loadUsersFromSupabase();
-      setDatabaseStatus('idle');
       setGdriveStatus('idle');
+
+      const mappedRoles = Object.keys(ROLE_DETAILS).map(k => ({
+        name: k,
+        icon: ROLE_DETAILS[k].icon,
+        badge: ROLE_DETAILS[k].badge,
+        permissions: ROLE_DEFAULT_PERMISSIONS[k] || {}
+      }));
+      setRoleList(mappedRoles);
     }
   }, [isOpen]);
 
@@ -575,6 +599,108 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
   };
 
+  const handleSaveRoleTemplate = async () => {
+    if (!newRoleTemplateName.trim()) {
+      onNotify('Nama Role tidak boleh kosong', 'warning');
+      return;
+    }
+    const roleName = newRoleTemplateName.trim();
+    if (roleName.toLowerCase() === 'superadmin') {
+      onNotify('Role Superadmin tidak dapat diedit melalui form ini.', 'warning');
+      return;
+    }
+
+    const newRoleObj: LocalRole = {
+      name: roleName,
+      icon: newRoleTemplateIcon || '📦',
+      badge: newRoleTemplateBadge || 'bg-slate-500',
+      permissions: newRoleTemplatePerms
+    };
+
+    let updatedList = [...roleList];
+    if (editingRoleIndex !== null) {
+      updatedList[editingRoleIndex] = newRoleObj;
+    } else {
+      const existing = updatedList.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+      if (existing) {
+        onNotify('Role dengan nama tersebut sudah ada', 'warning');
+        return;
+      }
+      updatedList.push(newRoleObj);
+    }
+
+    setRoleList(updatedList);
+    
+    const roleDict: Record<string, any> = {};
+    updatedList.forEach(r => {
+      roleDict[r.name] = {
+        name: r.name,
+        icon: r.icon,
+        badge: r.badge,
+        permissions: r.permissions
+      };
+    });
+
+    try {
+      await saveWmsSettings({ roles: roleDict });
+      onNotify('Template Role berhasil disimpan ke Cloud!', 'success');
+      setIsRoleFormOpen(false);
+      setEditingRoleIndex(null);
+    } catch {
+      onNotify('Gagal menyimpan template Role ke Cloud', 'error');
+    }
+  };
+
+  const handleDeleteRoleTemplate = (idx: number) => {
+    const target = roleList[idx];
+    if (target.name.toLowerCase() === 'superadmin' || target.name.toLowerCase() === 'admin') {
+      onNotify('Role master tidak dapat dihapus', 'warning');
+      return;
+    }
+    
+    setSettingsConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Role',
+      message: `Hapus role "${target.name}"? Ini akan menghapus dari database global.`,
+      onConfirm: async () => {
+        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const updatedList = roleList.filter((_, i) => i !== idx);
+        setRoleList(updatedList);
+
+        const roleDict: Record<string, any> = {};
+        updatedList.forEach(r => {
+          roleDict[r.name] = {
+            name: r.name,
+            icon: r.icon,
+            badge: r.badge,
+            permissions: r.permissions
+          };
+        });
+
+        try {
+          await saveWmsSettings({ roles: roleDict });
+          onNotify(`Role "${target.name}" berhasil dihapus.`, 'success');
+        } catch {
+          onNotify('Gagal menghapus role dari Cloud', 'error');
+        }
+      }
+    });
+  };
+
+  const handleEditRoleTemplate = (idx: number) => {
+    const r = roleList[idx];
+    if (r.name.toLowerCase() === 'superadmin') {
+      onNotify('Role Superadmin tidak dapat diedit', 'info');
+      return;
+    }
+    setEditingRoleIndex(idx);
+    setNewRoleTemplateName(r.name);
+    setNewRoleTemplateIcon(r.icon);
+    setNewRoleTemplateBadge(r.badge);
+    setNewRoleTemplatePerms(r.permissions || {});
+    setIsRoleFormOpen(true);
+  };
+
   const handleSwitchActiveRole = (targetRole: UserRole) => {
     if (!session) return;
     const targetPermissions = ROLE_DEFAULT_PERMISSIONS[targetRole];
@@ -692,18 +818,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           
 
           {canManageUsers && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('users')}
-              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'users'
-                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Manajemen Pengguna ({userList.length})</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab('users')}
+                className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'users'
+                    ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Manajemen Pengguna ({userList.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('roles')}
+                className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'roles'
+                    ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                <span>Role Templates</span>
+              </button>
+            </>
           )}
 
           <button
@@ -777,8 +917,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Perbaikan', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
-                      const details = ROLE_DETAILS[r];
+                    {roleList.map((rObj) => {
+                      const r = rObj.name;
+                      const details = rObj;
                       const isCurrent = session.role === r || (r === 'Superadmin' && session.role === 'All');
                       return (
                         <button
@@ -944,8 +1085,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Pilih Template Role Utama:
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Perbaikan', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
-                          const details = ROLE_DETAILS[r];
+                        {roleList.map((rObj) => {
+                          const r = rObj.name;
+                          const details = rObj;
                           const isSelected = newRole === r;
                           return (
                             <button
@@ -961,7 +1103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <div className="text-base mb-1">{details?.icon}</div>
                               <div className="text-xs font-bold truncate">{r}</div>
                               <div className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">
-                                {details?.desc}
+                                {Object.values(details?.permissions || {}).filter(Boolean).length} izin
                               </div>
                             </button>
                           );
@@ -1209,8 +1351,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Pilih Template Role Utama:
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {(['Superadmin', 'Scanner Barcode', 'Inventory', 'Stock Opname', 'Mutasi', 'Tugas Picking', 'Peminjaman', 'Perbaikan', 'HR & Admin', 'Operator'] as UserRole[]).map((r) => {
-                          const details = ROLE_DETAILS[r];
+                        {roleList.map((rObj) => {
+                          const r = rObj.name;
+                          const details = rObj;
                           const isSelected = newRole === r;
                           return (
                             <button
@@ -1226,7 +1369,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <div className="text-base mb-1">{details?.icon}</div>
                               <div className="text-xs font-bold truncate">{r}</div>
                               <div className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">
-                                {details?.desc}
+                                {Object.values(details?.permissions || {}).filter(Boolean).length} izin
                               </div>
                             </button>
                           );
@@ -1707,6 +1850,194 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ========================================================================= */}
           {/* TAB: DEVICE & SCANNER PREFERENCES (ACCESSIBLE TO ALL USERS) */}
           {/* ========================================================================= */}
+
+          {/* ========================================================================= */}
+          {/* TAB: ROLE TEMPLATES */}
+          {/* ========================================================================= */}
+          {activeTab === 'roles' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary-500" />
+                      Role Templates
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-1 max-w-lg leading-relaxed">
+                      Tambahkan dan atur role (hak akses) pengguna di sini. Role yang Anda buat akan tersedia saat mengatur pengguna.
+                    </p>
+                  </div>
+                  {!isRoleFormOpen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRoleIndex(null);
+                        setNewRoleTemplateName('');
+                        setNewRoleTemplateIcon('📦');
+                        setNewRoleTemplateBadge('bg-slate-500');
+                        setNewRoleTemplatePerms({});
+                        setIsRoleFormOpen(true);
+                      }}
+                      className="px-3 py-1.5 bg-primary-500 text-white rounded-lg text-xs font-bold hover:bg-primary-600 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Role Baru
+                    </button>
+                  )}
+                </div>
+
+                {isRoleFormOpen && (
+                  <form 
+                    className="mb-6 p-4 rounded-xl border border-primary-500/20 bg-primary-500/5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSaveRoleTemplate();
+                    }}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                          Nama Role <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newRoleTemplateName}
+                          onChange={(e) => setNewRoleTemplateName(e.target.value)}
+                          placeholder="misal: Supervisor"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">Icon (Emoji)</label>
+                          <input
+                            type="text"
+                            value={newRoleTemplateIcon}
+                            onChange={(e) => setNewRoleTemplateIcon(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">Warna Badge</label>
+                          <select
+                            value={newRoleTemplateBadge}
+                            onChange={(e) => setNewRoleTemplateBadge(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                          >
+                            <option value="bg-slate-500">Abu-abu</option>
+                            <option value="bg-primary-500">Biru (Primary)</option>
+                            <option value="bg-purple-500">Ungu</option>
+                            <option value="bg-emerald-500">Hijau</option>
+                            <option value="bg-amber-500">Kuning</option>
+                            <option value="bg-rose-500">Merah</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar border-t border-slate-200 dark:border-slate-700 pt-4">
+                      {PERMISSION_GROUPS.map((group) => (
+                        <div key={group.id} className="space-y-2">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm">{group.badge}</span>
+                            <h5 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">{group.title}</h5>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {group.permissions.map((perm) => {
+                              const isChecked = !!newRoleTemplatePerms[perm.key as keyof UserPermissions];
+                              return (
+                                <label
+                                  key={perm.key}
+                                  className={`flex items-start gap-2 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                    isChecked ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setNewRoleTemplatePerms(prev => ({
+                                        ...prev,
+                                        [perm.key]: checked
+                                      }));
+                                    }}
+                                    className="mt-0.5 rounded text-emerald-500 focus:ring-emerald-500"
+                                  />
+                                  <div>
+                                    <div className={`text-xs font-bold ${isChecked ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>
+                                      {perm.label}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 leading-tight">
+                                      {perm.description}
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setIsRoleFormOpen(false)}
+                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 rounded-xl"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-primary-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        Simpan Role
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {roleList.map((r, idx) => (
+                    <div key={r.name} className="flex items-start justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-[#0f172a]/50">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg text-white ${r.badge}`}>
+                          {r.icon}
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-slate-800 dark:text-white leading-none mb-1">{r.name}</div>
+                          <div className="text-[10px] text-slate-500 font-medium">
+                            {Object.values(r.permissions).filter(Boolean).length} izin akses
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEditRoleTemplate(idx)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 cursor-pointer transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRoleTemplate(idx)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'device' && (
             <div className="space-y-4">
               {/* Audio & Vibration Test */}
