@@ -84,7 +84,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     if (!cleanSku) return [];
     const map = new Map<string, ProductLocationInfo>();
 
-    // 1. Authoritative check: live Supabase view_stok_realtime data
+    // 1. Authoritative check: live Supabase stok_real_fisik data
     const isRealtimeChecked = cleanSku in realtimeSkuStocks;
     if (isRealtimeChecked) {
       const realtimeList = realtimeSkuStocks[cleanSku] || [];

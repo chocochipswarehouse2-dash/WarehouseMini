@@ -280,7 +280,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     }
 
     try {
-      // 1. Fetch physical stock rows from Supabase view_stok_realtime (Direct GAS Method)
+      // 1. Fetch physical stock rows from Supabase stok_real_fisik (Direct GAS Method)
       // Call with isManualRefresh to allow using cache from supabase.ts if not manually refreshed
       const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh || forceNetwork);
       if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
@@ -394,7 +394,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedDelta);
     const unsubMaster = globalRealtimeStore.subscribe('master_produk', triggerDebouncedReload);
-    const unsubStok = globalRealtimeStore.subscribe('view_stok_realtime', triggerDebouncedDelta);
 
     setIsRealtimeActive(true);
 
@@ -402,7 +401,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubLog();
       unsubMaster();
-      unsubStok();
     };
   }, []);
 
@@ -592,7 +590,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const seenSkus = new Set<string>();
 
     const normalizeRow = (row: any, sku: string, mapped?: any): NormalizedInventoryItem => {
-      // 1. Physical stock: Strictly derived from live Supabase view_stok_realtime (mapped / skuStockMap)
+      // 1. Physical stock: Strictly derived from live Supabase stok_real_fisik (mapped / skuStockMap)
       // When stockList has loaded, mapped is the sole authority. If mapped is undefined, physical warehouse stock is 0.
       const hasRealtimeData = stockList.length > 0;
 
@@ -606,7 +604,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       let locList: any[] = [];
 
       if (mapped) {
-        // Authoritative physical stock from Supabase view_stok_realtime
+        // Authoritative physical stock from Supabase stok_real_fisik
         mapFisik = Number(mapped.f?.['Gudang Utama'] ?? mapped.f?.['MAP'] ?? mapped.f?.['Warehouse'] ?? 0);
         liveFisik = Number(mapped.f?.['Barang Live'] ?? mapped.f?.['LIVE'] ?? 0);
         studioFisik = Number(mapped.stokStudio ?? mapped.f?.['Sample Studio'] ?? mapped.f?.['STUDIO'] ?? 0);

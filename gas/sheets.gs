@@ -225,22 +225,16 @@ function updateRow(sheet, sheetName, record) {
 }
 
 /**
- * SOFT DELETE: Tandai baris dengan status 'DELETED'.
- * Tidak menghapus baris secara fisik untuk keamanan data.
+ * HARD DELETE: Menghapus baris fisik dari sheet.
  */
 function softDeleteRow(sheet, uuid) {
   var existingRows = findAllRowsByUUID(sheet, uuid);
   if (existingRows.length === 0) return false;
 
-  var statusColIdx = getColumnIndex(sheet, 'status');
+  // Hapus dari indeks terbesar (bawah ke atas) agar tidak menggeser indeks baris lain
+  existingRows.sort(function(a, b) { return b - a; });
   for (var i = 0; i < existingRows.length; i++) {
-    var rowNum = existingRows[i];
-    if (statusColIdx > 0) {
-      sheet.getRange(rowNum, statusColIdx).setValue('DELETED');
-    } else {
-      var currentId = sheet.getRange(rowNum, 1).getValue();
-      sheet.getRange(rowNum, 1).setValue('DELETED-' + currentId);
-    }
+    sheet.deleteRow(existingRows[i]);
   }
   return true;
 }

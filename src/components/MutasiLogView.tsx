@@ -43,6 +43,7 @@ import {
   getAreaFromLokasi,
   supabaseFetch,
 } from '../services/supabase';
+import { fetchWithDeltaSync } from '../services/gasSync';
 import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
@@ -152,12 +153,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     return map;
   }, [productCatalog]);
 
-  // Load all logs from Supabase
+  // Load all logs from GAS (Delta Sync)
   const loadLogs = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchAllLogs(5000);
+      const data = await fetchWithDeltaSync<LogProdukItem>('Mutasi Log');
       // Deduplicate by ID
       const unique = Array.from(
         new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
@@ -165,7 +166,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       setLogs(unique);
     } catch (e: any) {
       console.error('Error loading logs:', e);
-      setFetchError(e.message || 'Gagal memuat log mutasi dari Supabase');
+      setFetchError(e.message || 'Gagal memuat log mutasi dari Google Sheet');
       if (onNotify) onNotify('Gagal memuat mutasi log.', 'error');
     } finally {
       setIsLoading(false);
@@ -202,35 +203,6 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
   useEffect(() => {
     loadLogs();
-
-    // Supabase Realtime via global store
-    const handleRealtimeUpdate = (payload: any) => {
-      if (!payload) return;
-      
-      setLogs((prevLogs) => {
-        const { eventType, new: newRow, old: oldRow } = payload;
-        
-        if (eventType === 'INSERT' && newRow) {
-          // Check if already exists to avoid duplicates
-          if (prevLogs.some((l) => l.id === newRow.id)) return prevLogs;
-          return [newRow as LogProdukItem, ...prevLogs];
-        } 
-        else if (eventType === 'UPDATE' && newRow) {
-          return prevLogs.map((l) => (l.id === newRow.id ? (newRow as LogProdukItem) : l));
-        } 
-        else if (eventType === 'DELETE' && oldRow) {
-          return prevLogs.filter((l) => l.id !== oldRow.id);
-        }
-        
-        return prevLogs;
-      });
-    };
-
-    const unsub = globalRealtimeStore.subscribe('log_produk', handleRealtimeUpdate);
-
-    return () => {
-      unsub();
-    };
   }, []);
 
   // Filtered logs

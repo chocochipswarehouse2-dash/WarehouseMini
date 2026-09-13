@@ -143,7 +143,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     if (!cleanSku) return [];
     const map = new Map<string, ProductLocationInfo>();
 
-    // 1. Authoritative check: live Supabase view_stok_realtime data
+    // 1. Authoritative check: live Supabase stok_real_fisik data
     const isRealtimeChecked = cleanSku in realtimeSkuStocks;
     if (isRealtimeChecked) {
       const realtimeList = realtimeSkuStocks[cleanSku] || [];
@@ -473,7 +473,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const skuMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
     const nameMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
 
-    // 1. Process ChannelStocks first (direct realtime from view_stok_realtime)
+    // 1. Process ChannelStocks first (direct realtime from stok_real_fisik)
     channelStocks.forEach((cs) => {
       const skuUpper = (cs.sku || '').toUpperCase().trim();
       if (!skuUpper) return;

@@ -598,7 +598,6 @@ export default function App() {
               }
             }
             globalRealtimeStore.notify('log_produk', payload);
-            globalRealtimeStore.notify('view_stok_realtime', payload);
           }
         )
         .on(

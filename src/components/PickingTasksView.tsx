@@ -205,63 +205,20 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   useEffect(() => {
     // Check local storage for active offline session
     try {
-      const savedSession = localStorage.getItem('wms_active_picking_session');
-      if (savedSession) {
-        const parsed = JSON.parse(savedSession);
-        if (parsed && parsed.activeSJ) {
+      const activeSession = localStorage.getItem('wms_active_picking_session');
+      if (activeSession) {
+        const parsed = JSON.parse(activeSession);
+        if (parsed.activeSJ) {
           setActiveSJ(parsed.activeSJ);
-          setActiveItems(Array.isArray(parsed.activeItems) ? parsed.activeItems : []);
-          setUnexpectedItems(Array.isArray(parsed.unexpectedItems) ? parsed.unexpectedItems : []);
+          setActiveItems(parsed.activeItems || []);
+          setUnexpectedItems(parsed.unexpectedItems || []);
           setActiveLocation(parsed.activeLocation || '');
           setRekapCatatan(parsed.rekapCatatan || '');
-          onNotify('Sesi Picking offline yang belum selesai berhasil dipulihkan', 'info');
         }
       }
-    } catch (e) {
-      console.warn('Gagal memulihkan sesi picking lokal:', e);
-    }
+    } catch {}
     
     loadPickingList();
-
-    // Supabase Realtime via global store
-    const handleRealtimeUpdate = (payload: any) => {
-      if (!payload) return;
-      
-      setRawItems((prev) => {
-        const { eventType, new: newRow, old: oldRow } = payload;
-        
-        if (eventType === 'INSERT' && newRow) {
-          const item = extractPickingItemFromRow(newRow);
-          if (!item) return prev;
-          if (prev.some((p) => p.id === item.id || (p.no_sj === item.no_sj && p.sku === item.sku))) return prev;
-          return [item, ...prev];
-        } 
-        else if (eventType === 'UPDATE' && newRow) {
-          const item = extractPickingItemFromRow(newRow);
-          if (!item) return prev;
-          return prev.map((p) =>
-            p.id === item.id || (p.no_sj === item.no_sj && p.sku === item.sku) ? { ...p, ...item } : p
-          );
-        } 
-        else if (eventType === 'DELETE' && oldRow) {
-          const oldNoSj = (oldRow.no_sj || '').toUpperCase().trim();
-          const oldSku = (oldRow.sku || '').toUpperCase().trim();
-          return prev.filter((p) => {
-            if (oldRow.id && p.id === String(oldRow.id)) return false;
-            if (oldNoSj && oldSku && (p.no_sj || '').toUpperCase().trim() === oldNoSj && (p.sku || '').toUpperCase().trim() === oldSku) return false;
-            return true;
-          });
-        }
-        
-        return prev;
-      });
-    };
-
-    const unsub = globalRealtimeStore.subscribe('picking_list', handleRealtimeUpdate);
-
-    return () => {
-      unsub();
-    };
   }, []);
 
   // Save active picking session to localStorage to persist across refreshes / offline
@@ -336,7 +293,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     if (!cleanSku) return [];
     const map = new Map<string, ProductLocationInfo>();
 
-    // 1. Authoritative check: live Supabase view_stok_realtime data
+    // 1. Authoritative check: live Supabase stok_real_fisik data
     const isRealtimeChecked = cleanSku in realtimeSkuStocks;
     if (isRealtimeChecked) {
       const realtimeList = realtimeSkuStocks[cleanSku] || [];

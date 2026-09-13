@@ -28,6 +28,7 @@ import {
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
+import { fetchWithDeltaSync } from '../services/gasSync';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
@@ -78,13 +79,13 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchStockOpnameQueue('ALL', 1000);
+      const data = await fetchWithDeltaSync<StockOpnameQueueItem>('Stok Opname Queue');
       const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
       setSoQueue(unique);
       setSelectedSoIds([]);
     } catch (e: any) {
       console.error('Error loading SO data:', e);
-      setFetchError(e.message || 'Gagal memuat antrean Stock Opname');
+      setFetchError(e.message || 'Gagal memuat antrean Stock Opname dari Google Sheet');
       if (onNotify) onNotify('Gagal memuat data Stock Opname.', 'error');
     } finally {
       setIsLoading(false);
@@ -93,34 +94,6 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
 
   useEffect(() => {
     loadSoData();
-
-    // Supabase Realtime for Stock Opname Queue
-    const handleRealtimeUpdate = (payload: any) => {
-      if (!payload) return;
-      
-      setSoQueue((prevQueue) => {
-        const { eventType, new: newRow, old: oldRow } = payload;
-        
-        if (eventType === 'INSERT' && newRow) {
-          if (prevQueue.some((q) => q.id === newRow.id)) return prevQueue;
-          return [newRow as StockOpnameQueueItem, ...prevQueue];
-        } 
-        else if (eventType === 'UPDATE' && newRow) {
-          return prevQueue.map((q) => (q.id === newRow.id ? (newRow as StockOpnameQueueItem) : q));
-        } 
-        else if (eventType === 'DELETE' && oldRow) {
-          return prevQueue.filter((q) => q.id !== oldRow.id);
-        }
-        
-        return prevQueue;
-      });
-    };
-
-    const unsub = globalRealtimeStore.subscribe('stock_opname_queue', handleRealtimeUpdate);
-
-    return () => {
-      unsub();
-    };
   }, []);
 
   // Filtered SO queue
@@ -366,7 +339,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     });
   };
 
-  // Sinkronkan ulang stok sistem secara realtime dari Supabase view_stok_realtime
+  // Sinkronkan ulang stok sistem secara realtime dari Supabase stok_real_fisik
   const handleResyncStock = async () => {
     setIsActionLoading(true);
     showGlobalLoading('Menyinkronkan stok sistem dengan Supabase...');

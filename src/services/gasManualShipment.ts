@@ -1,7 +1,7 @@
 import { ManualShipmentOrder } from '../types';
 import { getStoredManualShipmentGasUrl, DEFAULT_MANUAL_SHIPMENT_GAS_URL } from './settings';
 import { getSupabaseClient } from './supabase';
-
+import { fetchWithDeltaSync } from './gasSync';
 export { DEFAULT_MANUAL_SHIPMENT_GAS_URL };
 
 export const DEFAULT_OUTLETS: { nama: string; fulfillment: string }[] = [
@@ -154,6 +154,76 @@ export async function fetchOutlets(): Promise<{ nama: string; fulfillment: strin
   return fallback;
 }
 
+export function normalizeManualShipmentRecords(rawData: any[]): ManualShipmentOrder[] {
+  const map = new Map<string, ManualShipmentOrder>();
+
+  rawData.forEach((row) => {
+    const key = row.id || row.no_pesanan;
+    if (!key) return;
+
+    if (!map.has(key)) {
+      let no_transaksi_pengirim: string[] = [];
+      try {
+        if (typeof row.no_transaksi_pengirim === 'string') {
+           if (row.no_transaksi_pengirim.startsWith('[')) {
+               no_transaksi_pengirim = JSON.parse(row.no_transaksi_pengirim);
+           } else {
+               no_transaksi_pengirim = row.no_transaksi_pengirim.split(',').map((s: string) => s.trim()).filter(Boolean);
+           }
+        } else if (Array.isArray(row.no_transaksi_pengirim)) {
+            no_transaksi_pengirim = row.no_transaksi_pengirim;
+        }
+      } catch (e) {
+          console.warn("failed parsing no_transaksi_pengirim", e);
+      }
+
+      map.set(key, {
+        id: row.id,
+        no_pesanan: row.no_pesanan || '',
+        nama_pengirim: row.nama_pengirim || '',
+        no_telp_store: row.no_telp_store || '',
+        no_transaksi_pengirim: no_transaksi_pengirim,
+        nama_tujuan: row.nama_tujuan || '',
+        no_telp_tujuan: String(row.no_telp_tujuan || ''),
+        alamat_tujuan: row.alamat_tujuan || '',
+        notes_paket: row.notes_paket || '',
+        no_transaksi_customer: row.no_transaksi_customer || '',
+        jasa_kirim: row.jasa_kirim || '',
+        no_resi: row.no_resi || '',
+        status: row.status || 'diterima',
+        submitted_by: row.submitted_by || '',
+        created_at: row.created_at || row.tanggal,
+        items: []
+      });
+    }
+
+    const parent = map.get(key)!;
+
+    if (row.sku && row.nama_produk) {
+      parent.items.push({
+        sku: row.sku,
+        nama_produk: row.nama_produk,
+        qty: parseInt(row.qty, 10) || 0
+      });
+    } else if (row.items && typeof row.items === 'string' && row.items.startsWith('[')) {
+      try {
+         parent.items = JSON.parse(row.items);
+      } catch (e) {}
+    } else if (Array.isArray(row.items)) {
+         parent.items = row.items;
+    }
+  });
+
+  const finalRecords = Array.from(map.values());
+  finalRecords.sort((a, b) => {
+    const dateA = new Date(a.created_at || 0).getTime();
+    const dateB = new Date(b.created_at || 0).getTime();
+    return dateB - dateA;
+  });
+
+  return finalRecords;
+}
+
 export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
   // 1. Ambil dari cache lokal terlebih dahulu jika ada
   let cached: ManualShipmentOrder[] = [];
@@ -166,22 +236,20 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
   } catch {}
 
   try {
-    const sb = getSupabaseClient();
-    const { data, error } = await sb
-      .from('manual_shipment')
-      .select('*')
-      .order('created_at', { ascending: false });
-      
-    if (error) throw error;
+    const data = await fetchWithDeltaSync<any>('Manual Shipment', {
+      getPrimaryKey: (row) => row.id && row.sku ? `${row.id}_${row.sku}` : row.id,
+      getParentId: (row) => row.id
+    });
     
     if (data && Array.isArray(data)) {
+      const normalized = normalizeManualShipmentRecords(data);
       try {
-        localStorage.setItem('wms_cached_manual_shipments', JSON.stringify(data));
+        localStorage.setItem('wms_cached_manual_shipments', JSON.stringify(normalized));
       } catch {}
-      return data as ManualShipmentOrder[];
+      return normalized;
     }
   } catch (error) {
-    console.warn('Gagal memuat manual shipments dari Supabase, menggunakan cache lokal:', error);
+    console.warn('Gagal memuat manual shipments, menggunakan cache lokal:', error);
   }
 
   return cached;

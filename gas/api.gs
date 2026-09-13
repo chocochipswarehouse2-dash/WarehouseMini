@@ -96,12 +96,38 @@ function handleGetSheet(sheetName, params) {
     });
   }
 
-  return jsonResponse({
+  // Delta Sync & Delete Sync
+  var activeIds = null;
+  if (params && params.since) {
+    // 1. Collect all active IDs to tell the client what currently exists
+    activeIds = data.map(function(r) { return r.id || r.sku || r.no_pesanan || r.no_sj; }).filter(Boolean);
+
+    // 2. Filter data for rows that changed since the timestamp
+    var sinceDate = new Date(params.since).getTime();
+    if (!isNaN(sinceDate)) {
+      data = data.filter(function(row) {
+        var rowDateStr = row.updated_at || row.created_at || row.tanggal;
+        if (!rowDateStr) return true; // If no date column, send it to be safe
+        var rowDate = new Date(rowDateStr).getTime();
+        if (isNaN(rowDate)) return true;
+        // Keep if it was updated at or AFTER the since timestamp
+        return rowDate >= sinceDate;
+      });
+    }
+  }
+
+  var responsePayload = {
     success: true,
     data: data,
     count: data.length,
     sheet: sheetName
-  });
+  };
+
+  if (activeIds !== null) {
+    responsePayload.active_ids = activeIds;
+  }
+
+  return jsonResponse(responsePayload);
 }
 
 /**

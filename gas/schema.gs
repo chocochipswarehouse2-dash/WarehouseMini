@@ -97,7 +97,7 @@ const SCHEMA = {
     ]
   },
 
-  'log_produk': {
+  'Mutasi Log': {
     supabaseTable: 'log_produk',
     columns: [
       'id',           // A
@@ -146,7 +146,7 @@ const SCHEMA = {
     ]
   },
 
-  'stock_opname_queue': {
+  'Stok Opname Queue': {
     supabaseTable: 'stock_opname_queue',
     columns: [
       'id',           // A
@@ -168,6 +168,20 @@ const SCHEMA = {
       'approved_by',  // Q
       'tanggal_approve', // R
       'created_at',   // S
+    ]
+  },
+
+  'Stok Real': {
+    supabaseTable: 'stok_real_fisik',
+    columns: [
+      'id',           // A
+      'sku',          // B
+      'nama_produk',  // C
+      'size',         // D
+      'area',         // E
+      'lokasi',       // F
+      'sisa_stok',    // G
+      'updated_at',   // H
     ]
   },
 };

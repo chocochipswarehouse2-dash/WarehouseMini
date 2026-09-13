@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { getStoredManualShipmentGasUrl } from './settings';
 import { getSupabaseClient } from './supabase';
+import { fetchWithDeltaSync } from './gasSync';
 
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
@@ -59,41 +60,14 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
 
 export async function fetchPengecekanSJFromSupabase(): Promise<PengecekanSJRecord[]> {
   try {
-    const sb = getSupabaseClient();
-    const { data, error } = await sb
-      .from('pengecekan_sj')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500);
-
-    if (error || !Array.isArray(data)) {
-      return [];
-    }
-
-    const records: PengecekanSJRecord[] = [];
-    for (const row of data) {
-      records.push({
-        id: row.id,
-        no_sj: row.no_sj,
-        source: row.source,
-        destination: row.destination,
-        tanggal_sj: row.tanggal_sj,
-        status: row.status,
-        status_komparasi: row.status_komparasi,
-        total_qty_sj: row.total_qty_sj,
-        total_qty_terima: row.total_qty_terima,
-        total_sku: row.total_sku,
-        submitted_by: row.submitted_by,
-        created_at: row.created_at,
-        catatan: row.catatan,
-        items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || []),
-        items_json: row.items_json
-      });
-    }
-
-    return normalizeRecords(records);
+    const rawData = await fetchWithDeltaSync<any>(
+      'Tarikan MD',
+      (row) => `${row.id}_${row.sku}`,
+      (row) => row.id
+    );
+    return normalizeRecords(rawData);
   } catch (err) {
-    console.warn('Gagal fetchPengecekanSJFromSupabase:', err);
+    console.warn('Gagal fetchPengecekanSJFromSupabase dari GAS:', err);
     return [];
   }
 }
@@ -312,7 +286,7 @@ function submittedByNotUser(submitted_by: string): boolean {
  * Sinkronisasi latar belakang dengan Google Apps Script & Local Storage.
  */
 export async function fetchTarikanMDRecords(): Promise<PengecekanSJRecord[]> {
-  // 1. Muat cache instan dari local storage (0ms)
+  // Muat cache instan dari local storage (0ms) untuk responsivitas UI awal
   let cached: PengecekanSJRecord[] = [];
   try {
     const raw = localStorage.getItem(CACHE_KEY_RECORDS) || localStorage.getItem(CACHE_KEY_LEGACY);
@@ -321,65 +295,22 @@ export async function fetchTarikanMDRecords(): Promise<PengecekanSJRecord[]> {
     }
   } catch {}
 
-  // 2. PRIORITAS UTAMA: Ambil langsung dari Supabase
-  let supabaseRecords: PengecekanSJRecord[] = [];
   try {
-    supabaseRecords = await fetchPengecekanSJFromSupabase();
-  } catch (err) {
-    console.warn('Gagal memuat dari Supabase:', err);
-  }
-
-  // Jika Supabase memiliki data, update cache lokal & siapkan sebagai basis data utama
-  if (supabaseRecords.length > 0) {
-    try {
-      localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(supabaseRecords));
-    } catch {}
-    cached = supabaseRecords;
-  }
-
-  // 3. Ambil data dari Google Apps Script secara paralel / pelengkap
-  const gasUrl = getGasUrl();
-  if (gasUrl) {
-    try {
-      const url = `${gasUrl}?action=getPengecekanSJ`;
-      const res = await fetch(url, { method: 'GET' });
-      if (res.ok) {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
-          const gasNormalized = normalizeRecords(data.data);
-          
-          // Gabungkan record dari GAS dengan Supabase tanpa menduplikasi No SJ
-          const mergedMap = new Map<string, PengecekanSJRecord>();
-          // Masukkan data GAS terlebih dahulu
-          for (const r of gasNormalized) {
-            mergedMap.set(r.no_sj.toUpperCase(), r);
-          }
-          // Timpa dengan data Supabase jika ada (karena Supabase menyimpan raw_payload item lengkap)
-          for (const r of supabaseRecords) {
-            mergedMap.set(r.no_sj.toUpperCase(), r);
-          }
-          // Masukkan juga data dari cache lokal jika belum ada di map
-          for (const r of cached) {
-            if (!mergedMap.has(r.no_sj.toUpperCase())) {
-              mergedMap.set(r.no_sj.toUpperCase(), r);
-            }
-          }
-
-          const combined = Array.from(mergedMap.values());
-          try {
-            localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(combined));
-          } catch {}
-          return combined;
-        }
-      }
-    } catch (gasError) {
-      console.warn('GAS fetch gagal/timeout, data dari Supabase/Cache tetap digunakan:', gasError);
+    // Ambil data menggunakan Delta Sync
+    const records = await fetchPengecekanSJFromSupabase();
+    
+    // Perbarui cache lokal
+    if (records && records.length > 0) {
+      try {
+        localStorage.setItem(CACHE_KEY_RECORDS, JSON.stringify(records));
+      } catch {}
+      return records;
     }
+    return cached;
+  } catch (err) {
+    console.warn('Gagal memuat dari fetchTarikanMDRecords:', err);
+    return cached;
   }
-
-  // Jika GAS tidak ada atau gagal, kembalikan hasil Supabase / Cache lokal
-  return cached;
 }
 
 /**

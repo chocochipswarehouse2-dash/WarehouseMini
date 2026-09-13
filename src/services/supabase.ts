@@ -7,6 +7,8 @@ import {
   saveInventoryStocksToLocalDb,
   clearLocalDb,
 } from './localDb';
+import { fetchWithDeltaSync } from './gasSync';
+import { fetchAllStokRealFisik } from './gasStokReal';
 import {
   LogProdukItem,
   StockOpnameQueueItem,
@@ -561,7 +563,7 @@ CREATE INDEX IF NOT EXISTS idx_qc_tanggal ON public.qc_reports(tanggal);
 ALTER TABLE public.perbaikan_tickets ADD COLUMN IF NOT EXISTS qc_report_no TEXT;
 
 -- 10. VIEW REALTIME STOK OTOMATIS (SISA STOK = IN - OUT)
-CREATE OR REPLACE VIEW public.view_stok_realtime AS
+CREATE OR REPLACE VIEW public.stok_real_fisik AS
 SELECT 
   lp.sku,
   lp.lokasi,
@@ -688,93 +690,14 @@ ALTER TABLE public.perbaikan_tickets ADD COLUMN IF NOT EXISTS qc_report_no TEXT;
  */
 export async function fetchStockForLocations(locations: string[]): Promise<StockRealtimeItem[]> {
   if (!locations.length) return [];
-  const cleanLocs = locations.map((l) => l.trim()).filter(Boolean);
-  if (!cleanLocs.length) return [];
+  const cleanLocs = new Set(locations.map((l) => l.trim().toUpperCase()).filter(Boolean));
+  if (cleanLocs.size === 0) return [];
 
-  // 1. Try querying view_stok_realtime with automatic pagination
   try {
-    const lokParam = cleanLocs.map((l) => `"${l}"`).join(',');
-    const encodedLokParam = encodeURIComponent(lokParam);
-    const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
-    const allFetched: StockRealtimeItem[] = [];
-    const pageSize = 1000;
-    let offset = 0;
-    const maxRows = 50000;
-
-    while (offset < maxRows) {
-      const endpoint = `${supaUrl}/rest/v1/view_stok_realtime?select=sku,lokasi,nama_produk,size,sisa_stok,area&lokasi=in.(${encodedLokParam})&order=sku.asc,lokasi.asc&limit=${pageSize}&offset=${offset}`;
-      const res = await fetch(endpoint, {
-        headers: {
-          apikey: supaKey,
-          Authorization: `Bearer ${supaKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!res.ok) break;
-      const chunk = (await res.json()) as StockRealtimeItem[];
-      if (!Array.isArray(chunk) || chunk.length === 0) break;
-      allFetched.push(...chunk);
-      if (chunk.length < pageSize) break;
-      offset += pageSize;
-    }
-
-    if (allFetched.length > 0) {
-      const map = new Map<string, StockRealtimeItem>();
-      for (const it of allFetched) {
-        const key = `${(it.sku || '').trim().toUpperCase()}__${(it.lokasi || '').trim().toUpperCase()}`;
-        if (!map.has(key)) {
-          map.set(key, {
-            ...it,
-            sisa_stok: Number(it.sisa_stok) || 0,
-            area: it.area || getAreaFromLokasi(it.lokasi),
-          });
-        }
-      }
-      return Array.from(map.values());
-    }
+    const allStok = await fetchAllStokRealFisik();
+    return allStok.filter(r => cleanLocs.has((r.lokasi || '').toUpperCase()));
   } catch (err) {
-    console.warn('Error fetching realtime stock from Supabase view, trying log calculation:', err);
-  }
-
-  // 2. Fallback: calculate directly from log_produk for these specific locations
-  try {
-    const lokParam = cleanLocs.map((l) => `"${l}"`).join(',');
-    const logs = await supabaseFetch<LogProdukItem[]>(
-      'log_produk',
-      'GET',
-      null,
-      `lokasi=in.(${lokParam})&order=created_at.desc&limit=5000`
-    );
-    if (logs && Array.isArray(logs) && logs.length > 0) {
-      const stockMap = new Map<string, StockRealtimeItem>();
-      for (const log of logs) {
-        const sku = (log.sku || '').trim().toUpperCase();
-        if (!sku) continue;
-        const lok = (log.lokasi || 'Warehouse').trim();
-        const area = log.area || getAreaFromLokasi(lok);
-        const key = `${sku}__${lok.toUpperCase()}`;
-        const qty = Number(log.qty) || 0;
-        const type = (log.type || '').toUpperCase();
-        const delta = type === 'IN' || type === 'ADJ_IN' ? qty : type === 'OUT' || type === 'ADJ_OUT' ? -qty : 0;
-
-        if (!stockMap.has(key)) {
-          stockMap.set(key, {
-            sku,
-            nama_produk: log.nama_produk || sku,
-            size: log.size || '-',
-            lokasi: lok,
-            area,
-            sisa_stok: delta,
-            updated_at: log.created_at,
-          });
-        } else {
-          stockMap.get(key)!.sisa_stok += delta;
-        }
-      }
-      return Array.from(stockMap.values());
-    }
-  } catch (err) {
-    console.warn('Error calculating stock from logs for locations:', err);
+    console.warn('Error fetching realtime stock from GAS for locations:', err);
   }
 
   return [];
@@ -786,41 +709,11 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
 export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeItem[]> {
   if (!skus.length) return [];
   try {
-    const cleanSkus = Array.from(new Set(skus.map((s) => s.trim()))).filter(Boolean);
-    if (!cleanSkus.length) return [];
-    const skuParam = cleanSkus.map((s) => `"${s}"`).join(',');
-    let data: StockRealtimeItem[] | null = null;
-    try {
-      data = await supabaseFetch<StockRealtimeItem[]>(
-        'view_stok_realtime',
-        'GET',
-        null,
-        `sku=in.(${skuParam})&order=sku.asc,lokasi.asc`
-      );
-    } catch {
-      data = await supabaseFetch<StockRealtimeItem[]>(
-        'stok_realtime',
-        'GET',
-        null,
-        `sku=in.(${skuParam})&order=sku.asc,lokasi.asc`
-      );
-    }
-    if (data && Array.isArray(data)) {
-      const map = new Map<string, StockRealtimeItem>();
-      for (const it of data) {
-        if (!isWarehouseLocation(it.lokasi, it.area)) continue;
-        const key = `${(it.sku || '').trim().toUpperCase()}__${(it.lokasi || '').trim().toUpperCase()}`;
-        if (!map.has(key)) {
-          map.set(key, {
-            ...it,
-            sisa_stok: Number(it.sisa_stok) || 0,
-            area: it.area || getAreaFromLokasi(it.lokasi),
-          });
-        }
-      }
-      return Array.from(map.values());
-    }
-    return [];
+    const cleanSkus = new Set(skus.map((s) => s.trim().toUpperCase()).filter(Boolean));
+    if (cleanSkus.size === 0) return [];
+    
+    const allStok = await fetchAllStokRealFisik();
+    return allStok.filter(r => cleanSkus.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
   } catch (err) {
     console.warn('Error fetching realtime stock by SKUs:', err);
     return [];
@@ -1333,7 +1226,7 @@ export async function deleteStockOpnameQueueItems(
 }
 
 /**
- * Resync Stock Opname Queue items against live view_stok_realtime.
+ * Resync Stock Opname Queue items against live stok_real_fisik.
  * Recalculates qty_sistem and selisih for pending items so that any truncation errors or stale data are rectified.
  */
 export async function resyncStockOpnameQueueItems(
@@ -1427,103 +1320,21 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
     return memoryStokFisikCache;
   }
 
-  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
-  const allRows: StockRealtimeItem[] = [];
-  const pageSize = 1000;
-  const maxRows = 100000;
-
-  const headers = {
-    apikey: supaKey,
-    Authorization: 'Bearer ' + supaKey,
-    'Content-Type': 'application/json',
-  };
-
-  const fetchPage = async (off: number, retries = 3): Promise<StockRealtimeItem[]> => {
-    const currentLimit = Math.min(pageSize, maxRows - off);
-    const url = `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${off}`;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        const res = await fetch(url, { headers, signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const json = await res.json();
-          if (Array.isArray(json)) return json;
-        } else {
-          console.warn(`Supabase stock fetch page offset ${off} status ${res.status} (attempt ${attempt + 1})`);
-        }
-      } catch (err: any) {
-        console.warn(`Supabase stock fetch page offset ${off} error (attempt ${attempt + 1}):`, err?.message);
-      }
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-      }
-    }
-    return [];
-  };
-
   try {
-    // 1. Fetch initial 5 pages (0..5000) in parallel — covers all 4,500+ realtime rows in ~700-900ms
-    const baseOffsets = [0, 1000, 2000, 3000, 4000];
-    const baseResults = await Promise.all(baseOffsets.map((off) => fetchPage(off)));
-
-    let lastPageCount = 0;
-    for (const chunk of baseResults) {
-      if (Array.isArray(chunk) && chunk.length > 0) {
-        allRows.push(...chunk);
-        lastPageCount = chunk.length;
-      }
-    }
-
-    // 2. If the 5th page (offset 4000) was completely full (1000 items), fetch subsequent pages until done
-    if (lastPageCount >= pageSize) {
-      let nextOffset = 5000;
-      while (nextOffset < maxRows) {
-        const batchOffsets = [nextOffset, nextOffset + 1000, nextOffset + 2000];
-        const batchResults = await Promise.all(batchOffsets.map((off) => fetchPage(off)));
-        let hasIncomplete = false;
-
-        for (const chunk of batchResults) {
-          if (Array.isArray(chunk) && chunk.length > 0) {
-            allRows.push(...chunk);
-          }
-          if (!chunk || chunk.length < pageSize) {
-            hasIncomplete = true;
-            break;
-          }
-        }
-        if (hasIncomplete) break;
-        nextOffset += 3000;
-      }
-    }
-
-    // Fallback if 0 rows returned
-    if (allRows.length === 0) {
-      console.warn('Direct fetch returned 0 rows, trying un-ordered query fallback...');
-      const fallbackRes = await fetch(
-        `${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok&limit=1000&offset=0`,
-        { headers }
-      );
-      if (fallbackRes.ok) {
-        const fbJson = await fallbackRes.json();
-        if (Array.isArray(fbJson) && fbJson.length > 0) {
-          allRows.push(...fbJson);
-        }
-      }
-    }
-
-    if (allRows.length > 0) {
+    const allRows = await fetchAllStokRealFisik();
+    
+    if (allRows && allRows.length > 0) {
       memoryStokFisikCache = allRows;
       memoryStokFisikLastFetch = Date.now();
       // Auto-save snapshot to IndexedDB in background
       saveInventoryStocksToLocalDb(allRows).catch(() => {});
+      return allRows;
     }
   } catch (err) {
-    console.warn('fetchSupabaseStokFisikDirect warning:', err);
+    console.error('Error fetching direct fizik stok from GAS:', err);
   }
-  return allRows;
+
+  return memoryStokFisikCache || [];
 }
 
 /**
@@ -1544,8 +1355,8 @@ export async function fetchAllStockRealtime(maxRows = 50000): Promise<StockRealt
   const pageSize = 1000;
   let offset = 0;
 
-  // 1. Try querying stok_realtime or view_stok_realtime with deterministic ordering (order=sku.asc,lokasi.asc)
-  const targetTables = ['view_stok_realtime', 'stok_realtime'];
+  // 1. Try querying stok_realtime or stok_real_fisik with deterministic ordering (order=sku.asc,lokasi.asc)
+  const targetTables = ['stok_real_fisik', 'stok_realtime'];
   let successfulTable: string | null = null;
 
   for (const tableName of targetTables) {
@@ -2291,7 +2102,7 @@ let memoryProductLastFetch = 0;
 
 /**
  * Fetch master products from Supabase across all potential product tables with parallel loading & memory cache
- * (master_produk, view_stok_realtime, log_produk, etc.)
+ * (master_produk, stok_real_fisik, log_produk, etc.)
  */
 export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, forceRefresh = false): Promise<ProductItem[]> {
   // 1. SWR In-Memory cache check
@@ -2350,7 +2161,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     }
   }
 
-  // 3. Fast Parallel Fetch: fetch master_produk and view_stok_realtime concurrently with targeted column selection
+  // 3. Fast Parallel Fetch: fetch master_produk and stok_real_fisik concurrently with targeted column selection
   const pageSize = 1000;
 
   const fetchMasterTable = async () => {
@@ -2423,115 +2234,89 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
   };
 
   const fetchStockTable = async () => {
-    let offset = 0;
-    while (offset < maxRowsPerTable) {
-      const batchPromises = [];
-      const batchSize = 6;
-      for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
-        const off = offset;
-        batchPromises.push(
-          fetch(`${supaUrl}/rest/v1/view_stok_realtime?sisa_stok=neq.0&select=sku,lokasi,nama_produk,size,sisa_stok,area&order=sku.asc&limit=${pageSize}&offset=${off}`, {
-            headers: {
-              apikey: supaKey,
-              Authorization: 'Bearer ' + supaKey,
-              'Content-Type': 'application/json',
-            },
-          }).then(r => r.ok ? r.json() : []).catch(() => [])
-        );
-        offset += pageSize;
-      }
+    try {
+      const allStok = await fetchAllStokRealFisik();
+      if (!allStok || allStok.length === 0) return;
 
-      const results = await Promise.all(batchPromises);
-      let breakLoop = false;
+      for (const r of allStok) {
+        if (!r.sisa_stok || r.sisa_stok === 0) continue;
 
-      for (const rows of results) {
-        if (!Array.isArray(rows) || rows.length === 0) {
-          breakLoop = true;
-          break;
+        const sku = String(r.sku || '').trim().toUpperCase();
+        if (!sku) continue;
+
+        let item = productsMap.get(sku);
+        if (!item) {
+          // ONLY associate stock with products that exist in master_produk!
+          // Products outside master_produk must NEVER be created as catalog products.
+          continue;
         }
 
-        for (const r of rows) {
-          const sku = String(r.sku || '').trim().toUpperCase();
-          if (!sku) continue;
+        if (item && r.lokasi) {
+          const locClean = String(r.lokasi).trim();
+          const qty = Number(r.sisa_stok || 0);
 
-          let item = productsMap.get(sku);
-          if (!item) {
-            // ONLY associate stock with products that exist in master_produk!
-            // Products outside master_produk must NEVER be created as catalog products.
-            continue;
+          // Populate locList array
+          if (!item.locList) item.locList = [];
+          const locList = item.locList as Array<{ lokasi: string; qty?: number } | string>;
+          const existingLoc = locList.find((l: any) =>
+            (typeof l === 'string' ? l.toUpperCase() : l.lokasi.toUpperCase()) === locClean.toUpperCase()
+          );
+          if (!existingLoc) {
+            locList.push({ lokasi: locClean, qty });
+          } else if (typeof existingLoc === 'object') {
+            existingLoc.qty = (existingLoc.qty || 0) + qty;
           }
 
-          if (item && r.lokasi) {
-            const locClean = String(r.lokasi).trim();
-            const qty = Number(r.sisa_stok || 0);
-
-            // Populate locList array
-            if (!item.locList) item.locList = [];
-            const locList = item.locList as Array<{ lokasi: string; qty?: number } | string>;
-            const existingLoc = locList.find((l: any) =>
-              (typeof l === 'string' ? l.toUpperCase() : l.lokasi.toUpperCase()) === locClean.toUpperCase()
-            );
-            if (!existingLoc) {
-              locList.push({ lokasi: locClean, qty });
-            } else if (typeof existingLoc === 'object') {
-              existingLoc.qty = (existingLoc.qty || 0) + qty;
-            }
-
-            // Append to comma-separated lokasi string
-            if (!item.lokasi || item.lokasi === '-') {
-              item.lokasi = locClean;
-            } else {
-              const locArray = item.lokasi.split(/[,/;\n|]+/).map((x) => x.trim().toUpperCase());
-              if (!locArray.includes(locClean.toUpperCase())) {
-                item.lokasi = `${item.lokasi}, ${locClean}`;
-              }
-            }
-
-            // Detect studio / shopee / tiktok physical stock
-            const locUpper = locClean.toUpperCase();
-            const areaUpper = String(r.area || '').toUpperCase();
-            if (locUpper.includes('STUDIO') || areaUpper.includes('STUDIO')) {
-              item.stokStudio = (item.stokStudio || 0) + qty;
-            }
-            if (locUpper.includes('SHOPEE') || locUpper.includes('SHP') || areaUpper.includes('SHOPEE')) {
-              item.stokShp = (item.stokShp || 0) + qty;
-            }
-            if (locUpper.includes('TIKTOK') || locUpper.includes('TTK') || areaUpper.includes('TIKTOK')) {
-              item.stokTtk = (item.stokTtk || 0) + qty;
-            }
-
-            // Populate item.f for physical breakdown
-            if (!item.f || typeof item.f !== 'object') item.f = {};
-            const itemF = item.f as Record<string, number>;
-            const fKey = areaUpper.includes('CACAT') || locUpper.startsWith('DF')
-              ? 'Barang Cacat'
-              : areaUpper.includes('PERMAK') || locUpper.startsWith('PMK') || locUpper.startsWith('CC')
-              ? 'Permak / Cuci'
-              : areaUpper.includes('LIVE') || locUpper.includes('LIVE') || locUpper.includes('SHOPEE') || locUpper.includes('TIKTOK')
-              ? 'Barang Live'
-              : areaUpper.includes('STUDIO') || locUpper.includes('STUDIO')
-              ? 'Sample Studio'
-              : 'Gudang Utama';
-            itemF[fKey] = (itemF[fKey] || 0) + qty;
-            if (fKey === 'Gudang Utama') {
-              item.stokMap = (item.stokMap || 0) + qty;
+          // Append to comma-separated lokasi string
+          if (!item.lokasi || item.lokasi === '-') {
+            item.lokasi = locClean;
+          } else {
+            const locArray = item.lokasi.split(/[,/;\n|]+/).map((x) => x.trim().toUpperCase());
+            if (!locArray.includes(locClean.toUpperCase())) {
+              item.lokasi = `${item.lokasi}, ${locClean}`;
             }
           }
-        }
 
-        if (rows.length < pageSize) {
-          breakLoop = true;
+          // Detect studio / shopee / tiktok physical stock
+          const locUpper = locClean.toUpperCase();
+          const areaUpper = String(r.area || '').toUpperCase();
+          if (locUpper.includes('STUDIO') || areaUpper.includes('STUDIO')) {
+            item.stokStudio = (item.stokStudio || 0) + qty;
+          }
+          if (locUpper.includes('SHOPEE') || locUpper.includes('SHP') || areaUpper.includes('SHOPEE')) {
+            item.stokShp = (item.stokShp || 0) + qty;
+          }
+          if (locUpper.includes('TIKTOK') || locUpper.includes('TTK') || areaUpper.includes('TIKTOK')) {
+            item.stokTtk = (item.stokTtk || 0) + qty;
+          }
+
+          // Populate item.f for physical breakdown
+          if (!item.f || typeof item.f !== 'object') item.f = {};
+          const itemF = item.f as Record<string, number>;
+          const fKey = areaUpper.includes('CACAT') || locUpper.startsWith('DF')
+            ? 'Barang Cacat'
+            : areaUpper.includes('PERMAK') || locUpper.startsWith('PMK') || locUpper.startsWith('CC')
+            ? 'Permak / Cuci'
+            : areaUpper.includes('LIVE') || locUpper.includes('LIVE') || locUpper.includes('SHOPEE') || locUpper.includes('TIKTOK')
+            ? 'Barang Live'
+            : areaUpper.includes('STUDIO') || locUpper.includes('STUDIO')
+            ? 'Sample Studio'
+            : 'Gudang Utama';
+          itemF[fKey] = (itemF[fKey] || 0) + qty;
+          if (fKey === 'Gudang Utama') {
+            item.stokMap = (item.stokMap || 0) + qty;
+          }
         }
       }
-
-      if (breakLoop) break;
+    } catch (err) {
+      console.warn('Error fetching stock for products from GAS:', err);
     }
   };
 
   // 3. Sequential: First fetch all master_produk to build the true catalog
   await fetchMasterTable();
 
-  // Then enrich the existing master catalog with live location & stock from view_stok_realtime
+  // Then enrich the existing master catalog with live location & stock from stok_real_fisik
   if (productsMap.size > 0) {
     await fetchStockTable();
   } else {
@@ -2636,64 +2421,30 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     }
   >();
 
-  // 1. Fetch from view_stok_realtime prioritizing rows with sisa_stok <> 0
+  // 1. Fetch from stok_real_fisik prioritizing rows with sisa_stok <> 0
   const searchFilter = searchKeyword && searchKeyword.trim()
     ? buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])
     : '';
 
   try {
-    let viewRowsNonZero: any[] = [];
-    
-    // Check if we can use the cache
-    if (!searchKeyword || !searchKeyword.trim()) {
-      if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-        // Filter out zero stocks from cache
-        viewRowsNonZero = memoryStokFisikCache.filter(r => (r.sisa_stok ?? r.qty ?? 0) !== 0);
-      }
-    }
-
-    // If cache is empty or searchKeyword is provided, fetch from network
-    if (viewRowsNonZero.length === 0) {
-      const pageSize = 2000;
-      
-      if (searchKeyword && searchKeyword.trim()) {
-        // If there's a search keyword, it's usually a small result set, fetch once
-        const chunk = await supabaseFetch<any[]>(
-          'view_stok_realtime',
-          'GET',
-          null,
-          `select=sku,nama_produk,size,lokasi,area,sisa_stok&sisa_stok=neq.0${searchFilter}&limit=3000`
-        );
-        if (chunk && Array.isArray(chunk)) viewRowsNonZero = chunk;
-      } else {
-        // Parallelize fetching for full load to avoid 4+ seconds sequential block
-        const offsets = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000];
-        const fetchPromises = offsets.map(offset => 
-          supabaseFetch<any[]>(
-            'view_stok_realtime',
-            'GET',
-            null,
-            `select=sku,nama_produk,size,lokasi,area,sisa_stok&sisa_stok=neq.0&limit=${pageSize}&offset=${offset}`
-          ).catch(() => []) // fail gracefully for each chunk
-        );
-        
-        const results = await Promise.all(fetchPromises);
-        for (const chunk of results) {
-          if (chunk && Array.isArray(chunk)) {
-            viewRowsNonZero.push(...chunk);
-          }
-        }
-      }
-    }
+    const viewRowsNonZero = await fetchAllStokRealFisik();
+    const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
       for (const r of viewRowsNonZero) {
         const sku = String(r.sku || r.kode || '').trim().toUpperCase();
         if (!sku || sku === 'UNDEFINED' || sku === 'NULL') continue;
+        const nama = String(r.nama_produk || r.nama || sku).trim();
+
+        if (searchFilterUpper) {
+           if (!sku.includes(searchFilterUpper) && !nama.toUpperCase().includes(searchFilterUpper)) {
+             continue;
+           }
+        }
+        
         const sisa = Number(r.sisa_stok ?? r.qty ?? 0);
         const lok = String(r.lokasi || 'BLOK F').trim();
         const area = String(r.area || getAreaFromLokasi(lok)).trim();
-        const nama = String(r.nama_produk || r.nama || sku).trim();
         
         let size = String(r.size || r.ukuran || '').trim();
         if (!size || size === '-' || size === 'ALL') {
@@ -2724,39 +2475,8 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
         entry.locations.set(lokKey, { lokasi: lok, area, qty: prev + sisa });
       }
     }
-
-    // Secondary query: also fetch any remaining active view rows if needed
-    if (stockMap.size < 50 && !searchKeyword) {
-      const fallbackViewRows = await supabaseFetch<any[]>('view_stok_realtime', 'GET', null, 'select=*&limit=3000');
-      if (fallbackViewRows && Array.isArray(fallbackViewRows)) {
-        for (const r of fallbackViewRows) {
-          const sku = String(r.sku || r.kode || '').trim().toUpperCase();
-          if (!sku || sku === 'UNDEFINED' || sku === 'NULL') continue;
-          const sisa = Number(r.sisa_stok ?? r.qty ?? 0);
-          const lok = String(r.lokasi || 'BLOK F').trim();
-          const area = String(r.area || getAreaFromLokasi(lok)).trim();
-          const nama = String(r.nama_produk || r.nama || sku).trim();
-          const size = String(r.size || r.ukuran || '-').trim();
-
-          if (!stockMap.has(sku)) {
-            stockMap.set(sku, {
-              sku,
-              produk: nama,
-              size: size || 'ALL',
-              locations: new Map(),
-            });
-          }
-          const entry = stockMap.get(sku)!;
-          if (entry.produk === sku && nama !== sku) entry.produk = nama;
-
-          const lokKey = `${lok.toUpperCase()}__${area.toUpperCase()}`;
-          const prev = entry.locations.get(lokKey)?.qty || 0;
-          entry.locations.set(lokKey, { lokasi: lok, area, qty: prev + sisa });
-        }
-      }
-    }
   } catch (err) {
-    console.warn('Error fetching from view_stok_realtime in Supabase:', err);
+    console.warn('Error fetching from stok_real_fisik in Supabase:', err);
   }
 
   // 2. Also fetch and calculate from log_produk to ensure complete realtime accuracy
@@ -2767,7 +2487,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
 
     const logRows = await supabaseFetch<any[]>('log_produk', 'GET', null, logQuery);
     if (logRows && Array.isArray(logRows) && logRows.length > 0) {
-      // If view_stok_realtime was empty, compute net stock from log_produk
+      // If stok_real_fisik was empty, compute net stock from log_produk
       const isFromLogsOnly = stockMap.size === 0;
       for (const log of logRows) {
         const sku = String(log.sku || '').trim().toUpperCase();
@@ -3144,7 +2864,10 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
 
   // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
   const [pickingRes, peminjamanRes] = await Promise.allSettled([
-    supabaseFetch<any[]>('picking_list', 'GET', null, 'select=*&order=created_at.desc&limit=2000'),
+    fetchWithDeltaSync<any>('picking_list', {
+      getPrimaryKey: (row) => row.id || `${row.no_sj}_${row.sku}`,
+      getParentId: (row) => row.no_sj
+    }),
     supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100')
   ]);
 
@@ -4254,37 +3977,16 @@ export async function fetchPresensiRange(
 
 export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<StockRealtimeItem[]> {
   if (!skus || skus.length === 0) return [];
-  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
-  const cleanSkus = Array.from(new Set(skus.map(s => String(s || '').trim().toUpperCase()).filter(Boolean)));
-  if (cleanSkus.length === 0) return [];
+  const cleanSkus = new Set(skus.map(s => String(s || '').trim().toUpperCase()).filter(Boolean));
+  if (cleanSkus.size === 0) return [];
   
-  const CHUNK_SIZE = 40;
-  const allResults: StockRealtimeItem[] = [];
-
-  for (let i = 0; i < cleanSkus.length; i += CHUNK_SIZE) {
-    const chunk = cleanSkus.slice(i, i + CHUNK_SIZE);
-    const skuList = chunk.map(s => `"${s}"`).join(',');
-    const encodedSkus = encodeURIComponent(`(${skuList})`);
-    
-    try {
-      const res = await fetch(`${supaUrl}/rest/v1/view_stok_realtime?sku=in.${encodedSkus}&sisa_stok=neq.0&select=sku,nama_produk,size,area,lokasi,sisa_stok`, {
-        method: 'GET',
-        headers: {
-          'apikey': supaKey,
-          'Authorization': `Bearer ${supaKey}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json)) allResults.push(...json);
-      }
-    } catch (err) {
-      console.error('Error fetching delta stocks chunk:', err);
-    }
+  try {
+    const allStok = await fetchAllStokRealFisik();
+    return allStok.filter(r => cleanSkus.has((r.sku || '').toUpperCase()));
+  } catch (err) {
+    console.error('Error in fetchSupabaseStokFisikBySkus:', err);
+    return [];
   }
-  return allResults;
 }
 
 export async function fetchMasterProductDealposChannelsBySkus(
