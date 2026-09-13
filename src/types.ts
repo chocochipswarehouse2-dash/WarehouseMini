@@ -26,7 +26,8 @@ export type ActivePage =
   | 'cetak_label'
   | 'manual_shipment'
   | 'tarikan_md'
-  | 'roadmap';
+  | 'roadmap'
+  | 'supabase_migration';
 
 export type UserRole =
   | 'Superadmin'

@@ -13,3 +13,5 @@ gas/.clasprc.json
 
 # Supabase credentials (jangan di-commit!)
 supabase/.env
+
+scratch/

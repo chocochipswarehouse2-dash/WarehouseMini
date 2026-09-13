@@ -101,6 +101,7 @@ const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').th
 const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
 const ManualShipmentView = lazyWithRetry(() => import('./components/ManualShipmentView').then(m => ({ default: m.ManualShipmentView })));
 const TarikanMDView = lazyWithRetry(() => import('./components/TarikanMDView').then(m => ({ default: m.TarikanMDView })));
+const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
 
 import {
   fetchStockForLocations,
@@ -1472,6 +1473,11 @@ export default function App() {
               {activePage === 'roadmap' && (
                   <RoadmapView
                     session={session}
+                    onShowToast={showToast}
+                  />
+              )}
+              {activePage === 'supabase_migration' && (
+                  <SupabaseMigrationView
                     onShowToast={showToast}
                   />
               )}

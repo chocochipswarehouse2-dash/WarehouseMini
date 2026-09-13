@@ -37,6 +37,7 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
     case 'manual_shipment': return hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
     case 'tarikan_md': return hasPermission(session, 'can_tarikan_md');
     case 'roadmap': return hasPermission(session, 'can_view_roadmap');
+    case 'supabase_migration': return isSuperadmin(session);
     default: return false;
   }
 };

@@ -28,6 +28,7 @@ import {
   ClipboardCheck,
   Truck,
   Send,
+  Database,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -112,6 +113,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Rekap & Laporan HR', subtitle: 'Rekap Lembur, Cuti & Absensi Karyawan', icon: BarChart3 };
       case 'roadmap':
         return { title: 'Roadmap & Fitur', subtitle: 'Pantau & Request Fitur', icon: Map };
+      case 'supabase_migration':
+        return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
       default:
         return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
     }

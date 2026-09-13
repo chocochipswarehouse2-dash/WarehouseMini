@@ -558,6 +558,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       )}
 
+      {/* Migrasi Akun Supabase (Superadmin only - Bypass Egress Limit) */}
+      {userIsAdmin && (
+        <button
+          type="button"
+          onClick={() => {
+            handleNavClick('supabase_migration');
+            onCloseMobile();
+          }}
+          title="Migrasi & Kloning Data ke Akun Supabase Baru (Bypass Egress 5GB Limit)"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activePage === 'supabase_migration'
+              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+              : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+          } ${collapsed ? 'justify-center px-2' : ''}`}
+        >
+          <div
+            className={`p-1.5 rounded-lg shrink-0 ${
+              activePage === 'supabase_migration'
+                ? 'bg-white/20 text-white'
+                : 'bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400'
+            }`}
+          >
+            <Database className="w-4 h-4" />
+          </div>
+          {!collapsed && (
+            <div className="flex-1 text-left truncate flex items-center justify-between">
+              <span className="truncate font-extrabold">Migrasi Supabase</span>
+              <span
+                className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                  activePage === 'supabase_migration'
+                    ? 'bg-black/20 text-white'
+                    : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
+                }`}
+              >
+                MIGRASI
+              </span>
+            </div>
+          )}
+        </button>
+      )}
+
       {/* Dark Mode Switcher */}
       <button
         type="button"

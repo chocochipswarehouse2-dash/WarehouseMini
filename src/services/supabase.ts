@@ -111,6 +111,19 @@ let currentConfig = {
 
 export function getStoredSupabaseConfig() {
   const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  const isCustom = isBrowser && localStorage.getItem('wms_supabase_is_custom') === 'true';
+
+  if (isCustom) {
+    const customUrl = localStorage.getItem('wms_supabase_url');
+    const customKey = localStorage.getItem('wms_supabase_key');
+    if (customUrl && customKey && customUrl.startsWith('http')) {
+      try {
+        const parsedUrl = new URL(customUrl).origin;
+        return { url: parsedUrl, key: customKey.trim() };
+      } catch {}
+    }
+  }
+
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ? String(import.meta.env.VITE_SUPABASE_URL) : null;
   const envKey = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ? String(import.meta.env.VITE_SUPABASE_ANON_KEY) : null;
 
@@ -124,7 +137,7 @@ export function getStoredSupabaseConfig() {
 
   // Auto-migrate legacy project ref to the new default in browser localStorage
   // Also enforce that default project vxongwtxmhjixhzeoidp always uses the valid publishable key
-  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp') || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated'))) {
+  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || (url.includes('vxongwtxmhjixhzeoidp') && key !== DEFAULT_SUPABASE_ANON_KEY) || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated'))) {
     url = DEFAULT_SUPABASE_URL;
     key = DEFAULT_SUPABASE_ANON_KEY;
     if (isBrowser) {
@@ -139,7 +152,7 @@ export function getStoredSupabaseConfig() {
   return { url, key };
 }
 
-export function saveSupabaseConfig(url: string, key: string) {
+export function saveSupabaseConfig(url: string, key: string, markAsCustom: boolean = true) {
   let cleanUrl = url.trim();
   try {
     if (cleanUrl) {
@@ -150,9 +163,23 @@ export function saveSupabaseConfig(url: string, key: string) {
   if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
     localStorage.setItem('wms_supabase_url', cleanUrl);
     localStorage.setItem('wms_supabase_key', key.trim());
+    if (markAsCustom) {
+      localStorage.setItem('wms_supabase_is_custom', 'true');
+    }
+    localStorage.setItem('wms_supabase_v2_migrated', 'true');
   }
   currentConfig = { url: cleanUrl, key: key.trim() };
   supabaseInstance = null; // reset client
+}
+
+export function resetToDefaultSupabaseConfig() {
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    localStorage.removeItem('wms_supabase_is_custom');
+    localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
+    localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
+  }
+  currentConfig = { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_ANON_KEY };
+  supabaseInstance = null;
 }
 
 export function getSupabaseClient(): SupabaseClient {

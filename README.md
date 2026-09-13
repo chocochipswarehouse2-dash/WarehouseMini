@@ -21,3 +21,9 @@ View your app in AI Studio: https://ai.studio/apps/f4e75b90-7b34-4f2a-8a74-240b9
 
 ## ATURAN AGEN (AGENT RULES)
 - **WAJIB DEPLOY:** Jika ada perubahan kode yang sudah final/selesai dikerjakan, Anda **WAJIB** melakukan commit dan push ke GitHub (yang akan men-*trigger* deploy) sebelum mengakhiri sesi. Jangan biarkan perubahan kode belum di-*push*!
+
+## 🚀 Migrasi Akun Supabase (Bypass Limit Egress)
+- **Halaman Setup Web App:** Akses menu `Sidebar -> Alat & Utilitas -> Migrasi Supabase` (Khusus Superadmin).
+- **Master Schema DDL:** File [supabase_full_schema.sql](public/supabase_full_schema.sql) berisi DDL lengkap 18 tabel, index, views saldo fisik, RLS, & realtime.
+- **Script CLI:** Jalankan `node tools/migrate-supabase.cjs` untuk kloning data via terminal.
+- **Dokumentasi Lengkap:** Baca panduan di [docs/PANDUAN_MIGRASI_SUPABASE.md](docs/PANDUAN_MIGRASI_SUPABASE.md).
