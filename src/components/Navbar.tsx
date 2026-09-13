@@ -170,14 +170,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isRealtimeConnected ? (
             <>
               <div className="w-2 h-2 rounded-full bg-primary-500 shadow-[0_0_8px_var(--theme-500)]"></div>
-              <span className="text-[10px] uppercase tracking-wider font-extrabold text-primary-500">
+              <span className="text-[10px] uppercase font-extrabold text-primary-500 pr-0.5">
                 Live
               </span>
             </>
           ) : (
             <>
               <WifiOff className="w-3 h-3 text-amber-500" />
-              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+              <span className="text-[10px] uppercase font-bold text-slate-400 pr-0.5">
                 Sync
               </span>
             </>

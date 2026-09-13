@@ -180,7 +180,7 @@ const StatusBadge = ({ status }: { status: string }) => {
     SELESAI: 'bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400 border border-teal-300 dark:border-teal-800',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${styles[status] || 'bg-slate-100 text-slate-600'}`}>
+    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${styles[status] || 'bg-slate-100 text-slate-600'}`}>
       {status}
     </span>
   );
@@ -1514,7 +1514,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
 
             {/* BULK ACTIONS (ADMIN ONLY) */}
             {userIsAdmin && filteredRecords.length > 0 && (
-              <div className="flex items-center justify-between gap-4 px-3 py-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <input
                     type="checkbox"
@@ -1537,13 +1537,13 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     {selectedRecords.size > 0 ? `${selectedRecords.size} Dipilih` : 'Pilih Semua'}
                   </span>
                 </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Ubah Status Terpilih:</span>
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto justify-end">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase hidden sm:inline-block mr-1">Ubah Status:</span>
                   <button
                     type="button"
                     onClick={() => handleBulkUpdateStatus('pending')}
                     disabled={isBulkUpdating || selectedRecords.size === 0}
-                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-blue-200 dark:border-blue-800/50"
+                    className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-blue-200 dark:border-blue-800/50"
                   >
                     {isBulkUpdating && bulkStatusAction === 'pending' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Edit3 className="w-3 h-3" />}
                     PENDING
@@ -1552,7 +1552,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     type="button"
                     onClick={() => handleBulkUpdateStatus('selesai')}
                     disabled={isBulkUpdating || selectedRecords.size === 0}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-800/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-200 dark:border-emerald-800/50"
+                    className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-800/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-200 dark:border-emerald-800/50"
                   >
                     {isBulkUpdating && bulkStatusAction === 'selesai' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
                     SELESAI
@@ -1586,10 +1586,10 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     >
                       {/* ROW HEADER */}
                       <div
-                        className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                        className="flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         {userIsAdmin && (
-                          <div className="shrink-0 flex items-center pr-1" onClick={(e) => e.stopPropagation()}>
+                          <div className="shrink-0 flex items-start pt-1 pr-1" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={selectedRecords.has(rec.id)}
@@ -1604,7 +1604,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                           </div>
                         )}
                         <div 
-                          className="shrink-0 cursor-pointer"
+                          className="shrink-0 cursor-pointer pt-2"
                           onClick={() => {
                             if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
                           }}
@@ -1616,47 +1616,54 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                         </div>
 
                         <div 
-                          className="flex-1 min-w-0 cursor-pointer"
+                          className="flex-1 min-w-0 cursor-pointer flex flex-col gap-1.5"
                           onClick={() => {
                             if (!isEditing) setExpandedRow(isExpanded ? null : rec.id);
                           }}
                         >
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-slate-800 dark:text-white font-mono">{rec.no_sj}</span>
-                            <StatusBadge status={rec.status_komparasi} />
-                            {rec.status === 'pending' && (
-                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
-                                PENDING
-                              </span>
-                            )}
-                            {rec.sync_status === 'pending_sync' && (
-                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                                <CloudOff className="w-2.5 h-2.5" />
-                                Menunggu Sync (Offline)
-                              </span>
-                            )}
+                          {/* ROW 1: NO SJ & BADGES */}
+                          <div className="flex items-start justify-between gap-1.5 flex-wrap sm:flex-nowrap">
+                            <span className="text-[13px] sm:text-sm font-black text-slate-800 dark:text-white font-mono shrink-0">{rec.no_sj}</span>
+                            <div className="flex gap-1 flex-wrap justify-end">
+                              <StatusBadge status={rec.status_komparasi} />
+                              {rec.status === 'pending' && (
+                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                                  PENDING
+                                </span>
+                              )}
+                              {rec.sync_status === 'pending_sync' && (
+                                <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400 border border-amber-300 dark:border-amber-700 gap-1">
+                                  <CloudOff className="w-2.5 h-2.5" />
+                                  Offline
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              {rec.source || 'Gudang'} → {rec.destination || 'Outlet Tujuan'}
-                            </span>
-                            <span>·</span>
-                            <span>{rec.tanggal_sj}</span>
-                            <span>·</span>
-                            <span>Pemeriksa: {rec.submitted_by}</span>
+                          
+                          {/* ROW 2: SOURCE->DEST & QTY */}
+                          <div className="flex items-start justify-between gap-2 mt-0.5">
+                            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 leading-snug line-clamp-2">
+                              {rec.source || 'Gudang'} <span className="mx-1 text-slate-400 dark:text-slate-600">→</span> {rec.destination || 'Outlet Tujuan'}
+                            </div>
+                            <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200 shrink-0 text-right">
+                              {rec.total_qty_terima} / {rec.total_qty_sj} pcs
+                            </div>
+                          </div>
+
+                          {/* ROW 3: DATE/ADMIN & SKU */}
+                          <div className="flex items-center justify-between gap-2 mt-0.5">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 min-w-0">
+                              <span className="shrink-0">{rec.tanggal_sj}</span>
+                              <span className="text-slate-300 dark:text-slate-600 shrink-0">·</span>
+                              <span className="truncate">Admin: {rec.submitted_by}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 shrink-0 text-right">
+                              {rec.total_sku || rec.items?.length || 0} SKU <span className="hidden sm:inline">· terima / SJ</span>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                            {rec.total_qty_terima} / {rec.total_qty_sj} pcs
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {rec.total_sku || rec.items?.length || 0} SKU · terima / SJ
-                          </div>
-                        </div>
-
-                        <div className="shrink-0 text-slate-400">
+                        <div className="shrink-0 text-slate-400 pt-0.5">
                           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </div>
                       </div>

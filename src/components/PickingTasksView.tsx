@@ -2901,7 +2901,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             </button>
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-end gap-3">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -2918,7 +2918,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
             {/* Multiple Actions */}
             {selectedSJs.length > 0 && (
-              <div className="flex items-center gap-1.5 ml-auto">
+              <div className="flex items-center gap-1.5 flex-wrap sm:ml-auto">
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                   {selectedSJs.length} Terpilih
                 </span>
@@ -2926,7 +2926,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   type="button"
                   onClick={handleMarkCompleteSelected}
                   disabled={isBulkActionRunning}
-                  className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                  className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" /> Selesaikan
                 </button>
@@ -2934,7 +2934,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   type="button"
                   onClick={handleDeleteSelected}
                   disabled={isBulkActionRunning}
-                  className="px-3 py-1.5 bg-primary-100 hover:bg-primary-200 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                  className="flex-1 sm:flex-none justify-center px-3 py-1.5 bg-primary-100 hover:bg-primary-200 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400 font-extrabold text-[10px] uppercase rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Hapus
                 </button>
