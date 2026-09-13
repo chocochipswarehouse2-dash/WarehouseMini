@@ -1,6 +1,33 @@
 import { getStoredGasEndpoint } from './settings';
 import { getLocalDbMeta, setLocalDbMeta } from './localDb';
 
+/** Cache key for a given sheet — matches what fetchWithDeltaSync uses internally */
+export function getDeltaSyncCacheKey(sheetName: string) {
+  return `gas_delta_sync_${sheetName}`;
+}
+
+/**
+ * Reset delta sync cache for ONE sheet.
+ * Next fetch will do a full pull (no `since` filter).
+ */
+export async function clearDeltaSyncCache(sheetName: string): Promise<void> {
+  await setLocalDbMeta(getDeltaSyncCacheKey(sheetName), null);
+}
+
+/**
+ * Reset delta sync cache for ALL sheets.
+ */
+export async function clearAllDeltaSyncCaches(): Promise<void> {
+  const sheets = [
+    'Mutasi Log', 'Stok Opname Queue', 'Stok Real',
+    'Manual Shipment', 'Tarikan MD', 'Data Alamat',
+    'master_produk', 'picking_list'
+  ];
+  for (const s of sheets) {
+    await setLocalDbMeta(getDeltaSyncCacheKey(s), null);
+  }
+}
+
 export interface GasSyncResponse<T> {
   status: 'success' | 'error';
   data: T[];
@@ -67,7 +94,8 @@ export async function fetchWithDeltaSync<T>(
   const cacheKey = `gas_delta_sync_${sheetName}`;
   const cached = await getLocalDbMeta<GasCacheData<T>>(cacheKey);
   
-  const since = cached?.timestamp || 0;
+  // If cache was explicitly cleared (set to null), treat as fresh fetch
+  const since = (cached && cached.timestamp) ? cached.timestamp : 0;
   
   // Call GAS API with `since`
   const res = await fetchDataFromGAS<T>(sheetName, since);

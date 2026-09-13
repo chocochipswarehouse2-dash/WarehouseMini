@@ -43,7 +43,7 @@ import {
   getAreaFromLokasi,
   supabaseFetch,
 } from '../services/supabase';
-import { fetchWithDeltaSync } from '../services/gasSync';
+import { fetchWithDeltaSync, clearDeltaSyncCache } from '../services/gasSync';
 import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
@@ -168,6 +168,30 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       console.error('Error loading logs:', e);
       setFetchError(e.message || 'Gagal memuat log mutasi dari Google Sheet');
       if (onNotify) onNotify('Gagal memuat mutasi log.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Force full reload: reset delta sync cache so ALL data is fetched fresh
+   * regardless of timestamps. Use this after manual backfill / sheet import.
+   */
+  const forceReloadLogs = async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      await clearDeltaSyncCache('Mutasi Log');
+      const data = await fetchWithDeltaSync<LogProdukItem>('Mutasi Log');
+      const unique = Array.from(
+        new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
+      );
+      setLogs(unique);
+      if (onNotify) onNotify(`Muat ulang penuh selesai — ${unique.length} baris dimuat.`, 'success');
+    } catch (e: any) {
+      console.error('Error force reloading logs:', e);
+      setFetchError(e.message || 'Gagal memuat ulang penuh');
+      if (onNotify) onNotify('Gagal muat ulang penuh.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -645,9 +669,22 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               disabled={isLoading}
               onClick={loadLogs}
               className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              title="Refresh delta (hanya data baru)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span className="hidden xs:inline">Refresh Data</span>
+            </button>
+
+            <button
+              id="btnForceReloadMutasiLogs"
+              type="button"
+              disabled={isLoading}
+              onClick={forceReloadLogs}
+              className="px-3.5 py-2 text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-800/60 text-amber-700 dark:text-amber-300 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden xs:inline">Muat Ulang Penuh</span>
             </button>
 
             {canExportData && (
