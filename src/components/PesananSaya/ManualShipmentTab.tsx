@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft
 } from 'lucide-react';
-import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../types';
-import { hasPermission, isSuperadmin } from '../services/permissions';
-import { PhysicalScanInput } from './PhysicalScanInput';
+import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../../types';
+import { hasPermission, isSuperadmin } from '../../services/permissions';
+import { PhysicalScanInput } from '../PhysicalScanInput';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -14,8 +14,8 @@ import {
   deleteManualShipment,
   fetchJasaKirimList,
   editManualShipment,
-} from '../services/gasManualShipment';
-import { clearDeltaSyncCache } from '../services/gasSync';
+} from '../../services/gasManualShipment';
+import { clearDeltaSyncCache } from '../../services/gasSync';
 import QRCode from 'qrcode';
 import {
   generateCustomerTransactionNumber,
@@ -23,8 +23,8 @@ import {
   isTransactionNumberUnique,
   getStoreCode,
   generateShortOrderId,
-} from '../utils/transactionGenerator';
-import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
+} from '../../utils/transactionGenerator';
+import { getUserPersonName, formatOperatorWithPersonName } from '../../utils/userResolver';
 
 interface ManualShipmentViewProps {
   session: UserSession | null;
@@ -32,7 +32,7 @@ interface ManualShipmentViewProps {
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
+export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   session,
   productCatalog,
   onShowToast,

@@ -99,8 +99,7 @@ const LemburCutiView = lazyWithRetry(() => import('./components/hr/LemburCutiVie
 const HrApprovalView = lazyWithRetry(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
 const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
-const ManualShipmentView = lazyWithRetry(() => import('./components/ManualShipmentView').then(m => ({ default: m.ManualShipmentView })));
-const TarikanMDView = lazyWithRetry(() => import('./components/TarikanMDView').then(m => ({ default: m.TarikanMDView })));
+const PesananSayaView = lazyWithRetry(() => import('./components/PesananSaya/PesananSayaView').then(m => ({ default: m.PesananSayaView })));
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
 
 import {
@@ -263,7 +262,7 @@ export default function App() {
       safePreload(() => import('./components/hr/LemburCutiView'));
       safePreload(() => import('./components/hr/HrApprovalView'));
       safePreload(() => import('./components/hr/HrRekapView'));
-      safePreload(() => import('./components/ManualShipmentView'));
+      safePreload(() => import('./components/PesananSaya/PesananSayaView'));
     }, 2500);
 
     const syncSessionPermissions = async () => {
@@ -1455,16 +1454,8 @@ export default function App() {
                   />
               )}
 
-              {activePage === 'manual_shipment' && (
-                  <ManualShipmentView
-                    session={session}
-                    productCatalog={productDatabase}
-                    onShowToast={showToast}
-                  />
-              )}
-
-              {activePage === 'tarikan_md' && (
-                  <TarikanMDView
+              {activePage === 'pesanan_saya' && (
+                  <PesananSayaView
                     session={session}
                     productCatalog={productDatabase}
                     onShowToast={showToast}

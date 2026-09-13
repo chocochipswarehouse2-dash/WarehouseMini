@@ -198,20 +198,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       access: canPerbaikan,
     },
     {
-      id: 'manual_shipment' as ActivePage,
-      label: 'Manual Shipment',
-      shortLabel: 'Shipment',
+      id: 'pesanan_saya' as ActivePage,
+      label: 'Pesanan Saya',
+      shortLabel: 'Pesanan',
       icon: Package,
-      description: 'Pengiriman manual & rekap',
-      access: canManualShipment,
-    },
-    {
-      id: 'tarikan_md' as ActivePage,
-      label: 'Pengecekan Surat Jalan',
-      shortLabel: 'Cek SJ',
-      icon: ClipboardCheck,
-      description: 'Pengecekan penerimaan vs SJ',
-      access: canTarikanMD,
+      description: 'Manajemen semua pesanan',
+      access: canManualShipment || canTarikanMD,
     },
   ].filter((item) => item.access);
 

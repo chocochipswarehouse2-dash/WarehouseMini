@@ -24,6 +24,7 @@ export type ActivePage =
   | 'hr_approval'
   | 'hr_rekap'
   | 'cetak_label'
+  | 'pesanan_saya'
   | 'manual_shipment'
   | 'tarikan_md'
   | 'roadmap'
@@ -685,6 +686,7 @@ export interface PengecekanSJDraft {
   source: string;
   destination: string;
   tanggal_sj: string;
+  tipe_import?: 'Penerimaan' | 'Pengiriman';
   file_name?: string;
   items: TarikanMDItem[];
   scanQty: Record<string, number>;
@@ -702,6 +704,7 @@ export interface PengecekanSJRecord {
   source: string;
   destination: string;
   tanggal_sj: string;
+  tipe_import?: 'Penerimaan' | 'Pengiriman';
   status: 'pending' | 'selesai';
   status_komparasi: 'COCOK' | 'SELISIH';
   total_qty_sj: number;

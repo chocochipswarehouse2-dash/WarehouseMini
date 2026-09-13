@@ -14,9 +14,9 @@ import {
   PengecekanSJItem,
   PengecekanSJDraft,
   PengecekanSJRecord,
-} from '../types';
-import { isSuperadmin, hasPermission } from '../services/permissions';
-import { PhysicalScanInput } from './PhysicalScanInput';
+} from '../../types';
+import { isSuperadmin, hasPermission } from '../../services/permissions';
+import { PhysicalScanInput } from '../PhysicalScanInput';
 import {
   fetchTarikanMDRecords,
   submitTarikanMD,
@@ -28,9 +28,9 @@ import {
   exportPengecekanToCsv,
   getPendingOfflinePengecekanSJ,
   syncPendingOfflinePengecekanSJ,
-} from '../services/gasTarikanMD';
-import { fetchWithDeltaSync, clearDeltaSyncCache } from '../services/gasSync';
-import { playSuccessBeep, playErrorBeep } from '../services/audio';
+} from '../../services/gasTarikanMD';
+import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
+import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 
 interface TarikanMDViewProps {
   session: UserSession | null;
@@ -190,7 +190,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 // ==========================================
 // MAIN COMPONENT: PENGECEKAN SURAT JALAN
 // ==========================================
-export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
+export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   session,
   productCatalog = [],
   onShowToast,
@@ -200,6 +200,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
 
   // ---- TABS ----
   const [activeTab, setActiveTab] = useState<'pengecekan' | 'riwayat'>('pengecekan');
+  const [importType, setImportType] = useState<'Penerimaan' | 'Pengiriman'>('Penerimaan');
 
   // ---- DRAFT QUEUE (ANTREAN PENGECEKAN) ----
   const [drafts, setDrafts] = useState<PengecekanSJDraft[]>(() => loadSJDrafts());
@@ -359,6 +360,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
             source: g.source,
             destination: g.destination,
             tanggal_sj: g.tanggal_sj,
+            tipe_import: importType,
             file_name: file.name,
             items: g.items,
             scanQty: existing ? existing.scanQty : {},
@@ -392,7 +394,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
     }
 
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [drafts, onShowToast]);
+  }, [drafts, onShowToast, importType]);
 
   // ==========================================
   // SCAN HANDLER & CATALOG LOOKUP
@@ -575,6 +577,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
         source: activeDraft.source,
         destination: activeDraft.destination,
         tanggal_sj: activeDraft.tanggal_sj,
+        tipe_import: activeDraft.tipe_import,
         status: submitStatus,
         status_komparasi: summary.has_selisih ? 'SELISIH' : 'COCOK',
         total_qty_sj: summary.total_sj,
@@ -592,7 +595,10 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
         if (result.offline) {
           onShowToast('Tersimpan offline di perangkat. Otomatis dikirim ke Databases saat internet kembali aktif.', 'info');
         } else {
-          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit ke Database dengan status PENDING!`, 'success');
+          const typeMsg = activeDraft.tipe_import === 'Pengiriman' 
+            ? 'Masuk ke antrean modul Picking.' 
+            : 'Menunggu antrean Putaway (Modul Putaway belum tersedia).';
+          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit! ${typeMsg}`, 'success');
         }
 
         // Hapus dari antrean draft karena scan fisik sudah selesai
@@ -1002,6 +1008,31 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                 </div>
               </div>
 
+              <div className="flex items-center gap-4 py-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="importType"
+                    value="Penerimaan"
+                    checked={importType === 'Penerimaan'}
+                    onChange={() => setImportType('Penerimaan')}
+                    className="w-4 h-4 text-primary-600 focus:ring-primary-500 border-slate-300"
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">Penerimaan (Putaway)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="importType"
+                    value="Pengiriman"
+                    checked={importType === 'Pengiriman'}
+                    onChange={() => setImportType('Pengiriman')}
+                    className="w-4 h-4 text-primary-600 focus:ring-primary-500 border-slate-300"
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">Pengiriman (Picking)</span>
+                </label>
+              </div>
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1070,6 +1101,12 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                             <span>{draft.source} → {draft.destination}</span>
                             <span className="mx-1.5">·</span>
                             <span>{draft.tanggal_sj}</span>
+                            {draft.tipe_import && (
+                              <>
+                                <span className="mx-1.5">·</span>
+                                <span className={`font-bold ${draft.tipe_import === 'Penerimaan' ? 'text-indigo-500' : 'text-emerald-500'}`}>{draft.tipe_import}</span>
+                              </>
+                            )}
                           </div>
 
                           {/* Progress */}
@@ -1158,6 +1195,12 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                         <span>Tujuan: <strong>{activeDraft.destination}</strong></span>
                         <span>·</span>
                         <span>Tanggal: <strong>{activeDraft.tanggal_sj}</strong></span>
+                        {activeDraft.tipe_import && (
+                          <>
+                            <span>·</span>
+                            <span>Tipe: <strong>{activeDraft.tipe_import}</strong></span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1654,6 +1697,15 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                           <div className="flex items-start justify-between gap-1.5 flex-wrap sm:flex-nowrap">
                             <span className="text-[13px] sm:text-sm font-black text-slate-800 dark:text-white font-mono shrink-0">{rec.no_sj}</span>
                             <div className="flex gap-1 flex-wrap justify-end">
+                              {rec.tipe_import && (
+                                <span className={`inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                  rec.tipe_import === 'Penerimaan' 
+                                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
+                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                                }`}>
+                                  {rec.tipe_import}
+                                </span>
+                              )}
                               <StatusBadge status={rec.status_komparasi} />
                               {rec.status === 'pending' && (
                                 <span className="inline-flex items-center justify-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
@@ -1942,5 +1994,5 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
 };
 
 // Export alias PengecekanSuratJalanView untuk kompatibilitas
-export const PengecekanSuratJalanView = TarikanMDView;
-export default TarikanMDView;
+export const PengecekanSuratJalanView = DistribusiStoreTab;
+export default DistribusiStoreTab;

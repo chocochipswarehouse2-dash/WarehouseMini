@@ -8,7 +8,6 @@ import {
   clearLocalDb,
 } from './localDb';
 import { fetchWithDeltaSync } from './gasSync';
-import { fetchAllStokRealFisik } from './gasStokReal';
 import {
   LogProdukItem,
   StockOpnameQueueItem,
@@ -721,7 +720,7 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
   if (cleanLocs.size === 0) return [];
 
   try {
-    const allStok = await fetchAllStokRealFisik();
+    const allStok = await fetchAllStockRealtime(50000, false);
     return allStok.filter(r => cleanLocs.has((r.lokasi || '').toUpperCase()));
   } catch (err) {
     console.warn('Error fetching realtime stock from GAS for locations:', err);
@@ -739,7 +738,7 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
     const cleanSkus = new Set(skus.map((s) => s.trim().toUpperCase()).filter(Boolean));
     if (cleanSkus.size === 0) return [];
     
-    const allStok = await fetchAllStokRealFisik();
+    const allStok = await fetchAllStockRealtime(50000, false);
     return allStok.filter(r => cleanSkus.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
   } catch (err) {
     console.warn('Error fetching realtime stock by SKUs:', err);
@@ -1348,7 +1347,8 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
   }
 
   try {
-    const allRows = await fetchAllStokRealFisik();
+    // 1. Prioritize querying from Supabase stok_real_fisik view directly.
+    const allRows = await fetchAllStockRealtime(50000, true);
     
     if (allRows && allRows.length > 0) {
       memoryStokFisikCache = allRows;
@@ -1358,7 +1358,7 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
       return allRows;
     }
   } catch (err) {
-    console.error('Error fetching direct fizik stok from GAS:', err);
+    console.error('Error fetching direct fizik stok from Supabase:', err);
   }
 
   return memoryStokFisikCache || [];
@@ -1367,15 +1367,16 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
 /**
  * Fetch all realtime stock across all locations with chunked pagination to load 100% of rows
  */
-export async function fetchAllStockRealtime(maxRows = 50000): Promise<StockRealtimeItem[]> {
-  // First try direct fetch matching GAS method
-  try {
-    const directRows = await fetchSupabaseStokFisikDirect();
-    if (directRows && directRows.length > 0) {
-      return directRows;
+export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = false): Promise<StockRealtimeItem[]> {
+  if (!skipDirectCache) {
+    try {
+      const directRows = await fetchSupabaseStokFisikDirect();
+      if (directRows && directRows.length > 0) {
+        return directRows;
+      }
+    } catch (e) {
+      console.warn('Direct fetch error, trying fallback:', e);
     }
-  } catch (e) {
-    console.warn('Direct fetch error, trying fallback:', e);
   }
 
   const dedupMap = new Map<string, StockRealtimeItem>();
@@ -2262,7 +2263,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
   const fetchStockTable = async () => {
     try {
-      const allStok = await fetchAllStokRealFisik();
+      const allStok = await fetchAllStockRealtime(50000, false);
       if (!allStok || allStok.length === 0) return;
 
       for (const r of allStok) {
@@ -2454,7 +2455,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     : '';
 
   try {
-    const viewRowsNonZero = await fetchAllStokRealFisik();
+    const viewRowsNonZero = await fetchAllStockRealtime(50000, false);
     const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
@@ -4023,7 +4024,7 @@ export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<Stoc
   if (cleanSkus.size === 0) return [];
   
   try {
-    const allStok = await fetchAllStokRealFisik();
+    const allStok = await fetchAllStockRealtime(50000, false);
     return allStok.filter(r => cleanSkus.has((r.sku || '').toUpperCase()));
   } catch (err) {
     console.error('Error in fetchSupabaseStokFisikBySkus:', err);
