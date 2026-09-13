@@ -31,6 +31,7 @@ import {
 } from '../../services/gasTarikanMD';
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
+import { DistribusiPickingModal } from './DistribusiPickingModal';
 
 interface TarikanMDViewProps {
   session: UserSession | null;
@@ -237,6 +238,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
+  const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
 
   // Inline Edit Mode untuk Admin
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -1135,6 +1137,21 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           </span>
 
                           <div className="flex items-center gap-1.5">
+                            {draft.tipe_import === 'Pengiriman' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPickingModalDraft(draft);
+                                }}
+                                className="px-2 py-1 text-[11px] font-extrabold rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                title="Format Picking (Cetak SJ, Kirim WA ke Grup, atau Kirim ke Tugas Picking App)"
+                              >
+                                <Send className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                <span>Format Picking</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1205,6 +1222,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {activeDraft.tipe_import === 'Pengiriman' && (
+                        <button
+                          type="button"
+                          onClick={() => setPickingModalDraft(activeDraft)}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                          title="Pilih format picking: Cetak Lembar Kerja, Kirim WA ke Grup, atau Kirim ke Tugas Picking App"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Format Picking Picker</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
@@ -1988,6 +2017,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             )}
           </div>
         )}
+        {/* MODAL PILIHAN FORMAT DISTRIBUSI PICKING UNTUK TIPE PENGIRIMAN */}
+        <DistribusiPickingModal
+          isOpen={Boolean(pickingModalDraft)}
+          onClose={() => setPickingModalDraft(null)}
+          draft={pickingModalDraft}
+          productCatalog={productCatalog || []}
+          session={session}
+          onNotify={onShowToast}
+          onSuccessSentToApp={(draftId) => {
+            setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, catatan: `${d.catatan || ''} [Tugas Picking App Terkirim]`.trim() } : d));
+          }}
+        />
       </div>
     </div>
   );
