@@ -70,6 +70,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const getPageInfo = () => {
     switch (activePage) {
+      case 'loading_dock':
+        return { title: 'Loading Dock', subtitle: 'Area terpadu untuk mengatur kedatangan barang dari vendor CMT, penerimaan retur, dan pengiriman barang ke customer.', icon: ArrowRightLeft };
       case 'dashboard':
         return { title: 'Dashboard', subtitle: 'Ringkasan Aktivitas Gudang', icon: BarChart3 };
       case 'penerimaan_barang':

@@ -10,6 +10,7 @@ export type ActivePage =
   | 'agenda'
   | 'scanner'
   | 'penerimaan'
+  | 'loading_dock'
   | 'picking_tasks'
   | 'peminjaman'
   | 'stock_opname'
@@ -78,20 +79,20 @@ export interface UserPermissions {
   can_packing?: boolean;
   can_pengiriman?: boolean;
   can_agenda?: boolean;
-  can_scan: boolean;
+  can_scan?: boolean;
   can_penerimaan?: boolean;
-  can_picking: boolean;
-  can_peminjaman: boolean;
-  can_view_inventory: boolean;
-  can_approve_so: boolean;
-  can_export_data: boolean;
-  can_sync_dealpos: boolean;
-  can_manage_users: boolean;
-  can_manage_settings: boolean;
-  can_edit_data: boolean;
-  can_delete_data: boolean;
-  can_view_mutasi: boolean;
-  can_import_export_data: boolean;
+  can_picking?: boolean;
+  can_peminjaman?: boolean;
+  can_view_inventory?: boolean;
+  can_approve_so?: boolean;
+  can_export_data?: boolean;
+  can_sync_dealpos?: boolean;
+  can_manage_users?: boolean;
+  can_manage_settings?: boolean;
+  can_edit_data?: boolean;
+  can_delete_data?: boolean;
+  can_view_mutasi?: boolean;
+  can_import_export_data?: boolean;
   can_view_karyawan?: boolean;
   can_view_presensi?: boolean;
   can_view_roster?: boolean;

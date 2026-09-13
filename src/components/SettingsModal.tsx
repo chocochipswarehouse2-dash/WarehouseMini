@@ -174,7 +174,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newPhone, setNewPhone] = useState<string>('');
   const [newEmail, setNewEmail] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('Operator');
-  const [newPermissions, setNewPermissions] = useState<UserPermissions>({
+  const [newPermissions, setNewPermissions] = useState<Partial<UserPermissions>>({
     ...ROLE_DEFAULT_PERMISSIONS['Operator'],
   });
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -1121,7 +1121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {PERMISSION_GROUPS.map((group) => {
-                          const groupKeys = group.permissions.map((p) => p.key);
+                          const groupKeys = group.permissions.map((p) => p.key as UserPermissionKey);
                           const isAllGroupSelected = groupKeys.every((k) => newPermissions[k]);
 
                           return (
@@ -1166,7 +1166,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       <input
                                         type="checkbox"
                                         checked={isChecked}
-                                        onChange={() => handleTogglePermission(perm.key)}
+                                        onChange={() => handleTogglePermission(perm.key as UserPermissionKey)}
                                         className="mt-0.5 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
                                       />
                                       <div className="flex-1 min-w-0">
@@ -1386,7 +1386,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {PERMISSION_GROUPS.map((group) => {
-                          const groupKeys = group.permissions.map((p) => p.key);
+                          const groupKeys = group.permissions.map((p) => p.key as UserPermissionKey);
                           const isAllGroupSelected = groupKeys.every((k) => newPermissions[k]);
 
                           return (
@@ -1431,7 +1431,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       <input
                                         type="checkbox"
                                         checked={isChecked}
-                                        onChange={() => handleTogglePermission(perm.key)}
+                                        onChange={() => handleTogglePermission(perm.key as UserPermissionKey)}
                                         className="mt-0.5 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
                                       />
                                       <div className="flex-1 min-w-0">

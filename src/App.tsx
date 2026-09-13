@@ -83,11 +83,9 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 
 // Lazy load large components with resilient retry
 const DashboardView = lazyWithRetry(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
-const PenerimaanBarangView = lazyWithRetry(() => import('./components/PenerimaanBarangView').then(m => ({ default: m.PenerimaanBarangView })));
+const LoadingDockView = lazyWithRetry(() => import('./components/LoadingDockView').then(m => ({ default: m.LoadingDockView })));
 const PackingView = lazyWithRetry(() => import('./components/PackingView').then(m => ({ default: m.PackingView })));
-const PengirimanView = lazyWithRetry(() => import('./components/PengirimanView').then(m => ({ default: m.PengirimanView })));
 const AgendaView = lazyWithRetry(() => import('./components/AgendaView').then(m => ({ default: m.AgendaView })));
-const PenerimaanProduksiView = lazyWithRetry(() => import('./components/PenerimaanProduksiView').then(m => ({ default: m.PenerimaanProduksiView })));
 const PeminjamanView = lazyWithRetry(() => import('./components/PeminjamanView').then(m => ({ default: m.PeminjamanView })));
 const QualityControlView = lazyWithRetry(() => import('./components/QualityControlView').then(m => ({ default: m.QualityControlView })));
 const PickingTasksView = lazyWithRetry(() => import('./components/PickingTasksView').then(m => ({ default: m.PickingTasksView })));
@@ -1342,20 +1340,16 @@ export default function App() {
               {activePage === 'dashboard' && (
                   <DashboardView />
               )}
-              {activePage === 'penerimaan_barang' && (
-                  <PenerimaanBarangView />
-              )}
+              
               {activePage === 'packing' && (
                   <PackingView />
               )}
-              {activePage === 'pengiriman' && (
-                  <PengirimanView />
-              )}
+              
               {activePage === 'agenda' && (
                   <AgendaView />
               )}
-              {activePage === 'penerimaan' && (
-                  <PenerimaanProduksiView
+              {activePage === 'loading_dock' && (
+                  <LoadingDockView
                     session={session}
                     productCatalog={productDatabase}
                     onShowToast={showToast}

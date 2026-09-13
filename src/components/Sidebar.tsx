@@ -105,14 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Ringkasan & Aktivitas',
       access: canViewDashboard,
     },
-    {
-      id: 'penerimaan_barang' as ActivePage,
-      label: 'Penerimaan Barang',
-      shortLabel: 'Penerimaan Barang',
-      icon: Truck,
-      description: 'Laporan Loading Dock',
-      access: canPenerimaanBarang,
-    },
+    
     {
       id: 'packing' as ActivePage,
       label: 'Packing',
@@ -121,14 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Scan SJ/Pesanan Area Packing',
       access: canPacking,
     },
-    {
-      id: 'pengiriman' as ActivePage,
-      label: 'Pengiriman',
-      shortLabel: 'Pengiriman',
-      icon: Send, // Need to add import later if missing, I will check
-      description: 'Kirim Barang & Refill Toko',
-      access: canPengiriman,
-    },
+    
     {
       id: 'agenda' as ActivePage,
       label: 'Agenda & Project',
@@ -138,12 +124,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       access: canAgenda,
     },
     {
-      id: 'penerimaan' as ActivePage,
-      label: 'Penerimaan Produksi',
-      shortLabel: 'Penerimaan',
+      id: 'loading_dock' as ActivePage,
+      label: 'Loading Dock',
+      shortLabel: 'Loading Dock',
       icon: Truck,
-      description: 'Kedatangan Lokal CMT & Kargo',
-      access: canPenerimaan,
+      description: 'Penerimaan & Pengiriman Terpadu',
+      access: canPenerimaanBarang || canPengiriman || canPenerimaan,
     },
     {
       id: 'scanner' as ActivePage,
