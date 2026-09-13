@@ -34,10 +34,7 @@ export async function fetchDataFromGAS<T>(sheetName: string, since?: string | nu
 
   try {
     const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
+      method: 'GET'
     });
 
     if (!response.ok) {
