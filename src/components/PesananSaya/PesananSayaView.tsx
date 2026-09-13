@@ -50,25 +50,20 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324]">
-      {/* Header & Tabs */}
-      <div className="shrink-0 px-4 sm:px-6 pt-5 pb-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a]">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
-            <Package className="w-5 h-5" />
+      {/* Header & Tabs Inline */}
+      <div className="shrink-0 px-2 sm:px-4 pt-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a]">
+        <div className="flex items-center overflow-x-auto no-scrollbar">
+          {/* Inline Title */}
+          <div className="hidden sm:flex items-center gap-2 pr-4 mr-2 sm:mr-4 border-r border-slate-200 dark:border-slate-700 shrink-0 sticky left-0 bg-white dark:bg-[#0f172a] z-10 py-2">
+            <div className="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+              <Package className="w-4 h-4" />
+            </div>
+            <span className="font-extrabold text-sm text-slate-900 dark:text-white">Pesanan Saya</span>
           </div>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
-              Pesanan Saya
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Pusat manajemen semua pesanan dari berbagai platform dan store
-            </p>
-          </div>
-        </div>
 
-        {/* Tab Navigation (Scrollable horizontally) */}
-        <div className="flex overflow-x-auto no-scrollbar gap-2 pb-[-1px]">
-          {tabs.map((tab) => {
+          {/* Tab Navigation */}
+          <div className="flex gap-1 sm:gap-2">
+            {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -86,6 +81,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
               </button>
             );
           })}
+          </div>
         </div>
       </div>
 
