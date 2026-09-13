@@ -19,6 +19,24 @@
  */
 function doPost(e) {
   try {
+    // 0. Intercept custom action if frontend posts directly (e.g., saveDataAlamat)
+    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
+    if (action === 'saveDataAlamat') {
+      try {
+        var p = JSON.parse(e.postData.contents);
+        if (p.data && Array.isArray(p.data)) {
+          var ss = getSpreadsheet();
+          var sh = getOrCreateSheet(ss, 'Data Alamat');
+          p.data.forEach(function(item) {
+             insertRow(sh, 'Data Alamat', item);
+          });
+          return jsonResponse({ success: true, message: 'Saved to Data Alamat' });
+        }
+      } catch(ex) {
+        return jsonResponse({ success: false, error: ex.toString() });
+      }
+    }
+
     // 1. Verifikasi secret token
     var secret = (e && e.parameter && e.parameter.secret) ? e.parameter.secret : '';
     if (secret !== WEBHOOK_SECRET) {
