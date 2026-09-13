@@ -113,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'roadmap':
         return { title: 'Roadmap & Fitur', subtitle: 'Pantau & Request Fitur', icon: Map };
       default:
-        return { title: 'WMS Chocochips', subtitle: 'Warehouse System', icon: ScanBarcode };
+        return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
     }
   };
 

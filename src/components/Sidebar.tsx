@@ -612,7 +612,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <AppLogo />
               <div>
                 <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                  WMS <span className="text-primary-500">CHOCOCHIPS</span>
+                  WMS
                 </h2>
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold mt-0.5">
                   <div
@@ -698,7 +698,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isCollapsed && (
               <div className="min-w-0">
                 <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
-                  WMS <span className="text-primary-500">CHOCOCHIPS</span>
+                  WMS
                 </h2>
                 <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-bold">
                   <div

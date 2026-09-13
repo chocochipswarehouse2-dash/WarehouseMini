@@ -33,6 +33,15 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
   } catch {}
 
   const mergedMap = new Map<string, AddressData>();
+  
+  // 1.5. Masukkan cache awal ke map agar tidak hilang saat network return array kosong
+  cached.forEach((item) => {
+    if (item.nama_penerima && item.alamat) {
+      const key = `${item.nama_penerima.trim().toLowerCase()}_${item.alamat.trim().toLowerCase()}`;
+      mergedMap.set(key, item);
+    }
+  });
+
   let hasNetworkSuccess = false;
 
   // 2. Prioritas Utama: Load langsung dari Supabase
@@ -75,21 +84,23 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
         if (result && result.success && Array.isArray(result.data)) {
           hasNetworkSuccess = true;
           result.data.forEach((row: any) => {
-            const nama = String(row.nama_penerima || row.nama || '').trim();
-            const alamat = String(row.alamat || '').trim();
+            const nama = String(row.nama_penerima || row.nama || row.nama_tujuan || row.penerima || row.Name || row.NAMA || '').trim();
+            const alamat = String(row.alamat || row.alamat_tujuan || row.alamat_penerima || row.Alamat || row.ALAMAT || '').trim();
             if (nama && alamat) {
               const key = `${nama.toLowerCase()}_${alamat.toLowerCase()}`;
               if (!mergedMap.has(key)) {
                 mergedMap.set(key, {
                   id: String(row.id || `gas_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`),
                   nama_penerima: nama,
-                  no_telp: String(row.no_telp || row.telp || '').trim(),
+                  no_telp: String(row.no_telp || row.telp || row.telepon || row.no_hp || row.phone || '').trim(),
                   alamat: alamat,
-                  keterangan: String(row.keterangan || row.deskripsi || '').trim(),
-                  jasa_kirim: String(row.jasa_kirim || row.ekspedisi || '').trim(),
+                  keterangan: String(row.keterangan || row.deskripsi || row.notes || '').trim(),
+                  jasa_kirim: String(row.jasa_kirim || row.ekspedisi || row.kurir || '').trim(),
                   created_at: String(row.created_at || row.tanggal || '').trim(),
                 });
               }
+            } else {
+              console.warn('Row GAS dilewati karena nama/alamat kosong:', row);
             }
           });
         }

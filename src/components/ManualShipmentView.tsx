@@ -73,8 +73,9 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
         window.print();
       } catch (err) {
         console.warn('Window print direct error:', err);
+        alert('Gagal memunculkan dialog cetak. Jika Anda menggunakan iframe preview, silakan buka aplikasi ini di tab baru (Open in New Tab).');
       }
-    }, 300);
+    }, 500);
     return () => clearTimeout(timer);
   }, [printPayload?.timestamp]);
 
@@ -1613,6 +1614,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   window.print();
                 } catch (err) {
                   console.error('Print error:', err);
+                  alert('Gagal memunculkan dialog cetak. Silakan buka aplikasi di Tab Baru (Open in New Tab).');
                 }
               }}
               className="px-3.5 py-1.5 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -1656,7 +1658,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     <div className="flex justify-between items-center px-3 py-2 border-b-2 border-black bg-gray-50 shrink-0">
                       <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black flex items-center gap-1.5">
                         <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-4 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                        CHOCOCHIPS
+                        
                       </div>
                       <div className="text-[13px] font-black tracking-wider uppercase text-right leading-tight text-black">
                         {order.jasa_kirim || 'PENGIRIMAN PAKET'}
@@ -1801,7 +1803,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                     <div>
                       <div className="text-lg font-black tracking-wide text-indigo-600 flex items-center gap-2">
                         <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-5 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                        CHOCOCHIPS WMS
+                        WMS
                       </div>
                       <div className="text-sm font-extrabold mt-0.5">SURAT JALAN PICKING MANUAL SHIPMENT</div>
                       <div className="text-[11px] text-slate-500 mt-1">

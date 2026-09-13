@@ -388,7 +388,16 @@ export const CetakLabelView: React.FC = () => {
       alert('Antrean label kosong!');
       return;
     }
-    window.print();
+    
+    // Tambahkan delay kecil untuk memastikan DOM render sebelum dipanggil
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch (err) {
+        console.error('Print error:', err);
+        alert('Gagal memunculkan dialog cetak. Jika Anda membukanya di dalam iframe/preview, silakan buka aplikasi di Tab Baru (Open in New Tab) untuk mencetak.');
+      }
+    }, 300);
   };
 
   // Download Template CSV untuk panduan input paket massal
@@ -1303,7 +1312,7 @@ export const CetakLabelView: React.FC = () => {
                 </div>
                 <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black flex items-center gap-1.5">
                   <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-4 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                  CHOCOCHIPS
+                  
                 </div>
               </div>
 

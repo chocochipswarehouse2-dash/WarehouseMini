@@ -89,8 +89,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
           <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center justify-center gap-1.5">
             <span className="text-primary-500">WMS</span>
-            <span className="text-slate-300 dark:text-slate-700 font-normal">&bull;</span>
-            <span>CHOCOCHIPS</span>
+            
+            
           </h2>
           <p className="text-slate-500 dark:text-slate-400 text-[11px] font-bold tracking-wider mt-1 uppercase">
             Multi-Role Smart Warehouse System

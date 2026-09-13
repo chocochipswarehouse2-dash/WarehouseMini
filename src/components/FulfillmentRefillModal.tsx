@@ -535,7 +535,7 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
             <div>
               <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: var(--theme-500); display: flex; align-items: center; gap: 8px;">
                 <img src="/logo.png" alt="" referrerPolicy="no-referrer" style="height: 20px; object-fit: contain;" onerror="this.style.display='none'" />
-                CHOCOCHIPS WMS
+                WMS
               </div>
               <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING REFILL</div>
               <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${g.date}</b> • Dicetak oleh: <b>${currentUser}</b></div>
