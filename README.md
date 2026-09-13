@@ -18,3 +18,6 @@ View your app in AI Studio: https://ai.studio/apps/f4e75b90-7b34-4f2a-8a74-240b9
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## ATURAN AGEN (AGENT RULES)
+- **WAJIB DEPLOY:** Jika ada perubahan kode yang sudah final/selesai dikerjakan, Anda **WAJIB** melakukan commit dan push ke GitHub (yang akan men-*trigger* deploy) sebelum mengakhiri sesi. Jangan biarkan perubahan kode belum di-*push*!
