@@ -282,7 +282,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     try {
       // 1. Fetch physical stock rows from Supabase view_stok_realtime (Direct GAS Method)
       // Call with isManualRefresh to allow using cache from supabase.ts if not manually refreshed
-      const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh);
+      const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh || forceNetwork);
       if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
         globalInventoryStockCache = realtimeData;
         globalInventoryLastFetch = Date.now();

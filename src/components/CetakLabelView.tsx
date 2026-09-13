@@ -1301,7 +1301,8 @@ export const CetakLabelView: React.FC = () => {
                 <div className="text-sm font-black tracking-wider uppercase leading-none text-black">
                   {lbl.ekspedisi || 'PENGIRIMAN PAKET'}
                 </div>
-                <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black">
+                <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black flex items-center gap-1.5">
+                  <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-4 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
                   CHOCOCHIPS
                 </div>
               </div>

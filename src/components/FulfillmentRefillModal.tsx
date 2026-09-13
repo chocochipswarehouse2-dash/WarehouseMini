@@ -533,7 +533,10 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         <div style="page-break-after: always; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; max-width: 800px; margin: 0 auto;">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
             <div>
-              <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: var(--theme-500);">CHOCOCHIPS WMS</div>
+              <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.5px; color: var(--theme-500); display: flex; align-items: center; gap: 8px;">
+                <img src="/logo.png" alt="" referrerPolicy="no-referrer" style="height: 20px; object-fit: contain;" onerror="this.style.display='none'" />
+                CHOCOCHIPS WMS
+              </div>
               <div style="font-size: 14px; font-weight: 800; margin-top: 2px;">SURAT JALAN PICKING REFILL</div>
               <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Tanggal: <b>${g.date}</b> • Dicetak oleh: <b>${currentUser}</b></div>
             </div>

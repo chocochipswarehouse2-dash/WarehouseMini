@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AppLogo } from './Logo';
 import {
   User,
   Lock,
@@ -84,9 +85,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         {/* Header Style (Orange Brand Accent) */}
         <div className="pt-7 pb-3 text-center px-6 relative">
           <div className="flex justify-center mb-2.5">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-[#ff9e40] text-white flex items-center justify-center font-extrabold text-xl shadow-[0_4px_16px_rgba(255,122,0,0.4)]">
-              W
-            </div>
+            <AppLogo size={48} />
           </div>
           <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center justify-center gap-1.5">
             <span className="text-primary-500">WMS</span>

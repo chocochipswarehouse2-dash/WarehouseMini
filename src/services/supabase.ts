@@ -2316,36 +2316,38 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
   const productsMap = new Map<string, ProductItem>();
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
 
-  // 2. Load from localStorage cache first for instant 0ms fallback
-  try {
-    const rawProdCache = localStorage.getItem('wms_product_cache');
-    if (rawProdCache) {
-      const parsed = JSON.parse(rawProdCache);
-      if (Array.isArray(parsed)) {
-        for (const r of parsed) {
-          const item = extractProductFromRow(r);
-          if (item && item.k && !isDummyProduct(item)) {
-            productsMap.set(item.k.toUpperCase(), item);
-          }
-        }
-      }
-    }
-    const rawInvCache = localStorage.getItem('wms_cache_inventory_v38');
-    if (rawInvCache) {
-      const parsed = JSON.parse(rawInvCache);
-      if (Array.isArray(parsed)) {
-        for (const r of parsed) {
-          const item = extractProductFromRow(r);
-          if (item && item.k && !isDummyProduct(item)) {
-            if (!productsMap.has(item.k.toUpperCase())) {
+  // 2. Load from localStorage cache first for instant 0ms fallback (ONLY if not force refresh)
+  if (!forceRefresh) {
+    try {
+      const rawProdCache = localStorage.getItem('wms_product_cache');
+      if (rawProdCache) {
+        const parsed = JSON.parse(rawProdCache);
+        if (Array.isArray(parsed)) {
+          for (const r of parsed) {
+            const item = extractProductFromRow(r);
+            if (item && item.k && !isDummyProduct(item)) {
               productsMap.set(item.k.toUpperCase(), item);
             }
           }
         }
       }
+      const rawInvCache = localStorage.getItem('wms_cache_inventory_v38');
+      if (rawInvCache) {
+        const parsed = JSON.parse(rawInvCache);
+        if (Array.isArray(parsed)) {
+          for (const r of parsed) {
+            const item = extractProductFromRow(r);
+            if (item && item.k && !isDummyProduct(item)) {
+              if (!productsMap.has(item.k.toUpperCase())) {
+                productsMap.set(item.k.toUpperCase(), item);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error reading product local cache:', err);
     }
-  } catch (err) {
-    console.warn('Error reading product local cache:', err);
   }
 
   // 3. Fast Parallel Fetch: fetch master_produk and view_stok_realtime concurrently with targeted column selection

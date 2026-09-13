@@ -730,7 +730,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       <body>
         <div class="header">
           <div>
-            <div class="logo-title">CHOCOCHIPS WMS</div>
+            <div class="logo-title" style="display: flex; align-items: center; gap: 8px;">
+              <img src="/logo.png" alt="Logo" referrerPolicy="no-referrer" style="height: 28px; object-fit: contain;" onerror="this.style.display='none'" />
+              <span>CHOCOCHIPS WMS</span>
+            </div>
             <div class="logo-sub">Surat Peminjaman Sementara (SPS)</div>
           </div>
           <div style="text-align:right;">

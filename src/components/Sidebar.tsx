@@ -58,6 +58,8 @@ interface SidebarProps {
   hasNewPickingAlert?: boolean;
 }
 
+import { AppLogo } from './Logo';
+
 export const Sidebar: React.FC<SidebarProps> = ({
   session,
   activePage,
@@ -133,7 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'scanner' as ActivePage,
-      label: 'Scanner Barcode',
+      label: 'Scanner',
       shortLabel: 'Scan',
       icon: ScanBarcode,
       description: 'Tembak lokasi rak & SKU',
@@ -297,7 +299,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               collapsed ? 'hidden' : 'block'
             }`}
           >
-            Operasional Inventory
+            Operasional Warehouse
           </div>
 
           {navItems.map((item) => {
@@ -607,9 +609,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Top Brand Header */}
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-[#ff9e40] rounded-xl flex items-center justify-center shadow-md shadow-primary-500/30 shrink-0">
-                <span className="text-white font-extrabold text-sm">W</span>
-              </div>
+              <AppLogo />
               <div>
                 <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
                   WMS <span className="text-primary-500">CHOCOCHIPS</span>
@@ -694,9 +694,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-[#ff9e40] rounded-xl flex items-center justify-center shadow-md shadow-primary-500/30 shrink-0">
-              <span className="text-white font-extrabold text-xs">W</span>
-            </div>
+            <AppLogo size={32} />
             {!isCollapsed && (
               <div className="min-w-0">
                 <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">

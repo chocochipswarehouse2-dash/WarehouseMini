@@ -1654,7 +1654,8 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                   <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden justify-between">
                     {/* 1. Header */}
                     <div className="flex justify-between items-center px-3 py-2 border-b-2 border-black bg-gray-50 shrink-0">
-                      <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black">
+                      <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black flex items-center gap-1.5">
+                        <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-4 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
                         CHOCOCHIPS
                       </div>
                       <div className="text-[13px] font-black tracking-wider uppercase text-right leading-tight text-black">
@@ -1798,7 +1799,10 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
                 >
                   <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
                     <div>
-                      <div className="text-lg font-black tracking-wide text-indigo-600">CHOCOCHIPS WMS</div>
+                      <div className="text-lg font-black tracking-wide text-indigo-600 flex items-center gap-2">
+                        <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-5 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                        CHOCOCHIPS WMS
+                      </div>
                       <div className="text-sm font-extrabold mt-0.5">SURAT JALAN PICKING MANUAL SHIPMENT</div>
                       <div className="text-[11px] text-slate-500 mt-1">
                         Tanggal: <b>{todayStr}</b> • Admin: <b>{session?.name || getUserPersonName(session?.username) || 'Admin'}</b>
