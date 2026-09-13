@@ -30,6 +30,7 @@ import {
   Send,
   Database,
   Printer,
+  ShieldAlert,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -123,6 +124,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Cetak Label A6', subtitle: 'Cetak Resi Pengiriman Manual', icon: Printer };
       case 'tarikan_md':
         return { title: 'Pengecekan Surat Jalan', subtitle: 'Pengecekan Penerimaan vs Surat Jalan', icon: ClipboardCheck };
+      case 'pusat_resolusi':
+        return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };
       default:
         return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
     }

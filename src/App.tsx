@@ -100,6 +100,7 @@ const HrApprovalView = lazyWithRetry(() => import('./components/hr/HrApprovalVie
 const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
 const PesananSayaView = lazyWithRetry(() => import('./components/PesananSaya/PesananSayaView').then(m => ({ default: m.PesananSayaView })));
+const PusatResolusiView = lazyWithRetry(() => import('./components/PusatResolusi/PusatResolusiView').then(m => ({ default: m.default })));
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
 
 import {
@@ -162,6 +163,7 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   pengiriman: 'pengiriman',
   penerimaan: 'penerimaan',
   manual_shipment: 'manual-shipment',
+  pusat_resolusi: 'pusat-resolusi',
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
@@ -172,6 +174,9 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'pesanan': 'pesanan_saya',
   'manual-shipment': 'pesanan_saya',
   'tarikan-md': 'pesanan_saya',
+  'pusat-resolusi': 'pusat_resolusi',
+  'resolusi': 'pusat_resolusi',
+  'cs': 'pusat_resolusi',
   'loading-dock': 'loading_dock',
   'quality-control': 'perbaikan',
   'qc': 'perbaikan',
@@ -1587,6 +1592,10 @@ export default function App() {
                     productCatalog={productDatabase}
                     onShowToast={showToast}
                   />
+              )}
+
+              {activePage === 'pusat_resolusi' && (
+                  <PusatResolusiView />
               )}
               {activePage === 'roadmap' && (
                   <RoadmapView

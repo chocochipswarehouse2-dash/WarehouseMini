@@ -33,6 +33,7 @@ import {
   Printer,
   Send,
   Map,
+  ShieldAlert,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -122,6 +123,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Package,
       description: 'Manajemen semua pesanan',
       access: canManualShipment || canTarikanMD,
+    },
+    {
+      id: 'pusat_resolusi' as ActivePage,
+      label: 'Pusat Resolusi',
+      shortLabel: 'Resolusi',
+      icon: ShieldAlert,
+      description: 'Layanan CS, Retur & Kendala',
+      access: userIsAdmin || hasPermission(session, 'can_view_resolusi'),
     },
     {
       id: 'loading_dock' as ActivePage,

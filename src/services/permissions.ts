@@ -37,6 +37,7 @@ export const canAccessPage = (session: UserSession | null, page: import('../type
     case 'manual_shipment': return hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
     case 'tarikan_md': return hasPermission(session, 'can_tarikan_md');
     case 'roadmap': return hasPermission(session, 'can_view_roadmap');
+    case 'pusat_resolusi': return hasPermission(session, 'can_view_resolusi');
     case 'supabase_migration': return isSuperadmin(session);
     default: return false;
   }
@@ -146,6 +147,7 @@ export const PERMISSION_GROUPS = [
       { key: 'can_manual_shipment_action', label: 'Manual Shipment Action', description: 'Bisa aksi Manual Shipment', isSuperadminOnly: false },
       { key: 'can_tarikan_md', label: 'Tarikan MD', description: 'Bisa akses Tarikan MD', isSuperadminOnly: false },
       { key: 'can_view_roadmap', label: 'View Roadmap', description: 'Bisa akses Roadmap', isSuperadminOnly: false },
+      { key: 'can_view_resolusi', label: 'Pusat Resolusi', description: 'Bisa akses Pusat Resolusi & Retur', isSuperadminOnly: false },
       { key: 'can_manage_settings', label: 'Manage Settings', description: 'Bisa Manage Settings', isSuperadminOnly: true }
     ]
   }

@@ -28,6 +28,7 @@ export type ActivePage =
   | 'manual_shipment'
   | 'tarikan_md'
   | 'roadmap'
+  | 'pusat_resolusi'
   | 'supabase_migration';
 
 export type UserRole =
@@ -105,6 +106,7 @@ export interface UserPermissions {
   can_manual_shipment_action?: boolean;
   can_tarikan_md?: boolean;
   can_cetak_label?: boolean;
+  can_view_resolusi?: boolean;
 }
 
 export interface WmsUser {

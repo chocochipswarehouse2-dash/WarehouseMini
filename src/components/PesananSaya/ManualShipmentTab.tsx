@@ -317,7 +317,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
           {editingOrder ? 'Edit Manual Shipment' : 'Form Manual Shipment'}
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-10">
           {/* Order ID Manual Shipment & Pilihan Jasa Kirim (Paling Atas) */}
           <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/70 rounded-xl p-4 space-y-4">
             <div className="max-w-md">
@@ -395,6 +395,101 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                   />
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Pesanan */}
+          <div>
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2 flex justify-between items-center">
+              <span>Item Pesanan</span>
+            </h3>
+
+            {/* Scan / Add Product */}
+            <div className="mb-6">
+              <PhysicalScanInput 
+                onScan={handleScanProduct}
+                products={productCatalog}
+                placeholder="KETIK SKU ATAU SCAN BARCODE"
+              />
+            </div>
+
+            <div className="space-y-6">
+              {items.length === 0 && (
+                <div className="text-center py-12 text-slate-400 dark:text-slate-500">
+                  <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
+                  <div className="font-medium text-slate-500 dark:text-slate-400 mb-1">Empty Cart</div>
+                  <div className="text-sm">Add products to the cart<br/>or scan barcode</div>
+                </div>
+              )}
+              {items.map((item) => (
+                  <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700/80 relative transition-colors">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      {/* Product Name */}
+                      <div className="md:col-span-5 flex flex-col justify-center">
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Nama Produk</label>
+                        <div className="font-semibold text-slate-800 dark:text-white text-sm">
+                          {item.nama_produk}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                          SKU: {item.sku}
+                        </div>
+                      </div>
+
+                      {/* QTY */}
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.qty ?? ''}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleItemChange(item.id, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
+                          }}
+                          onBlur={() => {
+                            if (item.qty === '' || Number(item.qty) < 1) {
+                              handleItemChange(item.id, 'qty', 1);
+                            }
+                          }}
+                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1.5 px-3 font-bold"
+                          required
+                        />
+                      </div>
+
+                      {/* Fulfillment */}
+                      <div className="md:col-span-4">
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Fulfillment</label>
+                        <select
+                          value={item.fulfillment}
+                          onChange={(e) => handleItemChange(item.id, 'fulfillment', e.target.value)}
+                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1.5 px-3"
+                          required
+                        >
+                          <option value="">Pilih Fulfillment...</option>
+                          <option value="Marketplace">Marketplace</option>
+                          {outlets.map((o, idx) => (
+                            <option key={idx} value={o.nama}>{o.nama}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Remove */}
+                      <div className="md:col-span-1 flex items-center md:items-end justify-end md:justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="p-2 rounded-lg transition-colors text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-1 text-xs font-semibold cursor-pointer"
+                          title="Hapus item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span className="md:hidden">Hapus</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              }
             </div>
           </div>
 
@@ -499,101 +594,6 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
                 />
               </div>
-            </div>
-          </div>
-
-          {/* Pesanan */}
-          <div>
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2 flex justify-between items-center">
-              <span>Item Pesanan</span>
-            </h3>
-
-            {/* Scan / Add Product */}
-            <div className="mb-6">
-              <PhysicalScanInput 
-                onScan={handleScanProduct}
-                products={productCatalog}
-                placeholder="KETIK SKU ATAU SCAN BARCODE"
-              />
-            </div>
-
-            <div className="space-y-4">
-              {items.length === 0 && (
-                <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-                  <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-                  <div className="font-medium text-slate-500 dark:text-slate-400 mb-1">Empty Cart</div>
-                  <div className="text-sm">Add products to the cart<br/>or scan barcode</div>
-                </div>
-              )}
-              {items.map((item) => (
-                  <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700/80 relative transition-colors">
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                      {/* Product Name */}
-                      <div className="md:col-span-5 flex flex-col justify-center">
-                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Nama Produk</label>
-                        <div className="font-semibold text-slate-800 dark:text-white text-sm">
-                          {item.nama_produk}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                          SKU: {item.sku}
-                        </div>
-                      </div>
-
-                      {/* QTY */}
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Qty</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.qty ?? ''}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleItemChange(item.id, 'qty', val === '' ? '' : Math.max(0, parseInt(val, 10) || 0));
-                          }}
-                          onBlur={() => {
-                            if (item.qty === '' || Number(item.qty) < 1) {
-                              handleItemChange(item.id, 'qty', 1);
-                            }
-                          }}
-                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1.5 px-3 font-bold"
-                          required
-                        />
-                      </div>
-
-                      {/* Fulfillment */}
-                      <div className="md:col-span-4">
-                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Fulfillment</label>
-                        <select
-                          value={item.fulfillment}
-                          onChange={(e) => handleItemChange(item.id, 'fulfillment', e.target.value)}
-                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1.5 px-3"
-                          required
-                        >
-                          <option value="">Pilih Fulfillment...</option>
-                          <option value="Marketplace">Marketplace</option>
-                          {outlets.map((o, idx) => (
-                            <option key={idx} value={o.nama}>{o.nama}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Remove */}
-                      <div className="md:col-span-1 flex items-center md:items-end justify-end md:justify-center">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(item.id)}
-                          className="p-2 rounded-lg transition-colors text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-1 text-xs font-semibold cursor-pointer"
-                          title="Hapus item"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span className="md:hidden">Hapus</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              }
             </div>
           </div>
 
