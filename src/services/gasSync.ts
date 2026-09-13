@@ -39,9 +39,9 @@ export async function fetchDataFromGAS<T>(sheetName: string, since?: string | nu
     let tableName = sheetName;
     if (sheetName === 'Mutasi Log') tableName = 'log_produk';
     if (sheetName === 'Stok Opname Queue') tableName = 'stock_opname_queue';
-    if (sheetName === 'Stok Real') tableName = 'stok_real';
+    if (sheetName === 'Stok Real') tableName = 'stok_real_fisik';
     if (sheetName === 'Manual Shipment') tableName = 'manual_shipment';
-    if (sheetName === 'Tarikan MD') tableName = 'tarikan_md';
+    if (sheetName === 'Tarikan MD') tableName = 'pengecekan_sj';
     if (sheetName === 'Data Alamat') tableName = 'address_book';
     
     const rows = await supabaseFetch<T[]>(tableName, 'GET', null, 'select=*&limit=2000');
