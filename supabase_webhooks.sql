@@ -111,20 +111,8 @@ EXECUTE FUNCTION supabase_functions.http_request(
   '5000'
 );
 
--- 8. Webhook untuk tabel: outlet_config
-DROP TRIGGER IF EXISTS "sync-to-gas-outlet-config" ON public.outlet_config;
-CREATE TRIGGER "sync-to-gas-outlet-config"
-AFTER INSERT OR UPDATE OR DELETE ON public.outlet_config
-FOR EACH ROW
-EXECUTE FUNCTION supabase_functions.http_request(
-  'https://script.google.com/macros/s/AKfycbyMO8rJFIrjj1xers7l2BRT7uo2RZre7yERpj-IRxFmjM_XkJjZn4B0gauI3Xm4eRVC_g/exec?secret=wms-webhook-secret-2026',
-  'POST',
-  '{"Content-type":"application/json"}',
-  '{}',
-  '5000'
-);
-
 -- ==============================================================================
--- SELESAI! Semua 8 webhook sudah aktif.
+-- SELESAI! Semua 7 webhook sudah aktif.
 -- Data akan real-time sync dari Supabase → GAS Sheet setiap ada INSERT/UPDATE/DELETE.
+-- Catatan: outlet_config belum ada sebagai tabel Supabase (data outlet dibaca dari GAS sheet langsung).
 -- ==============================================================================

@@ -28,7 +28,7 @@ import {
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
-import { fetchWithDeltaSync } from '../services/gasSync';
+import { fetchWithDeltaSync, clearDeltaSyncCache } from '../services/gasSync';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
@@ -87,6 +87,29 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       console.error('Error loading SO data:', e);
       setFetchError(e.message || 'Gagal memuat antrean Stock Opname dari Google Sheet');
       if (onNotify) onNotify('Gagal memuat data Stock Opname.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Force full reload: reset delta sync cache so ALL data is fetched fresh
+   * regardless of timestamps. Use this after manual backfill / sheet import.
+   */
+  const forceReloadSoData = async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      await clearDeltaSyncCache('Stok Opname Queue');
+      const data = await fetchWithDeltaSync<StockOpnameQueueItem>('Stok Opname Queue');
+      const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
+      setSoQueue(unique);
+      setSelectedSoIds([]);
+      if (onNotify) onNotify(`Muat ulang penuh selesai — ${unique.length} baris dimuat.`, 'success');
+    } catch (e: any) {
+      console.error('Error force reloading SO data:', e);
+      setFetchError(e.message || 'Gagal memuat ulang penuh');
+      if (onNotify) onNotify('Gagal muat ulang penuh.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -459,6 +482,18 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span>Refresh Antrean</span>
+            </button>
+
+            <button
+              id="btnForceReloadSoQueue"
+              type="button"
+              disabled={isLoading}
+              onClick={forceReloadSoData}
+              className="px-3.5 py-2 text-xs font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-800/60 text-amber-700 dark:text-amber-300 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden xs:inline">Muat Ulang Penuh</span>
             </button>
 
             <button

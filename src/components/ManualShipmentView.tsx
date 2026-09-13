@@ -15,6 +15,7 @@ import {
   fetchJasaKirimList,
   editManualShipment,
 } from '../services/gasManualShipment';
+import { clearDeltaSyncCache } from '../services/gasSync';
 import QRCode from 'qrcode';
 import {
   generateCustomerTransactionNumber,
@@ -152,6 +153,24 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       });
     } catch (e) {
       console.warn('Error in loadOrders:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Force full reload: reset delta sync cache so ALL data is fetched fresh
+   */
+  const forceReloadOrders = async () => {
+    setLoading(true);
+    try {
+      await clearDeltaSyncCache('Manual Shipment');
+      localStorage.removeItem('wms_cached_manual_shipments'); // Also clear localStorage cache
+      await loadOrders();
+      if (onShowToast) onShowToast('Muat ulang penuh selesai.', 'success');
+    } catch (e) {
+      console.warn('Error in forceReloadOrders:', e);
+      if (onShowToast) onShowToast('Gagal muat ulang penuh.', 'error');
     } finally {
       setLoading(false);
     }
@@ -1083,10 +1102,19 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
             </button>
             <button
               onClick={loadOrders}
-              className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xs transition-colors cursor-pointer"
-              title="Refresh Data"
+              className="px-2.5 py-1.5 flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xs transition-colors cursor-pointer text-xs font-semibold"
+              title="Refresh delta (hanya data baru)"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              onClick={forceReloadOrders}
+              className="px-2.5 py-1.5 flex items-center gap-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/60 rounded-lg shadow-xs transition-colors cursor-pointer text-xs font-semibold"
+              title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Muat Ulang Penuh</span>
             </button>
             
             <div className="flex border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-xs">

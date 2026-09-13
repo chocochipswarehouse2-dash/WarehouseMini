@@ -29,6 +29,7 @@ import {
   getPendingOfflinePengecekanSJ,
   syncPendingOfflinePengecekanSJ,
 } from '../services/gasTarikanMD';
+import { fetchWithDeltaSync, clearDeltaSyncCache } from '../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../services/audio';
 
 interface TarikanMDViewProps {
@@ -628,6 +629,23 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
       setRecords(sorted);
     } catch {
       onShowToast('Gagal memuat riwayat pengecekan.', 'error');
+    } finally {
+      setLoadingRecords(false);
+    }
+  };
+
+  /**
+   * Force full reload: reset delta sync cache so ALL data is fetched fresh
+   */
+  const forceReloadRecords = async () => {
+    setLoadingRecords(true);
+    try {
+      await clearDeltaSyncCache('Tarikan MD');
+      localStorage.removeItem('wms_cached_tarikanmd'); // Clear if any local cache exists
+      await loadRecords();
+      onShowToast('Muat ulang penuh selesai.', 'success');
+    } catch {
+      onShowToast('Gagal memuat ulang penuh.', 'error');
     } finally {
       setLoadingRecords(false);
     }
@@ -1504,10 +1522,21 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                 <button
                   type="button"
                   onClick={loadRecords}
-                  className="p-2 text-slate-400 hover:text-primary-500 hover:bg-primary-500/10 rounded-xl transition-all cursor-pointer ml-1"
-                  title="Refresh Data"
+                  className="px-2 py-1.5 flex items-center gap-1 text-slate-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-all cursor-pointer ml-1 text-xs font-medium"
+                  title="Refresh delta (hanya data baru)"
                 >
-                  <RefreshCw className={`w-4 h-4 ${loadingRecords ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={forceReloadRecords}
+                  className="px-2 py-1.5 flex items-center gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/20 rounded-lg transition-all cursor-pointer text-xs font-medium"
+                  title="Muat ulang SEMUA data dari awal (reset cache lokal)"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRecords ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Muat Ulang Penuh</span>
                 </button>
               </div>
             </div>
