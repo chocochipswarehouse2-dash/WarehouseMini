@@ -86,7 +86,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
   const [telpPengirim, setTelpPengirim] = useState('');
   const [transPengirim, setTransPengirim] = useState('');
   
-  // Pilihan Jasa Kirim (Sheet outlet kolom C row 2)
+  // Pilihan Jasa Kirim (Database outlet kolom C row 2)
   const [jasaKirim, setJasaKirim] = useState('');
   const [customJasaKirim, setCustomJasaKirim] = useState('');
   const [isCustomJasaKirim, setIsCustomJasaKirim] = useState(false);
@@ -1061,7 +1061,7 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       }
     });
 
-    // Tambahkan UTF-8 BOM (\uFEFF) agar terbaca sempurna di Microsoft Excel dan Google Sheets
+    // Tambahkan UTF-8 BOM (\uFEFF) agar terbaca sempurna di Microsoft Excel dan Google Databases
     const csvContent = '\uFEFF' + [headers.map(escapeCsv).join(','), ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');

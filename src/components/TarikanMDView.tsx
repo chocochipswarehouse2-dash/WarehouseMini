@@ -253,7 +253,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
       // Begitu internet pulih, coba sinkronisasi otomatis
       syncPendingOfflinePengecekanSJ().then((res) => {
         if (res.successCount > 0) {
-          onShowToast(`Koneksi internet pulih: ${res.successCount} hasil pengecekan berhasil disinkronkan ke Sheet!`, 'success');
+          onShowToast(`Koneksi internet pulih: ${res.successCount} hasil pengecekan berhasil disinkronkan ke Database!`, 'success');
           loadRecords();
         }
         setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
@@ -282,10 +282,10 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
     try {
       const res = await syncPendingOfflinePengecekanSJ();
       if (res.successCount > 0) {
-        onShowToast(`Berhasil menyinkronkan ${res.successCount} data surat jalan ke Google Sheets!`, 'success');
+        onShowToast(`Berhasil menyinkronkan ${res.successCount} data surat jalan ke Databases!`, 'success');
         loadRecords();
       } else if (res.remainingCount > 0) {
-        onShowToast('Gagal menghubungi Google Sheets. Coba sesaat lagi.', 'warning');
+        onShowToast('Gagal menghubungi Google Databases. Coba sesaat lagi.', 'warning');
       } else {
         onShowToast('Semua data pengecekan sudah tersinkronisasi!', 'info');
       }
@@ -590,9 +590,9 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
       const result = await submitTarikanMD(record);
       if (result.success) {
         if (result.offline) {
-          onShowToast(result.message || 'Tersimpan offline di perangkat. Otomatis dikirim ke Google Sheets saat internet kembali aktif.', 'info');
+          onShowToast(result.message || 'Tersimpan offline di perangkat. Otomatis dikirim ke Databases saat internet kembali aktif.', 'info');
         } else {
-          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit ke Sheet dengan status PENDING!`, 'success');
+          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit ke Database dengan status PENDING!`, 'success');
         }
 
         // Hapus dari antrean draft karena scan fisik sudah selesai
@@ -923,7 +923,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
             <div className="flex items-center gap-2.5">
               <CloudOff className="w-4 h-4 shrink-0 text-blue-500" />
               <span>
-                <strong>{pendingOfflineCount} Surat Jalan</strong> telah selesai dicek secara offline dan menunggu dikirim ke Google Sheets.
+                <strong>{pendingOfflineCount} Surat Jalan</strong> telah selesai dicek secara offline dan menunggu dikirim ke Databases.
               </span>
             </div>
             <button
@@ -1395,7 +1395,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                   />
                 </div>
 
-                {/* SUBMIT KE GOOGLE SHEET (STATUS PENDING) */}
+                {/* SUBMIT ke Database (STATUS PENDING) */}
                 <div className={`rounded-2xl border-2 p-4 ${
                   summary.has_selisih
                     ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800'
@@ -1452,9 +1452,9 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
                     className="w-full py-3.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all shadow-md shadow-primary-500/20 cursor-pointer"
                   >
                     {submitting ? (
-                      <><RefreshCw className="w-4 h-4 animate-spin" /> Menyimpan ke Sheet...</>
+                      <><RefreshCw className="w-4 h-4 animate-spin" /> Menyimpan ke Database...</>
                     ) : (
-                      <><Send className="w-4 h-4" /> Submit Pengecekan ke Sheet</>
+                      <><Send className="w-4 h-4" /> Submit Pengecekan ke Database</>
                     )}
                   </button>
                 </div>

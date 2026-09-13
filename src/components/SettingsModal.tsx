@@ -220,18 +220,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       // Load unified WMS settings from Supabase (shared across all users)
       fetchWmsSettings(true).then((settings) => {
         if (settings) {
-          if (settings.gas_endpoint !== undefined) {
-            setGasEndpoint(settings.gas_endpoint);
-          }
-          if (settings.manual_shipment_gas_url) {
-            setManualShipmentGasUrl(settings.manual_shipment_gas_url);
-          }
+          
+          
           if (settings.gdrive_folder_url) {
             setGdriveFolderUrl(settings.gdrive_folder_url);
           }
-          if (settings.gdrive_gas_url) {
-            setGdriveGasUrl(settings.gdrive_gas_url);
-          }
+          
           if (settings.fonnte_token !== undefined) {
             setFonnteToken(settings.fonnte_token);
           }
@@ -279,8 +273,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       await saveWmsSettings({
         gdrive_folder_url: cleanGdrive,
-        gdrive_gas_url: cleanGas,
-        manual_shipment_gas_url: manualShipmentGasUrl.trim(),
+        
+        
       });
     } catch {}
 
@@ -430,7 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       const success = await saveWmsSettings({
         gas_endpoint: cleanEndpoint,
-        manual_shipment_gas_url: manualShipmentGasUrl.trim(),
+        
       });
       if (success) {
         onNotify('Konfigurasi GAS berhasil disimpan ke Supabase Cloud (berlaku untuk semua user)!', 'success');
@@ -491,7 +485,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSyncProductCatalog = async () => {
     setIsSyncingCatalog(true);
     try {
-      await onRefreshCatalog(gasEndpoint.trim(), session?.token || '');
+      await onRefreshCatalog('', session?.token || '');
       playSuccessBeep();
       vibrateDevice(50);
       onNotify('Katalog produk master berhasil disinkronkan dari Cloud!', 'success');
@@ -787,20 +781,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           )}
 
-          {canManageSettings && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('gas')}
-              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'gas'
-                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              <Cloud className="w-4 h-4" />
-              <span>Konfigurasi GAS</span>
-            </button>
-          )}
+          
 
           {canManageUsers && (
             <button
@@ -1695,7 +1676,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Google Drive Storage (Foto Reject QC)
                       </label>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Foto reject otomatis diunggah ke Google Drive melalui perantara GAS Web App, menghemat 99% Egress Supabase.
+                        Foto reject otomatis diunggah ke Supabase Storage, menghemat waktu dan lebih terpusat.
                       </p>
                     </div>
 
@@ -1748,18 +1729,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          2. Google Apps Script (GAS) Web App URL
-                        </label>
-                      </div>
-                      <input
-                        type="text"
-                        value={gdriveGasUrl}
-                        onChange={(e) => setGdriveGasUrl(e.target.value)}
-                        placeholder="https://script.google.com/macros/s/.../exec"
-                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
-                      />
+                      
                     </div>
                   </div>
                 </div>
@@ -1826,136 +1796,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ========================================================================= */}
           {/* TAB: GOOGLE APPS SCRIPT CONFIG (SUPERADMIN ONLY) */}
           {/* ========================================================================= */}
-          {activeTab === 'gas' && (
-            <div className="space-y-5">
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black">
-                    G
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                        Google Sheets Backend (GAS)
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                        Global Cloud (Supabase)
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Tersimpan di Supabase Cloud: 1 kali simpan otomatis setup semua user & perangkat.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSyncProductCatalog}
-                    disabled={isSyncingCatalog}
-                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCatalog ? 'animate-spin' : ''}`} />
-                    <span>Sync Katalog</span>
-                  </button>
-                </div>
-              </div>
-
-              {gasStatus === 'success' && (
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span>{gasStatusMsg}</span>
-                </div>
-              )}
-
-              {gasStatus === 'error' && (
-                <div className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800/60 rounded-xl text-xs text-primary-800 dark:text-primary-300 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-primary-600 flex-shrink-0" />
-                  <span>{gasStatusMsg}</span>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      1. Master WMS GAS Web App Exec URL (Utama)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(gasEndpoint, 'GAS Endpoint')}
-                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
-                    >
-                      {copiedKey === 'GAS Endpoint' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      <span>Salin</span>
-                    </button>
-                  </div>
-                  <textarea
-                    rows={2}
-                    value={gasEndpoint}
-                    onChange={(e) => setGasEndpoint(e.target.value)}
-                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      2. Manual Shipment & Tarikan MD GAS Web App Exec URL
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(manualShipmentGasUrl, 'Manual Shipment GAS')}
-                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
-                    >
-                      {copiedKey === 'Manual Shipment GAS' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      <span>Salin</span>
-                    </button>
-                  </div>
-                  <textarea
-                    rows={2}
-                    value={manualShipmentGasUrl}
-                    onChange={(e) => setManualShipmentGasUrl(e.target.value)}
-                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleResetGas}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset Default</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleTestGas}
-                    disabled={isTestingGas}
-                    className="px-3.5 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Radio className="w-3.5 h-3.5" />
-                    <span>Ping Server</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSaveGas}
-                  className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Simpan ke Supabase (Semua User)</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* ========================================================================= */}
           {/* TAB: DEVICE & SCANNER PREFERENCES (ACCESSIBLE TO ALL USERS) */}
           {/* ========================================================================= */}

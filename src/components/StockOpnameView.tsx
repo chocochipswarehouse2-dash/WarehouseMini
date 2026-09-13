@@ -85,7 +85,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       setSelectedSoIds([]);
     } catch (e: any) {
       console.error('Error loading SO data:', e);
-      setFetchError(e.message || 'Gagal memuat antrean Stock Opname dari Google Sheet');
+      setFetchError(e.message || 'Gagal memuat antrean Stock Opname dari Database');
       if (onNotify) onNotify('Gagal memuat data Stock Opname.', 'error');
     } finally {
       setIsLoading(false);
