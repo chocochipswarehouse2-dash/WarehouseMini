@@ -103,7 +103,10 @@ function handleGetSheet(sheetName, params) {
     activeIds = data.map(function(r) { return r.id || r.sku || r.no_pesanan || r.no_sj; }).filter(Boolean);
 
     // 2. Filter data for rows that changed since the timestamp
-    var sinceDate = new Date(params.since).getTime();
+    var sinceDate = Number(params.since);
+    if (isNaN(sinceDate)) {
+      sinceDate = new Date(params.since).getTime();
+    }
     if (!isNaN(sinceDate)) {
       data = data.filter(function(row) {
         var rowDateStr = row.updated_at || row.created_at || row.tanggal;
@@ -118,9 +121,11 @@ function handleGetSheet(sheetName, params) {
 
   var responsePayload = {
     success: true,
+    status: 'success',
     data: data,
     count: data.length,
-    sheet: sheetName
+    sheet: sheetName,
+    timestamp: new Date().getTime()
   };
 
   if (activeIds !== null) {

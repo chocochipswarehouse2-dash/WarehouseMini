@@ -42,8 +42,8 @@ export async function fetchDataFromGAS<T>(sheetName: string, since?: string | nu
     }
 
     const result = await response.json();
-    if (result.status === 'error') {
-      throw new Error(result.message || 'Gagal mengambil data dari GAS');
+    if (result.status === 'error' || result.success === false) {
+      throw new Error(result.message || result.error || 'Gagal mengambil data dari GAS');
     }
 
     return result as GasSyncResponse<T>;
@@ -129,12 +129,10 @@ export async function fetchWithDeltaSync<T>(
   });
 
   // Save new state back to local cache
-  if (res.timestamp) {
-    await setLocalDbMeta<GasCacheData<T>>(cacheKey, {
-      data: currentData,
-      timestamp: res.timestamp
-    });
-  }
+  await setLocalDbMeta<GasCacheData<T>>(cacheKey, {
+    data: currentData,
+    timestamp: res.timestamp || Date.now()
+  });
   
   return currentData;
 }
