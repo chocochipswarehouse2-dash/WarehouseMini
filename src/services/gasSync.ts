@@ -1,27 +1,20 @@
-import { getStoredGasEndpoint } from './settings';
 import { getLocalDbMeta, setLocalDbMeta } from './localDb';
+import { supabaseFetch } from './supabase';
 
-/** Cache key for a given sheet — matches what fetchWithDeltaSync uses internally */
+/** Cache key for a given sheet */
 export function getDeltaSyncCacheKey(sheetName: string) {
   return `gas_delta_sync_${sheetName}`;
 }
 
-/**
- * Reset delta sync cache for ONE sheet.
- * Next fetch will do a full pull (no `since` filter).
- */
 export async function clearDeltaSyncCache(sheetName: string): Promise<void> {
   await setLocalDbMeta(getDeltaSyncCacheKey(sheetName), null);
 }
 
-/**
- * Reset delta sync cache for ALL sheets.
- */
 export async function clearAllDeltaSyncCaches(): Promise<void> {
   const sheets = [
-    'Mutasi Log', 'Stok Opname Queue', 'Stok Real',
-    'Manual Shipment', 'Tarikan MD', 'Data Alamat',
-    'master_produk', 'picking_list'
+    'mutasi_log', 'stock_opname_queue', 'stok_real',
+    'manual_shipment', 'tarikan_md', 'address_book',
+    'master_produk', 'picking_list', 'pengecekan_sj'
   ];
   for (const s of sheets) {
     await setLocalDbMeta(getDeltaSyncCacheKey(s), null);
@@ -41,126 +34,39 @@ export interface GasCacheData<T> {
   timestamp: number;
 }
 
-/**
- * Fetches data from a specific Google Sheet via Google Apps Script API.
- * Supports Delta Sync if `since` timestamp is provided.
- *
- * @param sheetName Name of the sheet (e.g. "Mutasi Log", "Stok Real", "Stok Opname Queue")
- * @param since Optional ISO string or timestamp number to fetch only changes since then.
- */
 export async function fetchDataFromGAS<T>(sheetName: string, since?: string | number): Promise<GasSyncResponse<T>> {
-  const endpoint = getStoredGasEndpoint();
-  if (!endpoint) {
-    throw new Error('Endpoint GAS belum dikonfigurasi. Silakan periksa halaman Pengaturan.');
-  }
-
-  let url = `${endpoint}?table=${encodeURIComponent(sheetName)}`;
-  if (since) {
-    url += `&since=${encodeURIComponent(String(since))}`;
-  }
-
   try {
-    const response = await fetch(url, {
-      method: 'GET'
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-    if (result.status === 'error' || result.success === false) {
-      throw new Error(result.message || result.error || 'Gagal mengambil data dari GAS');
-    }
-
-    return result as GasSyncResponse<T>;
+    let tableName = sheetName;
+    if (sheetName === 'Mutasi Log') tableName = 'mutasi_log';
+    if (sheetName === 'Stok Opname Queue') tableName = 'stock_opname_queue';
+    if (sheetName === 'Stok Real') tableName = 'stok_real';
+    if (sheetName === 'Manual Shipment') tableName = 'manual_shipment';
+    if (sheetName === 'Tarikan MD') tableName = 'tarikan_md';
+    if (sheetName === 'Data Alamat') tableName = 'address_book';
+    
+    const rows = await supabaseFetch<T[]>(tableName, 'GET', null, 'select=*&limit=2000');
+    
+    return {
+      status: 'success',
+      data: Array.isArray(rows) ? rows : [],
+      timestamp: Date.now()
+    };
   } catch (err: any) {
-    console.error(`Error fetching data from GAS for sheet ${sheetName}:`, err);
+    console.error(`Error fetching data from Supabase for table ${sheetName}:`, err);
     throw err;
   }
 }
 
-/**
- * Fetches data from GAS with local caching and delta sync capabilities.
- * It uses IndexedDB (via localDb meta) to store the full dataset and the last sync timestamp.
- * When called, it passes `since` to GAS. GAS will return only modified/new rows and a list of `active_ids`.
- * It merges the delta into the cache, removes deleted rows, saves it back, and returns the full updated list.
- */
 export async function fetchWithDeltaSync<T>(
   sheetName: string,
   getPrimaryKey: (item: any) => string | number = (item) => item.id || item.sku || item.no_pesanan || item.no_sj,
   getParentId: (item: any) => string | number = (item) => item.id || item.sku || item.no_pesanan || item.no_sj
 ): Promise<T[]> {
-  const cacheKey = `gas_delta_sync_${sheetName}`;
-  const cached = await getLocalDbMeta<GasCacheData<T>>(cacheKey);
-  
-  // If cache was explicitly cleared (set to null), treat as fresh fetch
-  const since = (cached && cached.timestamp) ? cached.timestamp : 0;
-  
-  // Call GAS API with `since`
-  const res = await fetchDataFromGAS<T>(sheetName, since);
-  
-  let currentData = cached?.data || [];
-  
-  if (res.data && res.data.length > 0) {
-    // There are new or modified rows
-    const modifiedMap = new Map<string | number, T>();
-    for (const item of res.data) {
-      const pk = getPrimaryKey(item);
-      if (pk != null) {
-        modifiedMap.set(pk, item);
-      }
-    }
-    
-    // Merge updates and add new items
-    const nextData: T[] = [];
-    const seenIds = new Set<string | number>();
-    
-    for (const oldItem of currentData) {
-      const pk = getPrimaryKey(oldItem);
-      if (pk != null) {
-        if (modifiedMap.has(pk)) {
-          nextData.push(modifiedMap.get(pk)!);
-          seenIds.add(pk);
-        } else {
-          nextData.push(oldItem);
-        }
-      }
-    }
-    
-    // Add totally new items
-    for (const newItem of res.data) {
-      const pk = getPrimaryKey(newItem);
-      if (pk != null && !seenIds.has(pk)) {
-        nextData.push(newItem);
-      }
-    }
-    
-    currentData = nextData;
+  try {
+    const res = await fetchDataFromGAS<T>(sheetName);
+    return res.data || [];
+  } catch (e) {
+    console.error('fetchWithDeltaSync error:', e);
+    return [];
   }
-  
-  // Handle deletions if active_ids is provided (Delta Sync standard)
-  if (res.active_ids && Array.isArray(res.active_ids)) {
-    const activeSet = new Set(res.active_ids.map(String));
-    currentData = currentData.filter(item => {
-      const parentId = getParentId(item);
-      if (parentId == null) return true;
-      return activeSet.has(String(parentId));
-    });
-  }
-  
-  // Ensure descending sort if there's a created_at
-  currentData.sort((a: any, b: any) => {
-    const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return tB - tA; // descending
-  });
-
-  // Save new state back to local cache
-  await setLocalDbMeta<GasCacheData<T>>(cacheKey, {
-    data: currentData,
-    timestamp: res.timestamp || Date.now()
-  });
-  
-  return currentData;
 }

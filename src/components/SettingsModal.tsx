@@ -67,17 +67,14 @@ import {
 } from '../services/supabase';
 import {
   DEFAULT_GDRIVE_FOLDER_URL,
-  DEFAULT_GDRIVE_GAS_URL,
+
   testGdriveConnection,
   saveGdriveConfig,
 } from '../services/gdriveUpload';
-import { DEFAULT_MANUAL_SHIPMENT_GAS_URL } from '../services/gasManualShipment';
+
 import {
   fetchWmsSettings,
   saveWmsSettings,
-  getStoredGasEndpoint,
-  getStoredManualShipmentGasUrl,
-  getStoredGdriveGasUrl,
   getStoredGdriveFolderUrl,
 } from '../services/settings';
 import {
@@ -110,7 +107,7 @@ interface SettingsModalProps {
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type SettingsTab = 'database' | 'supabase' | 'gas' | 'users' | 'device' | 'deploy_apk' | 'whatsapp';
+type SettingsTab = 'database' | 'supabase' | 'users' | 'device' | 'deploy_apk' | 'whatsapp';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -143,19 +140,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [databaseStatus, setDatabaseStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [databaseStatusMsg, setDatabaseStatusMsg] = useState<string>('');
   const [gdriveFolderUrl, setGdriveFolderUrl] = useState<string>('');
-  const [gdriveGasUrl, setGdriveGasUrl] = useState<string>('');
-  const [manualShipmentGasUrl, setManualShipmentGasUrl] = useState<string>('');
   const [isTestingGdrive, setIsTestingGdrive] = useState<boolean>(false);
   const [gdriveStatus, setGdriveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [gdriveStatusMsg, setGdriveStatusMsg] = useState<string>('');
-
-  // GAS Config State
-  const [gasEndpoint, setGasEndpoint] = useState<string>('');
-  const [isTestingGas, setIsTestingGas] = useState<boolean>(false);
-  const [isSyncingCatalog, setIsSyncingCatalog] = useState<boolean>(false);
-  const [gasStatus, setGasStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [gasStatusMsg, setGasStatusMsg] = useState<string>('');
-
   // WhatsApp Config State
   const [fonnteToken, setFonnteToken] = useState<string>('');
   const [fonnteGroupTarget, setFonnteGroupTarget] = useState<string>('');
@@ -225,14 +212,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setSupabaseUrl(storedSupabase.url);
       setSupabaseKey(storedSupabase.key);
       setGdriveFolderUrl(getStoredGdriveFolderUrl());
-      setGdriveGasUrl(getStoredGdriveGasUrl());
-      setManualShipmentGasUrl(getStoredManualShipmentGasUrl());
-
-      const storedGas =
-        getStoredGasEndpoint() ||
-        session?.endpointUrl ||
-        '';
-      setGasEndpoint(storedGas);
 
       setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
       setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
@@ -294,7 +273,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     saveSupabaseConfig(cleanUrl, cleanKey);
-    saveGdriveConfig(cleanGdrive, cleanGas);
+    saveGdriveConfig(cleanGdrive, "");
     localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
 
     try {
@@ -314,8 +293,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setGdriveStatus('idle');
     setGdriveStatusMsg('');
     try {
-      saveGdriveConfig(gdriveFolderUrl, gdriveGasUrl);
-      const res = await testGdriveConnection(gdriveGasUrl, gdriveFolderUrl);
+      saveGdriveConfig(gdriveFolderUrl, "");
+      const res = await testGdriveConnection("", gdriveFolderUrl);
       if (res.success) {
         setGdriveStatus('success');
         setGdriveStatusMsg(res.message);
