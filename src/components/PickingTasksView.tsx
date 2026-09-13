@@ -619,6 +619,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 return {
                   ...item,
                   status: 'SELESAI' as const,
+                  qty_picked: item.qty_req, // Assume full pick on batch complete
                   picker_name: currentUser || 'Admin',
                 };
               }

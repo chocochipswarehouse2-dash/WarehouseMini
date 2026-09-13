@@ -210,8 +210,8 @@ export function loadSJDrafts(): PengecekanSJDraft[] {
   } catch { return []; }
 }
 
-export function deleteSJDraft(no_sj: string): void {
-  const drafts = loadSJDrafts().filter(d => d.no_sj !== no_sj && d.id !== no_sj);
+export function deleteSJDraft(idOrNoSj: string): void {
+  const drafts = loadSJDrafts().filter(d => d.no_sj !== idOrNoSj && d.id !== idOrNoSj);
   localStorage.setItem(CACHE_KEY_DRAFTS, JSON.stringify(drafts));
 }
 

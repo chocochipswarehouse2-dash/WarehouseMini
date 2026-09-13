@@ -1159,6 +1159,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 if (window.confirm(`Hapus draft SJ "${draft.no_sj}" dari antrean?`)) {
                                   deleteSJDraft(draft.id);
                                   setDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                  if (activeDraftId === draft.id) {
+                                    setActiveDraftId(null);
+                                  }
                                   onShowToast(`Draft SJ "${draft.no_sj}" dihapus.`, 'info');
                                 }
                               }}
