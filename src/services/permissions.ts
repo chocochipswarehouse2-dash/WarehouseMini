@@ -154,5 +154,6 @@ export const PERMISSION_GROUPS = [
 export const TOTAL_PERMISSIONS_COUNT = PERMISSION_GROUPS[0].permissions.length;
 
 export const countGrantedPermissions = (perms: Partial<import("../types").UserPermissions>) => {
-  return Object.values(perms).filter(Boolean).length;
+  const validKeys = new Set(PERMISSION_GROUPS[0].permissions.map(p => p.key));
+  return Object.entries(perms).filter(([key, value]) => validKeys.has(key) && value).length;
 };

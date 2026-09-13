@@ -1578,7 +1578,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               </span>
                               <span>•</span>
                               <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                                {grantedCount}/{TOTAL_PERMISSIONS_COUNT} Izin Aktif
+                                {usr.role?.toLowerCase() === 'superadmin' 
+                                  ? 'Akses Penuh (Sistem)' 
+                                  : `${grantedCount}/${TOTAL_PERMISSIONS_COUNT} Izin Aktif`}
                               </span>
                             </div>
                           </div>
