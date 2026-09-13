@@ -142,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'operasi_stok' as ActivePage,
-      label: 'Scanner | Mutasi',
+      label: 'Scanner | Mutasi | SO',
       shortLabel: 'Scan | Mutasi',
       icon: ScanBarcode,
       description: 'Scan Rak, Mutasi Log & SO',
