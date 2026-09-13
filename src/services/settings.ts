@@ -31,7 +31,7 @@ function initCacheFromLocalStorage(): WmsSettings {
   if (cachedSettings) return cachedSettings;
 
   try {
-    const gasEndpoint = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || '';
+    const gasEndpoint = localStorage.getItem('wms_gas_endpoint') || localStorage.getItem('wms_endpoint_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
     const storedManualGas = localStorage.getItem('wms_manual_shipment_gas_url') || '';
     const manualShipmentGas = sanitizeManualShipmentGasUrl(storedManualGas);
     if (storedManualGas !== manualShipmentGas) {
@@ -55,7 +55,7 @@ function initCacheFromLocalStorage(): WmsSettings {
     };
   } catch {
     cachedSettings = {
-      gas_endpoint: '',
+      gas_endpoint: DEFAULT_MANUAL_SHIPMENT_GAS_URL,
       manual_shipment_gas_url: DEFAULT_MANUAL_SHIPMENT_GAS_URL,
       gdrive_gas_url: DEFAULT_GDRIVE_GAS_URL,
       gdrive_folder_url: DEFAULT_GDRIVE_FOLDER_URL,
@@ -72,7 +72,7 @@ export function getStoredGasEndpoint(): string {
   return (
     localStorage.getItem('wms_gas_endpoint') ||
     localStorage.getItem('wms_endpoint_url') ||
-    ''
+    DEFAULT_MANUAL_SHIPMENT_GAS_URL
   );
 }
 
