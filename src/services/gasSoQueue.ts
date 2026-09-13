@@ -14,6 +14,8 @@ export async function fetchStockOpnameQueueFromGAS(): Promise<StockOpnameQueueIt
     
     return data.map((r) => ({
       id: r.id,
+      sesi_id: r.sesi_id || '',
+      tanggal: r.tanggal || '',
       sku: String(r.sku || '').toUpperCase(),
       nama_produk: String(r.nama_produk || r.sku || ''),
       size: String(r.size || ''),
@@ -23,8 +25,11 @@ export async function fetchStockOpnameQueueFromGAS(): Promise<StockOpnameQueueIt
       qty_sistem: Number(r.qty_sistem || 0),
       selisih: Number(r.selisih || 0),
       pic: String(r.pic || ''),
-      status: String(r.status || 'PENDING') as 'PENDING' | 'SYNCED',
+      status: String(r.status || 'PENDING') as 'PENDING' | 'APPROVED' | 'REJECTED',
       keterangan: String(r.keterangan || ''),
+      jenis: r.jenis || 'Opname',
+      operator: r.operator || '',
+      invoice: r.invoice || '',
       created_at: String(r.created_at || ''),
       updated_at: String(r.updated_at || ''),
     }));

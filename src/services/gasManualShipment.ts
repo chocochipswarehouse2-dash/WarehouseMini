@@ -201,9 +201,11 @@ export function normalizeManualShipmentRecords(rawData: any[]): ManualShipmentOr
 
     if (row.sku && row.nama_produk) {
       parent.items.push({
+        id: `${row.sku}_${Date.now()}`,
         sku: row.sku,
         nama_produk: row.nama_produk,
-        qty: parseInt(row.qty, 10) || 0
+        qty: parseInt(row.qty, 10) || 0,
+        fulfillment: 'NO_REFILL'
       });
     } else if (row.items && typeof row.items === 'string' && row.items.startsWith('[')) {
       try {
@@ -236,10 +238,10 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
   } catch {}
 
   try {
-    const data = await fetchWithDeltaSync<any>('Manual Shipment', {
-      getPrimaryKey: (row) => row.id && row.sku ? `${row.id}_${row.sku}` : row.id,
-      getParentId: (row) => row.id
-    });
+    const data = await fetchWithDeltaSync<any>('Manual Shipment', 
+      (row) => row.id && row.sku ? `${row.id}_${row.sku}` : row.id,
+      (row) => row.id
+    );
     
     if (data && Array.isArray(data)) {
       const normalized = normalizeManualShipmentRecords(data);

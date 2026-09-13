@@ -2821,10 +2821,10 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
 
   // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
   const [pickingRes, peminjamanRes] = await Promise.allSettled([
-    fetchWithDeltaSync<any>('picking_list', {
-      getPrimaryKey: (row) => row.id || `${row.no_sj}_${row.sku}`,
-      getParentId: (row) => row.no_sj
-    }),
+    fetchWithDeltaSync<any>('picking_list', 
+      (row) => row.id || `${row.no_sj}_${row.sku}`,
+      (row) => row.no_sj
+    ),
     supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100')
   ]);
 

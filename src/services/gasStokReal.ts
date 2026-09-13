@@ -7,10 +7,10 @@ import { StockRealtimeItem } from '../types';
  */
 export async function fetchAllStokRealFisik(): Promise<StockRealtimeItem[]> {
   try {
-    const data = await fetchWithDeltaSync<any>('Stok Real', {
-      getPrimaryKey: (row) => row.id || `${row.sku}_${row.lokasi}`,
-      getParentId: (row) => row.id
-    });
+    const data = await fetchWithDeltaSync<any>('Stok Real', 
+      (row) => row.id || `${row.sku}_${row.lokasi}`,
+      (row) => row.id
+    );
     
     // Normalisasi dan hanya tampilkan stok yang tidak 0
     return data
