@@ -244,20 +244,20 @@ export const ManualShipmentView: React.FC<ManualShipmentViewProps> = ({
       submitted_by: editingOrder ? editingOrder.submitted_by : (session?.name || getUserPersonName(session?.username) || 'Petugas')
     };
 
-    let success = false;
+    let result = { success: false, message: '' };
     if (editingOrder) {
-      success = await editManualShipment(orderData);
+      result = await editManualShipment(orderData);
     } else {
-      success = await submitManualShipment(orderData);
+      result = await submitManualShipment(orderData);
     }
 
-    if (success) {
+    if (result.success) {
       onShowToast(editingOrder ? 'Pesanan berhasil diupdate' : 'Pesanan berhasil disubmit', 'success');
       resetForm();
       loadOrders();
       setActiveTab('rekap');
     } else {
-      onShowToast(editingOrder ? 'Gagal update pesanan' : 'Gagal submit pesanan', 'error');
+      onShowToast(result.message || (editingOrder ? 'Gagal update pesanan' : 'Gagal submit pesanan'), 'error');
     }
     setLoading(false);
   };

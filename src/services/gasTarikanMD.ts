@@ -126,13 +126,21 @@ function normalizeRecords(rawData: any[]): PengecekanSJRecord[] {
       if (group.itemsMap.has(sku)) {
         const existing = group.itemsMap.get(sku)!;
         existing.qty_sj += Number(it.qty_sj || 0);
-        existing.qty_terima += Number(it.qty_terima || 0);
+        existing.qty_scan += Number(it.qty_scan || it.qty_terima || 0);
+        existing.selisih = existing.qty_scan - existing.qty_sj;
+        existing.status_item = existing.qty_scan === existing.qty_sj ? 'COCOK' : (existing.qty_scan < existing.qty_sj ? 'KURANG' : 'LEBIH');
       } else {
         group.itemsMap.set(sku, {
+          no_sj: row.no_sj,
+          source: row.source,
+          destination: row.destination,
+          tanggal_sj: row.tanggal_sj,
           sku: sku,
-          nama_barang: String(it.nama_barang || it.nama || ''),
+          nama_produk: String(it.nama_produk || it.nama_barang || it.nama || ''),
           qty_sj: Number(it.qty_sj || 0),
-          qty_terima: Number(it.qty_terima || 0),
+          qty_scan: Number(it.qty_scan || it.qty_terima || 0),
+          selisih: Number(it.qty_scan || it.qty_terima || 0) - Number(it.qty_sj || 0),
+          status_item: Number(it.qty_scan || it.qty_terima || 0) === Number(it.qty_sj || 0) ? 'COCOK' : (Number(it.qty_scan || it.qty_terima || 0) < Number(it.qty_sj || 0) ? 'KURANG' : 'LEBIH'),
         });
       }
     });
@@ -150,7 +158,7 @@ export async function fetchPengecekanSJList(): Promise<PengecekanSJRecord[]> {
   return onlineData;
 }
 
-export async function fetchTarikanMDLegacy(): Promise<TarikanMDRecord[]> {
+export async function fetchTarikanMDLegacy(): Promise<any[]> {
   try {
     const data = await fetchWithDeltaSync<any>('tarikan_md');
     if (!data || data.length === 0) return [];
@@ -162,9 +170,9 @@ export async function fetchTarikanMDLegacy(): Promise<TarikanMDRecord[]> {
       source: String(row.source || 'Gudang Pusat'),
       destination: String(row.destination || 'Outlet'),
       sku: String(row.sku || ''),
-      nama_barang: String(row.nama_barang || row.nama || ''),
+      nama_produk: String(row.nama_produk || row.nama_barang || row.nama || ''),
       qty_sj: Number(row.qty_sj || 0),
-      qty_terima: Number(row.qty_terima || row.qty || 0),
+      qty_scan: Number(row.qty_scan || row.qty_terima || row.qty || 0),
       status: String(row.status || 'pending'),
       status_komparasi: String(row.status_komparasi || 'COCOK'),
       submitted_by: String(row.submitted_by || row.user || 'Petugas'),
@@ -218,7 +226,7 @@ export async function deleteTarikanMD(id: string, no_sj?: string): Promise<boole
   return deletePengecekanSJFromSupabase(no_sj || id);
 }
 
-export async function saveTarikanMDLegacyToSupabase(record: TarikanMDRecord): Promise<boolean> {
+export async function saveTarikanMDLegacyToSupabase(record: any): Promise<boolean> {
   try {
     const payload = {
       no_sj: record.no_sj,
@@ -266,8 +274,8 @@ export function exportPengecekanToCsv(records: PengecekanSJRecord[], filename: s
   let csv = 'No SJ,Tanggal SJ,Source,Destination,Status,Status Komparasi,SKU,Nama Barang,Qty SJ,Qty Terima,Selisih,PIC\n';
   records.forEach(r => {
     (r.items || []).forEach(it => {
-      const selisih = (it.qty_terima || 0) - (it.qty_sj || 0);
-      csv += `${r.no_sj},${r.tanggal_sj},${r.source},${r.destination},${r.status},${r.status_komparasi},${it.sku},"${it.nama_barang}",${it.qty_sj},${it.qty_terima},${selisih},"${r.submitted_by}"\n`;
+      const selisih = (it.qty_scan || 0) - (it.qty_sj || 0);
+      csv += `${r.no_sj},${r.tanggal_sj},${r.source},${r.destination},${r.status},${r.status_komparasi},${it.sku},"${it.nama_produk}",${it.qty_sj},${it.qty_scan},${selisih},"${r.submitted_by}"\n`;
     });
   });
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

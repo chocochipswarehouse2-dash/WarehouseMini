@@ -284,7 +284,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
       if (res.successCount > 0) {
         onShowToast(`Berhasil menyinkronkan ${res.successCount} data surat jalan ke Databases!`, 'success');
         loadRecords();
-      } else if (res.remainingCount > 0) {
+      } else if (res.failCount > 0) {
         onShowToast('Gagal menghubungi Google Databases. Coba sesaat lagi.', 'warning');
       } else {
         onShowToast('Semua data pengecekan sudah tersinkronisasi!', 'info');
@@ -590,7 +590,7 @@ export const TarikanMDView: React.FC<TarikanMDViewProps> = ({
       const result = await submitTarikanMD(record);
       if (result.success) {
         if (result.offline) {
-          onShowToast(result.message || 'Tersimpan offline di perangkat. Otomatis dikirim ke Databases saat internet kembali aktif.', 'info');
+          onShowToast('Tersimpan offline di perangkat. Otomatis dikirim ke Databases saat internet kembali aktif.', 'info');
         } else {
           onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit ke Database dengan status PENDING!`, 'success');
         }

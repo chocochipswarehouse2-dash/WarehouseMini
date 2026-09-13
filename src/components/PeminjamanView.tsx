@@ -379,7 +379,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   const editCatalogSuggestions = useMemo(() => {
     if (!editProductSearch.trim() || editProductSearch.trim().length < 2) return [];
-    return fuzzySearchMultiple(productCatalog, editProductSearch.trim(), ['nama_produk', 'sku', 'nama', 'size']).slice(0, 8);
+    return productCatalog.filter((prod: any) => 
+      fuzzySearchMultiple(editProductSearch.trim(), [prod.nama_produk as string, prod.sku as string, prod.nama as string, prod.size as string])
+    ).slice(0, 8);
   }, [productCatalog, editProductSearch]);
 
   // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
@@ -1369,7 +1371,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
 
     for (const it of editingRecord.items) {
-      if (!it.qty || it.qty <= 0) {
+      if (!it.qty || Number(it.qty) <= 0) {
         onShowToast(`Qty barang "${it.produk || it.sku}" harus lebih dari 0!`, 'warning');
         return;
       }
@@ -2777,7 +2779,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
                         <div className="max-h-48 overflow-y-auto space-y-1 divide-y divide-slate-100 dark:divide-slate-800">
                           {editCatalogSuggestions.length > 0 ? (
-                            editCatalogSuggestions.map((prod, pIdx) => (
+                            editCatalogSuggestions.map((prod: any, pIdx: number) => (
                               <button
                                 key={pIdx}
                                 type="button"

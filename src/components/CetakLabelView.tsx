@@ -295,7 +295,7 @@ export const CetakLabelView: React.FC = () => {
     e.stopPropagation();
     if (!confirm(`Hapus alamat ${namaPenerima ? `"${namaPenerima}"` : ''} dari Data Alamat?`)) return;
     try {
-      await deleteDataAlamatItem(id, namaPenerima);
+      await deleteDataAlamatItem(id);
       setAddressBook(prev => prev.filter(item => item.id !== id && (!namaPenerima || item.nama_penerima !== namaPenerima)));
     } catch (e) {
       console.error(e);

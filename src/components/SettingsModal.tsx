@@ -240,7 +240,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       loadUsersFromSupabase();
       setDatabaseStatus('idle');
-      setGasStatus('idle');
       setGdriveStatus('idle');
     }
   }, [isOpen]);
@@ -259,7 +258,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const cleanUrl = supabaseUrl.trim();
     const cleanKey = supabaseKey.trim();
     const cleanGdrive = gdriveFolderUrl.trim();
-    const cleanGas = gdriveGasUrl.trim();
 
     if (!cleanUrl || !cleanKey) {
       onNotify('URL dan Anon Key Supabase tidak boleh kosong!', 'warning');
@@ -268,12 +266,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     saveSupabaseConfig(cleanUrl, cleanKey);
     saveGdriveConfig(cleanGdrive, "");
-    localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
 
     try {
       await saveWmsSettings({
         gdrive_folder_url: cleanGdrive,
-        
         
       });
     } catch {}
@@ -406,94 +402,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onNotify(`Test WhatsApp Fonnte gagal: ${msg}`, 'error');
     } finally {
       setIsTestingWa(false);
-    }
-  };
-
-  // --- GAS ACTIONS ---
-  const handleSaveGas = async () => {
-    const cleanEndpoint = gasEndpoint.trim();
-
-    localStorage.setItem('wms_endpoint_url', cleanEndpoint);
-    localStorage.setItem('wms_gas_endpoint', cleanEndpoint);
-    localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGasUrl.trim());
-    if (session) {
-      const updated = { ...session, endpointUrl: cleanEndpoint };
-      onUpdateSession(updated);
-    }
-
-    try {
-      const success = await saveWmsSettings({
-        gas_endpoint: cleanEndpoint,
-        
-      });
-      if (success) {
-        onNotify('Konfigurasi GAS berhasil disimpan ke Supabase Cloud (berlaku untuk semua user)!', 'success');
-        playSuccessBeep();
-      } else {
-        onNotify('Tersimpan di lokal, namun sinkronisasi ke Supabase Cloud gagal.', 'warning');
-      }
-    } catch (e) {
-      onNotify('Konfigurasi GAS disimpan secara lokal.', 'info');
-    }
-  };
-
-  const handleResetGas = async () => {
-    setGasEndpoint('');
-    setManualShipmentGasUrl(DEFAULT_MANUAL_SHIPMENT_GAS_URL);
-    localStorage.setItem('wms_endpoint_url', '');
-    localStorage.setItem('wms_gas_endpoint', '');
-    localStorage.setItem('wms_manual_shipment_gas_url', DEFAULT_MANUAL_SHIPMENT_GAS_URL);
-    if (session) {
-      onUpdateSession({ ...session, endpointUrl: '' });
-    }
-    try {
-      await saveWmsSettings({
-        gas_endpoint: '',
-        manual_shipment_gas_url: DEFAULT_MANUAL_SHIPMENT_GAS_URL,
-      });
-    } catch {}
-    onNotify('Endpoint GAS di-reset ke URL default dan disinkronkan ke Supabase!', 'info');
-  };
-
-  const handleTestGas = async () => {
-    setIsTestingGas(true);
-    setGasStatus('idle');
-    setGasStatusMsg('');
-
-    try {
-      const cleanEndpoint = gasEndpoint.trim();
-      // Dummy test delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      setGasStatus('success');
-      setGasStatusMsg('Endpoint Google Apps Script aktif dan merespon dengan baik.');
-      playSuccessBeep();
-      vibrateDevice(50);
-      onNotify('Koneksi Google Apps Script berhasil!', 'success');
-    } catch (err: unknown) {
-      console.warn('GAS test error:', err);
-      setGasStatus('error');
-      const msg = err instanceof Error ? err.message : 'Gagal menghubungi Google Apps Script.';
-      setGasStatusMsg(msg);
-      playErrorBeep();
-      onNotify(`Koneksi GAS gagal: ${msg}`, 'error');
-    } finally {
-      setIsTestingGas(false);
-    }
-  };
-
-  const handleSyncProductCatalog = async () => {
-    setIsSyncingCatalog(true);
-    try {
-      await onRefreshCatalog('', session?.token || '');
-      playSuccessBeep();
-      vibrateDevice(50);
-      onNotify('Katalog produk master berhasil disinkronkan dari Cloud!', 'success');
-    } catch {
-      playErrorBeep();
-      onNotify('Gagal menyinkronkan katalog produk.', 'error');
-    } finally {
-      setIsSyncingCatalog(false);
     }
   };
 
