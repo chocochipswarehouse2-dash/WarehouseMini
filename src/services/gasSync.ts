@@ -27,7 +27,7 @@ export async function fetchDataFromGAS<T>(sheetName: string, since?: string | nu
     throw new Error('Endpoint GAS belum dikonfigurasi. Silakan periksa halaman Pengaturan.');
   }
 
-  let url = `${endpoint}?sheet=${encodeURIComponent(sheetName)}`;
+  let url = `${endpoint}?table=${encodeURIComponent(sheetName)}`;
   if (since) {
     url += `&since=${encodeURIComponent(String(since))}`;
   }
