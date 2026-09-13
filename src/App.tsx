@@ -134,6 +134,96 @@ import {
 import { releaseScreenWakeLock, requestScreenWakeLock } from './services/wakeLock';
 import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
 
+// URL Path mapping untuk mendukung Deep-linking dan sinkronisasi address bar browser
+const PAGE_TO_PATH: Record<ActivePage, string> = {
+  dashboard: 'dashboard',
+  agenda: 'agenda',
+  pesanan_saya: 'pesanan-saya',
+  loading_dock: 'loading-dock',
+  perbaikan: 'quality-control',
+  scanner: 'scanner',
+  mutasi_log: 'mutasi-log',
+  inventory: 'inventory',
+  stock_opname: 'stock-opname',
+  picking_tasks: 'tugas-picking',
+  peminjaman: 'peminjaman',
+  cetak_label: 'cetak-label',
+  supabase_migration: 'migrasi-supabase',
+  karyawan: 'karyawan',
+  presensi: 'presensi',
+  roster_shift: 'roster-shift',
+  lembur_cuti: 'lembur-cuti',
+  hr_approval: 'hr-approval',
+  hr_rekap: 'hr-rekap',
+  roadmap: 'roadmap',
+  tarikan_md: 'pengecekan-sj',
+  penerimaan_barang: 'penerimaan-barang',
+  packing: 'packing',
+  pengiriman: 'pengiriman',
+  penerimaan: 'penerimaan',
+  manual_shipment: 'manual-shipment',
+};
+
+const PATH_TO_PAGE: Record<string, ActivePage> = {
+  '': 'dashboard',
+  'dashboard': 'dashboard',
+  'agenda': 'agenda',
+  'pesanan-saya': 'pesanan_saya',
+  'pesanan': 'pesanan_saya',
+  'manual-shipment': 'pesanan_saya',
+  'tarikan-md': 'pesanan_saya',
+  'loading-dock': 'loading_dock',
+  'quality-control': 'perbaikan',
+  'qc': 'perbaikan',
+  'perbaikan': 'perbaikan',
+  'scanner': 'scanner',
+  'scan': 'scanner',
+  'mutasi-log': 'mutasi_log',
+  'mutasi': 'mutasi_log',
+  'inventory': 'inventory',
+  'stok': 'inventory',
+  'stock-opname': 'stock_opname',
+  'so': 'stock_opname',
+  'tugas-picking': 'picking_tasks',
+  'picking': 'picking_tasks',
+  'picking-tasks': 'picking_tasks',
+  'peminjaman': 'peminjaman',
+  'sps': 'peminjaman',
+  'cetak-label': 'cetak_label',
+  'label': 'cetak_label',
+  'migrasi-supabase': 'supabase_migration',
+  'supabase-migration': 'supabase_migration',
+  'supabase': 'supabase_migration',
+  'migrasi': 'supabase_migration',
+  'karyawan': 'karyawan',
+  'presensi': 'presensi',
+  'roster-shift': 'roster_shift',
+  'roster': 'roster_shift',
+  'lembur-cuti': 'lembur_cuti',
+  'lembur': 'lembur_cuti',
+  'cuti': 'lembur_cuti',
+  'hr-approval': 'hr_approval',
+  'hr-rekap': 'hr_rekap',
+  'roadmap': 'roadmap',
+  'pengecekan-sj': 'tarikan_md',
+  'packing': 'packing',
+  'pengiriman': 'pengiriman',
+  'penerimaan-barang': 'penerimaan_barang',
+  'penerimaan': 'penerimaan',
+};
+
+function getPageFromUrl(session: UserSession | null): ActivePage {
+  if (typeof window === 'undefined') return getDefaultPageForSession(session);
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+  const matchedPage = PATH_TO_PAGE[path];
+  if (matchedPage) {
+    if (!session || canAccessPage(session, matchedPage)) {
+      return matchedPage;
+    }
+  }
+  return getDefaultPageForSession(session);
+}
+
 export default function App() {
   // Session & Auth (Multi-Role User Session)
   const [session, setSession] = useState<UserSession | null>(() => {
@@ -191,9 +281,42 @@ export default function App() {
     timestamp: number;
   } | null>(null);
 
-  // Active module page
-  const [activePage, setActivePage] = useState<ActivePage>(() => getDefaultPageForSession(session));
-  const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getDefaultPageForSession(session)]));
+  // Active module page (mendukung deep link & reload F5 dari URL)
+  const [activePage, setActivePage] = useState<ActivePage>(() => getPageFromUrl(session));
+  const [visitedPages, setVisitedPages] = useState<Set<ActivePage>>(() => new Set<ActivePage>([getPageFromUrl(session)]));
+
+  // Sinkronisasi activePage ke browser URL address bar secara transparan (HTML5 History API)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentPath = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    const targetPath = PAGE_TO_PATH[activePage] || activePage;
+    const expectedUrl = targetPath === 'dashboard' && currentPath === '' ? '/' : `/${targetPath}`;
+    const currentUrl = currentPath === '' ? '/' : `/${currentPath}`;
+
+    if (currentUrl !== expectedUrl) {
+      window.history.pushState({ page: activePage }, '', expectedUrl);
+    }
+  }, [activePage]);
+
+  // Listener navigasi tombol Back & Forward di browser
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const pageFromState = event.state?.page as ActivePage | undefined;
+      if (pageFromState && canAccessPage(session, pageFromState)) {
+        startTransition(() => {
+          setActivePage(pageFromState);
+        });
+      } else {
+        const pageFromPath = getPageFromUrl(session);
+        startTransition(() => {
+          setActivePage(pageFromPath);
+        });
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [session]);
 
   // Auto-redirect jika halaman aktif tidak diizinkan untuk sesi user
   useEffect(() => {
@@ -776,8 +899,9 @@ export default function App() {
       const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
       localStorage.setItem('wms_session_expiry', expiry.toString());
 
-      // Navigate to the user's primary allowed module page
-      const firstPage = getDefaultPageForSession(newSession);
+      // Navigate to the user's url page or primary allowed module page
+      const pageFromUrl = getPageFromUrl(newSession);
+      const firstPage = canAccessPage(newSession, pageFromUrl) ? pageFromUrl : getDefaultPageForSession(newSession);
       setActivePage(firstPage);
 
       showToast(`Selamat datang, ${resolvedName} (${res.role || 'Operator'})!`, 'success');
@@ -801,6 +925,9 @@ export default function App() {
     setSession(null);
     setScannedData([]);
     releaseScreenWakeLock();
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ page: 'dashboard' }, '', '/');
+    }
     showToast('Berhasil keluar dari akun.', 'info');
   };
 
