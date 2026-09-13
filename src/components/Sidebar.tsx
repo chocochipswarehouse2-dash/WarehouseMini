@@ -272,15 +272,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       access: canApproveHr,
       badge: 'REKAP',
     },
-    {
-      id: 'roadmap' as ActivePage,
-      label: 'Roadmap & Fitur',
-      shortLabel: 'Roadmap',
-      icon: Map,
-      description: 'Request fitur & pantau dev',
-      access: true,
-      badge: 'NEW',
-    },
   ].filter((item) => item.access);
 
   const handleNavClick = (page: ActivePage) => {
@@ -598,6 +589,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </button>
       )}
+
+      {/* Roadmap & Fitur (Semua User dapat Request Fitur & Pantau Dev) */}
+      <button
+        type="button"
+        onClick={() => {
+          handleNavClick('roadmap');
+          onCloseMobile();
+        }}
+        title="Roadmap Pengembangan & Request Fitur"
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          activePage === 'roadmap'
+            ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
+            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+        } ${collapsed ? 'justify-center px-2' : ''}`}
+      >
+        <div
+          className={`p-1.5 rounded-lg shrink-0 ${
+            activePage === 'roadmap'
+              ? 'bg-white/20 text-white'
+              : 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400'
+          }`}
+        >
+          <Map className="w-4 h-4" />
+        </div>
+        {!collapsed && (
+          <div className="flex-1 text-left truncate flex items-center justify-between">
+            <span className="truncate font-extrabold">Roadmap & Fitur</span>
+            <span
+              className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                activePage === 'roadmap'
+                  ? 'bg-black/20 text-white'
+                  : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+              }`}
+            >
+              NEW
+            </span>
+          </div>
+        )}
+      </button>
 
       {/* Dark Mode Switcher */}
       <button
