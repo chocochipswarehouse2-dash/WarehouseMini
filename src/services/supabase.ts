@@ -2479,49 +2479,6 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     console.warn('Error fetching from stok_real_fisik in Supabase:', err);
   }
 
-  // 2. Also fetch and calculate from log_produk to ensure complete realtime accuracy
-  try {
-    const logQuery = searchKeyword && searchKeyword.trim()
-      ? `select=sku,nama_produk,size,area,lokasi,qty,type${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&order=created_at.desc&limit=2000`
-      : 'select=sku,nama_produk,size,area,lokasi,qty,type&order=created_at.desc&limit=5000';
-
-    const logRows = await supabaseFetch<any[]>('log_produk', 'GET', null, logQuery);
-    if (logRows && Array.isArray(logRows) && logRows.length > 0) {
-      // If stok_real_fisik was empty, compute net stock from log_produk
-      const isFromLogsOnly = stockMap.size === 0;
-      for (const log of logRows) {
-        const sku = String(log.sku || '').trim().toUpperCase();
-        if (!sku) continue;
-        const lok = String(log.lokasi || 'BLOK F').trim();
-        const area = String(log.area || getAreaFromLokasi(lok)).trim();
-        const nama = String(log.nama_produk || sku).trim();
-        const size = String(log.size || '-').trim();
-        const qty = Number(log.qty) || 0;
-        const type = String(log.type || '').toUpperCase();
-        const delta = type === 'IN' || type === 'ADJ_IN' ? qty : type === 'OUT' || type === 'ADJ_OUT' ? -qty : 0;
-
-        if (!stockMap.has(sku)) {
-          stockMap.set(sku, {
-            sku,
-            produk: nama,
-            size: size || 'ALL',
-            locations: new Map(),
-          });
-        }
-        const entry = stockMap.get(sku)!;
-        if (entry.produk === sku && nama !== sku) entry.produk = nama;
-        if ((!entry.size || entry.size === 'ALL' || entry.size === '-') && size && size !== '-') entry.size = size;
-
-        if (isFromLogsOnly) {
-          const lokKey = `${lok.toUpperCase()}__${area.toUpperCase()}`;
-          const prev = entry.locations.get(lokKey)?.qty || 0;
-          entry.locations.set(lokKey, { lokasi: lok, area, qty: prev + delta });
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Error computing stock from log_produk:', err);
-  }
 
   // 3. Fetch Master Produk to enrich product names & include products with 0 stock
   try {
