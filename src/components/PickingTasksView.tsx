@@ -469,6 +469,20 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       }
     });
 
+    // Retrieve persistent completed SJs set
+    let storedCompletedSJs = new Set<string>();
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const cStr = localStorage.getItem('wms_completed_sjs_set');
+        if (cStr) {
+          const arr = JSON.parse(cStr);
+          if (Array.isArray(arr)) {
+            arr.forEach((s) => storedCompletedSJs.add(String(s).toUpperCase().trim()));
+          }
+        }
+      }
+    } catch {}
+
     // Evaluate group status based on items
     const result = Array.from(map.values()).map((g) => {
       // Sort items by lokasi (Rack location) to optimize picker route
@@ -487,8 +501,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         return 0;
       });
 
-      const isAllDone = g.items.length > 0 && g.items.every((it) => it.status === 'SELESAI');
-      const isAnyStarted = g.items.some((it) => it.qty_picked > 0 || it.status === 'SEDANG PICKING');
+      const isCompletedLocally = storedCompletedSJs.has((g.no_sj || '').toUpperCase().trim());
+      const isAllDone = isCompletedLocally || (g.items.length > 0 && g.items.every((it) => (it.status || '').toUpperCase().trim() === 'SELESAI'));
+      const isAnyStarted = g.items.some((it) => Number(it.qty_picked) > 0 || (it.status || '').toUpperCase().trim() === 'SEDANG PICKING');
 
       if (isAllDone) {
         g.status = 'SELESAI';
@@ -619,7 +634,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 return {
                   ...item,
                   status: 'SELESAI' as const,
-                  qty_picked: item.qty_req, // Assume full pick on batch complete
                   picker_name: currentUser || 'Admin',
                 };
               }
@@ -2973,13 +2987,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
                           isDone
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50'
+                            ? group.total_qty_picked === group.total_qty_req && group.total_qty_req > 0
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50'
+                              : group.total_qty_picked === 0
+                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400 border border-rose-300 dark:border-rose-700/50'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-300 dark:border-amber-700/50'
                             : group.status === 'SEDANG PICKING'
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 border border-blue-200'
                             : 'bg-primary-500/10 text-primary-500 border border-primary-500/20'
                         }`}
                       >
-                        {group.status}
+                        {isDone
+                          ? group.total_qty_picked === group.total_qty_req && group.total_qty_req > 0
+                            ? 'SELESAI (LENGKAP)'
+                            : group.total_qty_picked === 0
+                            ? 'SELESAI (0 PCS)'
+                            : 'SELESAI (SEBAGIAN)'
+                          : group.status}
                       </span>
                     </div>
 

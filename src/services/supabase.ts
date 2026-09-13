@@ -3014,6 +3014,20 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
 export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]> {
   const itemsMap = new Map<string, PickingListItem>();
 
+  // Retrieve persistent set of completed Surat Jalan so they never bounce back to PENDING
+  const storedCompletedSJs = new Set<string>();
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const cStr = localStorage.getItem('wms_completed_sjs_set');
+      if (cStr) {
+        const arr = JSON.parse(cStr);
+        if (Array.isArray(arr)) {
+          arr.forEach((s) => storedCompletedSJs.add(String(s).toUpperCase().trim()));
+        }
+      }
+    }
+  } catch {}
+
   // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
   const [pickingRes, peminjamanRes] = await Promise.allSettled([
     fetchWithDeltaSync<any>('picking_list', 
@@ -3027,6 +3041,9 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
     for (const r of pickingRes.value) {
       const item = extractPickingItemFromRow(r);
       if (item) {
+        if (storedCompletedSJs.has((item.no_sj || '').toUpperCase().trim())) {
+          item.status = 'SELESAI';
+        }
         itemsMap.set(`${item.no_sj}__${item.sku}`, item);
       }
     }
@@ -3045,6 +3062,15 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
       // Skip items that are already returned to avoid re-adding them to picking list
       if (pStatus === 'DIKEMBALIKAN' || pStatus === 'SELESAI') continue;
       
+      // If this SJ has been marked completed by the user, ensure it stays completed
+      if (storedCompletedSJs.has(no_sj)) {
+        const existing = itemsMap.get(`${no_sj}__${sku}`);
+        if (existing) {
+          existing.status = 'SELESAI';
+        }
+        continue;
+      }
+
       // Additional safety check: If it already exists in the map as SELESAI, don't overwrite it with a PENDING status from Peminjaman
       const existing = itemsMap.get(`${no_sj}__${sku}`);
       if (existing && existing.status === 'SELESAI') continue;
@@ -3300,6 +3326,23 @@ export async function completePickingSuratJalanSupabase(
         console.warn(`Failed inserting unexpected item ${unexp.sku} to Supabase:`, unexpErr);
       }
     }
+
+    // 5. Also sync to peminjaman (if SPS/PJM)
+    if (cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM')) {
+      await supabaseFetch('peminjaman', 'PATCH', { 
+        status: 'SELESAI'
+      }, `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`).catch(() => {});
+    }
+
+    // 6. Record in persistent completed set so it never bounces back
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const compStr = localStorage.getItem('wms_completed_sjs_set');
+        const compSet = new Set<string>(compStr ? JSON.parse(compStr) : []);
+        compSet.add(cleanNoSj);
+        localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
+      }
+    } catch {}
 
     return true;
   } catch (err) {
@@ -3632,12 +3675,15 @@ export async function updatePickingSuratJalanDetailsSupabase(
 export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Promise<boolean> {
   if (!no_sjs || no_sjs.length === 0) return true;
   try {
+    const upperNoSjs = no_sjs.map((s) => s.trim().toUpperCase());
+    const upperSet = new Set(upperNoSjs);
+
     // Delete one by one to avoid PostgREST 'in' syntax issues with special chars
-    for (const sj of no_sjs) {
-      const encodedSj = encodeURIComponent(sj.trim());
-      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=eq.${encodedSj}`);
+    for (const sj of upperNoSjs) {
+      const encodedSj = encodeURIComponent(sj);
+      await supabaseFetch('picking_list', 'DELETE', null, `no_sj=ilike.${encodedSj}`).catch(() => {});
       // Also delete from peminjaman explicitly 
-      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodedSj}`).catch(() => {});
+      await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=ilike.${encodedSj}`).catch(() => {});
     }
     // Clean up local caches
     try {
@@ -3646,7 +3692,7 @@ export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Pr
         if (cachedStr) {
           const cached = JSON.parse(cachedStr);
           if (Array.isArray(cached)) {
-            const newCache = cached.filter(item => !no_sjs.includes(item.no_sj));
+            const newCache = cached.filter(item => !upperSet.has((item.no_sj || '').trim().toUpperCase()));
             localStorage.setItem('wms_picking_cache', JSON.stringify(newCache));
           }
         }
@@ -3654,9 +3700,16 @@ export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Pr
         if (rawCachedStr) {
           const rawCached = JSON.parse(rawCachedStr);
           if (Array.isArray(rawCached)) {
-            const newRawCache = rawCached.filter(item => !no_sjs.includes(item.no_sj));
+            const newRawCache = rawCached.filter(item => !upperSet.has((item.no_sj || '').trim().toUpperCase()));
             localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(newRawCache));
           }
+        }
+        // Remove from completed set
+        const compStr = localStorage.getItem('wms_completed_sjs_set');
+        if (compStr) {
+          const compSet = new Set<string>(JSON.parse(compStr));
+          upperNoSjs.forEach((s) => compSet.delete(s));
+          localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
         }
       }
     } catch (err) {
@@ -3671,31 +3724,97 @@ export async function deletePickingSuratJalanBatchSupabase(no_sjs: string[]): Pr
 
 export async function completePickingSuratJalanBatchSupabase(no_sjs: string[], pickerName: string): Promise<boolean> {
   if (!no_sjs || no_sjs.length === 0) return true;
+  const upperNoSjs = no_sjs.map((s) => s.trim().toUpperCase());
+  const upperSet = new Set(upperNoSjs);
+
+  // 1. Immediately record in persistent localStorage set and caches
   try {
-    for (const sj of no_sjs) {
-      const encodedSj = encodeURIComponent(sj.trim());
-      await supabaseFetch('picking_list', 'PATCH', { 
-        status: 'SELESAI',
-        picker_name: pickerName || 'Admin'
-      }, `no_sj=eq.${encodedSj}`);
-    }
-    // Update local caches
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const cachedStr = localStorage.getItem('wms_picking_cache');
-        if (cachedStr) {
-          const cached = JSON.parse(cachedStr);
-          if (Array.isArray(cached)) {
-            const newCache = cached.map(item => no_sjs.includes(item.no_sj) ? { ...item, status: 'SELESAI', picker_name: pickerName || 'Admin' } : item);
-            localStorage.setItem('wms_picking_cache', JSON.stringify(newCache));
-          }
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const compStr = localStorage.getItem('wms_completed_sjs_set');
+      const compSet = new Set<string>(compStr ? JSON.parse(compStr) : []);
+      upperNoSjs.forEach((s) => compSet.add(s));
+      localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
+
+      // Update wms_picking_cache
+      const cachedStr = localStorage.getItem('wms_picking_cache');
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (Array.isArray(cached)) {
+          const newCache = cached.map((item) =>
+            upperSet.has((item.no_sj || '').trim().toUpperCase())
+              ? { ...item, status: 'SELESAI' as const, picker_name: pickerName || item.picker_name || 'Admin' }
+              : item
+          );
+          localStorage.setItem('wms_picking_cache', JSON.stringify(newCache));
         }
       }
-    } catch (err) {}
+
+      // Update wms_raw_picking_list_cache
+      const rawCachedStr = localStorage.getItem('wms_raw_picking_list_cache');
+      if (rawCachedStr) {
+        const rawCached = JSON.parse(rawCachedStr);
+        if (Array.isArray(rawCached)) {
+          const newRaw = rawCached.map((item) =>
+            upperSet.has((item.no_sj || '').trim().toUpperCase())
+              ? { ...item, status: 'SELESAI' as const, picker_name: pickerName || item.picker_name || 'Admin' }
+              : item
+          );
+          localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify(newRaw));
+        }
+      }
+    }
+  } catch (cacheErr) {
+    console.warn('Cache update error in completePickingSuratJalanBatchSupabase:', cacheErr);
+  }
+
+  // 2. Sync to Supabase in background / async
+  try {
+    for (const sj of upperNoSjs) {
+      const encodedSj = encodeURIComponent(sj);
+
+      // Try patching picking_list with picker_name
+      try {
+        await supabaseFetch(
+          'picking_list',
+          'PATCH',
+          {
+            status: 'SELESAI',
+            picker_name: pickerName || 'Admin',
+          },
+          `no_sj=ilike.${encodedSj}`
+        );
+      } catch (patchErr: any) {
+        // Retry minimal without picker_name if column doesn't exist
+        try {
+          await supabaseFetch(
+            'picking_list',
+            'PATCH',
+            {
+              status: 'SELESAI',
+            },
+            `no_sj=ilike.${encodedSj}`
+          );
+        } catch (innerPatchErr) {
+          console.warn(`Supabase patch picking_list failed for ${sj}:`, innerPatchErr);
+        }
+      }
+
+      // Also sync to peminjaman (if SPS/PJM)
+      if (sj.startsWith('SPS') || sj.startsWith('PJM')) {
+        await supabaseFetch(
+          'peminjaman',
+          'PATCH',
+          {
+            status: 'SELESAI',
+          },
+          `no_peminjaman=ilike.${encodedSj}`
+        ).catch(() => {});
+      }
+    }
     return true;
   } catch (e) {
-    console.error('completePickingSuratJalanBatchSupabase error:', e);
-    return false;
+    console.warn('Supabase remote sync warning in batch complete (saved locally):', e);
+    return true;
   }
 }
 
