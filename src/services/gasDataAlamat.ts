@@ -20,7 +20,7 @@ const getGasUrl = () => {
  * sehingga data termuat benar, instan, dan bebas dari kendala login Google Apps Script.
  */
 export async function fetchDataAlamatList(): Promise<AddressData[]> {
-  // 1. Ambil cache lokal terlebih dahulu (0ms responsivitas)
+  // 1. Ambil cache lokal terlebih dahulu (0ms responsivitas fallback)
   let cached: AddressData[] = [];
   try {
     const raw = localStorage.getItem('wms_cached_data_alamat');
@@ -33,19 +33,11 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
   } catch {}
 
   const mergedMap = new Map<string, AddressData>();
-
-  // Masukkan cache awal ke map
-  cached.forEach((item) => {
-    if (item.nama_penerima && item.alamat) {
-      const key = `${item.nama_penerima.trim().toLowerCase()}_${item.alamat.trim().toLowerCase()}`;
-      mergedMap.set(key, item);
-    }
-  });
+  let hasNetworkSuccess = false;
 
   // 2. Prioritas Utama: Load langsung dari Supabase
   try {
     const sb = getSupabaseClient();
-
     // A. Ambil dari tabel address_book Supabase
     const { data: abData, error: abErr } = await sb
       .from('address_book')
@@ -53,6 +45,7 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
       .order('created_at', { ascending: false });
 
     if (!abErr && Array.isArray(abData)) {
+      hasNetworkSuccess = true;
       abData.forEach((row: any) => {
         if (row.nama_penerima && row.alamat) {
           const key = `${String(row.nama_penerima).trim().toLowerCase()}_${String(row.alamat).trim().toLowerCase()}`;
@@ -68,54 +61,11 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
         }
       });
     }
-
-    // B. Ambil juga riwayat pengiriman manual_shipment dari Supabase
-    const { data: msData, error: msErr } = await sb
-      .from('manual_shipment')
-      .select('id, nama_tujuan, no_telp_tujuan, alamat_tujuan, notes_paket, jasa_kirim, created_at')
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (!msErr && Array.isArray(msData)) {
-      msData.forEach((row: any) => {
-        if (row.nama_tujuan && row.alamat_tujuan) {
-          const key = `${String(row.nama_tujuan).trim().toLowerCase()}_${String(row.alamat_tujuan).trim().toLowerCase()}`;
-          if (!mergedMap.has(key)) {
-            mergedMap.set(key, {
-              id: `ms_${row.id || Math.random().toString(36).substr(2, 6)}`,
-              nama_penerima: String(row.nama_tujuan).trim(),
-              no_telp: String(row.no_telp_tujuan || '').trim(),
-              alamat: String(row.alamat_tujuan).trim(),
-              keterangan: String(row.notes_paket || '').trim(),
-              jasa_kirim: String(row.jasa_kirim || '').trim(),
-              created_at: row.created_at || '',
-            });
-          } else {
-            // Jika sudah ada tapi belum ada no_telp atau jasa_kirim, lengkapi
-            const existing = mergedMap.get(key)!;
-            if (!existing.no_telp && row.no_telp_tujuan) {
-              existing.no_telp = String(row.no_telp_tujuan).trim();
-            }
-            if (!existing.jasa_kirim && row.jasa_kirim) {
-              existing.jasa_kirim = String(row.jasa_kirim).trim();
-            }
-          }
-        }
-      });
-    }
-
-    const resultList = Array.from(mergedMap.values());
-    if (resultList.length > 0) {
-      try {
-        localStorage.setItem('wms_cached_data_alamat', JSON.stringify(resultList));
-      } catch {}
-      return resultList;
-    }
   } catch (supabaseError) {
-    console.warn('Gagal memuat alamat dari Supabase, mencoba GAS fallback:', supabaseError);
+    console.warn('Gagal memuat alamat dari Supabase:', supabaseError);
   }
 
-  // 3. Fallback: Google Apps Script jika Supabase kosong / offline
+  // 3. Gabungkan dengan data dari Google Apps Script (GAS) Sheet Data Alamat
   const url = getGasUrl();
   if (url) {
     try {
@@ -123,6 +73,7 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
       if (res.ok) {
         const result = await res.json();
         if (result && result.success && Array.isArray(result.data)) {
+          hasNetworkSuccess = true;
           result.data.forEach((row: any) => {
             const nama = String(row.nama_penerima || row.nama || '').trim();
             const alamat = String(row.alamat || '').trim();
@@ -143,17 +94,20 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
           });
         }
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Gagal memuat data dari GAS Data Alamat', e);
+    }
   }
 
-  const finalList = Array.from(mergedMap.values());
-  if (finalList.length > 0) {
+  if (hasNetworkSuccess) {
+    const finalList = Array.from(mergedMap.values());
     try {
       localStorage.setItem('wms_cached_data_alamat', JSON.stringify(finalList));
     } catch {}
+    return finalList;
   }
-
-  return finalList.length > 0 ? finalList : cached;
+  
+  return cached;
 }
 
 /**
