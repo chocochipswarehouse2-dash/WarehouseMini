@@ -23,6 +23,8 @@ import {
   HelpCircle,
   RotateCcw,
   Sparkles,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import {
   getStoredSupabaseConfig,
@@ -227,6 +229,35 @@ export const SupabaseMigrationView: React.FC = () => {
 
   const selectAllTables = (selected: boolean) => {
     setTables((prev) => prev.map((t) => ({ ...t, selected })));
+  };
+
+  // Add / Remove custom tables dynamically (Future-proof for schema expansion)
+  const [customTableName, setCustomTableName] = useState('');
+
+  const handleAddCustomTable = () => {
+    const raw = customTableName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!raw) return;
+    if (tables.some((t) => t.name === raw)) {
+      alert(`Tabel "${raw}" sudah ada di dalam antrean migrasi!`);
+      return;
+    }
+    const newTableItem: TableMigrationItem = {
+      name: raw,
+      label: `Kustom: ${raw}`,
+      sourceCount: null,
+      targetCount: null,
+      transferredCount: 0,
+      status: 'idle',
+      selected: true,
+    };
+    setTables((prev) => [...prev, newTableItem]);
+    setCustomTableName('');
+    appendLog(`➕ Menambahkan tabel kustom "${raw}" ke antrean.`);
+  };
+
+  const handleRemoveTable = (name: string) => {
+    setTables((prev) => prev.filter((t) => t.name !== name));
+    appendLog(`➖ Menghapus tabel "${name}" dari antrean migrasi.`);
   };
 
   // Run Direct Batch Migration
@@ -804,8 +835,8 @@ export const SupabaseMigrationView: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Selection Filter */}
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          {/* Quick Selection Filter & Custom Table Adder */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 bg-slate-50 dark:bg-[#0F0F12] p-3 rounded-xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -822,10 +853,37 @@ export const SupabaseMigrationView: React.FC = () => {
               >
                 Batal Pilih
               </button>
+              <span>&bull;</span>
+              <span>
+                {tables.filter((t) => t.selected).length} dari {tables.length} tabel dipilih
+              </span>
             </div>
-            <span>
-              {tables.filter((t) => t.selected).length} dari {tables.length} tabel dipilih
-            </span>
+
+            {/* Input Tambah Tabel Kustom Dinamis */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={customTableName}
+                onChange={(e) => setCustomTableName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomTable();
+                  }
+                }}
+                placeholder="+ Nama tabel baru..."
+                className="px-2.5 py-1.5 bg-white dark:bg-black border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 w-44"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomTable}
+                className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-emerald-500 hover:text-black font-bold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer text-slate-700 dark:text-slate-200"
+                title="Tambahkan tabel baru ke antrean kloning"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah</span>
+              </button>
+            </div>
           </div>
 
           {/* Tables Checklist Grid */}
@@ -839,6 +897,7 @@ export const SupabaseMigrationView: React.FC = () => {
                   <th className="p-3 text-right">Data Target</th>
                   <th className="p-3 text-right">Ditransfer</th>
                   <th className="p-3 text-center">Status</th>
+                  <th className="p-3 w-10 text-center">Hapus</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
@@ -891,6 +950,16 @@ export const SupabaseMigrationView: React.FC = () => {
                       {tbl.status === 'idle' && (
                         <span className="text-[10px] text-slate-400">-</span>
                       )}
+                    </td>
+                    <td className="p-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTable(tbl.name)}
+                        title={`Hapus tabel "${tbl.name}" dari antrean`}
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
