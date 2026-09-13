@@ -734,3 +734,10 @@ export interface RoadmapItem {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface SystemDoc {
+  section_id: string;
+  content: string;
+  updated_by?: string;
+  updated_at?: string;
+}

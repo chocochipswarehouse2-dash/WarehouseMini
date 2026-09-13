@@ -19,6 +19,7 @@ import {
   UserRole,
   UserPermissions,
   RoadmapItem,
+  SystemDoc,
   KaryawanRecord,
   MasterShiftRecord,
   RosterShiftRecord,
@@ -5752,6 +5753,25 @@ export async function deleteRoadmap(id: string): Promise<void> {
     await supabaseFetch('wms_roadmap', 'DELETE', null, `id=eq.${id}`);
   } catch (err) {
     console.error('Error deleting roadmap:', err);
+    throw err;
+  }
+}
+
+export async function getSystemDocs(): Promise<SystemDoc[]> {
+  try {
+    const data = await supabaseFetch<SystemDoc[]>('wms_system_docs', 'GET', null, 'limit=100');
+    return data || [];
+  } catch (err) {
+    console.error('Error fetching system docs:', err);
+    return [];
+  }
+}
+
+export async function saveSystemDoc(doc: SystemDoc): Promise<void> {
+  try {
+    await supabaseFetch('wms_system_docs', 'POST', [doc], 'on_conflict=section_id', true);
+  } catch (err) {
+    console.error('Error saving system doc:', err);
     throw err;
   }
 }

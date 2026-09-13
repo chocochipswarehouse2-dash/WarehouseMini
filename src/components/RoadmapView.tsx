@@ -218,7 +218,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
       </div>
 
       {activeTab === 'workflow' ? (
-        <SystemWorkflow />
+        <SystemWorkflow session={session} onShowToast={onShowToast} />
       ) : (
         <>
           {/* BOARD VIEW */}

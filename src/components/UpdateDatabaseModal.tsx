@@ -662,7 +662,15 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
 
   const handleCopySql = () => {
     const sql = `-- TABEL MASTER PRODUK WMS & OUTLET STORE
--- TABEL ROADMAP CREATE TABLE IF NOT EXISTS public.master_produk FEATURE REQUEST
+-- TABEL ROADMAP & FEATURE REQUEST
+-- TABEL DOKUMENTASI SISTEM (WORKFLOW COMMENTS)
+CREATE TABLE IF NOT EXISTS public.wms_system_docs (
+  section_id TEXT PRIMARY KEY,
+  content TEXT,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.wms_roadmap (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
@@ -809,7 +817,15 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                 </button>
               </div>
               <pre className="text-[11px] font-mono p-3 bg-slate-950 rounded-lg overflow-x-auto text-emerald-300">
-{`-- TABEL ROADMAP CREATE TABLE IF NOT EXISTS public.master_produk FEATURE REQUEST
+{`-- TABEL ROADMAP & FEATURE REQUEST
+-- TABEL DOKUMENTASI SISTEM (WORKFLOW COMMENTS)
+CREATE TABLE IF NOT EXISTS public.wms_system_docs (
+  section_id TEXT PRIMARY KEY,
+  content TEXT,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS public.wms_roadmap (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
