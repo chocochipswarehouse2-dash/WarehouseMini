@@ -1070,10 +1070,10 @@ export default function App() {
             (s) => s.lokasi.toUpperCase() === lokasi.toUpperCase()
           );
 
-          // OPTIMIZATION & BUGFIX: Hanya proses SKU yang benar-benar discan secara fisik.
-          // Jika kita menggabungkan dengan semua SKU di sistem, SKU yang tidak discan
-          // akan otomatis dianggap qty_fisik = 0, yang akan menghapus stoknya.
-          const allSkus = new Set([...Object.keys(physicalCounts)]);
+          const allSkus = new Set([
+            ...Object.keys(physicalCounts),
+            ...systemStockForLokasi.map((s) => s.sku),
+          ]);
 
           allSkus.forEach((sku) => {
             const qty_fisik = physicalCounts[sku] || 0;
