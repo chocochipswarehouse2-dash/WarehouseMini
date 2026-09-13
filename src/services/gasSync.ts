@@ -37,7 +37,7 @@ export interface GasCacheData<T> {
 export async function fetchDataFromGAS<T>(sheetName: string, since?: string | number): Promise<GasSyncResponse<T>> {
   try {
     let tableName = sheetName;
-    if (sheetName === 'Mutasi Log') tableName = 'mutasi_log';
+    if (sheetName === 'Mutasi Log') tableName = 'log_produk';
     if (sheetName === 'Stok Opname Queue') tableName = 'stock_opname_queue';
     if (sheetName === 'Stok Real') tableName = 'stok_real';
     if (sheetName === 'Manual Shipment') tableName = 'manual_shipment';

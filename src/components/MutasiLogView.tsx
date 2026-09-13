@@ -43,7 +43,6 @@ import {
   getAreaFromLokasi,
   supabaseFetch,
 } from '../services/supabase';
-import { fetchWithDeltaSync, clearDeltaSyncCache } from '../services/gasSync';
 import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
@@ -153,12 +152,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     return map;
   }, [productCatalog]);
 
-  // Load all logs from GAS (Delta Sync)
+  // Load all logs from Database
   const loadLogs = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchWithDeltaSync<LogProdukItem>('Mutasi Log');
+      const data = await fetchRecentLogs();
       // Deduplicate by ID
       const unique = Array.from(
         new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
@@ -166,7 +165,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       setLogs(unique);
     } catch (e: any) {
       console.error('Error loading logs:', e);
-      setFetchError(e.message || 'Gagal memuat log mutasi dari Google Sheet');
+      setFetchError(e.message || 'Gagal memuat log mutasi dari Database');
       if (onNotify) onNotify('Gagal memuat mutasi log.', 'error');
     } finally {
       setIsLoading(false);
@@ -174,15 +173,13 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   };
 
   /**
-   * Force full reload: reset delta sync cache so ALL data is fetched fresh
-   * regardless of timestamps. Use this after manual backfill / sheet import.
+   * Force full reload: fetch fresh data from database
    */
   const forceReloadLogs = async () => {
     setIsLoading(true);
     setFetchError(null);
     try {
-      await clearDeltaSyncCache('Mutasi Log');
-      const data = await fetchWithDeltaSync<LogProdukItem>('Mutasi Log');
+      const data = await fetchRecentLogs();
       const unique = Array.from(
         new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
       );
