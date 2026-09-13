@@ -750,3 +750,68 @@ export interface SystemDoc {
   updated_by?: string;
   updated_at?: string;
 }
+
+// ------------------------------------------------------------
+// MODUL AGENDA & KALENDER KERJA
+// ------------------------------------------------------------
+export type AgendaCategory = 'meeting' | 'operasional' | 'project' | 'supplier' | 'urgent' | 'umum';
+
+export interface AgendaAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: 'image' | 'document';
+  url?: string;
+}
+
+export interface AgendaEvent {
+  id: string;
+  title: string;
+  description?: string;
+  start_date: string; // YYYY-MM-DD
+  end_date?: string; // YYYY-MM-DD
+  is_all_day: boolean;
+  start_time?: string; // HH:mm
+  end_time?: string; // HH:mm
+  category: AgendaCategory;
+  location?: string;
+  pic?: string;
+  project_id?: string;
+  attachments?: AgendaAttachment[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ------------------------------------------------------------
+// MODUL PROYEK WMS
+// ------------------------------------------------------------
+export type ProjectStatus = 'planned' | 'in_progress' | 'review' | 'completed' | 'on_hold';
+export type ProjectPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface ProjectTask {
+  id: string;
+  title: string;
+  is_completed: boolean;
+  assigned_to?: string;
+  due_date?: string;
+}
+
+export interface ProjectItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: ProjectStatus;
+  priority: ProjectPriority;
+  category: string;
+  pic?: string;
+  start_date?: string;
+  deadline?: string;
+  progress: number; // 0 - 100
+  tasks: ProjectTask[];
+  attachments?: AgendaAttachment[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+

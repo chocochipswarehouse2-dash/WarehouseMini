@@ -30,6 +30,8 @@ import {
   PerbaikanTicket,
   QcReport,
   SimpanPenerimaanPayload,
+  AgendaEvent,
+  ProjectItem,
 } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
 import { registerUserNames, getUserPersonName } from '../utils/userResolver';
@@ -640,6 +642,113 @@ BEGIN
     EXCEPTION WHEN duplicate_object THEN NULL;
               WHEN OTHERS THEN NULL;
     END;
+  END IF;
+END $$;
+
+-- 11. TABEL PROYEK WMS (wms_projects)
+CREATE TABLE IF NOT EXISTS public.wms_projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  status TEXT DEFAULT 'in_progress',
+  priority TEXT DEFAULT 'medium',
+  category TEXT DEFAULT 'Infrastruktur',
+  pic TEXT DEFAULT '',
+  start_date DATE,
+  deadline DATE,
+  progress INTEGER DEFAULT 0,
+  tasks JSONB DEFAULT '[]'::jsonb,
+  attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 12. TABEL AGENDA & KALENDER (wms_agenda)
+CREATE TABLE IF NOT EXISTS public.wms_agenda (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE,
+  is_all_day BOOLEAN DEFAULT false,
+  start_time TEXT DEFAULT '',
+  end_time TEXT DEFAULT '',
+  category TEXT DEFAULT 'umum',
+  location TEXT DEFAULT '',
+  pic TEXT DEFAULT '',
+  project_id UUID,
+  attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.wms_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_agenda ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public all access" ON public.wms_projects FOR ALL USING (true);
+CREATE POLICY "Allow public all access" ON public.wms_agenda FOR ALL USING (true);
+`;
+
+export const AGENDA_PROJECT_SUPABASE_DDL_SQL = `
+-- ============================================================
+-- DDL SCRIPT: TABEL AGENDA & PROYEK WMS UNTUK SUPABASE
+-- Jalankan skrip ini di menu SQL Editor di dashboard Supabase Anda
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.wms_projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  status TEXT DEFAULT 'in_progress' CHECK (status IN ('planned', 'in_progress', 'review', 'completed', 'on_hold')),
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  category TEXT DEFAULT 'Infrastruktur',
+  pic TEXT DEFAULT '',
+  start_date DATE,
+  deadline DATE,
+  progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  tasks JSONB DEFAULT '[]'::jsonb,
+  attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wms_projects_status ON public.wms_projects(status);
+CREATE INDEX IF NOT EXISTS idx_wms_projects_deadline ON public.wms_projects(deadline);
+
+CREATE TABLE IF NOT EXISTS public.wms_agenda (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE,
+  is_all_day BOOLEAN DEFAULT false,
+  start_time TEXT DEFAULT '',
+  end_time TEXT DEFAULT '',
+  category TEXT DEFAULT 'umum' CHECK (category IN ('meeting', 'operasional', 'project', 'supplier', 'urgent', 'umum')),
+  location TEXT DEFAULT '',
+  pic TEXT DEFAULT '',
+  project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
+  attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
+CREATE INDEX IF NOT EXISTS idx_wms_agenda_category ON public.wms_agenda(category);
+
+ALTER TABLE public.wms_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_agenda ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_projects' AND policyname = 'Allow public all access wms_projects') THEN
+    CREATE POLICY "Allow public all access wms_projects" ON public.wms_projects FOR ALL USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_agenda' AND policyname = 'Allow public all access wms_agenda') THEN
+    CREATE POLICY "Allow public all access wms_agenda" ON public.wms_agenda FOR ALL USING (true);
   END IF;
 END $$;
 `;
@@ -5464,3 +5573,393 @@ export async function saveSystemDoc(doc: SystemDoc): Promise<void> {
     throw err;
   }
 }
+
+// ---------------------------------------------------------------------------
+// AGENDA & PROJECT MODULE (SUPABASE SYNC + OFFLINE-FIRST CACHE)
+// ---------------------------------------------------------------------------
+
+const LOCAL_AGENDA_KEY = 'wms_local_agenda_events_v2';
+const LOCAL_PROJECTS_KEY = 'wms_local_projects_v2';
+
+function getRelativeDateStr(daysOffset: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOffset);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDefaultAgendaSeed(): AgendaEvent[] {
+  return [
+    {
+      id: 'seed-agenda-1',
+      title: 'Briefing Tim Gudang & Jalur Distribusi',
+      description: 'Sinkronisasi target picking harian, pengecekan ketersediaan rak, dan alokasi tim packer.',
+      start_date: getRelativeDateStr(0),
+      is_all_day: false,
+      start_time: '08:30',
+      end_time: '09:30',
+      category: 'operasional',
+      location: 'Ruang Briefing Gudang Utama',
+      pic: 'Budi Santoso',
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'seed-agenda-2',
+      title: 'Stock Opname Rutin Bulanan - Area B',
+      description: 'Pengecekan fisik menyeluruh stok kategori atasan dan bawahan di rak B01-B12.',
+      start_date: getRelativeDateStr(1),
+      is_all_day: true,
+      category: 'operasional',
+      location: 'Gudang Area B',
+      pic: 'Agus Prawiro',
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'seed-agenda-3',
+      title: 'Meeting Negosiasi Supplier Kardus & Bubble Wrap',
+      description: 'Pembahasan kontrak pengadaan bahan packing Q4 dan penyesuaian harga volume grosir.',
+      start_date: getRelativeDateStr(2),
+      is_all_day: false,
+      start_time: '10:00',
+      end_time: '11:30',
+      category: 'supplier',
+      location: 'Meeting Room Lantai 2 / Google Meet',
+      pic: 'Dewi Rahmawati',
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'seed-agenda-4',
+      title: 'Review Sprint & Milestone Sistem WMS Scanner PWA',
+      description: 'Demo integrasi kamera scanner offline dan pengujian fitur live picking task.',
+      start_date: getRelativeDateStr(3),
+      is_all_day: false,
+      start_time: '14:00',
+      end_time: '15:30',
+      category: 'project',
+      location: 'Studio & IT Hub',
+      pic: 'Rian Kurnia',
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'seed-agenda-5',
+      title: 'Audit Standar Keselamatan (K3) & Jalur Forklift',
+      description: 'Pengecekan marka jalan, APAR, dan kelaikan operasional forklift dan pallet jack.',
+      start_date: getRelativeDateStr(5),
+      is_all_day: false,
+      start_time: '13:00',
+      end_time: '14:30',
+      category: 'urgent',
+      location: 'Loading Dock & Area Transit',
+      pic: 'Hendra Saputra',
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    }
+  ];
+}
+
+function getDefaultProjectsSeed(): ProjectItem[] {
+  return [
+    {
+      id: 'seed-project-1',
+      title: 'Relokasi & Reorganisasi Rak Gudang Area B',
+      description: 'Penataan ulang layout rak penyimpanan area B untuk memperluas manuver forklift dan mempercepat rute picking barang fast-moving.',
+      status: 'in_progress',
+      priority: 'high',
+      category: 'Infrastruktur',
+      pic: 'Hendra Saputra',
+      start_date: getRelativeDateStr(-5),
+      deadline: getRelativeDateStr(10),
+      progress: 65,
+      tasks: [
+        { id: 't1', title: 'Survey dimensi layout baru & jalur aman', is_completed: true, assigned_to: 'Hendra' },
+        { id: 't2', title: 'Pembersihan dan pengecatan marka lantai', is_completed: true, assigned_to: 'Tim Lapangan' },
+        { id: 't3', title: 'Pemindahan rak besi B01-B08', is_completed: false, assigned_to: 'Hendra & Tim' },
+        { id: 't4', title: 'Re-pelabelan QR barcode rak', is_completed: false, assigned_to: 'Agus P' }
+      ],
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'seed-project-2',
+      title: 'Upgrade Barcode Scanner PWA & Offline Engine',
+      description: 'Penyempurnaan kamera scanner HTML5 dengan feedback audio haptic dan cache IndexedDB lokal untuk toleransi gangguan internet.',
+      status: 'in_progress',
+      priority: 'urgent',
+      category: 'Sistem IT',
+      pic: 'Rian Kurnia',
+      start_date: getRelativeDateStr(-10),
+      deadline: getRelativeDateStr(4),
+      progress: 85,
+      tasks: [
+        { id: 't21', title: 'Integrasi worker decoding barcode', is_completed: true, assigned_to: 'Rian K' },
+        { id: 't22', title: 'Uji performa scan kamera low-light', is_completed: true, assigned_to: 'Rian K' },
+        { id: 't23', title: 'Pengujian batch offline mutasi stok', is_completed: true, assigned_to: 'Tim IT' },
+        { id: 't24', title: 'Sosialisasi ke staf warehouse', is_completed: false, assigned_to: 'Budi S' }
+      ],
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'seed-project-3',
+      title: 'Penerapan Sistem Label QR Khusus Ekspedisi & Resi Otomatis',
+      description: 'Standardisasi format thermal label 100x150mm untuk memangkas antrean di loading dock saat serah terima kurir.',
+      status: 'planned',
+      priority: 'medium',
+      category: 'Operasional',
+      pic: 'Dewi Rahmawati',
+      start_date: getRelativeDateStr(2),
+      deadline: getRelativeDateStr(20),
+      progress: 25,
+      tasks: [
+        { id: 't31', title: 'Kalibrasi printer thermal Zebra & Iware', is_completed: true, assigned_to: 'Dewi R' },
+        { id: 't32', title: 'Integrasi format resi pengiriman', is_completed: false, assigned_to: 'Dewi R' },
+        { id: 't33', title: 'Uji coba packing 100 paket per hari', is_completed: false, assigned_to: 'Tim Packing' }
+      ],
+      created_by: 'Superadmin',
+      created_at: new Date().toISOString()
+    }
+  ];
+}
+
+/**
+ * Mengambil daftar agenda dari Supabase dengan fallback ke local cache
+ */
+export async function getAgendaEvents(): Promise<AgendaEvent[]> {
+  try {
+    const data = await supabaseFetch<AgendaEvent[]>('wms_agenda', 'GET', null, 'order=start_date.asc,start_time.asc');
+    if (Array.isArray(data)) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(data));
+      }
+      return data;
+    }
+  } catch (err) {
+    console.info('Supabase wms_agenda offline/not yet migrated, using local cache:', err);
+  }
+
+  // Fallback ke localStorage
+  if (typeof window !== 'undefined') {
+    const cached = localStorage.getItem(LOCAL_AGENDA_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+
+    // Baseline Seed jika storage kosong
+    const seed = getDefaultAgendaSeed();
+    localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(seed));
+    return seed;
+  }
+
+  return getDefaultAgendaSeed();
+}
+
+/**
+ * Menyimpan / memperbarui agenda ke Supabase dan local cache
+ */
+export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<AgendaEvent> {
+  const isNew = !item.id;
+  const nowIso = new Date().toISOString();
+  const id = item.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'agenda-' + Date.now());
+  
+  const payload: AgendaEvent = {
+    id,
+    title: item.title || 'Agenda Baru',
+    description: item.description || '',
+    start_date: item.start_date || getRelativeDateStr(0),
+    end_date: item.end_date || item.start_date || getRelativeDateStr(0),
+    is_all_day: Boolean(item.is_all_day),
+    start_time: item.start_time || '',
+    end_time: item.end_time || '',
+    category: item.category || 'umum',
+    location: item.location || '',
+    pic: item.pic || '',
+    project_id: item.project_id || undefined,
+    attachments: item.attachments || [],
+    created_by: item.created_by || 'User',
+    created_at: item.created_at || nowIso,
+    updated_at: nowIso,
+  };
+
+  // 1. Simpan ke Supabase
+  try {
+    if (isNew) {
+      await supabaseFetch('wms_agenda', 'POST', [payload]);
+    } else {
+      const updateData = { ...payload };
+      delete (updateData as any).id;
+      await supabaseFetch('wms_agenda', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+    }
+  } catch (err) {
+    console.warn('Gagal sync agenda ke Supabase (disimpan ke cache lokal):', err);
+  }
+
+  // 2. Simpan ke local cache
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_AGENDA_KEY);
+      let list: AgendaEvent[] = cached ? JSON.parse(cached) : [];
+      const idx = list.findIndex(a => a.id === id);
+      if (idx >= 0) {
+        list[idx] = payload;
+      } else {
+        list.push(payload);
+      }
+      localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(list));
+      window.dispatchEvent(new CustomEvent('wms_agenda_updated', { detail: { item: payload } }));
+    } catch (e) {
+      console.error('Local cache error:', e);
+    }
+  }
+
+  return payload;
+}
+
+/**
+ * Menghapus agenda dari Supabase dan local cache
+ */
+export async function deleteAgendaEvent(id: string): Promise<void> {
+  try {
+    await supabaseFetch('wms_agenda', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+  } catch (err) {
+    console.warn('Gagal hapus agenda di Supabase:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_AGENDA_KEY);
+      if (cached) {
+        let list: AgendaEvent[] = JSON.parse(cached);
+        list = list.filter(a => a.id !== id);
+        localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(list));
+        window.dispatchEvent(new CustomEvent('wms_agenda_updated', { detail: { deletedId: id } }));
+      }
+    } catch {}
+  }
+}
+
+/**
+ * Mengambil daftar proyek dari Supabase dengan fallback ke local cache
+ */
+export async function getProjects(): Promise<ProjectItem[]> {
+  try {
+    const data = await supabaseFetch<ProjectItem[]>('wms_projects', 'GET', null, 'order=created_at.desc');
+    if (Array.isArray(data)) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(data));
+      }
+      return data;
+    }
+  } catch (err) {
+    console.info('Supabase wms_projects offline/not yet migrated, using local cache:', err);
+  }
+
+  // Fallback ke localStorage
+  if (typeof window !== 'undefined') {
+    const cached = localStorage.getItem(LOCAL_PROJECTS_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+
+    const seed = getDefaultProjectsSeed();
+    localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(seed));
+    return seed;
+  }
+
+  return getDefaultProjectsSeed();
+}
+
+/**
+ * Menyimpan / memperbarui proyek ke Supabase dan local cache
+ */
+export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectItem> {
+  const isNew = !item.id;
+  const nowIso = new Date().toISOString();
+  const id = item.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'project-' + Date.now());
+
+  const payload: ProjectItem = {
+    id,
+    title: item.title || 'Proyek Baru',
+    description: item.description || '',
+    status: item.status || 'in_progress',
+    priority: item.priority || 'medium',
+    category: item.category || 'Infrastruktur',
+    pic: item.pic || '',
+    start_date: item.start_date || getRelativeDateStr(0),
+    deadline: item.deadline || getRelativeDateStr(14),
+    progress: typeof item.progress === 'number' ? Math.max(0, Math.min(100, item.progress)) : 0,
+    tasks: item.tasks || [],
+    attachments: item.attachments || [],
+    created_by: item.created_by || 'User',
+    created_at: item.created_at || nowIso,
+    updated_at: nowIso,
+  };
+
+  // 1. Simpan ke Supabase
+  try {
+    if (isNew) {
+      await supabaseFetch('wms_projects', 'POST', [payload]);
+    } else {
+      const updateData = { ...payload };
+      delete (updateData as any).id;
+      await supabaseFetch('wms_projects', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+    }
+  } catch (err) {
+    console.warn('Gagal sync project ke Supabase (disimpan ke cache lokal):', err);
+  }
+
+  // 2. Simpan ke local cache
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_PROJECTS_KEY);
+      let list: ProjectItem[] = cached ? JSON.parse(cached) : [];
+      const idx = list.findIndex(p => p.id === id);
+      if (idx >= 0) {
+        list[idx] = payload;
+      } else {
+        list.unshift(payload);
+      }
+      localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(list));
+      window.dispatchEvent(new CustomEvent('wms_projects_updated', { detail: { item: payload } }));
+    } catch (e) {
+      console.error('Local cache error:', e);
+    }
+  }
+
+  return payload;
+}
+
+/**
+ * Menghapus proyek dari Supabase dan local cache
+ */
+export async function deleteProject(id: string): Promise<void> {
+  try {
+    await supabaseFetch('wms_projects', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+  } catch (err) {
+    console.warn('Gagal hapus project di Supabase:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_PROJECTS_KEY);
+      if (cached) {
+        let list: ProjectItem[] = JSON.parse(cached);
+        list = list.filter(p => p.id !== id);
+        localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(list));
+        window.dispatchEvent(new CustomEvent('wms_projects_updated', { detail: { deletedId: id } }));
+      }
+    } catch {}
+  }
+}
+

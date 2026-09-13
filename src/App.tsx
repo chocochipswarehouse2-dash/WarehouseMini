@@ -1493,7 +1493,10 @@ export default function App() {
                   <PackingView />
               )}
               {activePage === 'agenda' && (
-                  <AgendaView />
+                  <AgendaView 
+                    session={session}
+                    onShowToast={showToast}
+                  />
               )}
               {activePage === 'loading_dock' && (
                   <LoadingDockView

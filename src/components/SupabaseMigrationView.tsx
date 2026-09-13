@@ -65,6 +65,8 @@ const ALL_MIGRATION_TABLES: Omit<TableMigrationItem, 'sourceCount' | 'targetCoun
   { name: 'manual_shipment', label: '16. Manual Shipment Toko (manual_shipment)' },
   { name: 'pengecekan_sj', label: '17. Tarikan MD / Cek SJ (pengecekan_sj)' },
   { name: 'address_book', label: '18. Buku Alamat Cetak Label (address_book)' },
+  { name: 'wms_projects', label: '19. Inisiatif & Task Proyek (wms_projects)' },
+  { name: 'wms_agenda', label: '20. Agenda & Kalender Kerja (wms_agenda)' },
 ];
 
 export const SupabaseMigrationView: React.FC = () => {
