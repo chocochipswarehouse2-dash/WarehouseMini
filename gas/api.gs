@@ -2,16 +2,16 @@
  * WMS GAS BACKEND — api.gs
  * =========================
  * Handler doGet: menyajikan data dari Google Sheets ke Frontend.
- * 
+ *
  * Frontend membaca data DARI SINI (bukan dari Supabase langsung)
  * sehingga egress Supabase hanya terjadi 1x saat sync ke GAS,
  * bukan per-user per-refresh.
- * 
+ *
  * Endpoint URL format:
  *   GET {GAS_WEB_APP_URL}?action=getOrders
  *   GET {GAS_WEB_APP_URL}?table=Manual+Shipment
  *   GET {GAS_WEB_APP_URL}?action=getPengecekanSJ
- * 
+ *
  * CATATAN: doGet sudah berjalan di context yang sama dengan webhook.gs (doPost).
  * Hanya ada 1 Web App deployment yang menangani keduanya.
  */
@@ -34,7 +34,7 @@ function doGet(e) {
       return handleGetSheet('pengecekan_sj');
     }
 
-    // 🏢 DATA ALAMAT (Address Book) 🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢🏢
+    // ── DATA ALAMAT (Address Book) ────────────────────────────────────────
     if (action === 'getDataAlamat') {
       return handleGetDataAlamat();
     }
@@ -200,19 +200,19 @@ function handleGetJasaKirim() {
  */
 function getDefaultOutlets() {
   return [
-    { nama: 'Mall Kelapa Gading',      fulfillment: 'Mall Kelapa Gading' },
-    { nama: 'La Vela Tangerang',       fulfillment: 'La Vela Tangerang' },
+    { nama: 'Mall Kelapa Gading',          fulfillment: 'Mall Kelapa Gading' },
+    { nama: 'La Vela Tangerang',           fulfillment: 'La Vela Tangerang' },
     { nama: 'Paskal Hyper Square Bandung', fulfillment: 'Paskal Hyper Square Bandung' },
-    { nama: 'Gading Serpong Tangerang', fulfillment: 'Gading Serpong Tangerang' },
-    { nama: 'Ciputra World Surabaya',  fulfillment: 'Ciputra World Surabaya' },
-    { nama: 'Puri Indah Mall',         fulfillment: 'Puri Indah Mall' },
-    { nama: 'By The Sea PIK',          fulfillment: 'By The Sea PIK' },
-    { nama: 'Pakuwon Mall Surabaya',   fulfillment: 'Pakuwon Mall Surabaya' },
-    { nama: 'Living World Tangerang',  fulfillment: 'Living World Tangerang' },
-    { nama: 'Lippo Mall Puri',         fulfillment: 'Lippo Mall Puri' },
-    { nama: 'Sun Plaza Medan',         fulfillment: 'Sun Plaza Medan' },
-    { nama: 'Deli Park Medan',         fulfillment: 'Deli Park Medan' },
-    { nama: 'Central Park Jakarta',    fulfillment: 'Central Park Jakarta' },
+    { nama: 'Gading Serpong Tangerang',    fulfillment: 'Gading Serpong Tangerang' },
+    { nama: 'Ciputra World Surabaya',      fulfillment: 'Ciputra World Surabaya' },
+    { nama: 'Puri Indah Mall',             fulfillment: 'Puri Indah Mall' },
+    { nama: 'By The Sea PIK',              fulfillment: 'By The Sea PIK' },
+    { nama: 'Pakuwon Mall Surabaya',       fulfillment: 'Pakuwon Mall Surabaya' },
+    { nama: 'Living World Tangerang',      fulfillment: 'Living World Tangerang' },
+    { nama: 'Lippo Mall Puri',             fulfillment: 'Lippo Mall Puri' },
+    { nama: 'Sun Plaza Medan',             fulfillment: 'Sun Plaza Medan' },
+    { nama: 'Deli Park Medan',             fulfillment: 'Deli Park Medan' },
+    { nama: 'Central Park Jakarta',        fulfillment: 'Central Park Jakarta' }
   ];
 }
 
@@ -231,41 +231,35 @@ function getDefaultJasaKirim() {
   ];
 }
 
-
 /**
- * Baca sheet Data Alamat, mengabaikan header jika tidak ada
+ * Baca sheet Data Alamat, mengabaikan baris header dan baris kosong
  */
 function handleGetDataAlamat() {
   var ss = getSpreadsheet();
   var sheet = ss.getSheetByName('Data Alamat');
   if (!sheet) return jsonResponse({ success: true, data: [] });
-  
+
   var values = sheet.getDataRange().getValues();
   if (values.length === 0) return jsonResponse({ success: true, data: [] });
+
   var data = [];
-  
-  var hasHeaders = false;
   var row1str = values[0].join(' ').toLowerCase();
-  if (row1str.indexOf('nama') !== -1 || row1str.indexOf('alamat') !== -1) {
-    hasHeaders = true;
-  }
-  
+  var hasHeaders = (row1str.indexOf('nama') !== -1 || row1str.indexOf('alamat') !== -1);
   var startIndex = hasHeaders ? 1 : 0;
-  
+
   for (var i = startIndex; i < values.length; i++) {
-     var row = values[i];
-     if (row.join('').trim() === '') continue;
-     
-     data.push({
-       id: String(row[0] || ''),
-       nama_penerima: String(row[1] || ''),
-       no_telp: String(row[2] || ''),
-       alamat: String(row[3] || ''),
-       keterangan: String(row[4] || ''),
-       jasa_kirim: String(row[5] || ''),
-       created_at: String(row[6] || '')
-     });
+    var row = values[i];
+    if (row.join('').trim() === '') continue;
+    data.push({
+      id:            String(row[0] || ''),
+      nama_penerima: String(row[1] || ''),
+      no_telp:       String(row[2] || ''),
+      alamat:        String(row[3] || ''),
+      keterangan:    String(row[4] || ''),
+      jasa_kirim:    String(row[5] || ''),
+      created_at:    String(row[6] || '')
+    });
   }
-  
+
   return jsonResponse({ success: true, data: data });
 }
