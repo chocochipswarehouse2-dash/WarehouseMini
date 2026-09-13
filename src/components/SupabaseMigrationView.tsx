@@ -543,7 +543,7 @@ export const SupabaseMigrationView: React.FC = () => {
                   Langkah 2: Eksekusi Master Skrip DDL Schema di Akun Baru
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Membuat seluruh 18 tabel, index pencarian cepat, view stok realtime, dan izin RLS secara otomatis.
+                  Membuat seluruh 20 tabel (termasuk Agenda & Proyek), index pencarian cepat, view stok realtime, dan izin RLS secara otomatis.
                 </p>
               </div>
             </div>
@@ -587,7 +587,7 @@ export const SupabaseMigrationView: React.FC = () => {
             <div className="p-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-slate-400 text-xs">
               <span className="flex items-center gap-1.5">
                 <FileCode className="w-3.5 h-3.5 text-emerald-400" />
-                <span>public/supabase_full_schema.sql (18 Tabel, Views, RLS, Realtime)</span>
+                <span>public/supabase_full_schema.sql (20 Tabel, Views, RLS, Realtime)</span>
               </span>
               <span>{loadingSql ? 'Memuat...' : `${sqlContent.split('\n').length} baris SQL`}</span>
             </div>

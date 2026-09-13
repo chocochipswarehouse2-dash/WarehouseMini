@@ -372,7 +372,50 @@ CREATE TABLE IF NOT EXISTS public.perijinan_cuti (
 );
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 14. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
+-- 14. TABEL PROYEK & AGENDA KERJA WMS
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.wms_projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  status TEXT DEFAULT 'in_progress' 
+    CHECK (status IN ('planned', 'in_progress', 'review', 'completed', 'on_hold')),
+  priority TEXT DEFAULT 'medium' 
+    CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  category TEXT DEFAULT 'Infrastruktur',
+  pic TEXT DEFAULT '',
+  start_date DATE,
+  deadline DATE,
+  progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+  tasks JSONB DEFAULT '[]'::jsonb,
+  attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_agenda (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE,
+  is_all_day BOOLEAN DEFAULT false,
+  start_time TEXT DEFAULT '',
+  end_time TEXT DEFAULT '',
+  category TEXT DEFAULT 'umum' 
+    CHECK (category IN ('meeting', 'operasional', 'project', 'supplier', 'urgent', 'umum')),
+  location TEXT DEFAULT '',
+  pic TEXT DEFAULT '',
+  project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
+  attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 15. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW public.stok_real_fisik AS
 SELECT 
@@ -411,7 +454,7 @@ FROM public.log_produk lp
 GROUP BY lp.sku, lp.lokasi, lp.area, lp.nama_produk, lp.size;
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 15. INDEKS PENCARIAN & PERFORMA
+-- 16. INDEKS PENCARIAN & PERFORMA
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_log_produk_sku ON public.log_produk(sku);
 CREATE INDEX IF NOT EXISTS idx_log_produk_lokasi ON public.log_produk(lokasi);
@@ -433,9 +476,14 @@ CREATE INDEX IF NOT EXISTS idx_roster_nik_tanggal ON public.roster_shift(nik, ta
 CREATE INDEX IF NOT EXISTS idx_presensi_nik_tanggal ON public.presensi(nik, tanggal);
 CREATE INDEX IF NOT EXISTS idx_lembur_nik ON public.lembur(nik);
 CREATE INDEX IF NOT EXISTS idx_cuti_nik ON public.perijinan_cuti(nik);
+CREATE INDEX IF NOT EXISTS idx_wms_projects_status ON public.wms_projects(status);
+CREATE INDEX IF NOT EXISTS idx_wms_projects_deadline ON public.wms_projects(deadline);
+CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
+CREATE INDEX IF NOT EXISTS idx_wms_agenda_category ON public.wms_agenda(category);
+CREATE INDEX IF NOT EXISTS idx_wms_agenda_project_id ON public.wms_agenda(project_id);
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 16. ROW LEVEL SECURITY (RLS) & ACCESS POLICIES
+-- 17. ROW LEVEL SECURITY (RLS) & ACCESS POLICIES
 -- ──────────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
@@ -444,7 +492,8 @@ DECLARE
     'wms_users', 'master_produk', 'log_produk', 'stock_opname_queue',
     'penerimaan_produksi', 'picking_list', 'peminjaman', 'perbaikan_tickets',
     'qc_reports', 'manual_shipment', 'pengecekan_sj', 'address_book',
-    'karyawan', 'master_shift', 'roster_shift', 'presensi', 'lembur', 'perijinan_cuti'
+    'karyawan', 'master_shift', 'roster_shift', 'presensi', 'lembur', 'perijinan_cuti',
+    'wms_projects', 'wms_agenda'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
@@ -455,7 +504,7 @@ BEGIN
 END $$;
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 17. AKTIFKAN REALTIME REPLICATION UNTUK TABEL UTAMA
+-- 18. AKTIFKAN REALTIME REPLICATION UNTUK TABEL UTAMA
 -- ──────────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
@@ -463,7 +512,7 @@ DECLARE
   tables text[] := ARRAY[
     'log_produk', 'stock_opname_queue', 'peminjaman', 'picking_list',
     'perbaikan_tickets', 'qc_reports', 'manual_shipment', 'pengecekan_sj',
-    'karyawan', 'presensi', 'lembur'
+    'karyawan', 'presensi', 'lembur', 'wms_projects', 'wms_agenda'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
@@ -482,3 +531,4 @@ END $$;
 -- ==============================================================================
 -- SELESAI! Seluruh skema database Supabase telah siap digunakan 100%.
 -- ==============================================================================
+

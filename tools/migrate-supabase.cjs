@@ -73,6 +73,8 @@ const TABLES_TO_MIGRATE = [
   'manual_shipment',
   'pengecekan_sj',
   'address_book',
+  'wms_projects',
+  'wms_agenda',
 ];
 
 const BATCH_SIZE = 500;
