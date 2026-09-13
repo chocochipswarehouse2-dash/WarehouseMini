@@ -90,7 +90,7 @@ export default defineConfig(({ command }) => {
               type: 'application/json',
               icons: [
                 {
-                  src: 'icon-192.png',
+                  src: 'logo.png',
                   sizes: '192x192',
                   type: 'image/png'
                 }
@@ -126,25 +126,25 @@ export default defineConfig(({ command }) => {
           ],
           icons: [
             {
-              src: 'icon-192.png',
+              src: 'logo.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'icon-192.png',
+              src: 'logo.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: 'icon-512.png',
+              src: 'logo.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'icon-512.png',
+              src: 'logo.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
@@ -152,14 +152,14 @@ export default defineConfig(({ command }) => {
           ],
           screenshots: [
             {
-              src: 'icon-512.png',
+              src: 'logo.png',
               sizes: '512x512',
               type: 'image/png',
               form_factor: 'wide',
               label: 'Warehouse Mini Dashboard'
             },
             {
-              src: 'icon-512.png',
+              src: 'logo.png',
               sizes: '512x512',
               type: 'image/png',
               form_factor: 'narrow',
@@ -172,7 +172,7 @@ export default defineConfig(({ command }) => {
               short_name: 'Scan',
               description: 'Buka pemindai',
               url: './',
-              icons: [{ src: 'icon-192.png', sizes: '192x192' }]
+              icons: [{ src: 'logo.png', sizes: '192x192' }]
             }
           ]
         } as any

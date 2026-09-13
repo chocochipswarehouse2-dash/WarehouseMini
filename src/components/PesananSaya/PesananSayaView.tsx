@@ -25,7 +25,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'manual_shipment', label: 'Manual Shipment', icon: Truck },
-    { id: 'distribusi', label: 'Distribusi Store', icon: Store },
+    { id: 'distribusi', label: 'Transfer Order', icon: Store },
     { id: 'shopee', label: 'Shopee', icon: ShoppingBag },
     { id: 'tiktok', label: 'Tiktok', icon: ShoppingBag },
     { id: 'website', label: 'Website', icon: Globe },
@@ -108,7 +108,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
                   </div>
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1.5">
-                      <span className="text-slate-600 dark:text-slate-300">Distribusi Store</span>
+                      <span className="text-slate-600 dark:text-slate-300">Transfer Order</span>
                       <span className="text-emerald-600 dark:text-emerald-400">Loading...</span>
                     </div>
                     <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -117,7 +117,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
                   </div>
                   <div className="pt-4 mt-2 border-t border-slate-100 dark:border-slate-800">
                     <p className="text-xs text-slate-500 text-center">
-                      Dashboard utama ini nantinya akan menampilkan progress gabungan dari Manual Shipment dan Distribusi Store secara real-time.
+                      Dashboard utama ini nantinya akan menampilkan progress gabungan dari Manual Shipment dan Transfer Order secara real-time.
                     </p>
                   </div>
                 </div>
