@@ -141,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'inventory' as ActivePage,
-      label: 'Inventory Realtime',
+      label: 'Inventory',
       shortLabel: 'Inventory',
       icon: Layers,
       description: 'Stok fisik rak & per SKU',

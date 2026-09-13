@@ -994,56 +994,11 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
   return (
     <div className="space-y-3.5 sm:space-y-6 pb-16">
-      {/* 1. Header Page */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div className="flex items-center gap-2.5 sm:gap-3.5">
-            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md shadow-emerald-500/20 shrink-0">
-              <Truck className="w-5 h-5 sm:w-7 sm:h-7" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <h1 className="text-base sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
-                  Penerimaan Produksi
-                </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  WMS Inbound
-                </span>
-              </div>
-              <p className="hidden sm:block text-xs sm:text-sm text-slate-500 mt-1">
-                Catat kedatangan barang fisik Lokal CMT &amp; Kargo, upload foto dokumentasi, dan multi-varian size &amp; warna.
-              </p>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 self-end sm:self-center">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition shadow-xs disabled:opacity-50 cursor-pointer"
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition shadow-xs cursor-pointer"
-              title="Ekspor CSV Data"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Ekspor CSV</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 2. Top-Level Tab Switcher */}
-        <div className="mt-3 sm:mt-5 pt-3 sm:pt-4 border-t border-slate-100 dark:border-slate-800">
-          <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-3">
+      {/* 1. Header Page & Tabs Combined */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Top-Level Tab Switcher */}
+        <div className="flex-1 grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('riwayat')}
@@ -1086,6 +1041,27 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               >
                 Multi
               </span>
+            </button>
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
             </button>
           </div>
         </div>
@@ -1452,9 +1428,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               {getNextSize(block.variants[block.variants.length - 1]?.size || 'S')})
                             </span>
                           </button>
-                        </div>
-                      </div>
-                    </div>
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
                   </div>
                 </div>
               </div>
@@ -1507,65 +1504,6 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           ======================================================== */}
       {activeTab === 'riwayat' && (
         <div className="space-y-3 sm:space-y-6">
-          {/* 4 KPI Summary Cards - Compact on mobile */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-            {/* KPI 1 */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-1 sm:mb-2">
-                <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tight truncate">Total Data</span>
-                <span className="p-1 sm:p-2 rounded-lg sm:rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
-                  <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </span>
-              </div>
-              <div className="text-lg sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white leading-tight">
-                {metrics.totalRows.toLocaleString()}
-              </div>
-              <p className="hidden sm:block text-[11px] text-slate-400 mt-1">Baris transaksi tercatat</p>
-            </div>
-
-            {/* KPI 2 */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-1 sm:mb-2">
-                <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tight truncate">Total Qty (Pcs)</span>
-                <span className="p-1 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0">
-                  <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </span>
-              </div>
-              <div className="text-lg sm:text-2xl lg:text-3xl font-black text-emerald-600 dark:text-emerald-400 leading-tight">
-                {metrics.totalPcs.toLocaleString()}
-              </div>
-              <p className="hidden sm:block text-[11px] text-slate-400 mt-1">Fisik pcs kedatangan</p>
-            </div>
-
-            {/* KPI 3 */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-1 sm:mb-2">
-                <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tight truncate">Lokal CMT</span>
-                <span className="p-1 sm:p-2 rounded-lg sm:rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 shrink-0">
-                  <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </span>
-              </div>
-              <div className="text-lg sm:text-2xl lg:text-3xl font-black text-blue-600 dark:text-blue-400 leading-tight">
-                {metrics.lokalCmtPcs.toLocaleString()}
-              </div>
-              <p className="hidden sm:block text-[11px] text-slate-400 mt-1">Pcs dari vendor lokal CMT</p>
-            </div>
-
-            {/* KPI 4 */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-1 sm:mb-2">
-                <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-tight truncate">Kargo Ekspedisi</span>
-                <span className="p-1 sm:p-2 rounded-lg sm:rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 shrink-0">
-                  <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </span>
-              </div>
-              <div className="text-lg sm:text-2xl lg:text-3xl font-black text-amber-600 dark:text-amber-400 leading-tight">
-                {metrics.kargoPcs.toLocaleString()}
-              </div>
-              <p className="hidden sm:block text-[11px] text-slate-400 mt-1">Pcs dari kargo / pengiriman luar</p>
-            </div>
-          </div>
-
           {/* Filter Toolbar - Clean & space-efficient */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 shadow-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3">
@@ -1664,9 +1602,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   )}
                   <span className="truncate">Sync</span>
                 </button>
-              </div>
-            </div>
           </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
           {/* View Mode Switcher: Kartu (1 SJ = 1 Kartu) vs Tabel */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs">
@@ -1949,9 +1908,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
-                </div>
-              </div>
-            </div>
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
           ) : (
             /* Unified Table */
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
@@ -2153,9 +2133,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
-              </div>
-            </div>
           </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
           )}
         </div>
       )}
@@ -2238,9 +2239,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               >
                 Kirim
               </button>
-            </div>
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
           </div>
         </div>
+      </div>
       )}
 
       {/* ========================================================
@@ -2564,9 +2586,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                     </>
                   )}
                 </button>
-              </div>
-            </div>
           </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
         </div>
       )}
 
@@ -2622,9 +2665,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   </>
                 )}
               </button>
-            </div>
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
           </div>
         </div>
+      </div>
       )}
 
       {/* ========================================================
@@ -2722,9 +2786,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 <Camera className="w-4 h-4" />
                 <span>Ambil Foto</span>
               </button>
-            </div>
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </button>
           </div>
         </div>
+      </div>
       )}
 
       {/* ========================================================
