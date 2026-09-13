@@ -2622,9 +2622,67 @@ export async function deletePeminjamanFromSupabase(noPeminjaman: string): Promis
   if (!noPeminjaman) return false;
   try {
     await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodeURIComponent(noPeminjaman)}`);
+    // Also clean local cache
+    try {
+      const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
+      const filtered = cached.filter(c => c.noPeminjaman !== noPeminjaman && c.id !== noPeminjaman);
+      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(filtered));
+      localStorage.setItem('wms_peminjaman_records', JSON.stringify(filtered));
+    } catch {}
     return true;
   } catch (err) {
     console.error('Error deleting peminjaman:', err);
+    return false;
+  }
+}
+
+export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Promise<boolean> {
+  const no = record.noPeminjaman || record.no_sps || record.id;
+  if (!no) return false;
+  try {
+    // 1. Delete existing rows for this loan number
+    await supabaseFetch('peminjaman', 'DELETE', null, `no_peminjaman=eq.${encodeURIComponent(no)}`);
+
+    // 2. Re-insert updated items with fresh IDs
+    const baseId = Math.floor(Date.now() / 1000) * 1000;
+    const payload = (record.items || []).map((it, idx) => {
+      const rawSize = (it.size || '').trim();
+      const cleanSize = (rawSize && rawSize !== '-') 
+        ? rawSize 
+        : (extractSizeFromSku(it.sku || '') !== '-' ? extractSizeFromSku(it.sku || '') : 'ALL');
+      const rawNama = it.produk || it.nama_produk || it.sku || 'Unknown';
+      return {
+        id: baseId + idx,
+        no_peminjaman: no,
+        pic: record.namaPeminjam || record.nama_peminjam || '',
+        keperluan: record.keperluan || '',
+        tanggal_pinjam: record.tglPinjam || record.tanggal_pinjam || '',
+        sku: it.sku || `SKU-${Date.now()}`,
+        nama_produk: rawNama,
+        size: cleanSize,
+        qty: Number(it.qty) || 1,
+        lokasi: it.lokasi || 'BLOK F',
+        status: record.status || 'Dipinjam',
+        operator: record.username || record.operator || 'System',
+        keterangan: (record.noWaPeminjam || record.no_wa_peminjam) ? `WA:${record.noWaPeminjam || record.no_wa_peminjam}` : (record.keterangan || '')
+      };
+    });
+
+    if (payload.length > 0) {
+      await supabaseFetch('peminjaman', 'POST', payload);
+    }
+
+    // 3. Update local cache
+    try {
+      const cached: PeminjamanRecord[] = JSON.parse(localStorage.getItem('wms_peminjaman_cache') || '[]');
+      const updated = cached.map(c => (c.noPeminjaman === no || c.id === no) ? record : c);
+      localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+      localStorage.setItem('wms_peminjaman_records', JSON.stringify(updated));
+    } catch {}
+
+    return true;
+  } catch (err) {
+    console.error('Error updating peminjaman in Supabase:', err);
     return false;
   }
 }

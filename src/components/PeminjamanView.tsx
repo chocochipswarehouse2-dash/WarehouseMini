@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Loader2,
   MapPin,
+  Edit2,
 } from 'lucide-react';
 import {
   sendPeminjamanAutoWhatsApp,
@@ -45,6 +46,7 @@ import { ProductItem, PeminjamanItemForm, PeminjamanRecord, ChannelStockItem, Us
 import {
   fetchPeminjamanFromSupabase,
   savePeminjamanToSupabase,
+  updatePeminjamanInSupabase,
   deletePeminjamanFromSupabase,
   returnPeminjamanSupabase,
   getSupabaseClient,
@@ -366,6 +368,19 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       setModalWaPeminjam(selectedRecordForModal.noWaPeminjam || selectedRecordForModal.no_wa_peminjam || '');
     }
   }, [selectedRecordForModal]);
+
+  // Edit & Delete Modal States
+  const [editingRecord, setEditingRecord] = useState<PeminjamanRecord | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+  const [deleteConfirmRecord, setDeleteConfirmRecord] = useState<PeminjamanRecord | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [editProductSearch, setEditProductSearch] = useState<string>('');
+  const [showEditProductDropdown, setShowEditProductDropdown] = useState<boolean>(false);
+
+  const editCatalogSuggestions = useMemo(() => {
+    if (!editProductSearch.trim() || editProductSearch.trim().length < 2) return [];
+    return fuzzySearchMultiple(productCatalog, editProductSearch.trim(), ['nama_produk', 'sku', 'nama', 'size']).slice(0, 8);
+  }, [productCatalog, editProductSearch]);
 
   // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
   useEffect(() => {
@@ -1286,6 +1301,143 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     onShowToast(`Status ${target?.noPeminjaman || 'peminjaman'} diubah menjadi ${nextStatus}!`, 'success');
   };
 
+  // Open Edit Modal
+  const handleStartEdit = (rec: PeminjamanRecord) => {
+    setEditingRecord(JSON.parse(JSON.stringify(rec)));
+    setEditProductSearch('');
+    setShowEditProductDropdown(false);
+  };
+
+  // Add Item in Edit Modal
+  const handleAddItemInEdit = (prod?: any) => {
+    if (!editingRecord) return;
+    const cleanSku = (prod?.sku || '').trim().toUpperCase();
+    const cleanSize = prod?.size || (cleanSku ? extractSizeFromSku(cleanSku) : 'ALL');
+    const newItem: PeminjamanItemForm = {
+      id: `edit-item-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      produk: prod?.nama_produk || prod?.nama || prod?.produk || '',
+      sku: cleanSku,
+      size: cleanSize && cleanSize !== '-' ? cleanSize : 'ALL',
+      qty: 1,
+      lokasi: prod?.lokasi || 'BLOK F',
+      stokMap: 0,
+      stokStudio: 0,
+      stokShp: 0,
+      stokTtk: 0,
+    };
+    setEditingRecord({
+      ...editingRecord,
+      items: [...(editingRecord.items || []), newItem],
+    });
+    setEditProductSearch('');
+    setShowEditProductDropdown(false);
+  };
+
+  // Update Item field in Edit Modal
+  const handleUpdateItemInEdit = (index: number, field: string, value: any) => {
+    if (!editingRecord || !editingRecord.items) return;
+    const nextItems = [...editingRecord.items];
+    nextItems[index] = { ...nextItems[index], [field]: value };
+    setEditingRecord({ ...editingRecord, items: nextItems });
+  };
+
+  // Remove Item in Edit Modal
+  const handleDeleteItemInEdit = (index: number) => {
+    if (!editingRecord || !editingRecord.items) return;
+    if (editingRecord.items.length <= 1) {
+      onShowToast('Peminjaman minimal harus memiliki 1 barang!', 'warning');
+      return;
+    }
+    const nextItems = editingRecord.items.filter((_, i) => i !== index);
+    setEditingRecord({ ...editingRecord, items: nextItems });
+  };
+
+  // Save Edit to Supabase & Local Cache
+  const handleSaveEdit = async () => {
+    if (!editingRecord) return;
+    const no = editingRecord.noPeminjaman || editingRecord.id;
+    if (!no) return;
+
+    if (!editingRecord.namaPeminjam?.trim()) {
+      onShowToast('Nama peminjam wajib diisi!', 'warning');
+      return;
+    }
+
+    if (!editingRecord.items || editingRecord.items.length === 0) {
+      onShowToast('Daftar barang tidak boleh kosong!', 'warning');
+      return;
+    }
+
+    for (const it of editingRecord.items) {
+      if (!it.qty || it.qty <= 0) {
+        onShowToast(`Qty barang "${it.produk || it.sku}" harus lebih dari 0!`, 'warning');
+        return;
+      }
+    }
+
+    setIsSavingEdit(true);
+    showGlobalLoading('Menyimpan perubahan peminjaman...');
+    try {
+      const ok = await updatePeminjamanInSupabase(editingRecord);
+      if (!ok) throw new Error('Gagal memperbarui data di Supabase');
+
+      const updated = records.map((r) =>
+        (r.noPeminjaman === no || r.id === no) ? editingRecord : r
+      );
+      setRecords(updated);
+      saveLocalPeminjamanRecords(updated);
+      try {
+        localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+      } catch {}
+
+      if (selectedRecordForModal && (selectedRecordForModal.noPeminjaman === no || selectedRecordForModal.id === no)) {
+        setSelectedRecordForModal(editingRecord);
+      }
+
+      onShowToast(`Data peminjaman ${no} berhasil diperbarui!`, 'success');
+      setEditingRecord(null);
+    } catch (err: any) {
+      console.error('Save edit error:', err);
+      onShowToast(err.message || 'Gagal menyimpan perubahan', 'error');
+    } finally {
+      setIsSavingEdit(false);
+      hideGlobalLoading();
+    }
+  };
+
+  // Delete Record from Supabase & Local Cache
+  const handleDeleteRecord = async (rec: PeminjamanRecord) => {
+    const no = rec.noPeminjaman || rec.id;
+    if (!no) return;
+
+    setIsDeleting(true);
+    showGlobalLoading('Menghapus data peminjaman...');
+    try {
+      const ok = await deletePeminjamanFromSupabase(no);
+      if (!ok) throw new Error('Gagal menghapus data dari Supabase');
+
+      const updated = records.filter((r) => r.noPeminjaman !== no && r.id !== no);
+      setRecords(updated);
+      saveLocalPeminjamanRecords(updated);
+      try {
+        localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+      } catch {}
+
+      if (selectedRecordForModal && (selectedRecordForModal.noPeminjaman === no || selectedRecordForModal.id === no)) {
+        setSelectedRecordForModal(null);
+      }
+      setDeleteConfirmRecord(null);
+
+      onShowToast(`Data peminjaman ${no} berhasil dihapus!`, 'success');
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      onShowToast(err.message || 'Gagal menghapus peminjaman', 'error');
+    } finally {
+      setIsDeleting(false);
+      hideGlobalLoading();
+    }
+  };
+
   return (
     <div id="peminjamanContainer" className="flex-1 p-3 sm:p-5 max-w-7xl mx-auto w-full space-y-4">
       {/* Header Banner */}
@@ -2124,31 +2276,52 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </div>
 
                   {/* Actions */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRecordForModal(rec)}
-                      className="py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
-                    >
-                      <FileText className="w-3 h-3 text-emerald-400" />
-                      <span>Detail</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePrintSJ(rec)}
-                      className="py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
-                    >
-                      <Printer className="w-3 h-3" />
-                      <span>Cetak SJ</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSendWa(rec, 'grup')}
-                      className="py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors"
-                    >
-                      <Share2 className="w-3 h-3" />
-                      <span>Kirim WA</span>
-                    </button>
+                  <div className="space-y-1.5 pt-1">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRecordForModal(rec)}
+                        className="py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <FileText className="w-3 h-3 text-emerald-400" />
+                        <span>Detail</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePrintSJ(rec)}
+                        className="py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Printer className="w-3 h-3" />
+                        <span>Cetak SJ</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSendWa(rec, 'grup')}
+                        className="py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Share2 className="w-3 h-3" />
+                        <span>Kirim WA</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(rec)}
+                        className="py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmRecord(rec)}
+                        className="py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Hapus</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -2415,21 +2588,404 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             })()}
 
             {/* Footer Buttons */}
+            <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rec = selectedRecordForModal;
+                    setSelectedRecordForModal(null);
+                    handleStartEdit(rec);
+                  }}
+                  className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rec = selectedRecordForModal;
+                    setDeleteConfirmRecord(rec);
+                  }}
+                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecordForModal(null)}
+                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintSJ(selectedRecordForModal)}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] text-xs flex items-center gap-1.5 transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Surat Jalan (PDF)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT PEMINJAMAN */}
+      {editingRecord && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0F0F12]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <span>Edit Riwayat Peminjaman</span>
+                    <span className="font-mono text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
+                      {editingRecord.noPeminjaman}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Perbarui informasi peminjam, keperluan, tanggal, status, atau daftar item barang.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRecord(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form Fields */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Nama Peminjam */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Nama Peminjam (PIC) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRecord.namaPeminjam || ''}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, namaPeminjam: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="Contoh: Budi, Siti, dll."
+                  />
+                </div>
+
+                {/* No WA Peminjam */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    No. WhatsApp PIC
+                  </label>
+                  <input
+                    type="tel"
+                    value={editingRecord.noWaPeminjam || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditingRecord({ ...editingRecord, noWaPeminjam: val, no_wa_peminjam: val });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="0812... / 628..."
+                  />
+                </div>
+
+                {/* Keperluan */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Keperluan
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRecord.keperluan || ''}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, keperluan: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="Contoh: Photoshoot, Live TikTok, Display"
+                  />
+                </div>
+
+                {/* Tanggal Pinjam & Status */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Tanggal Pinjam
+                    </label>
+                    <input
+                      type="date"
+                      value={editingRecord.tglPinjam || ''}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, tglPinjam: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Status
+                    </label>
+                    <select
+                      value={editingRecord.status || 'Dipinjam'}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
+                      className="w-full px-2 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      <option value="Dipinjam">Dipinjam</option>
+                      <option value="Dikembalikan">Dikembalikan</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Section */}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                    Daftar Barang ({editingRecord.items?.length || 0} Item)
+                  </span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowEditProductDropdown(!showEditProductDropdown)}
+                      className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah Barang</span>
+                    </button>
+
+                    {showEditProductDropdown && (
+                      <div className="absolute right-0 top-8 w-72 sm:w-80 bg-white dark:bg-[#18181B] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-20 p-2.5 space-y-2">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editProductSearch}
+                            onChange={(e) => setEditProductSearch(e.target.value)}
+                            placeholder="Cari produk dari katalog..."
+                            className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="max-h-48 overflow-y-auto space-y-1 divide-y divide-slate-100 dark:divide-slate-800">
+                          {editCatalogSuggestions.length > 0 ? (
+                            editCatalogSuggestions.map((prod, pIdx) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={() => handleAddItemInEdit(prod)}
+                                className="w-full text-left p-1.5 hover:bg-emerald-500/10 rounded-lg flex items-center justify-between gap-1 transition-colors cursor-pointer"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                    {prod.nama_produk || prod.nama}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-mono">
+                                    {prod.sku} &bull; Size {prod.size || '-'}
+                                  </div>
+                                </div>
+                                <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              </button>
+                            ))
+                          ) : editProductSearch.trim().length >= 2 ? (
+                            <div className="p-2 text-center text-[11px] text-slate-400">
+                              Tidak ditemukan di katalog.
+                              <button
+                                type="button"
+                                onClick={() => handleAddItemInEdit({ nama_produk: editProductSearch, sku: '', size: 'ALL', lokasi: 'BLOK F' } as any)}
+                                className="mt-1 block mx-auto text-emerald-500 font-bold hover:underline cursor-pointer"
+                              >
+                                + Tambahkan &quot;{editProductSearch}&quot; secara manual
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="p-2 text-center text-[11px] text-slate-400">
+                              Ketik minimal 2 huruf untuk mencari
+                              <button
+                                type="button"
+                                onClick={() => handleAddItemInEdit()}
+                                className="mt-1 block mx-auto text-emerald-500 font-bold hover:underline cursor-pointer"
+                              >
+                                + Tambah Baris Kosong
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Items Table */}
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-400 text-[10px] font-bold uppercase">
+                      <tr>
+                        <th className="p-2.5">Produk / SKU</th>
+                        <th className="p-2.5 w-20 text-center">Size</th>
+                        <th className="p-2.5 w-20 text-center">Qty</th>
+                        <th className="p-2.5 w-28">Lokasi</th>
+                        <th className="p-2.5 w-10 text-center"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {editingRecord.items?.map((it, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={it.produk || ''}
+                              onChange={(e) => handleUpdateItemInEdit(idx, 'produk', e.target.value)}
+                              placeholder="Nama Produk"
+                              className="w-full px-2 py-1 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded font-semibold text-slate-900 dark:text-white outline-none"
+                            />
+                            <input
+                              type="text"
+                              value={it.sku || ''}
+                              onChange={(e) => handleUpdateItemInEdit(idx, 'sku', e.target.value)}
+                              placeholder="SKU"
+                              className="w-full px-2 py-0.5 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded text-[10px] font-mono text-slate-400 outline-none"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={it.size || ''}
+                              onChange={(e) => handleUpdateItemInEdit(idx, 'size', e.target.value)}
+                              className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-emerald-500"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={it.qty || 1}
+                              onChange={(e) => handleUpdateItemInEdit(idx, 'qty', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                              className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-emerald-500 outline-none focus:border-emerald-500"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={it.lokasi || ''}
+                              onChange={(e) => handleUpdateItemInEdit(idx, 'lokasi', e.target.value)}
+                              placeholder="Lokasi"
+                              className="w-full px-2 py-1 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-emerald-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItemInEdit(idx)}
+                              title="Hapus baris barang"
+                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
             <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedRecordForModal(null)}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                disabled={isSavingEdit}
+                onClick={() => setEditingRecord(null)}
+                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
               >
-                Tutup
+                Batal
               </button>
               <button
                 type="button"
-                onClick={() => handlePrintSJ(selectedRecordForModal)}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] text-xs flex items-center gap-1.5 transition-colors"
+                disabled={isSavingEdit}
+                onClick={handleSaveEdit}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Cetak Surat Jalan (PDF)</span>
+                {isSavingEdit ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Simpan Perubahan</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS PEMINJAMAN */}
+      {deleteConfirmRecord && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#09090B] border border-rose-500/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  Hapus Riwayat Peminjaman?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+                  {deleteConfirmRecord.noPeminjaman}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Apakah Anda yakin ingin menghapus data peminjaman atas nama{' '}
+              <strong className="text-slate-900 dark:text-white font-bold">{deleteConfirmRecord.namaPeminjam}</strong>{' '}
+              ({deleteConfirmRecord.items?.length || 0} barang)?
+              <br />
+              <span className="text-rose-500 font-semibold mt-1 block">
+                Tindakan ini permanen dan data akan dihapus dari Supabase.
+              </span>
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmRecord(null)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteRecord(deleteConfirmRecord)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl shadow-[0_0_12px_rgba(244,63,94,0.3)] text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Permanen</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

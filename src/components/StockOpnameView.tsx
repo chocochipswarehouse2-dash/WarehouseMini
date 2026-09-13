@@ -99,8 +99,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      await clearDeltaSyncCache('Stok Opname Queue');
-      const data = await fetchWithDeltaSync<StockOpnameQueueItem>('Stok Opname Queue');
+      const data = await fetchStockOpnameQueue();
       const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
       setSoQueue(unique);
       setSelectedSoIds([]);
