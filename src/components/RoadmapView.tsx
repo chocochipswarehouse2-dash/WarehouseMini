@@ -256,7 +256,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
                           </span>
                           
                           {/* Admin Actions */}
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden shrink-0">
+                          <div className="opacity-100 transition-opacity flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden shrink-0">
                             <button onClick={() => handleOpenEdit(item)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 cursor-pointer">
                               <Edit3 className="w-3 h-3" />
                             </button>
