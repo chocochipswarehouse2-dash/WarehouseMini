@@ -3043,7 +3043,11 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
       const pStatus = String(p.status || '').toUpperCase().trim();
       
       // Skip items that are already returned to avoid re-adding them to picking list
-      if (pStatus === 'DIKEMBALIKAN') continue;
+      if (pStatus === 'DIKEMBALIKAN' || pStatus === 'SELESAI') continue;
+      
+      // Additional safety check: If it already exists in the map as SELESAI, don't overwrite it with a PENDING status from Peminjaman
+      const existing = itemsMap.get(`${no_sj}__${sku}`);
+      if (existing && existing.status === 'SELESAI') continue;
 
       if (no_sj && sku && !itemsMap.has(`${no_sj}__${sku}`)) {
         let pSize = String(p.size || '').trim();
