@@ -28,7 +28,6 @@ import {
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
-import { fetchWithDeltaSync, clearDeltaSyncCache } from '../services/gasSync';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
@@ -79,7 +78,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchWithDeltaSync<StockOpnameQueueItem>('Stok Opname Queue');
+      const data = await fetchStockOpnameQueue('ALL');
       const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
       setSoQueue(unique);
       setSelectedSoIds([]);

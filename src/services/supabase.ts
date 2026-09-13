@@ -5169,28 +5169,6 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
     localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(localList));
   } catch {}
 
-  // Google Apps Script Mirror (if configured)
-  const gasUrl = getStoredGasEndpoint();
-  if (gasUrl && gasUrl.startsWith('http')) {
-    try {
-      fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        mode: 'no-cors',
-        body: JSON.stringify({
-          action: 'simpanPenerimaanProduksi',
-          payload: {
-            tanggal: payload.tanggal,
-            kategori: payload.kategori,
-            no_surat_jalan: payload.no_surat_jalan,
-            keterangan: payload.keterangan || '',
-            produk_list: payload.produk_list || [],
-            operator: targetOperator,
-          },
-        }),
-      }).catch((e) => console.warn('GAS mirror penerimaan failed:', e));
-    } catch {}
-  }
 
   // Dispatch window event for realtime UI update
   if (typeof window !== 'undefined') {
@@ -5241,28 +5219,7 @@ export async function updateBatchPenerimaanProduksiInSupabase(
   // 3. Simpan baris baru
   const newItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
 
-  // 4. GAS Mirror Update if configured
-  const gasUrl = getStoredGasEndpoint();
-  if (gasUrl && gasUrl.startsWith('http')) {
-    try {
-      fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        mode: 'no-cors',
-        body: JSON.stringify({
-          action: 'updateBatchPenerimaanProduksi',
-          payload: {
-            orig_no_surat_jalan: cleanOrigSJ,
-            tanggal: payload.tanggal,
-            kategori: payload.kategori,
-            no_surat_jalan: payload.no_surat_jalan,
-            keterangan: payload.keterangan || '',
-            items: newItems,
-          },
-        }),
-      }).catch((e) => console.warn('GAS mirror update penerimaan failed:', e));
-    } catch {}
-  }
+  
 
   return newItems;
 }
@@ -5295,21 +5252,6 @@ export async function hapusBatchPenerimaanProduksiFromSupabase(noSuratJalan: str
     }
   } catch {}
 
-  // 3. GAS Mirror Delete
-  const gasUrl = getStoredGasEndpoint();
-  if (gasUrl && gasUrl.startsWith('http')) {
-    try {
-      fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        mode: 'no-cors',
-        body: JSON.stringify({
-          action: 'hapusBatchPenerimaanProduksi',
-          no_surat_jalan: cleanSJ,
-        }),
-      }).catch((e) => console.warn('GAS mirror hapus penerimaan failed:', e));
-    } catch {}
-  }
 
   // 4. Dispatch event
   if (typeof window !== 'undefined') {
