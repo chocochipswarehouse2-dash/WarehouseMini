@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, Printer, Send, Smartphone, Copy, Check, MessageSquare,
   Package, MapPin, Calendar, ArrowRight, ExternalLink, Loader2,
   CheckCircle2, AlertTriangle, FileText, ChevronRight
 } from 'lucide-react';
-import { PengecekanSJDraft, ProductItem, UserSession } from '../../types';
-import { createPickingSuratJalanSupabase } from '../../services/supabase';
+import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, StockRealtimeItem } from '../../types';
+import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { extractSizeFromSku } from '../../utils/sortUtils';
@@ -40,11 +40,173 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
   const [assignedPicker, setAssignedPicker] = useState<string>('');
   const [isCopiedWa, setIsCopiedWa] = useState<boolean>(false);
 
+  // Realtime warehouse stock state (stok_real_fisik dari Supabase)
+  const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
+  const [loadingStock, setLoadingStock] = useState<boolean>(false);
+
   // Target WhatsApp group / nomor
   const fonnteCfg = getFonnteConfig();
   const [waTargetNumber, setWaTargetNumber] = useState<string>(() => fonnteCfg.groupTarget || '');
 
-  // Map produk dari catalog untuk mengambil lokasi rak dan size
+  // Key to track unique SKUs in draft items for reactive realtime stock fetching
+  const draftSkusKey = useMemo(() => {
+    return (draft?.items || [])
+      .map((it) => (it.sku || '').trim().toUpperCase())
+      .filter(Boolean)
+      .sort()
+      .join(',');
+  }, [draft?.items]);
+
+  // Fetch realtime warehouse inventory by SKUs across warehouse locations whenever draft items change
+  useEffect(() => {
+    if (!isOpen || !draft || !draft.items || draft.items.length === 0) return;
+    const skus = draft.items.map((it) => (it.sku || '').trim().toUpperCase()).filter(Boolean);
+    const uniqueSkus = Array.from(new Set(skus));
+    if (uniqueSkus.length === 0) return;
+
+    setLoadingStock(true);
+    fetchStockForSkus(uniqueSkus)
+      .then((stocks) => {
+        const map: Record<string, StockRealtimeItem[]> = {};
+        // Pre-initialize all requested SKUs so we know they were checked
+        uniqueSkus.forEach((s) => {
+          map[s] = [];
+        });
+        stocks.forEach((stk) => {
+          const key = (stk.sku || '').toUpperCase().trim();
+          if (!map[key]) map[key] = [];
+          map[key].push(stk);
+        });
+        setRealtimeSkuStocks(map);
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat stok lokasi realtime untuk picking SJ:', err);
+      })
+      .finally(() => {
+        setLoadingStock(false);
+      });
+  }, [isOpen, draftSkusKey]);
+
+  // Helper: Extract all locations for a given item / SKU (strictly warehouse area locations that actually have stock > 0)
+  const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) return [];
+    const map = new Map<string, ProductLocationInfo>();
+
+    // 1. Authoritative check: live Supabase stok_real_fisik data
+    const isRealtimeChecked = cleanSku in realtimeSkuStocks;
+    if (isRealtimeChecked) {
+      const realtimeList = realtimeSkuStocks[cleanSku] || [];
+      // ONLY recommend warehouse locations that currently have physical stock (sisa_stok > 0)!
+      realtimeList.forEach((stk) => {
+        const loc = String(stk.lokasi || '').trim().toUpperCase();
+        const qty = Number(stk.sisa_stok) || 0;
+        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
+          const existing = map.get(loc);
+          if (existing) {
+            existing.qty = (existing.qty || 0) + qty;
+          } else {
+            map.set(loc, {
+              lokasi: loc,
+              qty: qty,
+              isPrimary: false,
+              source: 'REALTIME_STOCK',
+              area: stk.area || 'Warehouse',
+            });
+          }
+        }
+      });
+
+      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
+      if (sorted.length > 0) {
+        sorted[0].isPrimary = true;
+      }
+      return sorted;
+    }
+
+    // 2. Fallback only while realtime data is still loading or not yet queried
+    const strItemLokasi = String(itemLokasi || '').trim();
+    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--' && !strItemLokasi.toUpperCase().includes('BLOK F')) {
+      const parts = strItemLokasi
+        .split(/[,/;\n|]+/)
+        .map((s) => String(s || '').trim().toUpperCase())
+        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
+      parts.forEach((loc, idx) => {
+        map.set(loc, {
+          lokasi: loc,
+          isPrimary: idx === 0,
+          source: 'SJ',
+        });
+      });
+    }
+
+    const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+    if (catMatch) {
+      if (Array.isArray(catMatch.locList)) {
+        catMatch.locList.forEach((itemLoc) => {
+          if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
+            const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
+            const qty = Number(itemLoc.qty) || 0;
+            if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
+              if (!map.has(loc)) {
+                map.set(loc, {
+                  lokasi: loc,
+                  qty: qty,
+                  isPrimary: map.size === 0,
+                  source: 'CATALOG',
+                });
+              }
+            }
+          } else if (typeof itemLoc === 'string') {
+            const loc = itemLoc.trim().toUpperCase();
+            if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc)) {
+              if (!map.has(loc)) {
+                map.set(loc, {
+                  lokasi: loc,
+                  isPrimary: map.size === 0,
+                  source: 'CATALOG',
+                });
+              }
+            }
+          }
+        });
+      }
+      if (catMatch.lokasi) {
+        const loc = String(catMatch.lokasi).trim().toUpperCase();
+        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc)) {
+          if (!map.has(loc)) {
+            map.set(loc, {
+              lokasi: loc,
+              isPrimary: map.size === 0,
+              source: 'CATALOG',
+            });
+          }
+        }
+      }
+    }
+
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
+    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    return allLocs;
+  };
+
+  // Helper: Retrieve all recorded warehouse locations that currently have 0 stock
+  const getRecordedEmptyLocations = (sku: string): string[] => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku || !(cleanSku in realtimeSkuStocks)) return [];
+    const list = realtimeSkuStocks[cleanSku] || [];
+    const emptyLocs: string[] = [];
+    list.forEach((stk) => {
+      const loc = String(stk.lokasi || '').trim().toUpperCase();
+      const qty = Number(stk.sisa_stok) || 0;
+      if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty <= 0) {
+        if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
+      }
+    });
+    return emptyLocs;
+  };
+
+  // Map produk dari catalog dan realtime stok untuk mengambil lokasi rak dan size
   const enrichedItems = useMemo(() => {
     if (!draft || !draft.items) return [];
 
@@ -62,28 +224,59 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         size = extractSizeFromSku(cleanSku);
       }
 
-      const lokasi = prod?.lokasi || (it as any).lokasi || 'Warehouse';
-      const nama = it.nama_produk || prod?.n || cleanSku;
+      const locs = getProductLocations(cleanSku, (it as any).lokasi);
+      const emptyRacks = getRecordedEmptyLocations(cleanSku);
+      const isRealtimeLoaded = cleanSku in realtimeSkuStocks;
+
+      let lokasiDisplay = '-';
+      let isKosong = false;
+
+      if (locs.length > 0) {
+        lokasiDisplay = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+      } else if (isRealtimeLoaded) {
+        lokasiDisplay = emptyRacks.length > 0 ? `KOSONG (Rak: ${emptyRacks.join(', ')})` : 'KOSONG (0 pcs)';
+        isKosong = true;
+      } else if ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'Warehouse') {
+        lokasiDisplay = (it as any).lokasi;
+      } else if (prod?.lokasi && isWarehouseLocation(prod.lokasi)) {
+        lokasiDisplay = prod.lokasi;
+      } else {
+        lokasiDisplay = loadingStock ? 'Memeriksa Rak...' : 'Belum Ada Rak';
+      }
+
+      const primaryLokasi = locs.length > 0
+        ? locs[0].lokasi
+        : (emptyRacks.length > 0
+            ? emptyRacks[0]
+            : ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'Warehouse'
+                ? (it as any).lokasi
+                : (prod?.lokasi && isWarehouseLocation(prod.lokasi) ? prod.lokasi : 'Warehouse')));
+
+      const nama = it.nama_produk || prod?.n || prod?.p || cleanSku;
 
       return {
         no: idx + 1,
         sku: cleanSku,
         nama_produk: nama,
         size: size || '-',
-        lokasi: lokasi || 'Warehouse',
+        lokasi: lokasiDisplay,
+        primaryLokasi,
+        locList: locs,
+        emptyRacks,
+        isKosong,
         qty: it.qty_sj || 1,
       };
     });
 
     // Urutkan berdasarkan Lokasi Rak agar memudahkan picker berjalan efisien di lorong gudang
     items.sort((a, b) => {
-      const locComp = a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+      const locComp = a.primaryLokasi.localeCompare(b.primaryLokasi, undefined, { numeric: true, sensitivity: 'base' });
       if (locComp !== 0) return locComp;
       return a.sku.localeCompare(b.sku);
     });
 
     return items;
-  }, [draft, productCatalog]);
+  }, [draft, productCatalog, realtimeSkuStocks, loadingStock]);
 
   const totalQty = useMemo(() => {
     return enrichedItems.reduce((acc, it) => acc + it.qty, 0);
@@ -142,14 +335,14 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         (it, idx) => `
         <tr>
           <td style="text-align:center; font-weight:bold;">${idx + 1}</td>
-          <td style="font-weight:800; color:#0f172a; font-family:monospace; background:#f8fafc;">${it.lokasi}</td>
+          <td style="font-weight:800; color:${it.isKosong ? '#e11d48' : '#0f172a'}; font-family:monospace; background:${it.isKosong ? '#fff1f2' : '#f8fafc'}; text-align:center;">${it.lokasi}</td>
           <td style="font-family:monospace; font-weight:700;">${it.sku}</td>
           <td>${it.nama_produk}</td>
           <td style="text-align:center; font-weight:bold;">${it.size}</td>
           <td style="text-align:center; font-weight:900; font-size:13px; color:#0f172a;">${it.qty}</td>
           <td style="text-align:center;"><div class="check-box"></div></td>
           <td style="text-align:center;"><div class="blank-line"></div></td>
-          <td style="font-size:10px; color:#64748b;">-</td>
+          <td style="font-size:10px; color:#64748b;">${it.isKosong ? 'Stok 0' : '-'}</td>
         </tr>
       `
       )
@@ -311,7 +504,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
           <thead>
             <tr>
               <th style="width:30px; text-align:center;">No</th>
-              <th style="width:75px; text-align:center;">Lokasi Rak</th>
+              <th style="width:120px; text-align:center;">Lokasi Rak</th>
               <th style="width:130px;">Barcode / SKU</th>
               <th>Nama Produk</th>
               <th style="width:50px; text-align:center;">Size</th>
@@ -416,7 +609,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         sku: it.sku,
         nama_produk: it.nama_produk,
         size: it.size,
-        lokasi: it.lokasi,
+        lokasi: it.primaryLokasi || it.lokasi,
         qty_req: it.qty,
       }));
 
@@ -571,20 +764,35 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
               {/* Preview item table */}
               <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                 <div className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                  <span>Daftar Item ({totalSku} SKU)</span>
+                  <div className="flex items-center gap-2">
+                    <span>Daftar Item ({totalSku} SKU)</span>
+                    {loadingStock && (
+                      <span className="flex items-center gap-1 text-[10px] text-primary-600 dark:text-primary-400 font-semibold animate-pulse">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Memeriksa stok rak...
+                      </span>
+                    )}
+                  </div>
                   <span>Total: {totalQty} pcs</span>
                 </div>
                 <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
                   {enrichedItems.map((it) => (
                     <div key={it.sku} className="px-3.5 py-2 text-xs flex items-center justify-between">
                       <div className="min-w-0 flex-1 pr-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center flex-wrap gap-1.5">
                           <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{it.sku}</span>
-                          <span className="px-1.5 py-0.2 bg-slate-200 dark:bg-slate-700 rounded text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                            Rak: {it.lokasi}
-                          </span>
+                          {it.isKosong ? (
+                            <span className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 rounded text-[10px] font-extrabold flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {it.lokasi}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60 rounded text-[10px] font-extrabold flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              Rak: {it.lokasi}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate">{it.nama_produk} (Size: {it.size})</div>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">{it.nama_produk} (Size: {it.size})</div>
                       </div>
                       <div className="font-extrabold text-slate-900 dark:text-white shrink-0">
                         {it.qty} pcs
@@ -737,15 +945,35 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                   {/* Item table preview */}
                   <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                     <div className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                      <span>Item yang akan dibuatkan tugas ({totalSku} SKU)</span>
+                      <div className="flex items-center gap-2">
+                        <span>Item yang akan dibuatkan tugas ({totalSku} SKU)</span>
+                        {loadingStock && (
+                          <span className="flex items-center gap-1 text-[10px] text-purple-600 dark:text-purple-400 font-semibold animate-pulse">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Memeriksa stok rak...
+                          </span>
+                        )}
+                      </div>
                       <span>Total: {totalQty} pcs</span>
                     </div>
                     <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
                       {enrichedItems.map((it) => (
                         <div key={it.sku} className="px-3.5 py-2 text-xs flex items-center justify-between">
                           <div className="min-w-0 flex-1 pr-3">
-                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{it.sku}</span>
-                            <span className="text-[11px] text-slate-500 ml-2">({it.lokasi})</span>
+                            <div className="flex items-center flex-wrap gap-1.5">
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{it.sku}</span>
+                              {it.isKosong ? (
+                                <span className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 rounded text-[10px] font-extrabold flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                                  {it.lokasi}
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/60 rounded text-[10px] font-extrabold flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-purple-600 dark:text-purple-400 shrink-0" />
+                                  Rak: {it.lokasi}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate mt-0.5">{it.nama_produk} (Size: {it.size})</div>
                           </div>
                           <div className="font-extrabold text-slate-900 dark:text-white shrink-0">
                             {it.qty} pcs
