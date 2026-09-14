@@ -1,9 +1,13 @@
+/**
+ * @deprecated Legacy module - Modul Inventory saat ini 100% menggunakan Supabase secara langsung
+ * via fetchSupabaseStokFisikDirect() dan fetchAllStockRealtime() di src/services/supabase.ts.
+ */
 import { fetchWithDeltaSync } from './gasSync';
 import { StockRealtimeItem } from '../types';
 
 /**
- * Mengambil dan mensinkronisasi data Stok Real Fisik dari GAS
- * Menggunakan Delta Sync pattern (hanya menarik data yang berubah).
+ * Mengambil dan mensinkronisasi data Stok Real Fisik (Legacy Fallback)
+ * Saat ini fetchWithDeltaSync telah dialihkan ke tabel stok_real_fisik di Supabase.
  */
 export async function fetchAllStokRealFisik(): Promise<StockRealtimeItem[]> {
   try {

@@ -280,7 +280,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     }
 
     try {
-      // 1. Fetch physical stock rows from Supabase stok_real_fisik (Direct GAS Method)
+      // 1. Fetch physical stock rows directly from Supabase (stok_real_fisik / stok_realtime)
       // Call with isManualRefresh to allow using cache from supabase.ts if not manually refreshed
       const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh || forceNetwork);
       if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
@@ -478,10 +478,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   };
 
   // ========================================================
-  // 2. NORMALISASI & 5-KOMPARASI STOCK AGGREGATION (IDENTIK SCRIPT GAS)
+  // 2. NORMALISASI & 5-KOMPARASI STOCK AGGREGATION (SUPABASE + DEALPOS)
   // ========================================================
   const normalizedInventory = useMemo<NormalizedInventoryItem[]>(() => {
-    // A. Build skuStockMap (applyDirectSupabaseStock from GAS script)
+    // A. Build skuStockMap (from Supabase physical stock)
     const skuStockMap: Record<
       string,
       {

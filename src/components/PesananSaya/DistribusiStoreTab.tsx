@@ -28,6 +28,8 @@ import {
   exportPengecekanToCsv,
   getPendingOfflinePengecekanSJ,
   syncPendingOfflinePengecekanSJ,
+  normalizeDateToIso,
+  getCachedPengecekanSJList,
 } from '../../services/gasTarikanMD';
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
@@ -125,7 +127,7 @@ function parseCsvContent(content: string, fileName: string): ParsedSJGroup[] {
     if (!rowNoSj) rowNoSj = fileName.replace(/\.[^/.]+$/, '').trim(); // Fallback ke nama file jika kosong
     const rowSource = get(col.source) || 'Gudang Pusat';
     const rowDest = get(col.dest) || 'Tujuan';
-    const rowDate = get(col.date) || new Date().toISOString().slice(0, 10);
+    const rowDate = normalizeDateToIso(get(col.date));
     const qty = parseInt(get(col.qty) || '0', 10) || 0;
     const nama = get(col.variant) || get(col.product) || sku;
     const category = get(col.category);
@@ -527,6 +529,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     try {
       const nowIso = new Date().toISOString();
       const submittedBy = session?.name || session?.username || 'Operator';
+      const cleanDate = normalizeDateToIso(activeDraft.tanggal_sj);
 
       // 1. Kumpulkan baris item surat jalan reguler
       const regularRows: PengecekanSJItem[] = comparisonData.map(item => ({
@@ -534,7 +537,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         no_sj: activeDraft.no_sj,
         source: activeDraft.source,
         destination: activeDraft.destination,
-        tanggal_sj: activeDraft.tanggal_sj,
+        tanggal_sj: cleanDate,
         sku: item.sku,
         nama_produk: item.nama_produk,
         category: item.category || '',
@@ -556,7 +559,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         no_sj: activeDraft.no_sj,
         source: activeDraft.source,
         destination: activeDraft.destination,
-        tanggal_sj: activeDraft.tanggal_sj,
+        tanggal_sj: cleanDate,
         sku,
         nama_produk: val.nama || sku,
         category: val.category || 'Lebih',
@@ -578,7 +581,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         no_sj: activeDraft.no_sj,
         source: activeDraft.source,
         destination: activeDraft.destination,
-        tanggal_sj: activeDraft.tanggal_sj,
+        tanggal_sj: cleanDate,
         tipe_import: activeDraft.tipe_import,
         status: submitStatus,
         status_komparasi: summary.has_selisih ? 'SELISIH' : 'COCOK',
@@ -595,13 +598,16 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       const result = await submitTarikanMD(record);
       if (result.success) {
         if (result.offline) {
-          onShowToast('Tersimpan offline di perangkat. Otomatis dikirim ke Databases saat internet kembali aktif.', 'info');
+          onShowToast('Tersimpan offline di perangkat. Otomatis dikirim ke Database saat internet kembali aktif.', 'info');
         } else {
-          const typeMsg = activeDraft.tipe_import === 'Pengiriman' 
-            ? 'Masuk ke antrean modul Picking.' 
-            : 'Menunggu antrean Putaway (Modul Putaway belum tersedia).';
-          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disubmit! ${typeMsg}`, 'success');
+          onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disimpan ke Database Supabase!`, 'success');
         }
+
+        // Optimistic UI: langsung tampilkan record baru di riwayat
+        setRecords(prev => {
+          const filtered = prev.filter(r => r.no_sj !== record.no_sj && r.id !== record.id);
+          return [record, ...filtered];
+        });
 
         // Hapus dari antrean draft karena scan fisik sudah selesai
         deleteSJDraft(activeDraft.id);
@@ -610,13 +616,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
         // Buka tab Riwayat Pengecekan
         setActiveTab('riwayat');
-        loadRecords();
+        // Refresh silently dari Supabase agar sinkron dengan ID/kolom dari database
+        loadRecords(false);
       } else {
-        onShowToast('Gagal menyimpan hasil pengecekan.', 'error');
+        onShowToast(`Gagal menyimpan hasil pengecekan: ${result.message || 'Periksa koneksi atau database'}`, 'error');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Submit error:', e);
-      onShowToast('Terjadi kesalahan saat submit data.', 'error');
+      onShowToast(`Terjadi kesalahan saat submit data: ${e?.message || 'Error'}`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -625,8 +632,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   // ==========================================
   // RIWAYAT PENGECEKAN ACTIONS
   // ==========================================
-  const loadRecords = async () => {
-    setLoadingRecords(true);
+  const loadRecords = async (options?: boolean | React.MouseEvent) => {
+    const showLoadingSpinner = typeof options === 'boolean' ? options : true;
+    // 1. Instantly populate from local cache if available (0ms fast render!)
+    const cached = getCachedPengecekanSJList();
+    if (cached.length > 0 && records.length === 0) {
+      const sortedCached = [...cached].sort((a, b) => {
+        const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
+        const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
+        return timeB - timeA;
+      });
+      setRecords(sortedCached);
+    }
+
+    if (showLoadingSpinner) setLoadingRecords(true);
     try {
       const data = await fetchTarikanMDRecords();
       const sorted = [...data].sort((a, b) => {
@@ -636,7 +655,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       });
       setRecords(sorted);
     } catch {
-      onShowToast('Gagal memuat riwayat pengecekan.', 'error');
+      onShowToast('Gagal memuat riwayat pengecekan dari server.', 'error');
     } finally {
       setLoadingRecords(false);
     }
@@ -649,8 +668,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     setLoadingRecords(true);
     try {
       await clearDeltaSyncCache('Tarikan MD');
+      localStorage.removeItem('wms_cached_pengecekan_sj_records');
       localStorage.removeItem('wms_cached_tarikanmd'); // Clear if any local cache exists
-      await loadRecords();
+      await loadRecords(true);
       onShowToast('Muat ulang penuh selesai.', 'success');
     } catch {
       onShowToast('Gagal memuat ulang penuh.', 'error');
@@ -664,7 +684,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     setDeletingId(rec.id);
     try {
       await deleteTarikanMD(rec.id, rec.no_sj);
-      setRecords(prev => prev.filter(r => r.id !== rec.id));
+      setRecords(prev => prev.filter(r => r.id !== rec.id && r.no_sj !== rec.no_sj));
       onShowToast(`Riwayat SJ "${rec.no_sj}" berhasil dihapus!`, 'success');
     } catch {
       onShowToast('Gagal menghapus riwayat.', 'error');

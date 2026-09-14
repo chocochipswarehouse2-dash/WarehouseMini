@@ -921,7 +921,7 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
     const allStok = await fetchAllStockRealtime(50000, false);
     return allStok.filter(r => cleanLocs.has((r.lokasi || '').toUpperCase()));
   } catch (err) {
-    console.warn('Error fetching realtime stock from GAS for locations:', err);
+    console.warn('Error fetching realtime stock from Supabase for locations:', err);
   }
 
   return [];
@@ -1567,7 +1567,7 @@ export async function resyncStockOpnameQueueItems(
 }
 
 /**
- * Direct Supabase Realtime Stock Fetcher (matches GAS script fetchSupabaseStokFisikDirect)
+ * Direct Supabase Realtime Stock Fetcher
  * Highly optimized with concurrent chunk sizes, instant memory caching, and IndexedDB sync.
  */
 let memoryStokFisikCache: StockRealtimeItem[] | null = null;
@@ -2581,7 +2581,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
         }
       }
     } catch (err) {
-      console.warn('Error fetching stock for products from GAS:', err);
+      console.warn('Error fetching stock for products from Supabase:', err);
     }
   };
 
@@ -3510,20 +3510,23 @@ export async function insertPickingListRowsToSupabase(
 
   const nowIso = new Date().toISOString();
 
-  // 1. Full rows including 'size'
-  const fullRows = newItems.map((it) => {
-    const cleanSize = (it.size || '').trim();
-    let nama = it.nama_produk || it.sku;
-    if (cleanSize && cleanSize !== '-' && cleanSize !== 'ALL') {
-      // nama = nama;
+  // 1. Schema-compliant rows matching official Supabase picking_list table
+  const schemaCompliantRows = newItems.map((it) => {
+    const rawDate = String(it.tanggal || nowIso.slice(0, 10)).trim();
+    let cleanDate = nowIso.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      cleanDate = rawDate;
+    } else {
+      const dmy = rawDate.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+      if (dmy) cleanDate = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
     }
+
     return {
       no_sj: String(it.no_sj || '').trim().toUpperCase(),
-      tanggal: String(it.tanggal || nowIso.slice(0, 10)),
+      tanggal: cleanDate,
       tujuan: String(it.tujuan || 'Marketplace').trim(),
       sku: String(it.sku || '').trim().toUpperCase(),
-      nama_produk: nama,
-      size: cleanSize || '-',
+      nama_produk: it.nama_produk || it.sku,
       qty_req: Number(it.qty_req) || 1,
       qty_picked: Number(it.qty_picked) || 0,
       lokasi: String(it.lokasi || '-').trim(),
@@ -3532,23 +3535,12 @@ export async function insertPickingListRowsToSupabase(
     };
   });
 
-  // 2. Schema-compliant rows matching official supabase_schema.sql (NO 'size' column)
-  const schemaCompliantRows = fullRows.map(({ size, ...rest }) => rest);
-
-  // Attempt 1: Full payload
+  // Attempt 1: Schema-compliant payload (Direct & Fast)
   try {
-    await supabaseFetch('picking_list', 'POST', fullRows);
+    await supabaseFetch('picking_list', 'POST', schemaCompliantRows);
     return true;
   } catch (err: any) {
-    const errMsg = String(err?.message || err || '');
-    console.warn('insertPickingListRowsToSupabase: Attempt 1 with size column failed, trying schema-compliant without size:', errMsg);
-
-    // Attempt 2: Without size column
-    try {
-      await supabaseFetch('picking_list', 'POST', schemaCompliantRows);
-      return true;
-    } catch (err2: any) {
-      console.warn('insertPickingListRowsToSupabase: Attempt 2 without size column failed, trying minimal payload:', err2?.message);
+    console.warn('insertPickingListRowsToSupabase: Attempt 1 failed, trying minimal payload:', err?.message);
 
       // Attempt 3: Minimal fields only
       const minimalRows = schemaCompliantRows.map((r) => ({
@@ -3586,7 +3578,6 @@ export async function insertPickingListRowsToSupabase(
         return true;
       }
     }
-  }
 }
 
 export async function createPickingSuratJalanSupabase(
