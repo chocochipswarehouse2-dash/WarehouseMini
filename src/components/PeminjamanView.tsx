@@ -633,7 +633,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
     if (suggestions.length === 0) {
       return (
-        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 p-4 text-center text-xs text-slate-400 italic">
+        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700/80 shadow-2xl rounded-xl z-50 p-4 text-center text-xs text-slate-400 italic">
           ❌ Produk tidak ditemukan
         </div>
       );
@@ -642,7 +642,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     return (
       <div
         id={`combo-panel-${itemId}`}
-        className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 max-h-64 overflow-y-auto"
+        className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700/80 shadow-2xl rounded-xl z-50 max-h-64 overflow-y-auto"
       >
         {suggestions.map((s, idx) => {
           const isActive = idx === activeComboIndex;
@@ -667,8 +667,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               }}
               className={`px-3 py-2.5 text-xs cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 transition-colors ${
                 isActive
-                  ? 'bg-emerald-500/10 border-l-4 border-l-emerald-500 pl-2'
-                  : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-blue-500/10 border-l-4 border-l-blue-600 pl-2'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
               }`}
             >
               <div className="flex justify-between items-start gap-2">
@@ -1441,94 +1441,123 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   };
 
   return (
-    <div id="peminjamanContainer" className="flex-1 p-3 sm:p-5 max-w-7xl mx-auto w-full space-y-4">
-      {/* Header Banner */}
-      <div className="bg-white dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800/90 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-lg">
-              <FileText className="w-4 h-4" />
-            </span>
-            <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight uppercase">
-              Form Peminjaman Sementara (SPS)
-            </h2>
-            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-mono">
-              Live & Studio
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Modul pengajuan peminjaman barang untuk Divisi Live TikTok, Shopee, Foto Studio, dan Warehouse.
-          </p>
-        </div>
-
-        {/* View Switcher / Tab Buttons */}
-        <div className="grid grid-cols-3 bg-slate-100 dark:bg-black/50 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] sm:text-xs font-bold w-full sm:w-auto gap-1">
+    <div id="peminjamanContainer" className="flex-1 p-2 sm:p-4 max-w-7xl mx-auto w-full space-y-3 sm:space-y-4">
+      {/* 3 Tabs Peminjaman Sementara - Standar Style Quality Control */}
+      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+        <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-1.5">
+          {/* Tab 1: Form Pengajuan */}
           <button
             type="button"
+            id="tab-peminjaman-form"
             onClick={() => setActiveTab('form')}
-            className={`w-full py-2 sm:py-1.5 rounded-lg transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'form'
-                ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50'
+                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="text-center">Form Pengajuan</span>
+            <FileText className="w-4 h-4 shrink-0" />
+            <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+              <span className="sm:hidden">Form</span>
+              <span className="hidden sm:inline">Form Pengajuan</span>
+            </span>
           </button>
+
+          {/* Tab 2: Stok Live Channel */}
           <button
             type="button"
+            id="tab-peminjaman-stok"
             onClick={() => setActiveTab('stok')}
-            className={`w-full py-2 sm:py-1.5 rounded-lg transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'stok'
-                ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500/50'
+                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="text-center">Stok Live <br className="sm:hidden"/>({totalStockPcs})</span>
+            <Layers className="w-4 h-4 shrink-0" />
+            <div className="flex items-center justify-center gap-1 min-w-0">
+              <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+                <span className="sm:hidden">Stok</span>
+                <span className="hidden sm:inline">Stok Live</span>
+              </span>
+              <span
+                className={`px-1.5 py-0.2 text-[9px] sm:text-[10px] font-mono rounded-full font-bold transition-colors shrink-0 ${
+                  activeTab === 'stok'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                }`}
+              >
+                {totalStockPcs}
+              </span>
+            </div>
           </button>
+
+          {/* Tab 3: Riwayat */}
           <button
             type="button"
+            id="tab-peminjaman-riwayat"
             onClick={() => setActiveTab('riwayat')}
-            className={`w-full py-2 sm:py-1.5 rounded-lg transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'riwayat'
-                ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
+                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="text-center">Riwayat <br className="sm:hidden"/>({records.length})</span>
+            <Clock className="w-4 h-4 shrink-0" />
+            <div className="flex items-center justify-center gap-1 min-w-0">
+              <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+                <span className="sm:hidden">Riwayat</span>
+                <span className="hidden sm:inline">Riwayat Peminjaman</span>
+              </span>
+              <span
+                className={`px-1.5 py-0.2 text-[9px] sm:text-[10px] font-mono rounded-full font-bold transition-colors shrink-0 ${
+                  activeTab === 'riwayat'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'
+                }`}
+              >
+                {records.length}
+              </span>
+            </div>
           </button>
         </div>
       </div>
 
       {/* Main 2-Panel Split Container for Desktop & Responsive Mobile */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
         {/* LEFT COLUMN: FORM PENGAJUAN (Visible in 'form' tab or on lg screens) */}
         <div
-          className={`lg:col-span-6 xl:col-span-7 bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm space-y-4 ${
+          className={`lg:col-span-6 xl:col-span-7 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4 ${
             activeTab === 'stok' ? 'hidden lg:block' : activeTab === 'riwayat' ? 'hidden' : 'block'
           }`}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
-                📝 FORM PENGAJUAN PEMINJAMAN SEMENTARA (SPS)
+              <span className="p-1.5 bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                <FileText className="w-4 h-4" />
               </span>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide">
+                  Form Pengajuan Peminjaman Sementara
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Pengajuan barang untuk Live TikTok, Shopee, Foto Studio, dan Warehouse
+                </p>
+              </div>
             </div>
             <button
               type="button"
               onClick={handleFullRefresh}
-              className="px-2.5 py-1 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1.5 transition-all"
+              className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
               title="Refresh Stok & Data SPS"
             >
-              <RefreshCw className={`w-3 h-3 text-emerald-500 ${loadingStock ? 'animate-spin' : ''}`} />
-              <span>REFRESH</span>
+              <RefreshCw className={`w-3 h-3 text-blue-600 dark:text-blue-400 ${loadingStock ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
+            <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider font-mono">
               1. INFORMASI PEMINJAM (DIVISI LIVE / STUDIO)
             </div>
 
@@ -1552,7 +1581,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           setNoWaPeminjam(session.no_hp);
                         }
                       }}
-                      className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
+                      className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-bold"
                     >
                       Saya Sendiri
                     </button>
@@ -1567,7 +1596,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     value={namaPeminjam}
                     onChange={(e) => handleNamaPeminjamChange(e.target.value)}
                     placeholder="Contoh: Sarah / Host Live"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                   />
                   <datalist id="pic-peminjam-datalist">
                     {localUsers.map((u, idx) => (
@@ -1582,7 +1611,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase tracking-wider flex items-center justify-between">
                   <span>NO. WHATSAPP PEMINJAM</span>
-                  <span className="text-[10px] text-emerald-500 font-normal lowercase">(notif otomatis)</span>
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-normal lowercase">(notif otomatis)</span>
                 </label>
                 <div className="relative">
                   <Smartphone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
@@ -1591,7 +1620,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     value={noWaPeminjam}
                     onChange={(e) => setNoWaPeminjam(e.target.value)}
                     placeholder="Contoh: 081234567890"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-mono font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                   />
                 </div>
               </div>
@@ -1606,7 +1635,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   value={keperluan}
                   onChange={(e) => setKeperluan(e.target.value)}
                   placeholder="Contoh: Live TikTok / Live Shopee / Studio"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                 />
               </div>
             </div>
@@ -1623,25 +1652,25 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   required
                   value={tglPinjam}
                   onChange={(e) => setTglPinjam(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                 />
               </div>
             </div>
 
             {/* Multi-item rows section */}
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-3">
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider font-mono">
                   2. DAFTAR BARANG YANG DIPINJAM ({items.length} ITEM)
                 </span>
                 <button
                   type="button"
                   id="btnTambahItemAtas"
                   onClick={handleAddItem}
-                  className="px-2.5 py-1 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all"
+                  className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <Plus className="w-3 h-3 text-emerald-500" />
-                  <span>+ TAMBAH ITEM</span>
+                  <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>+ Tambah Item</span>
                 </button>
               </div>
 
@@ -1656,7 +1685,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   return (
                     <div
                       key={item.id}
-                      className="p-3.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800/80 rounded-xl space-y-2.5 relative shadow-sm"
+                      className="p-3.5 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5 relative shadow-xs"
                     >
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
@@ -1669,10 +1698,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <span
                             className={`font-mono text-[10px] font-extrabold px-2 py-0.5 rounded border ${
                               isKosong
-                                ? 'bg-primary-500/10 text-primary-500 border-primary-500/20'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-400 dark:border-rose-900/50'
                                 : isKurang
-                                ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-900/50'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-900/50'
                             }`}
                           >
                             {isKosong ? '❌ MAP KOSONG' : isKurang ? `⚠️ SISA MAP: ${mapStok}` : `✅ STOK MAP: ${mapStok}`}
@@ -1700,7 +1729,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                 }, 250);
                               }}
                               placeholder="Ketik nama produk / SKU..."
-                              className="w-full pl-3 pr-8 py-2 bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
+                              className="w-full pl-3 pr-8 py-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                               autoComplete="off"
                             />
                             {item.sku && (
@@ -1709,7 +1738,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                 onClick={() => {
                                   handleItemChange(item.id, { produk: '', sku: '', size: '', stokMap: 0 });
                                 }}
-                                className="absolute right-2 top-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+                                className="absolute right-2 top-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
                                 title="Hapus / Reset"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -1720,7 +1749,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
                           {/* Selected Item Detail preview card */}
                           {item.produk && item.sku && (
-                            <div className="mt-1.5 px-2.5 py-1.5 bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800 rounded-lg flex flex-col gap-1.5 text-xs">
+                            <div className="mt-1.5 px-2.5 py-1.5 bg-white dark:bg-[#131d31] border border-slate-200/80 dark:border-slate-800 rounded-lg flex flex-col gap-1.5 text-xs">
                               <div className="flex items-center justify-between min-w-0">
                                 <div className="min-w-0 pr-2">
                                   <div className="font-bold text-slate-900 dark:text-slate-100 whitespace-normal break-words leading-tight text-[11px]">
@@ -1729,11 +1758,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5 mt-0.5">
                                     <span>SKU: <b className="text-slate-700 dark:text-slate-300">{item.sku}</b></span>
                                     <span>&bull;</span>
-                                    <span>Size: <b className="text-emerald-600 dark:text-emerald-400">{item.size || 'ALL'}</b></span>
+                                    <span>Size: <b className="text-blue-600 dark:text-blue-400">{item.size || 'ALL'}</b></span>
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-primary-500/10 text-primary-500 border-primary-500/20'}`}>
+                                  <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded border ${(item.stokMap || 0) > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-900/50' : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-400 dark:border-rose-900/50'}`}>
                                     {(item.stokMap || 0) > 0 ? `${item.stokMap} pcs` : 'Sold'}
                                   </span>
                                 </div>
@@ -1764,11 +1793,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                   } else if (isLoaded) {
                                     return (
                                       <span
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 font-bold text-[9px] border border-primary-500/30"
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
                                         title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
                                       >
                                         <span>KOSONG (0)</span>
-                                        {emptyRacks.length > 0 && <span className="text-primary-500/80 font-mono">({emptyRacks.join(',')})</span>}
+                                        {emptyRacks.length > 0 && <span className="text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
                                       </span>
                                     );
                                   } else if (item.lokasi && item.lokasi !== '-' && !item.lokasi.includes('KOSONG')) {
@@ -1792,11 +1821,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                             QTY <span className="text-primary-500">*</span>
                           </label>
-                          <div className="flex items-center border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-[#09090B] overflow-hidden">
+                          <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-[#131d31] overflow-hidden">
                             <button
                               type="button"
                               onClick={() => handleItemChange(item.id, { qty: Math.max(1, (Number(item.qty) || 1) - 1) })}
-                              className="px-2.5 py-2 text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold"
+                              className="px-2.5 py-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer"
                             >
                               −
                             </button>
@@ -1820,7 +1849,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             <button
                               type="button"
                               onClick={() => handleItemChange(item.id, { qty: (Number(item.qty) || 0) + 1 })}
-                              className="px-2.5 py-2 text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold"
+                              className="px-2.5 py-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer"
                             >
                               +
                             </button>
@@ -1833,10 +1862,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             type="button"
                             disabled={items.length <= 1}
                             onClick={() => handleRemoveItem(item.id)}
-                            className="w-full py-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border border-primary-500/20 transition-all disabled:opacity-30 disabled:pointer-events-none"
+                            className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            <span>HAPUS</span>
+                            <span>Hapus</span>
                           </button>
                         </div>
                       </div>
@@ -1847,21 +1876,21 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             {/* Automatic WhatsApp Notification Banner */}
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="p-3 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-start sm:items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0">
                   <Share2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <span>Notifikasi Otomatis WhatsApp (Fonnte)</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
                     Mengirimkan <b>Picking List</b> ke Grup Gudang & <b>Notifikasi Penerimaan</b> ke WA Ka {namaPeminjam.trim() || 'Peminjam'}.
                   </p>
                 </div>
               </div>
-              <label className="inline-flex items-center gap-2 cursor-pointer self-start sm:self-auto px-2.5 py-1.5 bg-white dark:bg-[#0F0F12] border border-emerald-500/30 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-200">
+              <label className="inline-flex items-center gap-2 cursor-pointer self-start sm:self-auto px-2.5 py-1.5 bg-white dark:bg-[#131d31] border border-emerald-500/30 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-200 shadow-2xs">
                 <input
                   type="checkbox"
                   checked={autoSendWa}
@@ -1873,30 +1902,30 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             {/* Action Submit Buttons */}
-            <div className="pt-3 flex items-center gap-2 sm:gap-3">
+            <div className="pt-2 flex items-center gap-2 sm:gap-3">
               <button
                 type="button"
                 onClick={handleAddItem}
-                className="flex-[1] py-3 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 transition-all text-center leading-tight"
+                className="flex-[1] py-2.5 sm:py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all text-center leading-tight cursor-pointer"
               >
-                <Plus className="w-4 h-4 text-emerald-500" />
-                <span>+ Tambah<br className="sm:hidden" /> Item Lain</span>
+                <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>+ Tambah Item</span>
               </button>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-[1.5] sm:flex-[2] py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] text-[11px] sm:text-xs tracking-wider uppercase flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all disabled:opacity-50 cursor-pointer text-center leading-tight"
+                className="flex-[1.5] sm:flex-[2] py-2.5 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50 text-xs sm:text-sm tracking-wide flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer text-center leading-tight"
               >
                 {submitting ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
                     <span>Memproses...</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>AJUKAN<br className="sm:hidden" /> PEMINJAMAN</span>
+                    <span>Ajukan Peminjaman</span>
                   </>
                 )}
               </button>
@@ -1906,15 +1935,15 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
         {/* RIGHT COLUMN: STOK TERSEDIA (Visible in 'stok' tab or on lg screens) */}
         <div
-          className={`lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm space-y-4 ${
+          className={`lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-4 sm:p-5 shadow-xs space-y-4 ${
             activeTab === 'form' ? 'hidden lg:block' : activeTab === 'riwayat' ? 'hidden' : 'block'
           }`}
         >
           {/* Channel Header & Refresh */}
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
                   {selectedChannel === 'STUDIO'
                     ? '📍 STOK TERSEDIA DI STUDIO (BLOK F)'
                     : selectedChannel === 'SHOPEE'
@@ -1924,8 +1953,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     : '🌐 GABUNGAN STOK (STUDIO / SHP / TTK)'}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                Total: <b className="text-slate-800 dark:text-slate-200">{totalStockItems} SKU</b> &bull; <b className="text-emerald-500">{totalStockPcs} Pcs Tersedia</b>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                Total: <b className="text-slate-800 dark:text-slate-200">{totalStockItems} SKU</b> &bull; <b className="text-blue-600 dark:text-blue-400">{totalStockPcs} Pcs Tersedia</b>
               </div>
             </div>
 
@@ -1934,7 +1963,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 onClick={handleExportStockCSV}
                 title="Export Stok ke CSV"
-                className="p-1.5 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-emerald-500 text-xs transition-colors"
+                className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 text-xs transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
               </button>
@@ -1945,8 +1974,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   onRefreshCatalog();
                 }}
                 title="Sinkronisasi Stok Real-Time Database"
-                className={`p-1.5 bg-slate-100 dark:bg-[#0F0F12] hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-400 hover:text-white text-xs transition-colors ${
-                  loadingStock ? 'animate-spin text-emerald-500' : ''
+                className={`p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 text-xs transition-colors cursor-pointer ${
+                  loadingStock ? 'animate-spin text-blue-600 dark:text-blue-400' : ''
                 }`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -1955,13 +1984,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           </div>
 
           {/* Segmented Channel & Location Buttons (4-tabs including SEMUA) */}
-          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-black/50 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] sm:text-[11px] font-bold">
+          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 dark:bg-[#0b1324] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-[10px] sm:text-xs font-semibold">
             <button
               type="button"
               onClick={() => setSelectedChannel('STUDIO')}
-              className={`py-1.5 rounded-lg transition-all text-center ${
+              className={`py-1.5 rounded-lg transition-all text-center cursor-pointer ${
                 selectedChannel === 'STUDIO'
-                  ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -1970,9 +1999,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => setSelectedChannel('SHOPEE')}
-              className={`py-1.5 rounded-lg transition-all text-center ${
+              className={`py-1.5 rounded-lg transition-all text-center cursor-pointer ${
                 selectedChannel === 'SHOPEE'
-                  ? 'bg-amber-500 text-black font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                  ? 'bg-amber-600 text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -1981,9 +2010,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => setSelectedChannel('TIKTOK')}
-              className={`py-1.5 rounded-lg transition-all text-center ${
+              className={`py-1.5 rounded-lg transition-all text-center cursor-pointer ${
                 selectedChannel === 'TIKTOK'
-                  ? 'bg-slate-800 text-white font-extrabold border border-slate-700 shadow-md'
+                  ? 'bg-slate-900 dark:bg-slate-700 text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -1992,9 +2021,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => setSelectedChannel('ALL')}
-              className={`py-1.5 rounded-lg transition-all text-center ${
+              className={`py-1.5 rounded-lg transition-all text-center cursor-pointer ${
                 selectedChannel === 'ALL'
-                  ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)]'
+                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -2003,7 +2032,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           </div>
 
           {/* Guide Callout Box */}
-          <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+          <div className="px-3 py-2 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-xl text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-2">
             <span className="shrink-0 mt-0.5">💡</span>
             <p className="leading-snug">
               <b>Acuan Peminjam Divisi Live:</b> Daftar barang yang sudah tersedia di channel/lokasi terpilih. Anda dapat meminjam langsung atau menghindari pengajuan ganda.
@@ -2012,28 +2041,28 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
           {/* Search stock input */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
             <input
               type="text"
               value={searchStock}
               onChange={(e) => setSearchStock(e.target.value)}
-              placeholder="🔍 Cari Nama Produk / SKU / Lokasi..."
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
+              placeholder="Cari nama produk / SKU / lokasi..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
             />
           </div>
 
           {/* Table of Available Stocks */}
           <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[380px] overflow-y-auto">
             <table className="w-full text-left text-xs border-collapse font-sans">
-              <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+              <thead className="bg-slate-50 dark:bg-[#0b1324] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
                 {selectedChannel === 'ALL' ? (
                   <tr>
                     <th className="p-2.5">Produk & SKU</th>
                     <th className="p-2.5 text-center w-10">Size</th>
-                    <th className="p-2.5 text-center w-12 text-emerald-600 dark:text-emerald-400">Studio</th>
+                    <th className="p-2.5 text-center w-12 text-blue-600 dark:text-blue-400">Studio</th>
                     <th className="p-2.5 text-center w-12 text-amber-600 dark:text-amber-400">SHP</th>
                     <th className="p-2.5 text-center w-12 text-slate-700 dark:text-slate-300">TTK</th>
-                    <th className="p-2.5 text-center w-12 text-cyan-600 dark:text-cyan-400">Total</th>
+                    <th className="p-2.5 text-center w-12 text-indigo-600 dark:text-indigo-400">Total</th>
                   </tr>
                 ) : (
                   <tr>
@@ -2050,7 +2079,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   <tr>
                     <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
                       <div className="flex items-center justify-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin text-emerald-500" />
+                        <RefreshCw className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
                         <span>Memuat stok real-time dari Database...</span>
                       </div>
                     </td>
@@ -2077,7 +2106,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       return (
                         <tr
                           key={`${stk.sku}_${stk.size || ''}_all_${idx}`}
-                          className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                          className="hover:bg-slate-50/80 dark:hover:bg-[#131d31]/50 transition-colors group"
                         >
                           <td className="p-2.5">
                             <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
@@ -2086,7 +2115,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
                               <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
                               <span>&bull;</span>
-                              <span className="text-emerald-600 dark:text-emerald-400">{stk.locStr}</span>
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold">{stk.locStr}</span>
                             </div>
                           </td>
                           <td className="p-2.5 text-center">
@@ -2095,7 +2124,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             </span>
                           </td>
                           <td className="p-2.5 text-center">
-                            <span className={`font-mono text-xs font-bold ${stk.studioQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-300 dark:text-slate-600'}`}>
+                            <span className={`font-mono text-xs font-bold ${stk.studioQty > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600'}`}>
                               {stk.studioQty || 0}
                             </span>
                           </td>
@@ -2110,7 +2139,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             </span>
                           </td>
                           <td className="p-2.5 text-center">
-                            <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
+                            <span className="font-mono text-xs font-extrabold text-indigo-600 dark:text-indigo-400">
                               {totalLive}
                             </span>
                           </td>
@@ -2121,7 +2150,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     return (
                       <tr
                         key={`${stk.sku}_${stk.size || ''}_${idx}`}
-                        className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                        className="hover:bg-slate-50/80 dark:hover:bg-[#131d31]/50 transition-colors group"
                       >
                         <td className="p-2.5">
                           <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
@@ -2130,22 +2159,22 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
                             <span className="font-semibold text-slate-600 dark:text-slate-300">{stk.sku}</span>
                             <span>&bull;</span>
-                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{stk.locStr}</span>
+                            <span className="text-blue-600 dark:text-blue-400 font-semibold">{stk.locStr}</span>
                           </div>
                           {/* Channel breakdown pills */}
                           <div className="flex flex-wrap gap-1 mt-1">
                             {stk.ttkQty > 0 && (
-                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
                                 🖤 TikTok: {stk.ttkQty}
                               </span>
                             )}
                             {stk.shpQty > 0 && (
-                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
+                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
                                 🧡 Shopee: {stk.shpQty}
                               </span>
                             )}
                             {stk.studioQty > 0 && (
-                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold">
+                              <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 bg-blue-500/20 text-blue-700 dark:text-blue-300 rounded font-mono font-bold">
                                 📍 Studio: {stk.studioQty}
                               </span>
                             )}
@@ -2158,11 +2187,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         </td>
                         <td className="p-2.5 text-center">
                           {displayQty > 0 ? (
-                            <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                            <span className="font-mono text-xs font-extrabold text-blue-600 dark:text-blue-400">
                               {displayQty}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary-100 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50">
                               Sold
                             </span>
                           )}
@@ -2176,7 +2205,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => setDisplayLimit((prev) => prev + 30)}
-                          className="px-4 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
+                          className="px-4 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
                         >
                           Tampilkan Lebih Banyak ({filteredStocks.length - displayLimit} baris lagi)
                         </button>
@@ -2192,13 +2221,13 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
         {/* FULL WIDTH: RIWAYAT PENGAJUAN (Visible in 'riwayat' tab) */}
         {activeTab === 'riwayat' && (
-          <div className="col-span-12 bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3 gap-3">
+          <div className="col-span-12 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
               <div>
-                <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-mono">
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
                   RIWAYAT PENGAJUAN PEMINJAMAN SEMENTARA ({filteredHistory.length})
                 </span>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Daftar transaksi peminjaman barang, cetak surat jalan, dan kirim notifikasi WhatsApp.
                 </p>
               </div>
@@ -2210,14 +2239,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   type="text"
                   value={searchHistory}
                   onChange={(e) => setSearchHistory(e.target.value)}
-                  placeholder="🔍 Cari Invoice / PIC / Produk / SKU..."
-                  className="w-full pl-8 pr-8 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="Cari invoice / PIC / produk / SKU..."
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                 />
                 {searchHistory && (
                   <button
                     type="button"
                     onClick={() => setSearchHistory('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -2226,7 +2255,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             {filteredHistory.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-xs italic bg-slate-50 dark:bg-[#0F0F12] rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="p-8 text-center text-slate-500 dark:text-slate-400 text-xs italic bg-slate-50 dark:bg-[#0b1324] rounded-xl border border-slate-200 dark:border-slate-800">
                 Tidak ada data riwayat peminjaman yang cocok dengan pencarian &quot;{searchHistory}&quot;
               </div>
             ) : (
@@ -2234,19 +2263,19 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 {filteredHistory.map((rec) => (
                   <div
                     key={rec.id}
-                    className="bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-sm"
+                    className="bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-xs"
                   >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-extrabold text-emerald-500">
+                    <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
                       {rec.noPeminjaman}
                     </span>
                     <button
                       type="button"
                       onClick={() => handleToggleReturn(rec.id)}
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all ${
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all border ${
                         rec.status === 'Dipinjam'
-                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50'
                       }`}
                     >
                       {rec.status}
@@ -2263,16 +2292,16 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     </div>
                   </div>
 
-                  <div className="p-2 bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800/80 rounded-lg space-y-1 text-[11px]">
+                  <div className="p-2.5 bg-white dark:bg-[#131d31] border border-slate-200/80 dark:border-slate-800 rounded-lg space-y-1 text-xs">
                     <div className="text-[10px] font-bold text-slate-400 uppercase">
                       Barang Dipinjam ({rec.items.length} SKU):
                     </div>
                     {rec.items.map((it, i) => (
-                      <div key={i} className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+                      <div key={i} className="flex items-center justify-between text-slate-700 dark:text-slate-300 text-[11px]">
                         <span className="line-clamp-1">
                           &bull; {it.produk} ({it.size})
                         </span>
-                        <span className="font-mono font-bold text-emerald-500">{it.qty} Pcs</span>
+                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{it.qty} Pcs</span>
                       </div>
                     ))}
                   </div>
@@ -2283,15 +2312,15 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => setSelectedRecordForModal(rec)}
-                        className="py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                        className="py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       >
-                        <FileText className="w-3 h-3 text-emerald-400" />
+                        <FileText className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                         <span>Detail</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => handlePrintSJ(rec)}
-                        className="py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                        className="py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       >
                         <Printer className="w-3 h-3" />
                         <span>Cetak SJ</span>
@@ -2299,7 +2328,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => handleSendWa(rec, 'grup')}
-                        className="py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors"
+                        className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-xs"
                       >
                         <Share2 className="w-3 h-3" />
                         <span>Kirim WA</span>
@@ -2310,7 +2339,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => handleStartEdit(rec)}
-                        className="py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                        className="py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       >
                         <Edit2 className="w-3 h-3" />
                         <span>Edit</span>
@@ -2318,7 +2347,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       <button
                         type="button"
                         onClick={() => setDeleteConfirmRecord(rec)}
-                        className="py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                        className="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3 h-3" />
                         <span>Hapus</span>
@@ -2336,18 +2365,18 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       {/* MODAL PREVIEW SURAT JALAN & WHATSAPP FONNTE */}
       {selectedRecordForModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+          <div className="bg-white dark:bg-[#09090b] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
             {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0F0F12]">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-emerald-400" />
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-[#0b1324]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
                     Surat Peminjaman Sementara ({selectedRecordForModal.noPeminjaman})
                   </h3>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     PIC: {selectedRecordForModal.namaPeminjam} &bull; {selectedRecordForModal.tglPinjam}
                   </p>
                 </div>
@@ -2355,7 +2384,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setSelectedRecordForModal(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2367,17 +2396,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               return (
             <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
               {/* Document Summary Card */}
-              <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 font-mono">
+              <div className="p-4 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 font-mono">
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-sans">No Invoice:</span>
-                  <span className="font-bold text-emerald-400">{selectedRecordForModal.noPeminjaman}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">No Invoice:</span>
+                  <span className="font-bold text-blue-600 dark:text-blue-400">{selectedRecordForModal.noPeminjaman}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-sans">PIC Peminjam:</span>
-                  <span className="text-slate-200 font-sans font-bold">{selectedRecordForModal.namaPeminjam}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">PIC Peminjam:</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-sans font-bold">{selectedRecordForModal.namaPeminjam}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-sans">No. WhatsApp PIC:</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">No. WhatsApp PIC:</span>
                   <div className="flex items-center gap-1.5 font-sans">
                     <input
                       type="tel"
@@ -2389,17 +2418,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         selectedRecordForModal.no_wa_peminjam = val;
                       }}
                       placeholder="0812... / 628..."
-                      className="px-2 py-1 bg-white dark:bg-black border border-slate-300 dark:border-slate-700 rounded text-xs font-mono text-emerald-400 w-36 outline-none focus:border-emerald-500"
+                      className="px-2.5 py-1 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono text-blue-600 dark:text-blue-400 w-36 outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-sans">Keperluan:</span>
-                  <span className="text-slate-200 font-sans">{selectedRecordForModal.keperluan}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">Keperluan:</span>
+                  <span className="text-slate-800 dark:text-slate-200 font-sans">{selectedRecordForModal.keperluan}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-400 font-sans">Tanggal:</span>
-                  <span className="text-slate-200">{selectedRecordForModal.tglPinjam}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-sans">Tanggal:</span>
+                  <span className="text-slate-800 dark:text-slate-200">{selectedRecordForModal.tglPinjam}</span>
                 </div>
               </div>
 
@@ -2410,12 +2439,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 </div>
                 <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-400 text-[10px] font-bold uppercase">
+                    <thead className="bg-slate-100/80 dark:bg-[#0b1324] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase">
                       <tr>
-                        <th className="p-2">Produk</th>
-                        <th className="p-2 text-center">Size</th>
-                        <th className="p-2 text-center">Qty</th>
-                        <th className="p-2">Lokasi</th>
+                        <th className="p-2.5">Produk</th>
+                        <th className="p-2.5 text-center">Size</th>
+                        <th className="p-2.5 text-center">Qty</th>
+                        <th className="p-2.5">Lokasi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
@@ -2426,38 +2455,38 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         const emptyRacks = getRecordedEmptyLocations(cleanSku);
 
                         return (
-                          <tr key={idx}>
-                            <td className="p-2 font-sans font-semibold text-slate-800 dark:text-slate-200">{it.produk}</td>
-                            <td className="p-2 text-center text-slate-400">{it.size}</td>
-                            <td className="p-2 text-center font-bold text-emerald-400">{it.qty}</td>
-                            <td className="p-2 text-slate-400">
+                          <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-[#131d31]/30">
+                            <td className="p-2.5 font-sans font-semibold text-slate-900 dark:text-slate-100">{it.produk}</td>
+                            <td className="p-2.5 text-center text-slate-500 dark:text-slate-400">{it.size}</td>
+                            <td className="p-2.5 text-center font-bold text-blue-600 dark:text-blue-400">{it.qty}</td>
+                            <td className="p-2.5 text-slate-400">
                               <div className="flex flex-wrap items-center gap-1">
                                 {locs.length > 0 ? (
                                   locs.map((l, lIdx) => (
                                     <span
                                       key={lIdx}
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-mono font-bold text-[10px] border border-emerald-500/30"
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 font-mono font-bold text-[10px] border border-blue-500/30"
                                       title={`Rak ${l.lokasi}: Sisa stok ${l.qty} pcs`}
                                     >
-                                      <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                      <MapPin className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
                                       <span>{l.lokasi}</span>
-                                      <span className="text-[9px] font-black bg-emerald-600/20 px-1 rounded text-emerald-900 dark:text-emerald-100">
+                                      <span className="text-[9px] font-bold bg-blue-600/20 px-1 rounded text-blue-900 dark:text-blue-100">
                                         {l.qty}
                                       </span>
                                     </span>
                                   ))
                                 ) : isLoaded ? (
                                   <span
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 font-bold text-[9px] border border-primary-500/30"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-[9px] border border-rose-500/30"
                                     title={emptyRacks.length > 0 ? `Rak tercatat: ${emptyRacks.join(', ')}` : 'Stok gudang kosong'}
                                   >
                                     <span>KOSONG (0)</span>
-                                    {emptyRacks.length > 0 && <span className="text-[8px] text-primary-500/80 font-mono">({emptyRacks.join(',')})</span>}
+                                    {emptyRacks.length > 0 && <span className="text-[8px] text-rose-500/80 font-mono">({emptyRacks.join(',')})</span>}
                                   </span>
                                 ) : it.lokasi && it.lokasi !== '-' && !it.lokasi.includes('KOSONG') ? (
-                                  <span className="font-mono font-bold text-[10px] text-amber-500">{it.lokasi}</span>
+                                  <span className="font-mono font-bold text-[10px] text-amber-600 dark:text-amber-400">{it.lokasi}</span>
                                 ) : it.lokasi && it.lokasi.includes('KOSONG') ? (
-                                  <span className="font-mono font-bold text-[10px] text-primary-500">{it.lokasi}</span>
+                                  <span className="font-mono font-bold text-[10px] text-rose-600 dark:text-rose-400">{it.lokasi}</span>
                                 ) : (
                                   <span className="text-[10px] text-slate-400 italic">-</span>
                                 )}
@@ -2475,7 +2504,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                    <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <Share2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                     <span>Notifikasi WhatsApp (Fonnte):</span>
                   </div>
                   <span className="text-[10px] text-slate-400 font-mono">
@@ -2485,29 +2514,29 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Card 1: Grup Gudang (Picking List) */}
-                  <div className="p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                  <div className="p-3.5 bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
                         📦 1. Picking List ke Grup Gudang
                       </span>
                       {copiedWaType === 'grup' && (
-                        <span className="text-[10px] text-emerald-500 font-bold">Terkirim!</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Terkirim!</span>
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Target Grup: <code className="text-emerald-500 font-mono">{modalFonnteConfig.groupTarget || '(Belum diset di Pengaturan)'}</code>
+                      Target Grup: <code className="text-blue-600 dark:text-blue-400 font-mono">{modalFonnteConfig.groupTarget || '(Belum diset di Pengaturan)'}</code>
                     </p>
                     <div className="flex items-center gap-1.5 pt-1">
                       <button
                         type="button"
                         disabled={isSendingWaType === 'grup'}
                         onClick={() => handleSendWa(selectedRecordForModal, 'grup')}
-                        className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-xs"
                       >
                         {isSendingWaType === 'grup' ? (
-                          <RefreshCw className="w-3 h-3 animate-spin text-black" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
                         ) : (
-                          <Send className="w-3 h-3" />
+                          <Send className="w-3.5 h-3.5" />
                         )}
                         <span>Kirim Fonnte</span>
                       </button>
@@ -2519,7 +2548,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           onShowToast('Teks pesan grup berhasil disalin!', 'success');
                         }}
                         title="Salin Teks Pesan"
-                        className="p-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs transition-colors"
+                        className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs transition-colors cursor-pointer"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
@@ -2527,29 +2556,29 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </div>
 
                   {/* Card 2: Personal Peminjam */}
-                  <div className="p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                  <div className="p-3.5 bg-slate-50/70 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
                         📱 2. Notif Diterima ke Ka {selectedRecordForModal.namaPeminjam}
                       </span>
                       {copiedWaType === 'personal' && (
-                        <span className="text-[10px] text-emerald-500 font-bold">Terkirim!</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Terkirim!</span>
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      No WA: <code className="text-emerald-500 font-mono">{modalWaPeminjam || selectedRecordForModal.noWaPeminjam || '(Belum diisi)'}</code>
+                      No WA: <code className="text-blue-600 dark:text-blue-400 font-mono">{modalWaPeminjam || selectedRecordForModal.noWaPeminjam || '(Belum diisi)'}</code>
                     </p>
                     <div className="flex items-center gap-1.5 pt-1">
                       <button
                         type="button"
                         disabled={isSendingWaType === 'personal'}
                         onClick={() => handleSendWa(selectedRecordForModal, 'personal', modalWaPeminjam)}
-                        className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-lg text-[10px] flex items-center justify-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-xs"
                       >
                         {isSendingWaType === 'personal' ? (
-                          <RefreshCw className="w-3 h-3 animate-spin text-black" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
                         ) : (
-                          <Send className="w-3 h-3" />
+                          <Send className="w-3.5 h-3.5" />
                         )}
                         <span>Kirim Fonnte</span>
                       </button>
@@ -2565,7 +2594,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           }
                         }}
                         title="Buka via WhatsApp Web"
-                        className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-lg text-xs transition-colors"
+                        className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-xs transition-colors cursor-pointer"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </button>
@@ -2577,7 +2606,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                           onShowToast('Teks notifikasi personal berhasil disalin!', 'success');
                         }}
                         title="Salin Teks Pesan"
-                        className="p-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs transition-colors"
+                        className="p-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs transition-colors cursor-pointer"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
@@ -2590,7 +2619,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             })()}
 
             {/* Footer Buttons */}
-            <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div className="p-4 bg-slate-50/80 dark:bg-[#0b1324] border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -2599,7 +2628,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     setSelectedRecordForModal(null);
                     handleStartEdit(rec);
                   }}
-                  className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                   <span>Edit</span>
@@ -2610,7 +2639,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     const rec = selectedRecordForModal;
                     setDeleteConfirmRecord(rec);
                   }}
-                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Hapus</span>
@@ -2621,14 +2650,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 <button
                   type="button"
                   onClick={() => setSelectedRecordForModal(null)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   Tutup
                 </button>
                 <button
                   type="button"
                   onClick={() => handlePrintSJ(selectedRecordForModal)}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] text-xs flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Cetak Surat Jalan (PDF)</span>
@@ -2642,17 +2671,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       {/* MODAL EDIT PEMINJAMAN */}
       {editingRecord && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+          <div className="bg-white dark:bg-[#09090b] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
             {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0F0F12]">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-[#0b1324]">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
                   <Edit2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <span>Edit Riwayat Peminjaman</span>
-                    <span className="font-mono text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
+                    <span className="font-mono text-xs px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 font-bold">
                       {editingRecord.noPeminjaman}
                     </span>
                   </h3>
@@ -2664,7 +2693,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setEditingRecord(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2682,7 +2711,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     type="text"
                     value={editingRecord.namaPeminjam || ''}
                     onChange={(e) => setEditingRecord({ ...editingRecord, namaPeminjam: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                     placeholder="Contoh: Budi, Siti, dll."
                   />
                 </div>
@@ -2699,7 +2728,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       const val = e.target.value;
                       setEditingRecord({ ...editingRecord, noWaPeminjam: val, no_wa_peminjam: val });
                     }}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                     placeholder="0812... / 628..."
                   />
                 </div>
@@ -2713,7 +2742,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     type="text"
                     value={editingRecord.keperluan || ''}
                     onChange={(e) => setEditingRecord({ ...editingRecord, keperluan: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                     placeholder="Contoh: Photoshoot, Live TikTok, Display"
                   />
                 </div>
@@ -2728,7 +2757,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       type="date"
                       value={editingRecord.tglPinjam || ''}
                       onChange={(e) => setEditingRecord({ ...editingRecord, tglPinjam: e.target.value })}
-                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div>
@@ -2738,7 +2767,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     <select
                       value={editingRecord.status || 'Dipinjam'}
                       onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
-                      className="w-full px-2 py-2 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-2 py-2 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                     >
                       <option value="Dipinjam">Dipinjam</option>
                       <option value="Dikembalikan">Dikembalikan</option>
@@ -2750,21 +2779,21 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               {/* Items Section */}
               <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                  <span className="font-bold text-xs text-slate-900 dark:text-slate-100 uppercase tracking-wider">
                     Daftar Barang ({editingRecord.items?.length || 0} Item)
                   </span>
                   <div className="relative">
                     <button
                       type="button"
                       onClick={() => setShowEditProductDropdown(!showEditProductDropdown)}
-                      className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Tambah Barang</span>
                     </button>
 
                     {showEditProductDropdown && (
-                      <div className="absolute right-0 top-8 w-72 sm:w-80 bg-white dark:bg-[#18181B] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-20 p-2.5 space-y-2">
+                      <div className="absolute right-0 top-9 w-72 sm:w-80 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-20 p-2.5 space-y-2">
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
@@ -2773,7 +2802,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             value={editProductSearch}
                             onChange={(e) => setEditProductSearch(e.target.value)}
                             placeholder="Cari produk dari katalog..."
-                            className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
+                            className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
                           />
                         </div>
 
@@ -2784,7 +2813,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                 key={pIdx}
                                 type="button"
                                 onClick={() => handleAddItemInEdit(prod)}
-                                className="w-full text-left p-1.5 hover:bg-emerald-500/10 rounded-lg flex items-center justify-between gap-1 transition-colors cursor-pointer"
+                                className="w-full text-left p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg flex items-center justify-between gap-1 transition-colors cursor-pointer"
                               >
                                 <div className="min-w-0 flex-1">
                                   <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
@@ -2794,7 +2823,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                     {prod.sku} &bull; Size {prod.size || '-'}
                                   </div>
                                 </div>
-                                <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                               </button>
                             ))
                           ) : editProductSearch.trim().length >= 2 ? (
@@ -2803,7 +2832,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               <button
                                 type="button"
                                 onClick={() => handleAddItemInEdit({ nama_produk: editProductSearch, sku: '', size: 'ALL', lokasi: 'BLOK F' } as any)}
-                                className="mt-1 block mx-auto text-emerald-500 font-bold hover:underline cursor-pointer"
+                                className="mt-1 block mx-auto text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
                               >
                                 + Tambahkan &quot;{editProductSearch}&quot; secara manual
                               </button>
@@ -2814,7 +2843,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               <button
                                 type="button"
                                 onClick={() => handleAddItemInEdit()}
-                                className="mt-1 block mx-auto text-emerald-500 font-bold hover:underline cursor-pointer"
+                                className="mt-1 block mx-auto text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
                               >
                                 + Tambah Baris Kosong
                               </button>
@@ -2829,7 +2858,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 {/* Items Table */}
                 <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-400 text-[10px] font-bold uppercase">
+                    <thead className="bg-slate-100/80 dark:bg-[#0b1324] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase">
                       <tr>
                         <th className="p-2.5">Produk / SKU</th>
                         <th className="p-2.5 w-20 text-center">Size</th>
@@ -2840,21 +2869,21 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                       {editingRecord.items?.map((it, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                        <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-[#131d31]/30">
                           <td className="p-2">
                             <input
                               type="text"
                               value={it.produk || ''}
                               onChange={(e) => handleUpdateItemInEdit(idx, 'produk', e.target.value)}
                               placeholder="Nama Produk"
-                              className="w-full px-2 py-1 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded font-semibold text-slate-900 dark:text-white outline-none"
+                              className="w-full px-2 py-1 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-blue-500 rounded font-semibold text-slate-900 dark:text-white outline-none"
                             />
                             <input
                               type="text"
                               value={it.sku || ''}
                               onChange={(e) => handleUpdateItemInEdit(idx, 'sku', e.target.value)}
                               placeholder="SKU"
-                              className="w-full px-2 py-0.5 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded text-[10px] font-mono text-slate-400 outline-none"
+                              className="w-full px-2 py-0.5 bg-transparent border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-blue-500 rounded text-[10px] font-mono text-slate-400 outline-none"
                             />
                           </td>
                           <td className="p-2">
@@ -2862,7 +2891,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               type="text"
                               value={it.size || ''}
                               onChange={(e) => handleUpdateItemInEdit(idx, 'size', e.target.value)}
-                              className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-emerald-500"
+                              className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-blue-500"
                             />
                           </td>
                           <td className="p-2">
@@ -2871,7 +2900,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               min="1"
                               value={it.qty || 1}
                               onChange={(e) => handleUpdateItemInEdit(idx, 'qty', Math.max(1, parseInt(e.target.value, 10) || 1))}
-                              className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-emerald-500 outline-none focus:border-emerald-500"
+                              className="w-full px-1.5 py-1 text-center bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-blue-600 dark:text-blue-400 outline-none focus:border-blue-500"
                             />
                           </td>
                           <td className="p-2">
@@ -2880,7 +2909,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               value={it.lokasi || ''}
                               onChange={(e) => handleUpdateItemInEdit(idx, 'lokasi', e.target.value)}
                               placeholder="Lokasi"
-                              className="w-full px-2 py-1 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-emerald-500"
+                              className="w-full px-2 py-1 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-blue-500"
                             />
                           </td>
                           <td className="p-2 text-center">
@@ -2902,12 +2931,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             {/* Footer */}
-            <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+            <div className="p-4 bg-slate-50/80 dark:bg-[#0b1324] border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
               <button
                 type="button"
                 disabled={isSavingEdit}
                 onClick={() => setEditingRecord(null)}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 Batal
               </button>
@@ -2915,7 +2944,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isSavingEdit}
                 onClick={handleSaveEdit}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {isSavingEdit ? (
                   <>
@@ -2937,7 +2966,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       {/* MODAL KONFIRMASI HAPUS PEMINJAMAN */}
       {deleteConfirmRecord && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#09090B] border border-rose-500/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-5 space-y-4">
+          <div className="bg-white dark:bg-[#09090b] border border-rose-500/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-5 space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -2967,7 +2996,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => setDeleteConfirmRecord(null)}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 Batal
               </button>
@@ -2975,7 +3004,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => handleDeleteRecord(deleteConfirmRecord)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl shadow-[0_0_12px_rgba(244,63,94,0.3)] text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {isDeleting ? (
                   <>
