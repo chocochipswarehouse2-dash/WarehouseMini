@@ -1573,7 +1573,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <span className="font-mono text-slate-600 dark:text-slate-300">
                                 Pass:{' '}
                                 <b className="font-mono text-primary-500">
-                                  {showPasswords ? (usr.password || '123456') : '••••••'}
+                                  {showPasswords ? (usr.password?.length === 64 ? '•••••• (Terenkripsi)' : (usr.password || '123456')) : '••••••'}
                                 </b>
                               </span>
                               <span>•</span>
