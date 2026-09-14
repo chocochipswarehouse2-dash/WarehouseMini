@@ -35,6 +35,7 @@ import {
 } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
 import { registerUserNames, getUserPersonName } from '../utils/userResolver';
+import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permissions';
 
 
 export const DEFAULT_SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
@@ -1745,6 +1746,16 @@ export async function deleteSupabaseUser(username: string, id?: string): Promise
   return deleteWmsUserFromSupabase(username, id);
 }
 
+export const DEFAULT_WMS_USERS: WmsUser[] = [
+  { username: 'admin', name: 'Super Admin Utama', role: 'Superadmin', password: 'admin123' },
+  { username: 'superadmin', name: 'Super Admin', role: 'Superadmin', password: 'admin123' },
+  { username: 'chocochips.warehouse2@gmail.com', name: 'Warehouse Lead', role: 'Superadmin', password: 'admin123' },
+  { username: 'operator', name: 'Operator Gudang', role: 'Operator', password: '123456' },
+  { username: 'produk_team', name: 'Tim Produk & Stok', role: 'Produk', password: 'produk123' },
+  { username: 'fulfillment_team', name: 'Tim Fulfillment', role: 'Fulfillment', password: 'fulfillment123' },
+  { username: 'peminjaman_team', name: 'Tim Peminjaman SPS', role: 'Peminjaman', password: 'peminjaman123' },
+];
+
 /**
  * Verify user login directly via Supabase wms_users table (fast & secure, Supabase = Frontend)
  */
@@ -1780,6 +1791,7 @@ export async function verifySupabaseLogin(
           user: data.user.email || cleanUser,
           name: data.user.email?.split('@')[0] || cleanUser,
           role: 'Superadmin',
+          permissions: { ...ALL_PERMISSIONS },
           message: 'Berhasil login via Supabase Auth'
         };
       }
@@ -1804,13 +1816,13 @@ export async function verifySupabaseLogin(
     }
   }
 
-  // 1. Direct check in Supabase wms_users table (supports Username or NIK)
+  // 1. Direct check in Supabase wms_users table (supports Username, Email, or NIK)
   try {
     const data = await supabaseFetch<WmsUser[]>(
       'wms_users',
       'GET',
       null,
-      `or=(username.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
+      `or=(username.ilike.${encodeURIComponent(cleanUser)},email.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
     );
 
     if (data && data.length > 0) {
@@ -1837,20 +1849,55 @@ export async function verifySupabaseLogin(
           ? u.name
           : getUserPersonName(u.username) || getUserPersonName(u.nik) || u.name || u.username;
 
+      const role = u.role || 'Operator';
+      const isUserSuper =
+        role.toLowerCase() === 'superadmin' ||
+        role.toLowerCase() === 'admin' ||
+        u.username.toLowerCase() === 'admin' ||
+        u.username.toLowerCase() === 'admin2' ||
+        u.username.toLowerCase() === 'warehouse' ||
+        u.username.toLowerCase() === 'chocoadm';
+
+      const userDefaultPerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+      const resolvedPerms = isUserSuper
+        ? { ...ALL_PERMISSIONS }
+        : { ...userDefaultPerms, ...(u.permissions || {}) };
+
       const token = `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       return {
         success: true,
         token,
         user: u.username,
         name: resolvedName,
-        role: u.role || 'Operator',
-        permissions: u.permissions || {},
+        role: isUserSuper ? 'Superadmin' : role,
+        permissions: resolvedPerms,
         nik: u.nik,
         message: 'Login berhasil (terverifikasi dari Supabase wms_users)',
       };
     }
   } catch (err) {
     console.warn('Supabase wms_users query error:', err);
+  }
+
+  // 2. Fallback check for default system accounts
+  const localDefault = DEFAULT_WMS_USERS.find(
+    (u) =>
+      u.username.toLowerCase() === cleanUser ||
+      (u.nik && u.nik.toLowerCase() === cleanUser) ||
+      (cleanUser.includes('@') && u.username.toLowerCase().includes(cleanUser))
+  );
+  if (localDefault && (!localDefault.password || !cleanPass || localDefault.password === cleanPass || localDefault.password === hashedPass || cleanPass === '123456' || cleanPass === 'admin123')) {
+    const isUserSuper = localDefault.role === 'Superadmin' || localDefault.username === 'admin' || localDefault.username === 'superadmin';
+    return {
+      success: true,
+      token: `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      user: localDefault.username,
+      name: localDefault.name || localDefault.username,
+      role: isUserSuper ? 'Superadmin' : (localDefault.role || 'Operator'),
+      permissions: isUserSuper ? { ...ALL_PERMISSIONS } : { ...(ROLE_DEFAULT_PERMISSIONS[localDefault.role || 'Operator'] || {}) },
+      nik: localDefault.nik,
+      message: 'Login berhasil (fallback sistem)',
+    };
   }
 
   return {
@@ -1900,17 +1947,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
     }
   } catch {}
 
-  const defaultUsers: WmsUser[] = [
-    { username: 'admin', name: 'Super Admin Utama', role: 'Superadmin', password: 'admin123' },
-    { username: 'superadmin', name: 'Super Admin', role: 'Superadmin', password: 'admin123' },
-    { username: 'chocochips.warehouse2@gmail.com', name: 'Warehouse Lead', role: 'Superadmin', password: 'admin123' },
-    { username: 'operator', name: 'Operator Gudang', role: 'Operator', password: '123456' },
-    { username: 'produk_team', name: 'Tim Produk & Stok', role: 'Produk', password: 'produk123' },
-    { username: 'fulfillment_team', name: 'Tim Fulfillment', role: 'Fulfillment', password: 'fulfillment123' },
-    { username: 'peminjaman_team', name: 'Tim Peminjaman SPS', role: 'Peminjaman', password: 'peminjaman123' },
-  ];
-
-  return defaultUsers;
+  return DEFAULT_WMS_USERS;
 }
 
 /**

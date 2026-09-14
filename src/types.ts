@@ -108,6 +108,7 @@ export interface UserPermissions {
   can_tarikan_md?: boolean;
   can_cetak_label?: boolean;
   can_view_resolusi?: boolean;
+  can_view_roadmap?: boolean;
 }
 
 export interface WmsUser {

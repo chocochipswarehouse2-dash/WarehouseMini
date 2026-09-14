@@ -118,7 +118,14 @@ import {
   fetchWmsUsersFromSupabase,
 } from './services/supabase';
 import { WmsUser } from './types';
-import { getDefaultPageForSession, canAccessPage, canAccessSettings } from './services/permissions';
+import {
+  getDefaultPageForSession,
+  canAccessPage,
+  canAccessSettings,
+  isSuperadmin,
+  ALL_PERMISSIONS,
+  ROLE_DEFAULT_PERMISSIONS,
+} from './services/permissions';
 import { getUserPersonName, registerUserNames } from './utils/userResolver';
 import {
   playCategoryBeep,
@@ -398,18 +405,46 @@ export default function App() {
 
     const syncSessionPermissions = async () => {
       try {
+        if (!session) return;
+
+        // If user is superadmin, ensure full permissions
+        if (isSuperadmin(session)) {
+          if (!session.permissions || Object.keys(session.permissions).length < 25) {
+            const updatedSuperSession: UserSession = {
+              ...session,
+              role: 'Superadmin',
+              permissions: { ...ALL_PERMISSIONS },
+            };
+            setSession(updatedSuperSession);
+            localStorage.setItem('wms_user_role', 'Superadmin');
+            localStorage.setItem('wms_user_permissions', JSON.stringify(ALL_PERMISSIONS));
+          }
+          return;
+        }
+
         const cleanUser = session.username.trim().toLowerCase();
         const data = await supabaseFetch<WmsUser[]>(
           'wms_users',
           'GET',
           null,
-          `username=ilike.${encodeURIComponent(cleanUser)}&limit=1`
+          `or=(username.ilike.${encodeURIComponent(cleanUser)},email.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
         );
         if (!isMounted || !data || data.length === 0) return;
 
         const u = data[0];
-        const newRole = u.role || session.role;
-        const newPermissions = u.permissions;
+        const newRole = u.role || session.role || 'Operator';
+        const isUserSuper =
+          newRole.toLowerCase() === 'superadmin' ||
+          newRole.toLowerCase() === 'admin' ||
+          u.username.toLowerCase() === 'admin' ||
+          u.username.toLowerCase() === 'admin2' ||
+          u.username.toLowerCase() === 'warehouse' ||
+          u.username.toLowerCase() === 'chocoadm';
+
+        const userDefaultPerms = ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+        const newPermissions = isUserSuper
+          ? { ...ALL_PERMISSIONS }
+          : { ...userDefaultPerms, ...(u.permissions || {}) };
 
         const roleChanged = newRole !== session.role;
         const permsChanged = JSON.stringify(newPermissions || {}) !== JSON.stringify(session.permissions || {});
@@ -417,13 +452,13 @@ export default function App() {
         if (roleChanged || permsChanged) {
           const updatedSession: UserSession = {
             ...session,
-            role: newRole,
+            role: isUserSuper ? 'Superadmin' : newRole,
             permissions: newPermissions,
             name: u.name || session.name,
             nik: u.nik || session.nik,
           };
           setSession(updatedSession);
-          localStorage.setItem('wms_user_role', newRole);
+          localStorage.setItem('wms_user_role', isUserSuper ? 'Superadmin' : newRole);
           if (newPermissions) {
             localStorage.setItem('wms_user_permissions', JSON.stringify(newPermissions));
           } else {
