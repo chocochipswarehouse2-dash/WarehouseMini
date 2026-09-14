@@ -1443,50 +1443,20 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         </div>
       )}
 
-      {/* 2. Collapsible Form Input Laporan QC (Multi-Variant Support) */}
+      {/* 2. Form Input Laporan QC (Multi-Variant Support) */}
       {viewMode !== 'riwayat_only' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all">
-          {/* Header Accordion Bar */}
-          <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 bg-slate-50/60 dark:bg-slate-800/40">
-            <div className="flex items-start sm:items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
-                <PackageCheck className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                    Form Laporan Inspeksi QC (Multi-Variant)
-                  </h3>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0">
-                  {variants.length} Variant
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Input multi-variant produk dalam 1 submit &bull; Dukung SKU Produk atau Kode Produksi &bull; Parsial match SKU
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowForm(!showForm)}
-            className="w-full sm:w-auto px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap text-center shrink-0 cursor-pointer shadow-2xs"
-          >
-            {showForm ? 'Sembunyikan Form' : '+ Buka Form Input'}
-          </button>
-        </div>
-
-        {showForm && (
-          <form onSubmit={handleSubmitBatch} className="p-4 sm:p-6 space-y-6">
+          <form onSubmit={handleSubmitBatch} className="p-3.5 sm:p-5 space-y-4 sm:space-y-5">
             {/* Header Informasi Batch & PIC Login */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-slate-50 dark:from-slate-800/70 dark:via-slate-800/50 dark:to-slate-900 border border-blue-100 dark:border-slate-700/80 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/60 dark:border-slate-700/60 pb-3">
+            <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-slate-50 dark:from-slate-800/70 dark:via-slate-800/50 dark:to-slate-900 border border-blue-100 dark:border-slate-700/80 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/60 dark:border-slate-700/60 pb-2.5">
                 <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-blue-900 dark:text-blue-300">
                   <Layers className="w-4 h-4 text-blue-600" />
                   <span>Informasi Batch Pemeriksaan</span>
                 </div>
 
                 {/* Locked PIC Badge */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold shadow-xs">
+                <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold shadow-xs">
                   <User className="w-3.5 h-3.5 text-blue-600" />
                   <span className="text-slate-500">PIC QC:</span>
                   <span className="font-bold text-slate-900 dark:text-white">{currentPicName}</span>
@@ -1496,7 +1466,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Sumber / Asal Batch */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1527,50 +1497,14 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
-
-                {/* Link Google Drive Arsip */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                    <span>Link Google Drive (Opsional)</span>
-                    <ExternalLink className="w-3 h-3 text-slate-400" />
-                  </label>
-                  <input
-                    type="url"
-                    value={batchGdriveLink}
-                    onChange={(e) => setBatchGdriveLink(e.target.value)}
-                    placeholder="https://drive.google.com/..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Sub-Header Actions: Batch Shortcuts */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                  Daftar Variant / Produk Diperiksa ({variants.length})
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSetAllStatus('OKE')}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 transition-colors flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Set Semua OKE</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSetAllStatus('REJECT')}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-800 transition-colors flex items-center gap-1.5"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>Set Semua REJECT</span>
-                </button>
-              </div>
+            {/* Sub-Header: Label Variant */}
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Daftar Variant / Produk Diperiksa ({variants.length})
+              </span>
             </div>
 
             {/* List of Variant Cards */}
@@ -2280,8 +2214,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
               </div>
             </div>
           </form>
-        )}
-      </div>
+        </div>
       )}
 
       {/* 3. Riwayat Laporan QC Table */}

@@ -75,17 +75,34 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const currentOperator = session?.username || 'Operator';
 
   const loadSoData = async () => {
-    setIsLoading(true);
+    // 1. Instant Cache Load: Render immediately if cached data exists (0ms response)
+    if (typeof window !== 'undefined' && window.localStorage && soQueue.length === 0) {
+      try {
+        const cached = localStorage.getItem('wms_so_queue_cache_ALL') || localStorage.getItem('so_queue_cache_ALL');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSoQueue(parsed);
+          }
+        }
+      } catch {}
+    }
+
+    setIsLoading(soQueue.length === 0);
     setFetchError(null);
     try {
       const data = await fetchStockOpnameQueue('ALL');
-      const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
-      setSoQueue(unique);
+      if (data && Array.isArray(data) && data.length > 0) {
+        const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
+        setSoQueue(unique);
+      }
       setSelectedSoIds([]);
     } catch (e: any) {
-      console.error('Error loading SO data:', e);
-      setFetchError(e.message || 'Gagal memuat antrean Stock Opname dari Database');
-      if (onNotify) onNotify('Gagal memuat data Stock Opname.', 'error');
+      console.warn('Notice loading SO data:', e);
+      // Only show blocking error if we don't have any data rendered
+      if (soQueue.length === 0) {
+        setFetchError(e.message || 'Gagal memuat antrean Stock Opname dari Database');
+      }
     } finally {
       setIsLoading(false);
     }

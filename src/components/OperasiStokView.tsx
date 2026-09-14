@@ -16,44 +16,52 @@ export function OperasiStokView({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0a0f1c]">
-      {/* HEADER & TABS */}
-      <div className="bg-white dark:bg-[#131d31] border-b border-slate-200 dark:border-slate-800 shrink-0 pt-4">
-        <div className="flex items-center gap-6 px-4 sm:px-6 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('scanner')}
-            className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'scanner'
-                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
-          >
-            <ScanBarcode className="w-4 h-4" />
-            Scanner
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('mutasi')}
-            className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'mutasi'
-                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Mutasi Log
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('opname')}
-            className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'opname'
-                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            Stock Opname
-          </button>
+      {/* HEADER & TABS - Style Quality Control */}
+      <div className="p-2 sm:p-4 pb-0 shrink-0">
+        <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+          <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-1.5">
+            <button
+              type="button"
+              id="tab-operasi-scanner"
+              onClick={() => setActiveTab('scanner')}
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
+                activeTab === 'scanner'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50'
+                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ScanBarcode className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>Scanner</span>
+            </button>
+            
+            <button
+              type="button"
+              id="tab-operasi-mutasi"
+              onClick={() => setActiveTab('mutasi')}
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
+                activeTab === 'mutasi'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
+                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span><span className="sm:hidden">Mutasi</span><span className="hidden sm:inline">Mutasi Log</span></span>
+            </button>
+            
+            <button
+              type="button"
+              id="tab-operasi-opname"
+              onClick={() => setActiveTab('opname')}
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
+                activeTab === 'opname'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500/50'
+                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span><span className="sm:hidden">Opname</span><span className="hidden sm:inline">Stock Opname</span></span>
+            </button>
+          </div>
         </div>
       </div>
 

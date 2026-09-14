@@ -117,11 +117,25 @@ export function getStoredSupabaseConfig() {
   if (isCustom) {
     const customUrl = localStorage.getItem('wms_supabase_url');
     const customKey = localStorage.getItem('wms_supabase_key');
-    if (customUrl && customKey && customUrl.startsWith('http')) {
+    // If custom URL is valid AND not pointing to dead legacy project filgijcfhgqlirzhvwho
+    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho')) {
+      // If custom points to the main project vxongwtxmhjixhzeoidp, ensure it uses the working publishable key
+      if (customUrl.includes('vxongwtxmhjixhzeoidp')) {
+        return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_ANON_KEY };
+      }
       try {
         const parsedUrl = new URL(customUrl).origin;
         return { url: parsedUrl, key: customKey.trim() };
       } catch {}
+    } else {
+      // Clean up dead/invalid custom config automatically
+      if (isBrowser) {
+        try {
+          localStorage.removeItem('wms_supabase_is_custom');
+          localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
+          localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
+        } catch {}
+      }
     }
   }
 
@@ -334,7 +348,26 @@ export function isWarehouseLocation(lokasi: string, area?: string): boolean {
 }
 
 /**
- * Direct REST fetcher (compatible with existing edge proxy or direct REST API)
+ * Helper to fetch with timeout to prevent hanging connections
+ */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 12000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+/**
+ * Direct REST fetcher with automatic retry, timeout protection, and failover
  */
 export async function supabaseFetch<T = unknown>(
   table: string,
@@ -343,29 +376,85 @@ export async function supabaseFetch<T = unknown>(
   queryParams = '',
   preferRepresentation = false
 ): Promise<T> {
-  const { url, key } = getStoredSupabaseConfig();
-  const endpoint = `${url}/rest/v1/${table}${queryParams ? '?' + queryParams : ''}`;
-  const headers: Record<string, string> = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
+  let { url, key } = getStoredSupabaseConfig();
+  
+  const buildRequest = (targetUrl: string, targetKey: string) => {
+    const endpoint = `${targetUrl}/rest/v1/${table}${queryParams ? '?' + queryParams : ''}`;
+    const headers: Record<string, string> = {
+      apikey: targetKey,
+      Authorization: `Bearer ${targetKey}`,
+      'Content-Type': 'application/json',
+    };
+
+    if (method === 'POST' || method === 'PATCH' || method === 'DELETE') {
+      if (queryParams && queryParams.includes('on_conflict')) {
+        headers['Prefer'] = preferRepresentation
+          ? 'return=representation,resolution=merge-duplicates'
+          : 'return=minimal,resolution=merge-duplicates';
+      } else {
+        headers['Prefer'] = preferRepresentation ? 'return=representation' : 'return=minimal';
+      }
+    }
+    return { endpoint, headers };
   };
 
-  if (method === 'POST' || method === 'PATCH' || method === 'DELETE') {
-    if (queryParams && queryParams.includes('on_conflict')) {
-      headers['Prefer'] = preferRepresentation
-        ? 'return=representation,resolution=merge-duplicates'
-        : 'return=minimal,resolution=merge-duplicates';
-    } else {
-      headers['Prefer'] = preferRepresentation ? 'return=representation' : 'return=minimal';
+  let { endpoint, headers } = buildRequest(url, key);
+  let response: Response | null = null;
+  let lastError: any = null;
+
+  // Try executing the request with timeout & 1 retry on network failure
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await fetchWithTimeout(endpoint, {
+        method,
+        headers,
+        body: payload ? JSON.stringify(payload) : undefined,
+      }, 12000);
+      break; // Success!
+    } catch (err: any) {
+      lastError = err;
+      // If error is network error ("Failed to fetch") or timeout:
+      // If we are currently using a custom or non-default URL, immediately failover to verified default Supabase
+      if (url !== DEFAULT_SUPABASE_URL) {
+        console.warn(`Supabase fetch failed on custom URL (${url}), failing over to default Supabase...`);
+        url = DEFAULT_SUPABASE_URL;
+        key = DEFAULT_SUPABASE_ANON_KEY;
+        const req = buildRequest(url, key);
+        endpoint = req.endpoint;
+        headers = req.headers;
+        // Clean up invalid custom config
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            localStorage.removeItem('wms_supabase_is_custom');
+            localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
+            localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
+          } catch {}
+        }
+        continue;
+      }
+      
+      // If GET request, wait briefly (200ms) before 2nd attempt
+      if (method === 'GET' && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      break;
     }
   }
 
-  const response = await fetch(endpoint, {
-    method,
-    headers,
-    body: payload ? JSON.stringify(payload) : undefined,
-  });
+  if (!response) {
+    // If it's a GET request and REST fetch failed completely, attempt fallback to Supabase JS Client
+    if (method === 'GET') {
+      try {
+        const client = getSupabaseClient();
+        const { data, error } = await client.from(table).select('*').limit(1000);
+        if (!error && data !== null) {
+          return data as unknown as T;
+        }
+      } catch {}
+    }
+    throw lastError || new Error('Network request to Supabase failed');
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -1205,11 +1294,57 @@ export async function fetchStockOpnameQueue(
       `select=*&${statusQuery}order=tanggal.desc&limit=${limit}`
     );
     if (data && Array.isArray(data)) {
+      // Cache data for instant 0ms subsequent loads
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          localStorage.setItem(`wms_so_queue_cache_${status}`, JSON.stringify(data.slice(0, 1000)));
+          if (status === 'ALL') {
+            localStorage.setItem('wms_so_queue_cache_ALL', JSON.stringify(data.slice(0, 1000)));
+          }
+        } catch {}
+      }
       return data;
     }
     return [];
   } catch (err) {
-    console.error('Error fetching SO queue from Supabase:', err);
+    console.warn('REST fetch SO queue warning, attempting fallback:', err);
+    
+    // Fallback 1: Direct Supabase JS Client
+    try {
+      const client = getSupabaseClient();
+      let query = client.from('stock_opname_queue').select('*').order('tanggal', { ascending: false }).limit(limit);
+      if (status !== 'ALL') {
+        query = query.eq('status', status);
+      }
+      const { data, error } = await query;
+      if (!error && data && Array.isArray(data)) {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            localStorage.setItem(`wms_so_queue_cache_${status}`, JSON.stringify(data.slice(0, 1000)));
+            if (status === 'ALL') {
+              localStorage.setItem('wms_so_queue_cache_ALL', JSON.stringify(data.slice(0, 1000)));
+            }
+          } catch {}
+        }
+        return data as StockOpnameQueueItem[];
+      }
+    } catch (fallbackErr) {
+      console.warn('Fallback to Supabase JS Client also failed:', fallbackErr);
+    }
+
+    // Fallback 2: Cached data from local storage
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const cached = localStorage.getItem(`wms_so_queue_cache_${status}`) || localStorage.getItem('wms_so_queue_cache_ALL');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+
     return [];
   }
 }

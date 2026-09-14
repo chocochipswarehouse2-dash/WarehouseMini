@@ -8,51 +8,53 @@ import {
   LifeBuoy
 } from 'lucide-react';
 
-const tabs = [
-  { id: 'retur', label: 'Retur Barang', icon: RefreshCcw },
-  { id: 'refund', label: 'Pengembalian Dana', icon: Banknote },
-  { id: 'gagal_kirim', label: 'Pengiriman Gagal', icon: PackageX },
-  { id: 'komplain', label: 'Komplain Customer', icon: MessageSquareWarning },
-  { id: 'rating', label: 'Report Rating', icon: Star },
+interface TabItem {
+  id: string;
+  label: string;
+  shortLabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}
+
+const tabs: TabItem[] = [
+  { id: 'retur', label: 'Retur Barang', shortLabel: 'Retur', icon: RefreshCcw, color: 'bg-rose-600 shadow-rose-600/25 ring-rose-500/50' },
+  { id: 'refund', label: 'Pengembalian Dana', shortLabel: 'Refund', icon: Banknote, color: 'bg-amber-600 shadow-amber-600/25 ring-amber-500/50' },
+  { id: 'gagal_kirim', label: 'Pengiriman Gagal', shortLabel: 'Gagal Kirim', icon: PackageX, color: 'bg-red-600 shadow-red-600/25 ring-red-500/50' },
+  { id: 'komplain', label: 'Komplain Customer', shortLabel: 'Komplain', icon: MessageSquareWarning, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50' },
+  { id: 'rating', label: 'Report Rating', shortLabel: 'Rating', icon: Star, color: 'bg-amber-500 shadow-amber-500/25 ring-amber-400/50' },
 ];
 
 export default function PusatResolusiView() {
   const [activeTab, setActiveTab] = useState(tabs[0].id);
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324]">
-      {/* Header & Tabs Inline */}
-      <div className="shrink-0 px-2 sm:px-4 pt-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a]">
-        <div className="flex items-center overflow-x-auto no-scrollbar">
-          {/* Inline Title */}
-          <div className="hidden sm:flex items-center gap-2 pr-4 mr-2 sm:mr-4 border-r border-slate-200 dark:border-slate-700 shrink-0 sticky left-0 bg-white dark:bg-[#0f172a] z-10 py-2">
-            <div className="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-600 dark:text-rose-400">
-              <LifeBuoy className="w-4 h-4" />
-            </div>
-            <span className="font-extrabold text-sm text-slate-900 dark:text-white">Pusat Resolusi</span>
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex gap-1 sm:gap-2">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
-                    isActive
-                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-500/10'
-                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'fill-rose-500/20' : ''}`} />
-                  <span className="text-sm font-bold">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324] space-y-2 sm:space-y-3 p-2 sm:p-4">
+      {/* Header & Tabs Style Quality Control */}
+      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                id={`tab-resolusi-${tab.id}`}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
+                  isActive
+                    ? `${tab.color} text-white shadow-md ring-1`
+                    : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span>
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

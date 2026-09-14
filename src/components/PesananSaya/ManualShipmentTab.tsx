@@ -1520,38 +1520,42 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300">
-      {/* Tab Navigation */}
-      <div className="grid grid-cols-2 gap-1.5 p-1.5 mb-4 sm:mb-6 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors">
-        <button
-          type="button"
-          className={`w-full py-2.5 px-2 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
-            activeTab === 'form'
-              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700 font-extrabold'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-          onClick={() => {
-            if (editingOrder) resetForm();
-            setActiveTab('form');
-          }}
-        >
-          <Package className="w-4 h-4 shrink-0" />
-          <span className="truncate">{editingOrder ? 'Edit Pesanan' : 'Form Input Pesanan'}</span>
-        </button>
-        <button
-          type="button"
-          className={`w-full py-2.5 px-2 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
-            activeTab === 'rekap'
-              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700 font-extrabold'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-          onClick={() => {
-            setActiveTab('rekap');
-            loadOrders();
-          }}
-        >
-          <History className="w-4 h-4 shrink-0" />
-          <span className="truncate">Rekap Pesanan</span>
-        </button>
+      {/* Tab Navigation Style Quality Control */}
+      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs mb-3 sm:mb-5">
+        <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+          <button
+            type="button"
+            id="tab-manual-form"
+            className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
+              activeTab === 'form'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50 font-extrabold'
+                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+            }`}
+            onClick={() => {
+              if (editingOrder) resetForm();
+              setActiveTab('form');
+            }}
+          >
+            <Package className="w-4 h-4 shrink-0" />
+            <span className="truncate">{editingOrder ? 'Edit Pesanan' : 'Form Pesanan'}</span>
+          </button>
+          <button
+            type="button"
+            id="tab-manual-rekap"
+            className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
+              activeTab === 'rekap'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50 font-extrabold'
+                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+            }`}
+            onClick={() => {
+              setActiveTab('rekap');
+              loadOrders();
+            }}
+          >
+            <History className="w-4 h-4 shrink-0" />
+            <span className="truncate">Rekap Pesanan</span>
+          </button>
+        </div>
       </div>
 
       <div className="w-full">

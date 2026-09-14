@@ -950,41 +950,57 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           </div>
         )}
 
-        {/* TABS SELECTOR */}
-        <div className="flex gap-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl p-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab('pengecekan')}
-            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === 'pengecekan'
-                ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            <span>🔍 Pengecekan Barang</span>
-            {drafts.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-primary-500 text-white text-[10px] font-extrabold">
-                {drafts.length}
-              </span>
-            )}
-          </button>
+        {/* TABS SELECTOR - Style Quality Control */}
+        <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+          <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+            <button
+              type="button"
+              id="tab-distribusi-pengecekan"
+              onClick={() => setActiveTab('pengecekan')}
+              className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2 select-none ${
+                activeTab === 'pengecekan'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500/50 font-extrabold'
+                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>🔍 Pengecekan</span>
+              {drafts.length > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    activeTab === 'pengecekan'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  {drafts.length}
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('riwayat')}
-            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === 'riwayat'
-                ? 'bg-white dark:bg-[#131d31] text-primary-500 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            <span>📋 Riwayat Pengecekan</span>
-            {records.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-extrabold">
-                {records.length}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              id="tab-distribusi-riwayat"
+              onClick={() => setActiveTab('riwayat')}
+              className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2 select-none ${
+                activeTab === 'riwayat'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50 font-extrabold'
+                  : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>📋 Riwayat</span>
+              {records.length > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    activeTab === 'riwayat'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {records.length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

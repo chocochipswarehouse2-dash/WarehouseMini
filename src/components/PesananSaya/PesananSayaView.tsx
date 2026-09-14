@@ -15,6 +15,15 @@ interface PesananSayaViewProps {
 
 type TabType = 'dashboard' | 'manual_shipment' | 'distribusi' | 'shopee' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
 
+interface TabConfig {
+  id: TabType;
+  label: string;
+  shortLabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  isComingSoon?: boolean;
+}
+
 export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   session,
   productCatalog,
@@ -22,16 +31,16 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
 
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'manual_shipment', label: 'Manual Shipment', icon: Truck },
-    { id: 'distribusi', label: 'Transfer Order', icon: Store },
-    { id: 'shopee', label: 'Shopee', icon: ShoppingBag },
-    { id: 'tiktok', label: 'Tiktok', icon: ShoppingBag },
-    { id: 'website', label: 'Website', icon: Globe },
-    { id: 'woocommerce', label: 'WooCommerce', icon: ShoppingCart },
-    { id: 'lazada', label: 'Lazada', icon: Tag },
-  ] as const;
+  const tabs: TabConfig[] = [
+    { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard, color: 'bg-blue-600 shadow-blue-600/25 ring-blue-500/50' },
+    { id: 'manual_shipment', label: 'Manual Shipment', shortLabel: 'Manual', icon: Truck, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50' },
+    { id: 'distribusi', label: 'Transfer Order', shortLabel: 'Transfer', icon: Store, color: 'bg-emerald-600 shadow-emerald-600/25 ring-emerald-500/50' },
+    { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', isComingSoon: true },
+    { id: 'tiktok', label: 'Tiktok', shortLabel: 'Tiktok', icon: ShoppingBag, color: 'bg-rose-600 shadow-rose-600/25 ring-rose-500/50', isComingSoon: true },
+    { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', isComingSoon: true },
+    { id: 'woocommerce', label: 'WooCommerce', shortLabel: 'Woo', icon: ShoppingCart, color: 'bg-purple-600 shadow-purple-600/25 ring-purple-500/50', isComingSoon: true },
+    { id: 'lazada', label: 'Lazada', shortLabel: 'Lazada', icon: Tag, color: 'bg-sky-700 shadow-sky-700/25 ring-sky-600/50', isComingSoon: true },
+  ];
 
   const renderDummyTab = (name: string) => (
     <div className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
@@ -49,39 +58,44 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   );
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324]">
-      {/* Header & Tabs Inline */}
-      <div className="shrink-0 px-2 sm:px-4 pt-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a]">
-        <div className="flex items-center overflow-x-auto no-scrollbar">
-          {/* Inline Title */}
-          <div className="hidden sm:flex items-center gap-2 pr-4 mr-2 sm:mr-4 border-r border-slate-200 dark:border-slate-700 shrink-0 sticky left-0 bg-white dark:bg-[#0f172a] z-10 py-2">
-            <div className="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-              <Package className="w-4 h-4" />
-            </div>
-            <span className="font-extrabold text-sm text-slate-900 dark:text-white">Pesanan Saya</span>
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex gap-1 sm:gap-2">
-            {tabs.map((tab) => {
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324] space-y-2 sm:space-y-3 p-2 sm:p-4">
+      {/* Header & Tabs Style Quality Control - Hemat Area Kerja & Rapi di HP */}
+      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
+          {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                type="button"
+                id={`tab-pesanan-${tab.id}`}
                 onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  isActive 
-                    ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' 
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:border-slate-700'
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
+                  isActive
+                    ? `${tab.color} text-white shadow-md ring-1`
+                    : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                {tab.label}
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span>
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </span>
+                {tab.isComingSoon && (
+                  <span
+                    className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                      isActive
+                        ? 'bg-white/25 text-white'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300'
+                    }`}
+                  >
+                    Soon
+                  </span>
+                )}
               </button>
             );
           })}
-          </div>
         </div>
       </div>
 
