@@ -1426,44 +1426,43 @@ export default function App() {
               {activePage === 'operasi_stok' && (
                 <OperasiStokView
                   scannerComponent={
-                    <div className="block">
-                      <div className="max-w-2xl mx-auto space-y-4">
-                        <div className="space-y-2">
-                          <div className="sticky top-[48px] sm:top-[52px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pb-1 -mt-1">
-                            <div className="bg-white dark:bg-[#09090B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-md">
-                              <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
-                              {(scanMode === 'fisik' || scanMode === 'manual') && (
-                                <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                              )}
-                              {scanMode === 'kamera' && (
-                                <CameraScanner
-                                  onScan={handleScannedItem}
-                                  onRequestWakeLock={requestScreenWakeLock}
-                                />
-                              )}
-                              <QuickTagToolbar
-                                currentCategory={currentCategory}
-                                currentLocation={currentLocation}
-                                onSelectCategory={handleSelectQuickCategory}
-                                onSelectLocation={handleSelectQuickLocation}
-                              />
-                            </div>
-                          </div>
-                          <ScannedItemsList
-                            items={scannedData}
-                            onRemoveItem={handleRemoveItem}
-                            onClearAll={handleClearAll}
-                            onUpdateCategory={handleUpdateItemCategory}
+                    <div className="w-full max-w-2xl mx-auto space-y-4">
+                      {/* Scanner Method & Input Card */}
+                      <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                        <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                        {(scanMode === 'fisik' || scanMode === 'manual') && (
+                          <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                        )}
+                        {scanMode === 'kamera' && (
+                          <CameraScanner
+                            onScan={handleScannedItem}
+                            onRequestWakeLock={requestScreenWakeLock}
                           />
-                          <BottomSaveBar
-                            items={scannedData}
-                            keterangan={keterangan}
-                            onChangeKeterangan={setKeterangan}
-                            onSave={handleSaveData}
-                            isSaving={isSaving}
-                          />
-                        </div>
+                        )}
+                        <QuickTagToolbar
+                          currentCategory={currentCategory}
+                          currentLocation={currentLocation}
+                          onSelectCategory={handleSelectQuickCategory}
+                          onSelectLocation={handleSelectQuickLocation}
+                        />
                       </div>
+
+                      {/* Scanned Items List */}
+                      <ScannedItemsList
+                        items={scannedData}
+                        onRemoveItem={handleRemoveItem}
+                        onClearAll={handleClearAll}
+                        onUpdateCategory={handleUpdateItemCategory}
+                      />
+
+                      {/* Bottom Save Action Bar */}
+                      <BottomSaveBar
+                        items={scannedData}
+                        keterangan={keterangan}
+                        onChangeKeterangan={setKeterangan}
+                        onSave={handleSaveData}
+                        isSaving={isSaving}
+                      />
                     </div>
                   }
                   mutasiLogComponent={

@@ -16,8 +16,10 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
   const [isFocused, setIsFocused] = useState(true);
 
   useEffect(() => {
-    // Keep focus for physical barcode reader
-    inputRef.current?.focus();
+    // Keep focus for physical barcode reader on desktop without causing mobile screen jumps
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+      inputRef.current?.focus();
+    }
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -75,7 +77,7 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
       id="containerPhysical"
       className="bg-transparent px-3 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
     >
-      <div className="max-w-lg mx-auto flex flex-col gap-1.5">
+      <div className="w-full flex flex-col gap-1.5">
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
             <Barcode className="h-5 w-5 text-emerald-500" />
@@ -90,9 +92,8 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             placeholder={placeholder || "Tembak Barcode / Tulis SKU..."}
-            className="w-full bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-mono font-bold text-base rounded-xl focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 block pl-11 pr-12 py-2.5 outline-none uppercase transition-all placeholder-slate-400 dark:placeholder-slate-600"
+            className="w-full bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-mono font-bold text-sm sm:text-base rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block pl-11 pr-12 py-2.5 outline-none uppercase transition-all placeholder-slate-400 dark:placeholder-slate-600"
             autoComplete="off"
-            autoFocus
           />
 
           <button

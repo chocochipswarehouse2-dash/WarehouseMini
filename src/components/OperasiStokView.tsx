@@ -60,8 +60,7 @@ export function OperasiStokView({
       {/* CONTENT AREA */}
       <div className="flex-1 overflow-hidden relative">
         <div className={`absolute inset-0 overflow-y-auto ${activeTab === 'scanner' ? 'block' : 'hidden'}`}>
-          {/* We use padding for scanner to match its standalone look */}
-          <div className="p-4 sm:p-6 pb-24 max-w-4xl mx-auto">
+          <div className="p-3 sm:p-5 pb-28">
             {scannerComponent}
           </div>
         </div>

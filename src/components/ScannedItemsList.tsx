@@ -45,9 +45,9 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
   };
 
   return (
-    <div id="scannedListSection" className="px-4 py-4 max-w-lg mx-auto">
+    <div id="scannedListSection" className="w-full space-y-3">
       {/* Header Bar */}
-      <div className="flex justify-between items-center mb-3 bg-white dark:bg-[#0F0F12] p-3 rounded-xl border border-slate-200 dark:border-slate-800 transition-colors">
+      <div className="flex justify-between items-center bg-white dark:bg-[#0F0F12] p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs transition-colors">
         <div className="flex items-center gap-2">
           <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-2">
             <span>Daftar Pemindaian</span>
