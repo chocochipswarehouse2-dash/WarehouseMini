@@ -506,7 +506,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       username: cleanU,
       name: cleanName,
       role: newRole,
-      password: cleanP ? cleanP : (originalTarget?.password || userToSave.password),
+      password: cleanP ? cleanP : undefined,
       permissions: newPermissions,
       nik: newNik.trim() || undefined,
       no_hp: newPhone.trim() || undefined,
