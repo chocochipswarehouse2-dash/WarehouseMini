@@ -4780,38 +4780,31 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
 
   const mergedMap = new Map<string, QcReport>();
 
-  // 2. Coba ambil dari tabel dedicated qc_reports
+  // 2. Ambil dari tabel dedicated qc_reports & fallback log_produk secara paralel untuk performa cepat
   try {
-    const query = 'order=created_at.desc&limit=2000';
-    const data = await supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, query);
-    if (data && Array.isArray(data)) {
-      for (const item of data) {
+    const [qcRes, logRes] = await Promise.allSettled([
+      supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, 'order=created_at.desc&limit=2000'),
+      supabaseFetch<any[]>('log_produk', 'GET', undefined, 'type=eq.QC_INSPEKSI&order=created_at.desc&limit=2000'),
+    ]);
+
+    if (qcRes.status === 'fulfilled' && Array.isArray(qcRes.value)) {
+      for (const item of qcRes.value) {
         if (item && item.report_no) {
           mergedMap.set(item.report_no, item);
         }
       }
     }
-  } catch (err) {
-    // Normal jika tabel qc_reports belum dibuat di Supabase
-  }
 
-  // 3. Ambil dari log_produk (type=QC_INSPEKSI) sebagai fallback cloud
-  try {
-    const logQuery = 'type=eq.QC_INSPEKSI&order=created_at.desc&limit=2000';
-    const logs = await supabaseFetch<any[]>('log_produk', 'GET', undefined, logQuery);
-    if (logs && Array.isArray(logs)) {
-      for (const row of logs) {
+    if (logRes.status === 'fulfilled' && Array.isArray(logRes.value)) {
+      for (const row of logRes.value) {
         const parsed = logProdukToQcReport(row);
-        if (parsed && parsed.report_no) {
-          // Jangan overwrite jika sudah ada di qc_reports (qc_reports lebih update)
-          if (!mergedMap.has(parsed.report_no)) {
-            mergedMap.set(parsed.report_no, parsed);
-          }
+        if (parsed && parsed.report_no && !mergedMap.has(parsed.report_no)) {
+          mergedMap.set(parsed.report_no, parsed);
         }
       }
     }
-  } catch (errLog) {
-    console.warn('Gagal memuat log QC_INSPEKSI dari Supabase:', errLog);
+  } catch (err) {
+    console.warn('Gagal memuat QC reports secara paralel dari Supabase:', err);
   }
 
   // Jika berhasil mengambil data dari server, jadikan data server sebagai sumber kebenaran (authoritative)

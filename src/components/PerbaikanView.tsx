@@ -53,12 +53,16 @@ import {
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
+import { ThermalStickerModal } from './ThermalStickerModal';
 
 interface PerbaikanViewProps {
   session: UserSession | null;
   productCatalog?: ProductItem[];
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   initialSearchQuery?: string;
+  activeSection?: 'reject' | 'perbaikan' | 'defect';
+  onNavigateSection?: (section: 'reject' | 'perbaikan' | 'defect') => void;
+  onRejectCreated?: (newTicket: PerbaikanTicket) => void;
 }
 
 // Initial Sample Mock Data (Disiapkan agar preview langsung bisa dicoba & dieksplorasi)
@@ -205,6 +209,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   productCatalog = [],
   onShowToast,
   initialSearchQuery,
+  activeSection,
+  onNavigateSection,
+  onRejectCreated,
 }) => {
   // Role & Permission Checks
   const userIsAdmin =
@@ -328,7 +335,30 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   // Tab State: 'input' | 'reject' | 'cuci' | 'permak' | 'defect' | 'rekap'
   const [activeTab, setActiveTab] = useState<
     'input' | 'reject' | 'cuci' | 'permak' | 'defect' | 'rekap'
-  >('reject');
+  >(() => {
+    if (activeSection === 'reject') return 'reject';
+    if (activeSection === 'perbaikan') return 'cuci';
+    if (activeSection === 'defect') return 'defect';
+    return 'reject';
+  });
+
+  // Keep activeTab in sync with activeSection when changed by parent QualityControlView
+  useEffect(() => {
+    if (!activeSection) return;
+    if (activeSection === 'reject') {
+      if (activeTab !== 'input' && activeTab !== 'reject') {
+        setActiveTab('reject');
+      }
+    } else if (activeSection === 'perbaikan') {
+      if (activeTab !== 'cuci' && activeTab !== 'permak') {
+        setActiveTab('cuci');
+      }
+    } else if (activeSection === 'defect') {
+      if (activeTab !== 'defect' && activeTab !== 'rekap') {
+        setActiveTab('defect');
+      }
+    }
+  }, [activeSection]);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
@@ -394,7 +424,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
   // Modal Update Pengerjaan (Cuci / Permak)
   const [progressModalTicket, setProgressModalTicket] = useState<PerbaikanTicket | null>(null);
-  const [progressResult, setProgressResult] = useState<'SUCCESS_GRADE_A' | 'FAILED_DEFECT'>('SUCCESS_GRADE_A');
+  const [progressResult, setProgressResult] = useState<'SUCCESS_GRADE_A' | 'RETURN_QC' | 'FAILED_DEFECT'>('SUCCESS_GRADE_A');
   const [progressLokasiKembali, setProgressLokasiKembali] = useState('A-01');
   const [progressBiaya, setProgressBiaya] = useState<number>(0);
   const [progressCatatan, setProgressCatatan] = useState('');
@@ -998,30 +1028,36 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       }).catch(console.warn);
     }
 
+    onRejectCreated?.(newTicket);
+
     if (formTindakanSortir === 'CUCI') {
       onShowToast(
         `Produk #${newTicketNo} berhasil didata & langsung dialokasikan ke Antrean Cuci (${targetLokasi})!`,
         'success'
       );
       setActiveTab('cuci');
+      onNavigateSection?.('perbaikan');
     } else if (formTindakanSortir === 'PERMAK') {
       onShowToast(
         `Produk #${newTicketNo} berhasil didata & langsung dialokasikan ke Antrean Permak (${targetLokasi})!`,
         'success'
       );
       setActiveTab('permak');
+      onNavigateSection?.('perbaikan');
     } else if (formTindakanSortir === 'DEFECT') {
       onShowToast(
         `Produk #${newTicketNo} berhasil didata & langsung dialokasikan ke Ruang Defect (${targetLokasi})!`,
         'warning'
       );
       setActiveTab('defect');
+      onNavigateSection?.('defect');
     } else {
       onShowToast(
         `Tiket Reject #${newTicketNo} berhasil dibuat! Menunggu arahan sortir Kepala QC.`,
         'success'
       );
       setActiveTab('reject');
+      onNavigateSection?.('reject');
     }
 
     // Reset Form
@@ -1149,18 +1185,72 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       playSuccessBeep();
       vibrateDevice([100, 50, 100]);
       onShowToast(
-        `Selamat! Pakaian #${progressModalTicket.ticket_no} lolos Grade A dan siap kembali ke rak ${targetKembali}`,
+        `Selamat! Pakaian ${progressModalTicket.nama_produk} lolos Grade A dan siap kembali ke rak ${targetKembali}`,
         'success'
       );
-    } else {
-      // Gagal diselamatkan -> Vonis Defect
+    } else if (progressResult === 'RETURN_QC') {
+      const targetKnr = progressLokasiKembali.trim().toUpperCase() || 'KNR-01';
       const updated: PerbaikanTicket = {
         ...progressModalTicket,
+        tahap: 'REJECT',
+        status_pengerjaan: 'PENDING',
+        lokasi_sekarang: targetKnr,
+        reparasi_selesai: new Date().toLocaleString('id-ID'),
+        reparasi_catatan: progressCatatan.trim() || 'Selesai cuci/permak, dikembalikan ke Kontainer KNR untuk inspeksi QC ulang',
+        biaya_reparasi: Number(progressBiaya) || 0,
+        updated_at: new Date().toISOString(),
+      };
+      setTickets((prev) => prev.map((t) => (t.id === progressModalTicket.id ? updated : t)));
+
+      // Update ke Supabase
+      updatePerbaikanTicketInSupabase(progressModalTicket.id || progressModalTicket.ticket_no, updated).catch(console.warn);
+
+      // Mutasi Kembali ke Kontainer KNR QC (Keluar dari lokasi cuci/permak, masuk ke Kontainer KNR)
+      const operatorName = session?.name || session?.username || 'Operator';
+      recordPerbaikanStockMutation({
+        type: 'OUT',
+        invoice: `QC-RECHECK-${progressModalTicket.ticket_no}`,
+        sku: progressModalTicket.sku,
+        nama_produk: progressModalTicket.nama_produk,
+        size: progressModalTicket.size,
+        lokasi: progressModalTicket.lokasi_sekarang,
+        qty: progressModalTicket.qty,
+        operator: operatorName,
+        keterangan: `Keluar dari ${progressModalTicket.lokasi_sekarang} untuk dikirim balik ke QC`,
+      }).catch(console.warn);
+
+      recordPerbaikanStockMutation({
+        type: 'IN',
+        invoice: `QC-RECHECK-${progressModalTicket.ticket_no}`,
+        sku: progressModalTicket.sku,
+        nama_produk: progressModalTicket.nama_produk,
+        size: progressModalTicket.size,
+        lokasi: targetKnr,
+        qty: progressModalTicket.qty,
+        operator: operatorName,
+        keterangan: `Selesai cuci/permak masuk kembali ke Kontainer ${targetKnr} untuk inspeksi QC ulang`,
+      }).catch(console.warn);
+
+      playSuccessBeep();
+      onShowToast(
+        `Produk selesai diperbaiki dan dikembalikan ke Kontainer ${targetKnr} untuk pemeriksaan ulang QC.`,
+        'info'
+      );
+    } else {
+      // Gagal diselamatkan -> Vonis Defect (Buat Nomor Tiket Defect resmi DFT-...)
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const defectTicketNo = progressModalTicket.ticket_no?.startsWith('DFT-')
+        ? progressModalTicket.ticket_no
+        : `DFT-${dateStr}-${Math.floor(100 + Math.random() * 900)}`;
+
+      const updated: PerbaikanTicket = {
+        ...progressModalTicket,
+        ticket_no: defectTicketNo,
         tahap: 'DEFECT',
         status_pengerjaan: 'GAGAL',
         lokasi_sekarang: 'DF-01',
         reparasi_selesai: new Date().toLocaleString('id-ID'),
-        reparasi_catatan: progressCatatan.trim() || 'Gagal diselamatkan, masuk antrean defect',
+        reparasi_catatan: progressCatatan.trim() || 'Gagal diselamatkan, masuk antrean ACC defect',
         biaya_reparasi: Number(progressBiaya) || 0,
         updated_at: new Date().toISOString(),
       };
@@ -1173,7 +1263,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       const operatorName = session?.name || session?.username || 'Operator';
       recordPerbaikanStockMutation({
         type: 'OUT',
-        invoice: `FAIL-${progressModalTicket.ticket_no}`,
+        invoice: `FAIL-${defectTicketNo}`,
         sku: progressModalTicket.sku,
         nama_produk: progressModalTicket.nama_produk,
         size: progressModalTicket.size,
@@ -1185,22 +1275,24 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       recordPerbaikanStockMutation({
         type: 'IN',
-        invoice: `FAIL-${progressModalTicket.ticket_no}`,
+        invoice: `FAIL-${defectTicketNo}`,
         sku: progressModalTicket.sku,
         nama_produk: progressModalTicket.nama_produk,
         size: progressModalTicket.size,
         lokasi: 'DF-01',
         qty: progressModalTicket.qty,
         operator: operatorName,
-        keterangan: `Masuk rak Defect DF-01 menunggu ACC Harga`,
+        keterangan: `Masuk rak Defect DF-01 menunggu ACC Management (Tiket #${defectTicketNo})`,
       }).catch(console.warn);
 
       playErrorBeep();
       vibrateDevice([150, 80, 150]);
       onShowToast(
-        `Pakaian #${progressModalTicket.ticket_no} divonis Defect (dipindah ke rak DF-01). Menunggu ACC Harga.`,
+        `Pakaian divonis Defect! Tiket #${defectTicketNo} diterbitkan ke rak DF-01. Stiker 50x20mm siap dicetak.`,
         'warning'
       );
+      // Langsung buka modal cetak stiker thermal 50x20mm
+      setPrintModalTicket(updated);
     }
 
     setProgressModalTicket(null);
@@ -1359,8 +1451,266 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto pb-16">
-      {/* 1. Header Banner & Modul Indicator */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-lg border border-indigo-800/40 relative overflow-hidden">
+      {/* Section-Specific Header / Navigation if wrapped by QualityControlView */}
+      {activeSection ? (
+        <>
+          {activeSection === 'reject' && (
+            <div className="bg-white dark:bg-[#131d31] p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-900 shadow-xs">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                      Antrean Pakaian Reject
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300">
+                      {stats.totalReject} pcs
+                    </span>
+                    {isLoadingDb && (
+                      <span className="flex items-center gap-1 text-[10px] text-amber-500 font-mono animate-pulse">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Sinkronisasi...
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Daftar pakaian rusak hasil temuan QC atau gudang yang menunggu arahan sortir Kepala QC (Cuci, Permak, atau Defect).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={handleSyncPhysicalStock}
+                  className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Tarik stok fisik rak CC, PMK, & DF"
+                >
+                  <Database className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="hidden sm:inline">Tarik Stok Rak</span>
+                  {physicalRepairItems.length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-md text-[10px] font-mono font-bold">
+                      {physicalRepairItems.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-toggle-input-reject"
+                  onClick={() => setActiveTab(activeTab === 'input' ? 'reject' : 'input')}
+                  className="px-3.5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-primary-500/30 transition-all cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{activeTab === 'input' ? 'Tutup Form' : '+ Pendataan & Sortir Reject'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="p-2 sm:px-3 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Unduh Rekap Spreadsheet"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden sm:inline">Ekspor CSV</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'perbaikan' && (
+            <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-900 shadow-xs">
+                    <Scissors className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                        Pengerjaan Perbaikan Pakaian
+                      </h2>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300">
+                        {stats.totalCuci + stats.totalPermak} total
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Pilih kriteria pengerjaan: <strong>Cuci</strong> (Laundry di Rak CC) atau <strong>Permak</strong> (Jahit di Rak PMK).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 justify-end flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSyncPhysicalStock}
+                    className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Tarik stok fisik rak CC & PMK"
+                  >
+                    <Database className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="hidden sm:inline">Tarik Stok Rak</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="hidden sm:inline">Ekspor CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sub-tab Perbaikan: Cuci | Permak (Sesuai Kriteria: Perbaikan : Cuci l Permak) */}
+              <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-[#0f172a] rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+                <button
+                  type="button"
+                  id="subtab-perbaikan-cuci"
+                  onClick={() => setActiveTab('cuci')}
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                    activeTab === 'cuci'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Cuci [CC]</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                      activeTab === 'cuci'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300'
+                    }`}
+                  >
+                    {stats.totalCuci} pcs
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  id="subtab-perbaikan-permak"
+                  onClick={() => setActiveTab('permak')}
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                    activeTab === 'permak'
+                      ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25 ring-1 ring-amber-500/50'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Scissors className="w-4 h-4" />
+                  <span>Permak [PMK]</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                      activeTab === 'permak'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
+                    }`}
+                  >
+                    {stats.totalPermak} pcs
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'defect' && (
+            <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center shrink-0 border border-purple-200 dark:border-purple-900 shadow-xs">
+                    <Tag className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                        Ruang Defect & Obral Defect
+                      </h2>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300">
+                        {stats.totalDefect} di rak DF
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Pakaian cacat permanen di Rak DF-01 yang menunggu otorisasi ACC harga diskon atau obral event bazaar.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 justify-end flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSyncPhysicalStock}
+                    className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Tarik stok fisik rak DF"
+                  >
+                    <Database className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="hidden sm:inline">Tarik Stok Rak DF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-purple-500" />
+                    <span className="hidden sm:inline">Ekspor CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sub-tab Defect: Ruang Defect | Arsip Histori */}
+              <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-[#0f172a] rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+                <button
+                  type="button"
+                  id="subtab-defect-ruang"
+                  onClick={() => setActiveTab('defect')}
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                    activeTab === 'defect'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25 ring-1 ring-purple-500/50'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Tag className="w-4 h-4" />
+                  <span>Ruang Defect [DF]</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                      activeTab === 'defect'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300'
+                    }`}
+                  >
+                    {stats.totalDefect} pcs
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  id="subtab-defect-arsip"
+                  onClick={() => setActiveTab('rekap')}
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                    activeTab === 'rekap'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Archive className="w-4 h-4" />
+                  <span>Arsip & Selesai Obral</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                      activeTab === 'rekap'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'
+                    }`}
+                  >
+                    {stats.totalArsip} pcs
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* 1. Header Banner & Modul Indicator */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-lg border border-indigo-800/40 relative overflow-hidden">
         <div className="absolute right-0 top-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -1633,6 +1983,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           <span>+ Pendataan & Sortir Reject</span>
         </button>
       </div>
+        </>
+      )}
 
       {/* 4. Tab 1: Form Input Reject Baru */}
       {activeTab === 'input' && (
@@ -2268,12 +2620,18 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   key={item.id ? `ticket-id-${item.id}` : (item.ticket_no ? `ticket-no-${item.ticket_no}` : `ticket-idx-${itemIdx}`)}
                   className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow relative overflow-hidden"
                 >
-                  {/* Badge Tahap Warna */}
+                  {/* Badge Tahap Warna & Lokasi */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400">
-                        #{item.ticket_no}
-                      </span>
+                      {item.tahap === 'CUCI' || item.tahap === 'PERMAK' ? (
+                        <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                          📍 Lokasi: <b className="text-amber-600 dark:text-amber-400">{item.lokasi_sekarang || (item.tahap === 'CUCI' ? 'CC-01' : 'PMK-01')}</b>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs font-black text-purple-600 dark:text-purple-400">
+                          #{item.ticket_no}
+                        </span>
+                      )}
                       {item.qc_report_no && (
                         <span
                           className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900"
@@ -2367,14 +2725,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
                   {/* Tombol Aksi Berdasarkan Tahap */}
                   <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPrintModalTicket(item)}
-                      className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-                      title="Cetak Label Tag Pakaian"
-                    >
-                      <Printer className="w-4 h-4" />
-                    </button>
+                    {(item.tahap === 'DEFECT' || item.tahap?.startsWith('SELESAI')) && (
+                      <button
+                        type="button"
+                        onClick={() => setPrintModalTicket(item)}
+                        className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-xl transition-colors cursor-pointer"
+                        title="Cetak Stiker Barcode 50x20 mm"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -2684,10 +3044,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 <label className="font-bold text-slate-700 dark:text-slate-300">
                   Hasil Inspeksi Pengerjaan: *
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setProgressResult('SUCCESS_GRADE_A')}
+                    onClick={() => {
+                      setProgressResult('SUCCESS_GRADE_A');
+                      setProgressLokasiKembali('A-01');
+                    }}
                     className={`p-3 rounded-xl border font-extrabold flex flex-col items-center gap-1 cursor-pointer transition-all ${
                       progressResult === 'SUCCESS_GRADE_A'
                         ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-xs'
@@ -2695,9 +3058,28 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     }`}
                   >
                     <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    <span>Lolos Grade A (Bagus)</span>
-                    <span className="text-[10px] font-normal text-slate-400">
+                    <span>Lolos Grade A</span>
+                    <span className="text-[10px] font-normal text-slate-400 text-center">
                       Kembali ke rak siap jual
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProgressResult('RETURN_QC');
+                      setProgressLokasiKembali('KNR-01');
+                    }}
+                    className={`p-3 rounded-xl border font-extrabold flex flex-col items-center gap-1 cursor-pointer transition-all ${
+                      progressResult === 'RETURN_QC'
+                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-500 text-blue-700 dark:text-blue-300 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <RefreshCw className="w-5 h-5 text-blue-500" />
+                    <span>Kirim Balik ke QC</span>
+                    <span className="text-[10px] font-normal text-slate-400 text-center">
+                      Kembali ke Kontainer (KNR)
                     </span>
                   </button>
 
@@ -2706,14 +3088,14 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     onClick={() => setProgressResult('FAILED_DEFECT')}
                     className={`p-3 rounded-xl border font-extrabold flex flex-col items-center gap-1 cursor-pointer transition-all ${
                       progressResult === 'FAILED_DEFECT'
-                        ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-700 dark:text-primary-300 shadow-xs'
+                        ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-xs'
                         : 'border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    <AlertTriangle className="w-5 h-5 text-primary-500" />
-                    <span>Gagal (Tetap Rusak)</span>
-                    <span className="text-[10px] font-normal text-slate-400">
-                      Vonis jadi Defect (Rak DF-01)
+                    <AlertTriangle className="w-5 h-5 text-purple-500" />
+                    <span>Vonis DEFECT</span>
+                    <span className="text-[10px] font-normal text-slate-400 text-center">
+                      Buat Tiket DFT &amp; Cetak Stiker
                     </span>
                   </button>
                 </div>
@@ -2736,6 +3118,39 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   <span className="text-[10px] text-emerald-700 dark:text-emerald-400">
                     Sistem akan otomatis membuat mutasi IN ke rak ini agar saldo fisik bertambah.
                   </span>
+                </div>
+              )}
+
+              {/* Input Kontainer (Jika Kirim Balik ke QC) */}
+              {progressResult === 'RETURN_QC' && (
+                <div className="space-y-1 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800/40">
+                  <label className="font-bold text-blue-900 dark:text-blue-300">
+                    Pilih Kontainer Pengembalian QC: *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={progressLokasiKembali}
+                    onChange={(e) => setProgressLokasiKembali(e.target.value)}
+                    placeholder="cth: KNR-01 / KNR-02"
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-xl font-bold uppercase"
+                  />
+                  <span className="text-[10px] text-blue-700 dark:text-blue-400">
+                    Pakaian masuk ke antrean kontainer QC untuk diperiksa ulang oleh tim QC.
+                  </span>
+                </div>
+              )}
+
+              {/* Notice jika Vonis DEFECT */}
+              {progressResult === 'FAILED_DEFECT' && (
+                <div className="space-y-1 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-xl border border-purple-200 dark:border-purple-800/40">
+                  <div className="flex items-center gap-2 text-purple-900 dark:text-purple-300 font-bold">
+                    <Printer className="w-4 h-4 text-purple-600" />
+                    <span>Tiket Defect &amp; Cetak Barcode 50x20 mm</span>
+                  </div>
+                  <p className="text-[11px] text-purple-700 dark:text-purple-300">
+                    Sistem akan otomatis menerbitkan Nomor Tiket Defect resmi (DFT-...), memindahkan barang ke rak DF-01, dan langsung menampilkan modal cetak stiker barcode ukuran 50x20 mm untuk ditempel pada produk.
+                  </p>
                 </div>
               )}
 
@@ -3183,59 +3598,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         </div>
       )}
 
-      {/* 11. Modal Cetak Barcode Label Tag Pakaian */}
-      {printModalTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white text-black max-w-sm w-full rounded-2xl p-6 space-y-4 shadow-2xl border">
-            <div className="flex items-center justify-between border-b pb-2">
-              <span className="font-extrabold text-xs tracking-wider uppercase text-slate-600">
-                LABEL TIKET PERBAIKAN WMS
-              </span>
-              <button
-                type="button"
-                onClick={() => setPrintModalTicket(null)}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-center space-y-1 p-3 border-2 border-dashed border-slate-300 rounded-xl">
-              <div className="text-lg font-black font-mono tracking-wider">
-                {printModalTicket.ticket_no}
-              </div>
-              <div className="text-xs font-bold text-slate-800">{printModalTicket.sku}</div>
-              <div className="text-[11px] text-slate-600 truncate">
-                {printModalTicket.nama_produk}
-              </div>
-              <div className="text-xs font-black text-primary-600 uppercase pt-1">
-                [{printModalTicket.tahap}] • {printModalTicket.kategori_rusak}
-              </div>
-              <div className="text-[10px] text-slate-500 pt-1">
-                Lokasi Rak: <b>{printModalTicket.lokasi_sekarang}</b> • Tgl: {printModalTicket.tanggal}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-2 bg-slate-900 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Thermal</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrintModalTicket(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 11. Modal Cetak Barcode Label Stiker 50x20 mm Thermal Printer */}
+      <ThermalStickerModal
+        isOpen={!!printModalTicket}
+        onClose={() => setPrintModalTicket(null)}
+        ticket={printModalTicket}
+      />
 
       {/* 12. Modal Konfirmasi Hapus Tiket Defect & Perbaikan */}
       {deleteConfirmTicket && (

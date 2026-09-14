@@ -58,6 +58,8 @@ import {
 import { getAllProductsFromLocalDb } from '../services/localDb';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { hasPermission, isSuperadmin } from '../services/permissions';
+import { ThermalStickerModal } from './ThermalStickerModal';
+import { Printer, LayoutGrid, Table } from 'lucide-react';
 
 interface LaporanQcViewProps {
   session: UserSession | null;
@@ -65,6 +67,8 @@ interface LaporanQcViewProps {
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   onNavigateToPerbaikan?: (ticketNo?: string) => void;
   onRejectCreated?: (newTicket: PerbaikanTicket) => void;
+  viewMode?: 'all' | 'form_only' | 'riwayat_only';
+  onNavigateToRiwayat?: () => void;
 }
 
 export interface PhotoItem {
@@ -90,6 +94,7 @@ export interface QcVariantItem {
   kategori_rusak: string;
   detail_kerusakan: string;
   target_penanganan: 'REJECT' | 'CUCI' | 'PERMAK' | 'DEFECT';
+  lokasi_reject?: string; // Diisi manual oleh PIC, default: KNR-01
   photos: PhotoItem[];
   catatan: string;
 }
@@ -180,6 +185,7 @@ const createInitialVariant = (tipe: ProductIdentifierType = 'sku'): QcVariantIte
   kategori_rusak: 'Noda / Kotor',
   detail_kerusakan: '',
   target_penanganan: 'REJECT',
+  lokasi_reject: 'KNR-01',
   photos: [],
   catatan: '',
 });
@@ -190,6 +196,8 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   onShowToast,
   onNavigateToPerbaikan,
   onRejectCreated,
+  viewMode = 'all',
+  onNavigateToRiwayat,
 }) => {
   const [reports, setReports] = useState<QcReport[]>(() => {
     try {
@@ -230,11 +238,43 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'OKE' | 'REJECT'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'OKE' | 'REJECT' | 'KNR' | 'CUCI' | 'PERMAK' | 'DEFECT'>('ALL');
   const [filterSumber, setFilterSumber] = useState<string>('ALL');
+
+  // View Format Toggle: Kartu (Cards) vs Tabel (Table)
+  const [viewFormat, setViewFormat] = useState<'cards' | 'table'>(() => {
+    try {
+      const saved = localStorage.getItem('wms_qc_view_format');
+      if (saved === 'table' || saved === 'cards') return saved;
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        return 'cards';
+      }
+    } catch {}
+    return 'table';
+  });
 
   // Lightbox Modal
   const [lightboxImages, setLightboxImages] = useState<string[] | null>(null);
+
+  // Thermal 50x20mm Sticker Modal State
+  const [thermalModalTicket, setThermalModalTicket] = useState<{
+    ticket_no: string;
+    sku: string;
+    nama_produk: string;
+    size?: string;
+    qty: number;
+    kategori_rusak?: string;
+    detail_kerusakan?: string;
+    lokasi_sekarang?: string;
+    tanggal?: string;
+  } | null>(null);
+
+  // Quick Sortir Modal State (Dari Riwayat Laporan)
+  const [quickSortirReport, setQuickSortirReport] = useState<QcReport | null>(null);
+  const [quickSortirTarget, setQuickSortirTarget] = useState<'CUCI' | 'PERMAK' | 'DEFECT'>('CUCI');
+  const [quickSortirLokasi, setQuickSortirLokasi] = useState<string>('CC-01');
+  const [quickSortirCatatan, setQuickSortirCatatan] = useState<string>('');
+  const [isExecutingQuickSortir, setIsExecutingQuickSortir] = useState<boolean>(false);
 
   // Supabase SQL DDL Modal
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
@@ -285,6 +325,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         const data = await fetchQcReportsFromSupabase();
         if (mounted && data && data.length > 0) {
           setReports(data);
+          window.dispatchEvent(
+            new CustomEvent('wms_qc_reports_updated', { detail: { reports: data } })
+          );
         }
       } catch (err) {
         console.warn('Gagal load laporan QC:', err);
@@ -705,17 +748,16 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         }
 
         let perbaikanTicketNo: string | undefined = undefined;
+        let finalLokasiReject = (v.lokasi_reject || '').trim().toUpperCase();
+        if (!finalLokasiReject) {
+          if (v.target_penanganan === 'CUCI') finalLokasiReject = 'CC-01';
+          else if (v.target_penanganan === 'PERMAK') finalLokasiReject = 'PMK-01';
+          else if (v.target_penanganan === 'DEFECT') finalLokasiReject = 'DF-01';
+          else finalLokasiReject = 'KNR-01';
+        }
 
-        // Auto-create ticket if status is REJECT or qtyReject > 0
+        // Penanganan Reject Berdasarkan Kategori Alur
         if (v.status === 'REJECT' || qtyReject > 0) {
-          const ticketRand = Math.floor(100 + Math.random() * 900);
-          perbaikanTicketNo = `RJC-${dateStr}-${ticketRand}-${i + 1}`;
-
-          let targetLokasi = 'PERBAIKAN-01';
-          if (v.target_penanganan === 'CUCI') targetLokasi = 'CC-01';
-          else if (v.target_penanganan === 'PERMAK') targetLokasi = 'PMK-01';
-          else if (v.target_penanganan === 'DEFECT') targetLokasi = 'DF-01';
-
           let mappedSumber: PerbaikanTicket['sumber_barang'] = 'Gudang Fisik';
           if (batchSumber.includes('CMT') || batchSumber.includes('Produksi')) {
             mappedSumber = 'Penerimaan CMT';
@@ -731,38 +773,80 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             ? `[QC #${reportNo}] ${v.detail_kerusakan.trim()}`
             : `[QC #${reportNo}] Ditemukan cacat ${v.kategori_rusak || 'Defect'} pada inspeksi QC`;
 
-          const newTicket: PerbaikanTicket = {
-            ticket_no: perbaikanTicketNo,
-            tanggal: now.toISOString(),
-            sku: finalSku,
-            nama_produk: finalNamaProduk,
-            size: finalSize,
-            qty: qtyReject > 0 ? qtyReject : 1,
-            lokasi_asal: 'Area QC',
-            lokasi_sekarang: targetLokasi,
-            is_already_in_repair: false,
-            sumber_barang: mappedSumber,
-            kategori_rusak: (v.kategori_rusak as any) || 'Noda / Kotor',
-            detail_kerusakan: defectDetail,
-            foto_urls: uploadedPhotoUrls,
-            tahap: v.target_penanganan,
-            status_pengerjaan: 'PENDING',
-            qc_pic: currentPicName,
-            qc_tanggal: now.toISOString(),
-            qc_catatan: `Inspeksi QC: REJECT (${qtyReject} pcs). ${v.catatan.trim()}`,
-            operator_input: currentPicName,
-            qc_report_no: reportNo,
-            created_at: now.toISOString(),
-          };
+          if (v.target_penanganan === 'DEFECT') {
+            // HANYA DEFECT YANG MENDAPATKAN NOMOR TIKET ACC (DFT-...)
+            const ticketRand = Math.floor(100 + Math.random() * 900);
+            perbaikanTicketNo = `DFT-${dateStr}-${ticketRand}-${i + 1}`;
 
-          try {
-            await savePerbaikanTicketToSupabase(newTicket);
-            if (onRejectCreated) {
-              onRejectCreated(newTicket);
+            const newTicket: PerbaikanTicket = {
+              ticket_no: perbaikanTicketNo,
+              tanggal: now.toISOString(),
+              sku: finalSku,
+              nama_produk: finalNamaProduk,
+              size: finalSize,
+              qty: qtyReject > 0 ? qtyReject : 1,
+              lokasi_asal: 'Area QC',
+              lokasi_sekarang: finalLokasiReject,
+              is_already_in_repair: false,
+              sumber_barang: mappedSumber,
+              kategori_rusak: (v.kategori_rusak as any) || 'Defect Berat / BS',
+              detail_kerusakan: defectDetail,
+              foto_urls: uploadedPhotoUrls,
+              tahap: 'DEFECT',
+              status_pengerjaan: 'PENDING',
+              qc_pic: currentPicName,
+              qc_tanggal: now.toISOString(),
+              qc_catatan: `Inspeksi QC: Vonis DEFECT (${qtyReject} pcs) di ${finalLokasiReject}. ${v.catatan.trim()}`,
+              operator_input: currentPicName,
+              qc_report_no: reportNo,
+              created_at: now.toISOString(),
+            };
+
+            try {
+              await savePerbaikanTicketToSupabase(newTicket);
+              if (onRejectCreated) onRejectCreated(newTicket);
+              totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
+            } catch (errTicket) {
+              console.warn('Gagal simpan tiket defect:', errTicket);
             }
+          } else if (v.target_penanganan === 'CUCI' || v.target_penanganan === 'PERMAK') {
+            // CUCI & PERMAK: CUKUP DATA LOKASI FISIK, TIDAK PERLU NOMOR TIKET
+            const internalQueueId = `${v.target_penanganan === 'CUCI' ? 'CC' : 'PMK'}-${dateStr}-${Date.now().toString().slice(-4)}-${i + 1}`;
+
+            const newTicket: PerbaikanTicket = {
+              ticket_no: internalQueueId,
+              tanggal: now.toISOString(),
+              sku: finalSku,
+              nama_produk: finalNamaProduk,
+              size: finalSize,
+              qty: qtyReject > 0 ? qtyReject : 1,
+              lokasi_asal: 'Area QC',
+              lokasi_sekarang: finalLokasiReject,
+              is_already_in_repair: false,
+              sumber_barang: mappedSumber,
+              kategori_rusak: (v.kategori_rusak as any) || (v.target_penanganan === 'CUCI' ? 'Noda / Kotor' : 'Jahitan Rusak'),
+              detail_kerusakan: defectDetail,
+              foto_urls: uploadedPhotoUrls,
+              tahap: v.target_penanganan,
+              status_pengerjaan: 'PENDING',
+              qc_pic: currentPicName,
+              qc_tanggal: now.toISOString(),
+              qc_catatan: `Antrean Perbaikan (${v.target_penanganan}): ${qtyReject} pcs di lokasi ${finalLokasiReject}`,
+              operator_input: currentPicName,
+              qc_report_no: reportNo,
+              created_at: now.toISOString(),
+            };
+
+            try {
+              await savePerbaikanTicketToSupabase(newTicket);
+              if (onRejectCreated) onRejectCreated(newTicket);
+              totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
+            } catch (errTicket) {
+              console.warn('Gagal simpan antrean perbaikan:', errTicket);
+            }
+          } else {
+            // REJECT Kontainer KNR (Belum Disortir)
             totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
-          } catch (errTicket) {
-            console.warn('Gagal simpan tiket perbaikan:', errTicket);
           }
         } else {
           totalOkeCreated += qtyOke > 0 ? qtyOke : qtyChecked;
@@ -782,6 +866,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           qty_diperiksa: qtyChecked,
           qty_oke: qtyOke,
           qty_reject: qtyReject,
+          lokasi_barang: v.status === 'REJECT' ? finalLokasiReject : 'RAK-OK',
           kategori_rusak: v.status === 'REJECT' ? v.kategori_rusak : undefined,
           detail_kerusakan: v.status === 'REJECT' ? v.detail_kerusakan.trim() : undefined,
           target_penanganan: v.status === 'REJECT' ? v.target_penanganan : undefined,
@@ -803,16 +888,30 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       const savedBatch = await saveQcReportsBatchToSupabase(reportsToSave);
       setReports((prev) => {
         const savedNos = new Set(savedBatch.map((s) => s.report_no));
-        return [...savedBatch, ...prev.filter((p) => !savedNos.has(p.report_no))];
+        const updated = [...savedBatch, ...prev.filter((p) => !savedNos.has(p.report_no))];
+        window.dispatchEvent(
+          new CustomEvent('wms_qc_reports_updated', { detail: { reports: updated } })
+        );
+        return updated;
       });
 
       playSuccessBeep();
       vibrateDevice([40, 60, 40]);
 
-      onShowToast(
-        `Berhasil menyimpan & mensinkronkan ${savedBatch.length} laporan QC ke Supabase Cloud! (${totalOkeCreated} Pcs OKE, ${totalRejectCreated} Pcs REJECT) - kini dapat dilihat oleh admin & user lain.`,
-        'success'
-      );
+      if (viewMode === 'form_only') {
+        onShowToast(
+          `Laporan QC berhasil disimpan! (${totalOkeCreated} OKE, ${totalRejectCreated} REJECT). Mengalihkan ke Riwayat Laporan...`,
+          'success'
+        );
+        if (onNavigateToRiwayat) {
+          setTimeout(() => onNavigateToRiwayat(), 500);
+        }
+      } else {
+        onShowToast(
+          `Berhasil menyimpan & mensinkronkan ${savedBatch.length} laporan QC ke Supabase Cloud! (${totalOkeCreated} Pcs OKE, ${totalRejectCreated} Pcs REJECT) - kini dapat dilihat oleh admin & user lain.`,
+          'success'
+        );
+      }
 
       // Reset form to 1 clean variant
       setVariants([createInitialVariant('sku')]);
@@ -846,7 +945,13 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         deleteConfirmReport.id,
         deleteConfirmReport.perbaikan_ticket_no
       );
-      setReports((prev) => prev.filter((r) => r.report_no !== deleteConfirmReport.report_no));
+      setReports((prev) => {
+        const updated = prev.filter((r) => r.report_no !== deleteConfirmReport.report_no);
+        window.dispatchEvent(
+          new CustomEvent('wms_qc_reports_updated', { detail: { reports: updated } })
+        );
+        return updated;
+      });
       playSuccessBeep();
       onShowToast(
         deleteConfirmReport.perbaikan_ticket_no
@@ -968,9 +1073,13 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
       await updateQcReportInSupabase(updated);
 
-      setReports((prev) =>
-        prev.map((r) => (r.report_no === updated.report_no ? updated : r))
-      );
+      setReports((prev) => {
+        const nextList = prev.map((r) => (r.report_no === updated.report_no ? updated : r));
+        window.dispatchEvent(
+          new CustomEvent('wms_qc_reports_updated', { detail: { reports: nextList } })
+        );
+        return nextList;
+      });
 
       playSuccessBeep();
       onShowToast(`Laporan QC #${updated.report_no} berhasil diperbarui!`, 'success');
@@ -1115,96 +1224,239 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     onShowToast('Laporan QC berhasil diekspor ke CSV!', 'success');
   };
 
+  const handleOpenQuickSortir = (report: QcReport, defaultTarget: 'CUCI' | 'PERMAK' | 'DEFECT' = 'CUCI') => {
+    setQuickSortirReport(report);
+    setQuickSortirTarget(defaultTarget);
+    setQuickSortirLokasi(
+      defaultTarget === 'CUCI' ? 'CC-01' : defaultTarget === 'PERMAK' ? 'PMK-01' : 'DF-01'
+    );
+    setQuickSortirCatatan(report.detail_kerusakan || report.catatan || '');
+  };
+
+  const handleExecuteQuickSortir = async () => {
+    if (!quickSortirReport) return;
+    setIsExecutingQuickSortir(true);
+    try {
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const picName = session?.name || getUserPersonName(session?.username) || 'PIC Gudang';
+      const finalLokasi = quickSortirLokasi.trim().toUpperCase() || (quickSortirTarget === 'CUCI' ? 'CC-01' : quickSortirTarget === 'PERMAK' ? 'PMK-01' : 'DF-01');
+
+      let newTicketNo: string | undefined = undefined;
+      let ticketToPrint: any = null;
+
+      if (quickSortirTarget === 'DEFECT') {
+        // HANYA DEFECT YANG MENDAPATKAN NOMOR TIKET RESMI ACC (DFT-...)
+        const rand = Math.floor(100 + Math.random() * 900);
+        newTicketNo = `DFT-${dateStr}-${rand}`;
+
+        const newTicket: PerbaikanTicket = {
+          ticket_no: newTicketNo,
+          tanggal: now.toISOString(),
+          sku: quickSortirReport.sku,
+          nama_produk: quickSortirReport.nama_produk,
+          size: quickSortirReport.size || '-',
+          qty: quickSortirReport.qty_reject > 0 ? quickSortirReport.qty_reject : 1,
+          lokasi_asal: quickSortirReport.lokasi_barang || 'KNR-01',
+          lokasi_sekarang: finalLokasi,
+          is_already_in_repair: false,
+          sumber_barang: 'Gudang Fisik',
+          kategori_rusak: (quickSortirReport.kategori_rusak as any) || 'Defect Berat / BS',
+          detail_kerusakan: quickSortirCatatan.trim() || `[QC #${quickSortirReport.id}] Vonis Defect`,
+          foto_urls: quickSortirReport.foto_urls || [],
+          tahap: 'DEFECT',
+          status_pengerjaan: 'PENDING',
+          qc_pic: picName,
+          qc_tanggal: now.toISOString(),
+          qc_catatan: `Sortir Defect dari Kontainer ${quickSortirReport.lokasi_barang || 'KNR-01'} ke lokasi ${finalLokasi}`,
+          operator_input: picName,
+          qc_report_no: String(quickSortirReport.id),
+          created_at: now.toISOString(),
+        };
+
+        await savePerbaikanTicketToSupabase(newTicket);
+        if (onRejectCreated) onRejectCreated(newTicket);
+
+        ticketToPrint = {
+          ticket_no: newTicketNo,
+          sku: quickSortirReport.sku,
+          nama_produk: quickSortirReport.nama_produk,
+          size: quickSortirReport.size || '-',
+          qty: quickSortirReport.qty_reject > 0 ? quickSortirReport.qty_reject : 1,
+          kategori_rusak: (quickSortirReport.kategori_rusak as any) || 'Defect Berat / BS',
+          detail_kerusakan: quickSortirCatatan.trim() || 'Vonis Defect',
+          lokasi_sekarang: finalLokasi,
+          tanggal: now.toLocaleString('id-ID'),
+        };
+      } else {
+        // CUCI & PERMAK: CUKUP DATA LOKASI FISIK, TIDAK PERLU NOMOR TIKET
+        const internalQueueId = `${quickSortirTarget === 'CUCI' ? 'CC' : 'PMK'}-${dateStr}-${Date.now().toString().slice(-4)}`;
+        const newTicket: PerbaikanTicket = {
+          ticket_no: internalQueueId,
+          tanggal: now.toISOString(),
+          sku: quickSortirReport.sku,
+          nama_produk: quickSortirReport.nama_produk,
+          size: quickSortirReport.size || '-',
+          qty: quickSortirReport.qty_reject > 0 ? quickSortirReport.qty_reject : 1,
+          lokasi_asal: quickSortirReport.lokasi_barang || 'KNR-01',
+          lokasi_sekarang: finalLokasi,
+          is_already_in_repair: false,
+          sumber_barang: 'Gudang Fisik',
+          kategori_rusak: (quickSortirReport.kategori_rusak as any) || (quickSortirTarget === 'CUCI' ? 'Noda / Kotor' : 'Jahitan Rusak'),
+          detail_kerusakan: quickSortirCatatan.trim() || `[QC #${quickSortirReport.id}] Alur ${quickSortirTarget}`,
+          foto_urls: quickSortirReport.foto_urls || [],
+          tahap: quickSortirTarget,
+          status_pengerjaan: 'PENDING',
+          qc_pic: picName,
+          qc_tanggal: now.toISOString(),
+          qc_catatan: `Sortir ke ${quickSortirTarget} di lokasi ${finalLokasi}`,
+          operator_input: picName,
+          qc_report_no: String(quickSortirReport.id),
+          created_at: now.toISOString(),
+        };
+
+        await savePerbaikanTicketToSupabase(newTicket);
+        if (onRejectCreated) onRejectCreated(newTicket);
+      }
+
+      // Update QC Report data
+      const updatedReport: QcReport = {
+        ...quickSortirReport,
+        target_penanganan: quickSortirTarget,
+        lokasi_barang: finalLokasi,
+        perbaikan_ticket_no: newTicketNo || quickSortirReport.perbaikan_ticket_no,
+      };
+
+      await updateQcReportInSupabase(updatedReport);
+      setReports((prev) => {
+        const nextList = prev.map((r) => (r.id === quickSortirReport.id ? updatedReport : r));
+        window.dispatchEvent(
+          new CustomEvent('wms_qc_reports_updated', { detail: { reports: nextList } })
+        );
+        return nextList;
+      });
+
+      playSuccessBeep();
+      vibrateDevice([100, 50, 100]);
+
+      if (quickSortirTarget === 'DEFECT') {
+        onShowToast(
+          `Berhasil! Tiket Defect #${newTicketNo} diterbitkan ke lokasi ${finalLokasi}. Siap dicetak stiker 50x20mm.`,
+          'success'
+        );
+        setQuickSortirReport(null);
+        if (ticketToPrint) {
+          setThermalModalTicket(ticketToPrint);
+        }
+      } else {
+        onShowToast(
+          `Berhasil menyortir barang ke Antrean ${quickSortirTarget} (Lokasi: ${finalLokasi}).`,
+          'success'
+        );
+        setQuickSortirReport(null);
+      }
+    } catch (err: any) {
+      console.error('Gagal sortir barang reject:', err);
+      playErrorBeep();
+      onShowToast(`Gagal memindahkan barang reject: ${err.message || err}`, 'error');
+    } finally {
+      setIsExecutingQuickSortir(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* 0. (Banner removed) */}
 
 
-      {/* 1. Stat Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Laporan</span>
-            <span className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600">
-              <ClipboardCheck className="w-4 h-4" />
-            </span>
+      {/* 1. Stat Summary Cards - Compact & Responsive */}
+      {viewMode !== 'form_only' && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Laporan</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600">
+                <ClipboardCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white">{metrics.totalReports}</span>
+              <span className="text-[11px] text-slate-400">laporan</span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-500">{metrics.todayReportsCount} hari ini</div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-800 dark:text-white">{metrics.totalReports}</span>
-            <span className="text-xs text-slate-400">laporan</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">{metrics.todayReportsCount} hari ini</div>
-        </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Diperiksa</span>
-            <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600">
-              <Layers className="w-4 h-4" />
-            </span>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Diperiksa</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600">
+                <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-indigo-400">{metrics.totalChecked}</span>
+              <span className="text-[11px] text-slate-400">pcs</span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-500">Semua produk &amp; batch</div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{metrics.totalChecked}</span>
-            <span className="text-xs text-slate-400">pcs</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Semua produk & batch</div>
-        </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Lolos OKE</span>
-            <span className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600">
-              <CheckCircle2 className="w-4 h-4" />
-            </span>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Lolos OKE</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600">
+                <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">{metrics.totalOke}</span>
+              <span className="text-[11px] text-slate-400">pcs</span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-500">Grade A siap jual</div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{metrics.totalOke}</span>
-            <span className="text-xs text-slate-400">pcs</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Grade A siap jual</div>
-        </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Reject</span>
-            <span className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600">
-              <AlertTriangle className="w-4 h-4" />
-            </span>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Reject</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600">
+                <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400">{metrics.totalReject}</span>
+              <span className="text-[11px] text-slate-400">pcs</span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-500">Kirim ke perbaikan</div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-rose-600 dark:text-rose-400">{metrics.totalReject}</span>
-            <span className="text-xs text-slate-400">pcs</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Kirim ke perbaikan</div>
-        </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Reject Rate</span>
-            <span className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600">
-              <ShieldCheck className="w-4 h-4" />
-            </span>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-xs col-span-2 sm:col-span-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Reject Rate</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600">
+                <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400">{metrics.rejectRate}%</span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-500">Tingkat cacat kualitas</div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">{metrics.rejectRate}%</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Tingkat cacat kualitas</div>
         </div>
-      </div>
+      )}
 
       {/* 2. Collapsible Form Input Laporan QC (Multi-Variant Support) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all">
-        {/* Header Accordion Bar */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 bg-slate-50/60 dark:bg-slate-800/40">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
-              <PackageCheck className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                  Form Laporan Inspeksi QC (Multi-Variant)
-                </h3>
+      {viewMode !== 'riwayat_only' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all">
+          {/* Header Accordion Bar */}
+          <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3.5 bg-slate-50/60 dark:bg-slate-800/40">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
+                <PackageCheck className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                    Form Laporan Inspeksi QC (Multi-Variant)
+                  </h3>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0">
                   {variants.length} Variant
                 </span>
@@ -1815,19 +2067,70 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                             </label>
                             <select
                               value={variant.target_penanganan}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                const newTarget = e.target.value as any;
+                                let defaultLok = variant.lokasi_reject;
+                                if (!defaultLok || defaultLok === 'KNR-01' || defaultLok === 'CC-01' || defaultLok === 'PMK-01' || defaultLok === 'DF-01') {
+                                  if (newTarget === 'CUCI') defaultLok = 'CC-01';
+                                  else if (newTarget === 'PERMAK') defaultLok = 'PMK-01';
+                                  else if (newTarget === 'DEFECT') defaultLok = 'DF-01';
+                                  else defaultLok = 'KNR-01';
+                                }
                                 handleUpdateVariant(variant.id, {
-                                  target_penanganan: e.target.value as any,
-                                })
-                              }
+                                  target_penanganan: newTarget,
+                                  lokasi_reject: defaultLok,
+                                });
+                              }}
                               className="w-full px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-rose-500 outline-none"
                             >
-                              <option value="REJECT">REJECT (Sortir Umum)</option>
+                              <option value="REJECT">REJECT (Sortir Umum / Masuk Kontainer)</option>
                               <option value="CUCI">CUCI (Pencucian Noda)</option>
                               <option value="PERMAK">PERMAK (Jahit Ulang / Vermak)</option>
-                              <option value="DEFECT">DEFECT (BS Berat / Obral)</option>
+                              <option value="DEFECT">DEFECT (BS Berat / Obral - Ada Tiket)</option>
                             </select>
                           </div>
+                        </div>
+
+                        {/* Lokasi Fisik Barang Reject (Diisi Manual oleh PIC) */}
+                        <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-800/80 border border-rose-200 dark:border-rose-900/50 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                              <span>📍 Lokasi Fisik Barang Reject (Input PIC):</span>
+                              <span className="text-[10px] font-normal text-slate-400">
+                                (Default: KNR-01 / Kontainer)
+                              </span>
+                            </label>
+                            <div className="flex items-center gap-1">
+                              {['KNR-01', 'KNR-02', 'CC-01', 'PMK-01', 'DF-01'].map((lok) => (
+                                <button
+                                  key={lok}
+                                  type="button"
+                                  onClick={() => handleUpdateVariant(variant.id, { lokasi_reject: lok })}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                                    (variant.lokasi_reject || 'KNR-01') === lok
+                                      ? 'bg-rose-600 text-white shadow-xs'
+                                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                                  }`}
+                                >
+                                  {lok}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            value={variant.lokasi_reject || 'KNR-01'}
+                            onChange={(e) =>
+                              handleUpdateVariant(variant.id, {
+                                lokasi_reject: e.target.value.toUpperCase(),
+                              })
+                            }
+                            placeholder="cth: KNR-01 / CC-01 / PMK-01 / DF-01"
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs uppercase focus:ring-2 focus:ring-rose-500 outline-none"
+                          />
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                            Barang reject dari picker ditempatkan di <strong>Kontainer (kode: KNR)</strong> atau langsung ke lokasi cuci/permak/defect. Cuci &amp; permak tidak memerlukan nomor tiket, cukup data lokasi.
+                          </p>
                         </div>
 
                         {/* Deskripsi Kerusakan */}
@@ -1979,28 +2282,72 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           </form>
         )}
       </div>
+      )}
 
       {/* 3. Riwayat Laporan QC Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        {/* Table Header & Controls */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="font-bold text-slate-900 dark:text-white text-base">
-              Riwayat Laporan Inspeksi Mutu (QC)
-            </h3>
+      {viewMode !== 'form_only' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+          {/* Table Header & Controls */}
+          <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                Riwayat Laporan Inspeksi Mutu (QC)
+              </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Menampilkan {filteredReports.length} dari {reports.length} total laporan inspeksi
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* View Mode Toggle: Kartu vs Tabel */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                id="toggle-view-cards"
+                onClick={() => {
+                  setViewFormat('cards');
+                  try {
+                    localStorage.setItem('wms_qc_view_format', 'cards');
+                  } catch {}
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewFormat === 'cards'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-slate-200 dark:ring-slate-700'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="Tampilan Kartu (Grid Kotak)"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Kartu</span>
+              </button>
+              <button
+                type="button"
+                id="toggle-view-table"
+                onClick={() => {
+                  setViewFormat('table');
+                  try {
+                    localStorage.setItem('wms_qc_view_format', 'table');
+                  } catch {}
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewFormat === 'table'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs ring-1 ring-slate-200 dark:ring-slate-700'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="Tampilan Tabel (Baris Tabular)"
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Tabel</span>
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={handleExportCsv}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-200 dark:border-emerald-800 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Ekspor CSV</span>
+              <span className="hidden sm:inline">Ekspor CSV</span>
             </button>
 
             <button
@@ -2009,7 +2356,12 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 setIsLoading(true);
                 try {
                   const data = await fetchQcReportsFromSupabase();
-                  if (data) setReports(data);
+                  if (data) {
+                    setReports(data);
+                    window.dispatchEvent(
+                      new CustomEvent('wms_qc_reports_updated', { detail: { reports: data } })
+                    );
+                  }
                   onShowToast('Data laporan QC berhasil disinkronisasi', 'info');
                 } finally {
                   setIsLoading(false);
@@ -2099,240 +2451,271 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           </select>
         </div>
 
-        {/* Reports Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-semibold">
-                <th className="py-3 px-4">No. Laporan &amp; Tanggal</th>
-                <th className="py-3 px-4">Identifikasi Produk</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-center">Qty</th>
-                <th className="py-3 px-4">Kategori &amp; Detail Kerusakan</th>
-                <th className="py-3 px-4 text-center">Foto Bukti</th>
-                <th className="py-3 px-4">PIC QC</th>
-                <th className="py-3 px-4">Terusan Perbaikan</th>
-                <th className="py-3 px-4 text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
-              {filteredReports.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <ClipboardCheck className="w-8 h-8 opacity-40 text-slate-400" />
-                      <span>Tidak ada data laporan QC yang cocok dengan filter.</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredReports.map((r, rIdx) => {
+        {/* Reports Display: Card View OR Table View */}
+        {viewFormat === 'cards' ? (
+          <div className="p-3.5 sm:p-5">
+            {filteredReports.length === 0 ? (
+              <div className="py-12 text-center text-slate-400">
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <ClipboardCheck className="w-8 h-8 opacity-40 text-slate-400" />
+                  <span>Tidak ada data laporan QC yang cocok dengan filter.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-4">
+                {filteredReports.map((r, rIdx) => {
                   const isReject = r.status === 'REJECT';
                   const isKode = r.tipe_identifikasi === 'kode_produksi' || !!r.kode_produksi;
 
                   return (
-                    <tr
-                      key={r.id ? `qc-rep-id-${r.id}` : (r.report_no ? `qc-rep-no-${r.report_no}-${rIdx}` : `qc-rep-idx-${rIdx}`)}
-                      className="hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors"
+                    <div
+                      key={r.id ? `qc-card-id-${r.id}` : (r.report_no ? `qc-card-no-${r.report_no}-${rIdx}` : `qc-card-idx-${rIdx}`)}
+                      className={`bg-white dark:bg-slate-900 rounded-2xl border transition-all hover:shadow-md p-4 flex flex-col justify-between space-y-3.5 ${
+                        isReject
+                          ? 'border-rose-200/90 dark:border-rose-900/60 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-800 shadow-xs'
+                      }`}
                     >
-                      {/* No Laporan & Tanggal */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-mono font-bold text-slate-900 dark:text-white">
-                          {r.report_no}
-                        </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Calendar className="w-3 h-3" />
-                          <span>
-                            {r.tanggal
-                              ? new Date(r.tanggal).toLocaleDateString('id-ID', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : '-'}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          Sumber:{' '}
-                          <span className="font-medium text-slate-700 dark:text-slate-300">
-                            {r.sumber_batch}
-                          </span>
-                        </div>
-                      </td>
+                      {/* Card Header */}
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate" title={r.report_no}>
+                              {r.report_no}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Calendar className="w-3 h-3 shrink-0" />
+                              <span>
+                                {r.tanggal
+                                  ? new Date(r.tanggal).toLocaleDateString('id-ID', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })
+                                  : '-'}
+                              </span>
+                              <span className="text-slate-300 dark:text-slate-600">&bull;</span>
+                              <span className="truncate">{r.sumber_batch}</span>
+                            </div>
+                          </div>
 
-                      {/* Identifikasi Produk */}
-                      <td className="py-3.5 px-4 max-w-[240px]">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
-                              isKode
-                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300'
-                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                            }`}
-                          >
-                            {isKode ? 'Kode Produksi' : 'SKU'}
-                          </span>
-                          <span className="font-mono font-bold text-slate-900 dark:text-white">
-                            {r.sku}
-                          </span>
-                        </div>
-
-                        <div
-                          className="font-medium text-slate-800 dark:text-slate-100 truncate"
-                          title={r.nama_produk}
-                        >
-                          {r.nama_produk}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px] text-slate-400">
-                          {r.warna && (
-                            <span>
-                              Warna:{' '}
-                              <strong className="text-slate-600 dark:text-slate-300">
-                                {r.warna}
-                              </strong>
+                          {/* Status Pill */}
+                          {isReject ? (
+                            <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>REJECT</span>
                             </span>
-                          )}
-                          {r.size && r.size !== '-' && (
-                            <span>
-                              Size:{' '}
-                              <strong className="text-slate-600 dark:text-slate-300">
-                                {r.size}
-                              </strong>
+                          ) : (
+                            <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900">
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              <span>OKE</span>
                             </span>
                           )}
                         </div>
-                      </td>
 
-                      {/* Status Badge */}
-                      <td className="py-3.5 px-4 text-center">
-                        {isReject ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                            <AlertTriangle className="w-3 h-3" />
-                            REJECT
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                            <CheckCircle2 className="w-3 h-3" />
-                            OKE Lolos
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Qty */}
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="font-semibold text-slate-900 dark:text-white">
-                          {r.qty_diperiksa} pcs
-                        </div>
-                        <div className="text-[10px] mt-0.5">
-                          <span className="text-emerald-600 font-medium">OK: {r.qty_oke}</span>
-                          {r.qty_reject > 0 && (
-                            <span className="text-rose-600 font-bold ml-1.5">
-                              RJC: {r.qty_reject}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Kategori & Detail Kerusakan */}
-                      <td className="py-3.5 px-4 max-w-[240px]">
-                        {isReject ? (
-                          <div>
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
-                              {r.kategori_rusak || 'Defect'}
-                            </span>
-                            <div
-                              className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 line-clamp-2"
-                              title={r.detail_kerusakan}
+                        {/* Identifikasi Produk */}
+                        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
+                                isKode
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300'
+                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                              }`}
                             >
-                              {r.detail_kerusakan || '-'}
+                              {isKode ? 'Kode' : 'SKU'}
+                            </span>
+                            <span className="font-mono font-bold text-xs text-blue-700 dark:text-blue-300">
+                              {r.sku}
+                            </span>
+                          </div>
+                          <div className="font-bold text-sm text-slate-800 dark:text-slate-100 line-clamp-2" title={r.nama_produk}>
+                            {r.nama_produk}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {r.warna && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
+                                Warna: {r.warna}
+                              </span>
+                            )}
+                            {r.size && r.size !== '-' && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
+                                Size: {r.size}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Qty Breakdown Metrics */}
+                        <div className="grid grid-cols-3 gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-center">
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-semibold uppercase">Diperiksa</div>
+                            <div className="text-xs font-black text-slate-700 dark:text-slate-200 mt-0.5">
+                              {r.qty_diperiksa || 0} pcs
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-emerald-600 font-semibold uppercase">Lolos OKE</div>
+                            <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                              {r.qty_oke || 0} pcs
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-rose-600 font-semibold uppercase">Reject</div>
+                            <div className={`text-xs font-black mt-0.5 ${r.qty_reject > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
+                              {r.qty_reject || 0} pcs
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Detail Reject / Kerusakan & Lokasi Fisik */}
+                        {isReject ? (
+                          <div className="p-2.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/70 dark:border-rose-900/40 text-xs space-y-2">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-bold text-rose-800 dark:text-rose-300 text-[11px]">
+                                Kerusakan: {r.kategori_rusak || 'Defect'}
+                              </span>
+                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                📍 {r.lokasi_barang || 'KNR-01'}
+                              </span>
+                            </div>
+                            {r.detail_kerusakan && (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-400 italic line-clamp-2">
+                                "{r.detail_kerusakan}"
+                              </p>
+                            )}
+
+                            {/* Alur & Aksi Sortir */}
+                            <div className="pt-1.5 border-t border-rose-200/50 dark:border-rose-900/30 flex items-center justify-between gap-1 flex-wrap">
+                              {r.target_penanganan === 'DEFECT' ? (
+                                <div className="flex items-center gap-1.5 flex-wrap w-full justify-between">
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 text-[10px] font-bold border border-purple-200 dark:border-purple-800">
+                                    <span>🏷️ DEFECT #{r.perbaikan_ticket_no || ''}</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setThermalModalTicket({
+                                        ticket_no: r.perbaikan_ticket_no || `DFT-${String(r.id)}`,
+                                        sku: r.sku,
+                                        nama_produk: r.nama_produk,
+                                        size: r.size || '-',
+                                        qty: r.qty_reject || 1,
+                                        kategori_rusak: r.kategori_rusak,
+                                        detail_kerusakan: r.detail_kerusakan,
+                                        lokasi_sekarang: r.lokasi_barang || 'DF-01',
+                                        tanggal: r.tanggal ? new Date(r.tanggal).toLocaleDateString('id-ID') : undefined,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] shadow-xs cursor-pointer transition-all"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                    <span>Cetak 50x20</span>
+                                  </button>
+                                </div>
+                              ) : (!r.target_penanganan || r.target_penanganan === 'REJECT') ? (
+                                <div className="flex items-center gap-1 flex-wrap w-full justify-between">
+                                  <span className="text-[10px] text-slate-500 font-medium">Sortir:</span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickSortir(r, 'CUCI')}
+                                      className="px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900 cursor-pointer transition-all"
+                                    >
+                                      🫧 Cuci
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickSortir(r, 'PERMAK')}
+                                      className="px-2 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 cursor-pointer transition-all"
+                                    >
+                                      🪡 Permak
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickSortir(r, 'DEFECT')}
+                                      className="px-2 py-0.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10px] font-bold border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-900 cursor-pointer transition-all"
+                                    >
+                                      🏷️ Defect
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                                    {r.target_penanganan === 'CUCI' ? '🫧 Di Antrean Cuci' : '🪡 Di Antrean Permak'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (onNavigateToPerbaikan) onNavigateToPerbaikan(r.perbaikan_ticket_no);
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700"
+                                  >
+                                    <span>Tab Perbaikan</span>
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ) : (
-                          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium italic">
+                          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium italic px-1">
                             {r.catatan || 'Kualitas lolos Grade A tanpa cacat'}
                           </div>
                         )}
-                      </td>
 
-                      {/* Foto Bukti */}
-                      <td className="py-3.5 px-4 text-center">
-                        {r.foto_urls && r.foto_urls.length > 0 ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setLightboxImages(r.foto_urls)}
-                              className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 w-9 h-9 flex-shrink-0"
-                              title="Klik untuk memperbesar foto"
-                            >
-                              <img
-                                src={r.foto_urls[0]}
-                                alt="Foto"
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                              />
-                              {r.foto_urls.length > 1 && (
-                                <span className="absolute inset-0 bg-black/50 text-white font-bold text-[10px] flex items-center justify-center">
-                                  +{r.foto_urls.length - 1}
-                                </span>
+                        {/* Foto Bukti */}
+                        {r.foto_urls && r.foto_urls.length > 0 && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <span className="text-[10px] text-slate-400 font-medium">Foto:</span>
+                            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                              {r.foto_urls.slice(0, 4).map((photoUrl, pIdx) => (
+                                <img
+                                  key={pIdx}
+                                  src={photoUrl}
+                                  alt={`Bukti QC ${pIdx + 1}`}
+                                  referrerPolicy="no-referrer"
+                                  onClick={() => setLightboxImages(r.foto_urls)}
+                                  className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-80 transition-opacity"
+                                />
+                              ))}
+                              {r.foto_urls.length > 4 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxImages(r.foto_urls)}
+                                  className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
+                                >
+                                  +{r.foto_urls.length - 4}
+                                </button>
                               )}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 italic">-</span>
-                        )}
-                        {r.gdrive_link && (
-                          <div className="mt-1">
-                            <a
-                              href={r.gdrive_link}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400 hover:underline"
-                              title="Buka Google Drive"
-                            >
-                              <ExternalLink className="w-2.5 h-2.5" />
-                              <span>GDrive</span>
-                            </a>
+                            </div>
+                            {r.gdrive_link && (
+                              <a
+                                href={r.gdrive_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="ml-auto inline-flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                <span>GDrive</span>
+                              </a>
+                            )}
                           </div>
                         )}
-                      </td>
+                      </div>
 
-                      {/* PIC QC */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      {/* Card Footer: PIC & Actions */}
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px] truncate">
                           <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-semibold">{formatOperatorWithPersonName(r.pic_qc)}</span>
+                          <span className="truncate">{formatOperatorWithPersonName(r.pic_qc)}</span>
                         </div>
-                      </td>
 
-                      {/* Terusan Perbaikan */}
-                      <td className="py-3.5 px-4">
-                        {r.perbaikan_ticket_no ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onNavigateToPerbaikan) {
-                                onNavigateToPerbaikan(r.perbaikan_ticket_no);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-mono text-[11px] font-bold border border-rose-200 dark:border-rose-900 transition-colors"
-                            title="Klik untuk buka antrean di Tab Perbaikan & Defect"
-                          >
-                            <Scissors className="w-3 h-3 text-rose-600" />
-                            <span>#{r.perbaikan_ticket_no}</span>
-                            <ArrowRight className="w-2.5 h-2.5 opacity-60" />
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">-</span>
-                        )}
-                      </td>
-
-                      {/* Aksi */}
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {/* Edit Action (Akses Admin) */}
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(r)}
@@ -2341,16 +2724,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                 ? 'hover:bg-blue-50 dark:hover:bg-blue-950/40 text-slate-400 hover:text-blue-600'
                                 : 'hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-300 dark:text-slate-600 hover:text-amber-600'
                             }`}
-                            title={
-                              canEditData
-                                ? 'Edit Laporan QC (Akses Admin)'
-                                : 'Edit Laporan QC (Diperlukan hak akses Admin)'
-                            }
+                            title={canEditData ? 'Edit Laporan QC' : 'Edit Laporan QC (Akses Admin)'}
                           >
-                            <Pencil className="w-4 h-4" />
+                            <Pencil className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Delete Action */}
                           <button
                             type="button"
                             onClick={() => handleRequestDelete(r)}
@@ -2359,24 +2737,387 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                 ? 'hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600'
                                 : 'hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-300 dark:text-slate-600 hover:text-amber-600'
                             }`}
-                            title={
-                              canDeleteData
-                                ? 'Hapus Laporan QC'
-                                : 'Hapus Laporan QC (Diperlukan hak akses Admin)'
-                            }
+                            title={canDeleteData ? 'Hapus Laporan QC' : 'Hapus Laporan QC (Akses Admin)'}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Reports Table */
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[880px] text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-semibold">
+                  <th className="py-3 px-4">No. Laporan &amp; Tanggal</th>
+                  <th className="py-3 px-4">Identifikasi Produk</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-center">Qty</th>
+                  <th className="py-3 px-4">Kategori &amp; Detail Kerusakan</th>
+                  <th className="py-3 px-4 text-center">Foto Bukti</th>
+                  <th className="py-3 px-4">PIC QC</th>
+                  <th className="py-3 px-4">Status Alur &amp; Lokasi Fisik</th>
+                  <th className="py-3 px-4 text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
+                {filteredReports.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <ClipboardCheck className="w-8 h-8 opacity-40 text-slate-400" />
+                        <span>Tidak ada data laporan QC yang cocok dengan filter.</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredReports.map((r, rIdx) => {
+                    const isReject = r.status === 'REJECT';
+                    const isKode = r.tipe_identifikasi === 'kode_produksi' || !!r.kode_produksi;
+
+                    return (
+                      <tr
+                        key={r.id ? `qc-rep-id-${r.id}` : (r.report_no ? `qc-rep-no-${r.report_no}-${rIdx}` : `qc-rep-idx-${rIdx}`)}
+                        className="hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        {/* No Laporan & Tanggal */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-slate-900 dark:text-white">
+                            {r.report_no}
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Calendar className="w-3 h-3" />
+                            <span>
+                              {r.tanggal
+                                ? new Date(r.tanggal).toLocaleDateString('id-ID', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '-'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Sumber:{' '}
+                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                              {r.sumber_batch}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Identifikasi Produk */}
+                        <td className="py-3.5 px-4 max-w-[240px]">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
+                                isKode
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300'
+                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                              }`}
+                            >
+                              {isKode ? 'Kode Produksi' : 'SKU'}
+                            </span>
+                            <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              {r.sku}
+                            </span>
+                          </div>
+
+                          <div
+                            className="font-medium text-slate-800 dark:text-slate-100 truncate"
+                            title={r.nama_produk}
+                          >
+                            {r.nama_produk}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                            {r.warna && (
+                              <span>
+                                Warna:{' '}
+                                <strong className="text-slate-600 dark:text-slate-300">
+                                  {r.warna}
+                                </strong>
+                              </span>
+                            )}
+                            {r.size && r.size !== '-' && (
+                              <span>
+                                Size:{' '}
+                                <strong className="text-slate-600 dark:text-slate-300">
+                                  {r.size}
+                                </strong>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Status Badge */}
+                        <td className="py-3.5 px-4 text-center">
+                          {isReject ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                              <AlertTriangle className="w-3 h-3" />
+                              REJECT
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                              <CheckCircle2 className="w-3 h-3" />
+                              OKE Lolos
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Qty */}
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="font-semibold text-slate-900 dark:text-white">
+                            {r.qty_diperiksa} pcs
+                          </div>
+                          <div className="text-[10px] mt-0.5">
+                            <span className="text-emerald-600 font-medium">OK: {r.qty_oke}</span>
+                            {r.qty_reject > 0 && (
+                              <span className="text-rose-600 font-bold ml-1.5">
+                                RJC: {r.qty_reject}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Kategori & Detail Kerusakan */}
+                        <td className="py-3.5 px-4 max-w-[240px]">
+                          {isReject ? (
+                            <div>
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+                                {r.kategori_rusak || 'Defect'}
+                              </span>
+                              <div
+                                className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 line-clamp-2"
+                                title={r.detail_kerusakan}
+                              >
+                                {r.detail_kerusakan || '-'}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium italic">
+                              {r.catatan || 'Kualitas lolos Grade A tanpa cacat'}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Foto Bukti */}
+                        <td className="py-3.5 px-4 text-center">
+                          {r.foto_urls && r.foto_urls.length > 0 ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setLightboxImages(r.foto_urls)}
+                                className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 w-9 h-9 flex-shrink-0"
+                                title="Klik untuk memperbesar foto"
+                              >
+                                <img
+                                  src={r.foto_urls[0]}
+                                  alt="Foto"
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                />
+                                {r.foto_urls.length > 1 && (
+                                  <span className="absolute inset-0 bg-black/50 text-white font-bold text-[10px] flex items-center justify-center">
+                                    +{r.foto_urls.length - 1}
+                                  </span>
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">-</span>
+                          )}
+                          {r.gdrive_link && (
+                            <div className="mt-1">
+                              <a
+                                href={r.gdrive_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400 hover:underline"
+                                title="Buka Google Drive"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                <span>GDrive</span>
+                              </a>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* PIC QC */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="font-semibold">{formatOperatorWithPersonName(r.pic_qc)}</span>
+                          </div>
+                        </td>
+
+                        {/* Status Alur & Lokasi Fisik */}
+                        <td className="py-3.5 px-4">
+                          {r.status === 'OKE' ? (
+                            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>Grade A (Siap Jual)</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5 min-w-[150px]">
+                              {/* Lokasi Fisik Badge */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono text-[11px] font-bold border border-slate-200 dark:border-slate-700">
+                                  <span>📍</span>
+                                  <span>{r.lokasi_barang || 'KNR-01'}</span>
+                                </span>
+
+                                {r.target_penanganan === 'CUCI' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-900">
+                                    <span>🫧 Cuci</span>
+                                  </span>
+                                )}
+
+                                {r.target_penanganan === 'PERMAK' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-[10px] font-bold border border-amber-200 dark:border-amber-900">
+                                    <span>🪡 Permak</span>
+                                  </span>
+                                )}
+
+                                {r.target_penanganan === 'DEFECT' && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-bold border border-purple-200 dark:border-purple-900">
+                                    <span>🏷️ ACC Defect</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Alur Actions / Ticket Details */}
+                              {r.target_penanganan === 'DEFECT' ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {r.perbaikan_ticket_no && (
+                                    <span className="font-mono text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                                      #{r.perbaikan_ticket_no}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setThermalModalTicket({
+                                        ticket_no: r.perbaikan_ticket_no || `DFT-${String(r.id)}`,
+                                        sku: r.sku,
+                                        nama_produk: r.nama_produk,
+                                        size: r.size || '-',
+                                        qty: r.qty_reject || 1,
+                                        kategori_rusak: r.kategori_rusak,
+                                        detail_kerusakan: r.detail_kerusakan,
+                                        lokasi_sekarang: r.lokasi_barang || 'DF-01',
+                                        tanggal: r.tanggal ? new Date(r.tanggal).toLocaleDateString('id-ID') : undefined,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] shadow-xs cursor-pointer transition-all"
+                                    title="Cetak stiker barcode 50x20 mm"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                    <span>Cetak 50x20</span>
+                                  </button>
+                                </div>
+                              ) : (!r.target_penanganan || r.target_penanganan === 'REJECT') ? (
+                                /* Quick Sortir Buttons jika masih di Kontainer KNR */
+                                <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                                  <span className="text-[10px] text-slate-400 font-medium">Sortir:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenQuickSortir(r, 'CUCI')}
+                                    className="px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900 cursor-pointer transition-all"
+                                    title="Pindah ke antrean Cuci (CC-01)"
+                                  >
+                                    🫧 Cuci
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenQuickSortir(r, 'PERMAK')}
+                                    className="px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 cursor-pointer transition-all"
+                                    title="Pindah ke antrean Permak (PMK-01)"
+                                  >
+                                    🪡 Permak
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenQuickSortir(r, 'DEFECT')}
+                                    className="px-1.5 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10px] font-bold border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-900 cursor-pointer transition-all"
+                                    title="Terbitkan Tiket Defect & Cetak Stiker"
+                                  >
+                                    🏷️ Defect
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (onNavigateToPerbaikan) onNavigateToPerbaikan(r.perbaikan_ticket_no);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-blue-600 transition-colors"
+                                >
+                                  <span>Lihat di Tab Perbaikan</span>
+                                  <ArrowRight className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Aksi */}
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Edit Action (Akses Admin) */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(r)}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                canEditData
+                                  ? 'hover:bg-blue-50 dark:hover:bg-blue-950/40 text-slate-400 hover:text-blue-600'
+                                  : 'hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-300 dark:text-slate-600 hover:text-amber-600'
+                              }`}
+                              title={
+                                canEditData
+                                  ? 'Edit Laporan QC (Akses Admin)'
+                                  : 'Edit Laporan QC (Diperlukan hak akses Admin)'
+                              }
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+
+                            {/* Delete Action */}
+                            <button
+                              type="button"
+                              onClick={() => handleRequestDelete(r)}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                canDeleteData
+                                  ? 'hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600'
+                                  : 'hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-300 dark:text-slate-600 hover:text-amber-600'
+                              }`}
+                              title={
+                                canDeleteData
+                                  ? 'Hapus Laporan QC'
+                                  : 'Hapus Laporan QC (Diperlukan hak akses Admin)'
+                              }
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+      )}
 
       {/* 4. Lightbox Modal Preview Foto */}
       {lightboxImages && lightboxImages.length > 0 && (
@@ -3015,6 +3756,200 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* 5. Modal Quick Sortir dari Riwayat */}
+      {quickSortirReport && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-scale-in">
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-600 text-white shadow-xs">
+                  <PackageCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                    Sortir Barang Reject
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    {quickSortirReport.sku} &bull; Qty: {quickSortirReport.qty_reject || 1} pcs
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickSortirReport(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* Pilihan Target Penanganan */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700 dark:text-slate-300">
+                  Pilih Kategori Tujuan Sortir: *
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickSortirTarget('CUCI');
+                      setQuickSortirLokasi('CC-01');
+                    }}
+                    className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 font-bold transition-all cursor-pointer ${
+                      quickSortirTarget === 'CUCI'
+                        ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs ring-2 ring-blue-500/20'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-lg">🫧</span>
+                    <span>CUCI</span>
+                    <span className="text-[9px] font-normal text-slate-400">Tanpa no tiket</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickSortirTarget('PERMAK');
+                      setQuickSortirLokasi('PMK-01');
+                    }}
+                    className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 font-bold transition-all cursor-pointer ${
+                      quickSortirTarget === 'PERMAK'
+                        ? 'bg-amber-50 border-amber-500 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 shadow-xs ring-2 ring-amber-500/20'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-lg">🪡</span>
+                    <span>PERMAK</span>
+                    <span className="text-[9px] font-normal text-slate-400">Tanpa no tiket</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickSortirTarget('DEFECT');
+                      setQuickSortirLokasi('DF-01');
+                    }}
+                    className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 font-bold transition-all cursor-pointer ${
+                      quickSortirTarget === 'DEFECT'
+                        ? 'bg-purple-50 border-purple-500 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs ring-2 ring-purple-500/20'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-lg">🏷️</span>
+                    <span>DEFECT</span>
+                    <span className="text-[9px] font-normal text-slate-400">Ada Tiket DFT</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Lokasi Baru Fisik */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                  <span>Lokasi Fisik Baru: *</span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    Asal: {quickSortirReport.lokasi_barang || 'KNR-01'}
+                  </span>
+                </label>
+                <div className="flex items-center gap-1 mb-1">
+                  {(quickSortirTarget === 'CUCI'
+                    ? ['CC-01', 'CC-02']
+                    : quickSortirTarget === 'PERMAK'
+                    ? ['PMK-01', 'PMK-02']
+                    : ['DF-01', 'DF-02', 'KNR-01']
+                  ).map((lok) => (
+                    <button
+                      key={lok}
+                      type="button"
+                      onClick={() => setQuickSortirLokasi(lok)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-all ${
+                        quickSortirLokasi === lok
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                      }`}
+                    >
+                      {lok}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={quickSortirLokasi}
+                  onChange={(e) => setQuickSortirLokasi(e.target.value.toUpperCase())}
+                  placeholder="cth: CC-01 / PMK-01 / DF-01"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold uppercase text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              {/* Catatan Sortir */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700 dark:text-slate-300">
+                  Catatan / Kerusakan Tambahan:
+                </label>
+                <textarea
+                  rows={2}
+                  value={quickSortirCatatan}
+                  onChange={(e) => setQuickSortirCatatan(e.target.value)}
+                  placeholder="Catatan detail kerusakan atau penanganan..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {quickSortirTarget === 'DEFECT' && (
+                <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-[11px] text-purple-800 dark:text-purple-300 flex items-start gap-2">
+                  <Printer className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Tiket Defect &amp; Cetak Stiker 50x20mm:</strong>
+                    <p className="mt-0.5 text-purple-600 dark:text-purple-400">
+                      Sistem akan menerbitkan nomor tiket <code>DFT-...</code> untuk antrean ACC Defect dan langsung menampilkan dialog cetak stiker thermal 50x20 mm.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setQuickSortirReport(null)}
+                disabled={isExecutingQuickSortir}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteQuickSortir}
+                disabled={isExecutingQuickSortir}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isExecutingQuickSortir ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Konfirmasi Sortir &amp; Pindah Lokasi</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Thermal 50x20 mm Sticker Print Modal */}
+      {thermalModalTicket && (
+        <ThermalStickerModal
+          isOpen={!!thermalModalTicket}
+          onClose={() => setThermalModalTicket(null)}
+          ticket={thermalModalTicket}
+        />
       )}
     </div>
   );
