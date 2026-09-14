@@ -795,10 +795,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     if (onlyWithStock) {
       list = list.filter(
         (item) =>
-          item.totalFisikGudang > 0 ||
-          item.totalStore > 0 ||
-          item.totalOnline > 0 ||
-          item.totalOffline > 0
+          item.totalFisikGudang !== 0 ||
+          item.totalStore !== 0 ||
+          item.totalOnline !== 0 ||
+          item.totalOffline !== 0 ||
+          item.komparasi.MAP.dp !== 0 ||
+          item.komparasi.LIVE.dp !== 0 ||
+          item.komparasi.STUDIO.dp !== 0 ||
+          item.komparasi.PERMAK.dp !== 0 ||
+          item.komparasi.DEFECT.dp !== 0
       );
     }
 
@@ -900,10 +905,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const itemsWithStockCount = useMemo(() => {
     return normalizedInventory.filter(
       (item) =>
-        item.totalFisikGudang > 0 ||
-        item.totalStore > 0 ||
-        item.totalOnline > 0 ||
-        item.totalOffline > 0
+        item.totalFisikGudang !== 0 ||
+        item.totalStore !== 0 ||
+        item.totalOnline !== 0 ||
+        item.totalOffline !== 0 ||
+        item.komparasi.MAP.dp !== 0 ||
+        item.komparasi.LIVE.dp !== 0 ||
+        item.komparasi.STUDIO.dp !== 0 ||
+        item.komparasi.PERMAK.dp !== 0 ||
+        item.komparasi.DEFECT.dp !== 0
     ).length;
   }, [normalizedInventory]);
 
@@ -1441,6 +1451,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                               <span className="font-mono text-xs font-black text-amber-600 dark:text-amber-400">
                                 {kd.fisik}
                               </span>
+                            ) : kd.fisik < 0 ? (
+                              <span className="font-mono text-xs font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">
+                                {kd.fisik}
+                              </span>
                             ) : (
                               <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
                             )}
@@ -1448,6 +1462,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60">
                             {kd.dp > 0 ? (
                               <span className="font-mono text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {kd.dp}
+                              </span>
+                            ) : kd.dp < 0 ? (
+                              <span className="font-mono text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">
                                 {kd.dp}
                               </span>
                             ) : (
@@ -1464,7 +1482,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       const val = item.singles[c] || 0;
                       return (
                         <td key={c} className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
-                          {val > 0 ? <span className="font-bold text-slate-800 dark:text-slate-200">{val}</span> : <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>}
+                          {val > 0 ? (
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{val}</span>
+                          ) : val < 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">{val}</span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                          )}
                         </td>
                       );
                     })}
@@ -1475,7 +1499,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       const val = item.singles[c] || 0;
                       return (
                         <td key={c} className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
-                          {val > 0 ? <span className="font-bold text-blue-600 dark:text-blue-400">{val}</span> : <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>}
+                          {val > 0 ? (
+                            <span className="font-bold text-blue-600 dark:text-blue-400">{val}</span>
+                          ) : val < 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">{val}</span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                          )}
                         </td>
                       );
                     })}
@@ -1486,7 +1516,13 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       const val = item.singles[c] || 0;
                       return (
                         <td key={c} className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
-                          {val > 0 ? <span className="font-bold text-emerald-600 dark:text-emerald-400">{val}</span> : <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>}
+                          {val > 0 ? (
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">{val}</span>
+                          ) : val < 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">{val}</span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                          )}
                         </td>
                       );
                     })}
@@ -1572,14 +1608,30 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <div className="text-[9px] font-extrabold text-slate-500 uppercase">{k}</div>
                           <div className="text-[10px] flex items-center justify-between px-1 mt-0.5">
                             <span className="text-[8px] text-slate-400">F:</span>
-                            <span className="font-mono font-extrabold text-amber-600 dark:text-amber-400">
-                              {kd.fisik > 0 ? kd.fisik : '·'}
+                            <span
+                              className={`font-mono ${
+                                kd.fisik < 0
+                                  ? 'font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-0.5 rounded'
+                                  : kd.fisik > 0
+                                  ? 'font-extrabold text-amber-600 dark:text-amber-400'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {kd.fisik !== 0 ? kd.fisik : '·'}
                             </span>
                           </div>
                           <div className="text-[10px] flex items-center justify-between px-1">
                             <span className="text-[8px] text-slate-400">DP:</span>
-                            <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                              {kd.dp > 0 ? kd.dp : '·'}
+                            <span
+                              className={`font-mono ${
+                                kd.dp < 0
+                                  ? 'font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-0.5 rounded'
+                                  : kd.dp > 0
+                                  ? 'font-semibold text-slate-700 dark:text-slate-300'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {kd.dp !== 0 ? kd.dp : '·'}
                             </span>
                           </div>
                         </div>
@@ -1615,10 +1667,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
                                   val > 0
                                     ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white border-slate-300'
+                                    : val < 0
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
                                     : 'bg-slate-50 dark:bg-slate-900/40 text-slate-400 border-slate-200 dark:border-slate-800'
                                 }`}
                               >
-                                {c}: {val > 0 ? val : '·'}
+                                {c}: {val !== 0 ? val : '·'}
                               </span>
                             );
                           })}
@@ -1638,10 +1692,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
                                   val > 0
                                     ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                                    : val < 0
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
                                     : 'bg-slate-50 dark:bg-slate-900/40 text-slate-400 border-slate-200 dark:border-slate-800'
                                 }`}
                               >
-                                {c}: {val > 0 ? val : '·'}
+                                {c}: {val !== 0 ? val : '·'}
                               </span>
                             );
                           })}
@@ -1661,10 +1717,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
                                   val > 0
                                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                    : val < 0
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
                                     : 'bg-slate-50 dark:bg-slate-900/40 text-slate-400 border-slate-200 dark:border-slate-800'
                                 }`}
                               >
-                                {c}: {val > 0 ? val : '·'}
+                                {c}: {val !== 0 ? val : '·'}
                               </span>
                             );
                           })}
