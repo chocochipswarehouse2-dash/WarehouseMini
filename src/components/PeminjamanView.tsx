@@ -2799,7 +2799,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                             ))
                           ) : editProductSearch.trim().length >= 2 ? (
                             <div className="p-2 text-center text-[11px] text-slate-400">
-                              Tidak ditemukan di katalog.
+                              SKU tidak terdaftar.
                               <button
                                 type="button"
                                 onClick={() => handleAddItemInEdit({ nama_produk: editProductSearch, sku: '', size: 'ALL', lokasi: 'BLOK F' } as any)}

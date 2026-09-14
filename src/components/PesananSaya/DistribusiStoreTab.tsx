@@ -437,7 +437,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
       const resolvedName = masterProduct
         ? (masterProduct.p || masterProduct.n || (masterProduct as any).nama_produk || sku)
-        : 'SKU Tidak Terdaftar di Master Produk';
+        : 'SKU tidak terdaftar';
 
       const resolvedCategory = masterProduct?.category || masterProduct?.c || 'Lainnya';
 

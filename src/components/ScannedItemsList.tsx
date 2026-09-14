@@ -139,7 +139,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
 
                   {item.isInvalidSku && (
                     <div className="text-xs text-primary-500 dark:text-primary-400 mt-1 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" /> SKU tidak terdaftar di database Supabase
+                      <AlertTriangle className="w-3.5 h-3.5" /> SKU tidak terdaftar
                     </div>
                   )}
 

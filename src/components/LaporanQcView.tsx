@@ -1521,7 +1521,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                 })
                               ) : (
                                 <div className="p-3 text-center text-xs text-slate-400">
-                                  Produk tidak ditemukan di katalog. Anda tetap dapat menginput SKU &amp; nama manual.
+                                  SKU tidak terdaftar. Anda tetap dapat menginput SKU &amp; nama manual.
                                 </div>
                               )}
                             </div>

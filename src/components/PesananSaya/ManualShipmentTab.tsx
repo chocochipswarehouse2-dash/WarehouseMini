@@ -283,7 +283,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const handleScanProduct = (sku: string) => {
     const product = productCatalog.find(p => p.k.toUpperCase() === sku.toUpperCase());
     if (!product) {
-      onShowToast(`Produk dengan SKU ${sku} tidak ditemukan!`, 'error');
+      onShowToast(`SKU ${sku} tidak terdaftar!`, 'error');
       return;
     }
 

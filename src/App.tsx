@@ -1006,7 +1006,7 @@ export default function App() {
         isInvalidSku = true;
         playErrorBeep();
         vibrateDevice([100, 100, 100]);
-        showToast(`Peringatan: SKU "${text}" tidak terdaftar di katalog!`, 'warning');
+        showToast(`Peringatan: SKU "${text}" tidak terdaftar!`, 'warning');
       } else {
         playSuccessBeep();
         vibrateDevice(40);
