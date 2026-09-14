@@ -147,10 +147,10 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
 
   return (
     <div className="space-y-3 pb-12">
-      {/* 4 Tabs Quality Control - Kesamping (Horizontal) Menghemat Area Kerja */}
+      {/* 4 Tabs Quality Control - Tampilan HP Rapi (Grid 4 Kolom Teratur Tanpa Terpotong) */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
-        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
-          {/* Tab 1: Form Laporan (Input QC Bersih Tanpa Tabel Riwayat) */}
+        <div className="grid grid-cols-4 sm:flex sm:items-center gap-1 sm:gap-1.5">
+          {/* Tab 1: Form Laporan (Input QC) */}
           <button
             type="button"
             id="tab-qc-form-laporan"
@@ -158,17 +158,20 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
               setActiveTab('form_laporan');
               setTargetSearchTicket(undefined);
             }}
-            className={`flex-1 min-w-[125px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'form_laporan'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50'
                 : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <ClipboardCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span>Form Laporan</span>
+            <ClipboardCheck className="w-4 h-4 shrink-0" />
+            <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+              <span className="sm:hidden">Form</span>
+              <span className="hidden sm:inline">Form Laporan</span>
+            </span>
           </button>
 
-          {/* Tab 2: Riwayat Laporan (Audit Lengkap Seluruh Laporan & Sortir Reject) */}
+          {/* Tab 2: Riwayat Laporan */}
           <button
             type="button"
             id="tab-qc-riwayat-laporan"
@@ -176,29 +179,34 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
               setActiveTab('riwayat_laporan');
               setTargetSearchTicket(undefined);
             }}
-            className={`flex-1 min-w-[140px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'riwayat_laporan'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
                 : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span>Riwayat Laporan</span>
-            {stats.riwayatTotal > 0 && (
-              <span
-                className={`px-1.5 py-0.5 text-[10px] font-mono rounded-full font-bold transition-colors ${
-                  activeTab === 'riwayat_laporan'
-                    ? 'bg-white/25 text-white'
-                    : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'
-                }`}
-                title={`${stats.riwayatTotal} total laporan inspeksi (${stats.riwayatReject} reject)`}
-              >
-                {stats.riwayatTotal}
+            <Layers className="w-4 h-4 shrink-0" />
+            <div className="flex items-center justify-center gap-1 min-w-0">
+              <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+                <span className="sm:hidden">Riwayat</span>
+                <span className="hidden sm:inline">Riwayat Laporan</span>
               </span>
-            )}
+              {stats.riwayatTotal > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 text-[9px] sm:text-[10px] font-mono rounded-full font-bold transition-colors shrink-0 ${
+                    activeTab === 'riwayat_laporan'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'
+                  }`}
+                  title={`${stats.riwayatTotal} total laporan inspeksi (${stats.riwayatReject} reject)`}
+                >
+                  {stats.riwayatTotal}
+                </span>
+              )}
+            </div>
           </button>
 
-          {/* Tab 3: Perbaikan (Cuci & Permak - Berbasis Data Lokasi Fisik Tanpa Tiket) */}
+          {/* Tab 3: Perbaikan */}
           <button
             type="button"
             id="tab-qc-perbaikan"
@@ -206,29 +214,33 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
               setActiveTab('perbaikan');
               setTargetSearchTicket(undefined);
             }}
-            className={`flex-1 min-w-[115px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'perbaikan'
                 ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25 ring-1 ring-amber-500/50'
                 : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Scissors className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span>Perbaikan</span>
-            {stats.perbaikan > 0 && (
-              <span
-                className={`px-1.5 py-0.5 text-[10px] font-mono rounded-full font-bold transition-colors ${
-                  activeTab === 'perbaikan'
-                    ? 'bg-white/25 text-white'
-                    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
-                }`}
-                title={`${stats.perbaikan} pcs dalam antrean perbaikan cuci & permak`}
-              >
-                {stats.perbaikan}
+            <Scissors className="w-4 h-4 shrink-0" />
+            <div className="flex items-center justify-center gap-1 min-w-0">
+              <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+                Perbaikan
               </span>
-            )}
+              {stats.perbaikan > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 text-[9px] sm:text-[10px] font-mono rounded-full font-bold transition-colors shrink-0 ${
+                    activeTab === 'perbaikan'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
+                  }`}
+                  title={`${stats.perbaikan} pcs dalam antrean perbaikan cuci & permak`}
+                >
+                  {stats.perbaikan}
+                </span>
+              )}
+            </div>
           </button>
 
-          {/* Tab 4: ACC Defect (Otorisasi Bertiket Manajemen & Cetak Stiker 50x20mm) */}
+          {/* Tab 4: ACC Defect */}
           <button
             type="button"
             id="tab-qc-defect"
@@ -236,26 +248,31 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
               setActiveTab('acc_defect');
               setTargetSearchTicket(undefined);
             }}
-            className={`flex-1 min-w-[125px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer ${
+            className={`w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-center transition-all duration-200 cursor-pointer ${
               activeTab === 'acc_defect'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25 ring-1 ring-purple-500/50'
                 : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span>ACC Defect</span>
-            {stats.defect > 0 && (
-              <span
-                className={`px-1.5 py-0.5 text-[10px] font-mono rounded-full font-bold transition-colors ${
-                  activeTab === 'acc_defect'
-                    ? 'bg-white/25 text-white'
-                    : 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300'
-                }`}
-                title={`${stats.defect} tiket defect menunggu ACC`}
-              >
-                {stats.defect}
+            <Tag className="w-4 h-4 shrink-0" />
+            <div className="flex items-center justify-center gap-1 min-w-0">
+              <span className="text-[11px] sm:text-xs md:text-sm leading-tight">
+                <span className="sm:hidden">Defect</span>
+                <span className="hidden sm:inline">ACC Defect</span>
               </span>
-            )}
+              {stats.defect > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 text-[9px] sm:text-[10px] font-mono rounded-full font-bold transition-colors shrink-0 ${
+                    activeTab === 'acc_defect'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300'
+                  }`}
+                  title={`${stats.defect} tiket defect menunggu ACC`}
+                >
+                  {stats.defect}
+                </span>
+              )}
+            </div>
           </button>
         </div>
       </div>

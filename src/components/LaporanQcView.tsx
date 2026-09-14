@@ -2400,11 +2400,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           </div>
 
           {/* Filter Status */}
-          <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div className="w-full sm:w-auto flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setFilterStatus('ALL')}
-              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
+              className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 sm:py-1 text-[11px] sm:text-xs rounded-lg font-bold transition-colors whitespace-nowrap text-center ${
                 filterStatus === 'ALL'
                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -2415,24 +2415,26 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             <button
               type="button"
               onClick={() => setFilterStatus('OKE')}
-              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
+              className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 sm:py-1 text-[11px] sm:text-xs rounded-lg font-bold transition-colors whitespace-nowrap text-center ${
                 filterStatus === 'OKE'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
               }`}
             >
-              OKE Lolos ({reports.filter((r) => r.status === 'OKE').length})
+              <span className="sm:hidden">OKE ({reports.filter((r) => r.status === 'OKE').length})</span>
+              <span className="hidden sm:inline">OKE Lolos ({reports.filter((r) => r.status === 'OKE').length})</span>
             </button>
             <button
               type="button"
               onClick={() => setFilterStatus('REJECT')}
-              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
+              className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 sm:py-1 text-[11px] sm:text-xs rounded-lg font-bold transition-colors whitespace-nowrap text-center ${
                 filterStatus === 'REJECT'
                   ? 'bg-rose-600 text-white shadow-sm'
                   : 'text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
               }`}
             >
-              REJECT Defect ({reports.filter((r) => r.status === 'REJECT').length})
+              <span className="sm:hidden">Reject ({reports.filter((r) => r.status === 'REJECT').length})</span>
+              <span className="hidden sm:inline">REJECT Defect ({reports.filter((r) => r.status === 'REJECT').length})</span>
             </button>
           </div>
 
