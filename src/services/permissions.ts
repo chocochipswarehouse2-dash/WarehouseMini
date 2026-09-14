@@ -5,6 +5,7 @@ export const isSuperadmin = (session: UserSession | null): boolean => {
   const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
   const user = String(session.username || '').trim().toLowerCase();
   const email = String(session.email || '').trim().toLowerCase();
+  const nik = String(session.nik || '').trim().toLowerCase();
 
   return (
     role === 'superadmin' ||
@@ -13,6 +14,7 @@ export const isSuperadmin = (session: UserSession | null): boolean => {
     user === 'admin2' ||
     user === 'chocoadm' ||
     user === 'warehouse' ||
+    nik === 'wh0001' ||
     email.startsWith('admin') ||
     email.includes('warehouse2@gmail.com') ||
     email.includes('chocoadm')

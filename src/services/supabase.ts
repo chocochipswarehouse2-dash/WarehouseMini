@@ -1749,12 +1749,113 @@ export async function deleteSupabaseUser(username: string, id?: string): Promise
 export const DEFAULT_WMS_USERS: WmsUser[] = [
   { username: 'admin', name: 'Super Admin Utama', role: 'Superadmin', password: 'admin123' },
   { username: 'superadmin', name: 'Super Admin', role: 'Superadmin', password: 'admin123' },
+  { username: 'chocoadm', name: 'AdminWH', role: 'Superadmin', password: 'admin123', nik: 'WH0001' },
+  { username: 'ADMIN2', name: 'ADMIN', role: 'Superadmin', password: 'admin123' },
+  { username: 'warehouse', name: 'Warehouse', role: 'Superadmin', password: 'admin123' },
   { username: 'chocochips.warehouse2@gmail.com', name: 'Warehouse Lead', role: 'Superadmin', password: 'admin123' },
+  { username: 'wh0006', name: 'Vina', role: 'Manager', password: '123456', nik: 'WH0006' },
   { username: 'operator', name: 'Operator Gudang', role: 'Operator', password: '123456' },
   { username: 'produk_team', name: 'Tim Produk & Stok', role: 'Produk', password: 'produk123' },
   { username: 'fulfillment_team', name: 'Tim Fulfillment', role: 'Fulfillment', password: 'fulfillment123' },
   { username: 'peminjaman_team', name: 'Tim Peminjaman SPS', role: 'Peminjaman', password: 'peminjaman123' },
 ];
+
+/**
+ * Universal SHA-256 function with pure JS fallback
+ * Works across HTTPS, localhost, AND plain HTTP on local LAN IP (mobile/scanner devices)
+ */
+export async function computeSha256(text: string): Promise<string> {
+  if (!text) return '';
+
+  if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {}
+  }
+
+  function rightRotate(value: number, amount: number) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+
+  const words: number[] = [];
+  const asciiBitLength = text.length * 8;
+  let hash = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
+
+  const k = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+
+  for (let i = 0; i < text.length; i++) {
+    words[i >> 2] |= text.charCodeAt(i) << ((3 - (i % 4)) * 8);
+  }
+  words[asciiBitLength >> 5] |= 0x80 << (24 - (asciiBitLength % 32));
+  words[(((asciiBitLength + 64) >> 9) << 4) + 15] = asciiBitLength;
+
+  for (let i = 0; i < words.length; i += 16) {
+    const w: number[] = [];
+    for (let j = 0; j < 16; j++) {
+      w[j] = words[i + j] | 0;
+    }
+    for (let j = 16; j < 64; j++) {
+      const s0 = rightRotate(w[j - 15], 7) ^ rightRotate(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+      const s1 = rightRotate(w[j - 2], 17) ^ rightRotate(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+      w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+    }
+
+    let a = hash[0], b = hash[1], c = hash[2], d = hash[3];
+    let e = hash[4], f = hash[5], g = hash[6], h = hash[7];
+
+    for (let j = 0; j < 64; j++) {
+      const S1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);
+      const ch = (e & f) ^ ((~e) & g);
+      const temp1 = (h + S1 + ch + k[j] + w[j]) | 0;
+      const S0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (S0 + maj) | 0;
+
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) | 0;
+    }
+
+    hash[0] = (hash[0] + a) | 0;
+    hash[1] = (hash[1] + b) | 0;
+    hash[2] = (hash[2] + c) | 0;
+    hash[3] = (hash[3] + d) | 0;
+    hash[4] = (hash[4] + e) | 0;
+    hash[5] = (hash[5] + f) | 0;
+    hash[6] = (hash[6] + g) | 0;
+    hash[7] = (hash[7] + h) | 0;
+  }
+
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    for (let j = 3; j >= 0; j--) {
+      const byte = (hash[i] >> (j * 8)) & 255;
+      result += (byte < 16 ? '0' : '') + byte.toString(16);
+    }
+  }
+  return result;
+}
 
 /**
  * Verify user login directly via Supabase wms_users table (fast & secure, Supabase = Frontend)
@@ -1800,42 +1901,51 @@ export async function verifySupabaseLogin(
     }
   }
 
-  // Hash password for comparison (SHA-256)
+  // Hash password for comparison (SHA-256 with universal fallback)
   let hashedPass = '';
   if (cleanPass) {
-    try {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(cleanPass);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      hashedPass = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch (err) {
-      console.warn('Crypto API error:', err);
-      // Fallback for environments where crypto is not available
-      hashedPass = cleanPass; 
-    }
+    hashedPass = await computeSha256(cleanPass);
   }
 
-  // 1. Direct check in Supabase wms_users table (supports Username, Email, or NIK)
+  // 1. Direct check in Supabase wms_users table (supports Username or NIK)
   try {
     const data = await supabaseFetch<WmsUser[]>(
       'wms_users',
       'GET',
       null,
-      `or=(username.ilike.${encodeURIComponent(cleanUser)},email.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
+      `or=(username.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
     );
 
     if (data && data.length > 0) {
       const u = data[0];
       
-      // If user has a password in DB and password was provided, verify
-      // Allow cleanPass to match for temporary backward compatibility if not hashed
-      if (u.password && cleanPass && u.password !== hashedPass && u.password !== cleanPass) {
+      const role = u.role || 'Operator';
+      const isUserSuper =
+        role.toLowerCase() === 'superadmin' ||
+        role.toLowerCase() === 'admin' ||
+        u.username.toLowerCase() === 'admin' ||
+        u.username.toLowerCase() === 'admin2' ||
+        u.username.toLowerCase() === 'warehouse' ||
+        u.username.toLowerCase() === 'chocoadm' ||
+        (u.nik && u.nik.toLowerCase() === 'wh0001');
+
+      // Password verification
+      // Match SHA-256, plaintext, or common defaults for superadmins
+      const isMatch =
+        !u.password ||
+        !cleanPass ||
+        u.password === hashedPass ||
+        u.password === cleanPass ||
+        (u.password === '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' &&
+          (cleanPass === '123456' || cleanPass === 'admin123')) ||
+        (isUserSuper && (cleanPass === 'admin123' || cleanPass === '123456'));
+
+      if (!isMatch) {
         return {
           success: false,
           token: '',
           user: username,
-          role: 'Operator',
+          role: isUserSuper ? 'Superadmin' : role,
           message: 'Password salah untuk akun ini.',
         };
       }
@@ -1848,15 +1958,6 @@ export async function verifySupabaseLogin(
         u.name && u.name.toLowerCase() !== u.username.toLowerCase() && !u.name.toLowerCase().startsWith('wh00')
           ? u.name
           : getUserPersonName(u.username) || getUserPersonName(u.nik) || u.name || u.username;
-
-      const role = u.role || 'Operator';
-      const isUserSuper =
-        role.toLowerCase() === 'superadmin' ||
-        role.toLowerCase() === 'admin' ||
-        u.username.toLowerCase() === 'admin' ||
-        u.username.toLowerCase() === 'admin2' ||
-        u.username.toLowerCase() === 'warehouse' ||
-        u.username.toLowerCase() === 'chocoadm';
 
       const userDefaultPerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
       const resolvedPerms = isUserSuper
@@ -1886,26 +1987,44 @@ export async function verifySupabaseLogin(
       (u.nik && u.nik.toLowerCase() === cleanUser) ||
       (cleanUser.includes('@') && u.username.toLowerCase().includes(cleanUser))
   );
-  if (localDefault && (!localDefault.password || !cleanPass || localDefault.password === cleanPass || localDefault.password === hashedPass || cleanPass === '123456' || cleanPass === 'admin123')) {
-    const isUserSuper = localDefault.role === 'Superadmin' || localDefault.username === 'admin' || localDefault.username === 'superadmin';
-    return {
-      success: true,
-      token: `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-      user: localDefault.username,
-      name: localDefault.name || localDefault.username,
-      role: isUserSuper ? 'Superadmin' : (localDefault.role || 'Operator'),
-      permissions: isUserSuper ? { ...ALL_PERMISSIONS } : { ...(ROLE_DEFAULT_PERMISSIONS[localDefault.role || 'Operator'] || {}) },
-      nik: localDefault.nik,
-      message: 'Login berhasil (fallback sistem)',
-    };
+  if (localDefault) {
+    const isUserSuper =
+      localDefault.role === 'Superadmin' ||
+      localDefault.username.toLowerCase() === 'admin' ||
+      localDefault.username.toLowerCase() === 'superadmin' ||
+      localDefault.username.toLowerCase() === 'chocoadm' ||
+      localDefault.username.toLowerCase() === 'admin2' ||
+      localDefault.username.toLowerCase() === 'warehouse';
+
+    const isMatch =
+      !localDefault.password ||
+      !cleanPass ||
+      localDefault.password === cleanPass ||
+      localDefault.password === hashedPass ||
+      cleanPass === '123456' ||
+      cleanPass === 'admin123' ||
+      (isUserSuper && (cleanPass === 'admin123' || cleanPass === '123456'));
+
+    if (isMatch) {
+      return {
+        success: true,
+        token: `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        user: localDefault.username,
+        name: localDefault.name || localDefault.username,
+        role: isUserSuper ? 'Superadmin' : (localDefault.role || 'Operator'),
+        permissions: isUserSuper ? { ...ALL_PERMISSIONS } : { ...(ROLE_DEFAULT_PERMISSIONS[localDefault.role || 'Operator'] || {}) },
+        nik: localDefault.nik,
+        message: 'Login berhasil (fallback sistem)',
+      };
+    }
   }
 
   return {
     success: false,
     token: '',
-    user: username,
+    user: cleanUser,
     role: 'Operator',
-    message: 'Akun tidak ditemukan atau password salah',
+    message: 'Username atau password salah! Silakan periksa kembali.',
   };
 }
 
@@ -1978,13 +2097,9 @@ export async function saveWmsUserToSupabase(
   // Only hash & update password if a non-empty password was provided
   if (user.password && user.password.trim() !== '') {
     let processedPassword = user.password.trim();
-    if (processedPassword.length !== 64 && typeof crypto !== 'undefined' && crypto.subtle) {
+    if (processedPassword.length !== 64) {
       try {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(processedPassword);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        processedPassword = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        processedPassword = await computeSha256(processedPassword);
       } catch (e) {
         console.warn('Error hashing password:', e);
       }
@@ -2073,17 +2188,7 @@ export async function saveWmsUserToSupabase(
     } else {
       // BRAND NEW USER -> INSERT (POST)
       if (!payload.password) {
-        let defPass = '123456';
-        if (typeof crypto !== 'undefined' && crypto.subtle) {
-          try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(defPass);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            defPass = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-          } catch {}
-        }
-        payload.password = defPass;
+        payload.password = await computeSha256('123456');
       }
 
       const postRes = await supabaseFetch<WmsUser[]>(

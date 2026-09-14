@@ -14,6 +14,7 @@ import {
   ToastMessage,
   UserSession,
   ActivePage,
+  UserPermissions,
 } from './types';
 import RoadmapView from "./components/RoadmapView";
 import { Navbar } from './components/Navbar';
@@ -409,7 +410,12 @@ export default function App() {
 
         // If user is superadmin, ensure full permissions
         if (isSuperadmin(session)) {
-          if (!session.permissions || Object.keys(session.permissions).length < 25) {
+          const hasMissingPerms =
+            !session.permissions ||
+            Object.keys(ALL_PERMISSIONS).some(
+              (k) => session.permissions?.[k as keyof UserPermissions] !== true
+            );
+          if (hasMissingPerms || session.role !== 'Superadmin') {
             const updatedSuperSession: UserSession = {
               ...session,
               role: 'Superadmin',
@@ -427,7 +433,7 @@ export default function App() {
           'wms_users',
           'GET',
           null,
-          `or=(username.ilike.${encodeURIComponent(cleanUser)},email.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
+          `or=(username.ilike.${encodeURIComponent(cleanUser)},nik.ilike.${encodeURIComponent(cleanUser)})&limit=1`
         );
         if (!isMounted || !data || data.length === 0) return;
 
@@ -439,7 +445,8 @@ export default function App() {
           u.username.toLowerCase() === 'admin' ||
           u.username.toLowerCase() === 'admin2' ||
           u.username.toLowerCase() === 'warehouse' ||
-          u.username.toLowerCase() === 'chocoadm';
+          u.username.toLowerCase() === 'chocoadm' ||
+          (u.nik && u.nik.toLowerCase() === 'wh0001');
 
         const userDefaultPerms = ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
         const newPermissions = isUserSuper
