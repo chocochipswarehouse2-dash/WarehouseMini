@@ -1601,20 +1601,20 @@ export default function App() {
               {activePage === 'hr_approval' && (
                   <HrApprovalView
                     session={session}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'hr_rekap' && (
                   <HrRekapView
                     session={session}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'pesanan_saya' && (
                   <PesananSayaView
                     session={session}
                     productCatalog={productDatabase}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'pusat_resolusi' && (
