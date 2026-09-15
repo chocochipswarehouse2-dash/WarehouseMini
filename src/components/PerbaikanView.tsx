@@ -1063,6 +1063,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     // Reset Form
     setFormSku('');
     setFormNama('');
+    setFormSize('Default');
+    setFormQty(1);
+    setFormKategoriRusak('Noda / Kotor');
     setFormDetailKerusakan('');
     setFormInstruksiSortir('');
     setFormPetugasPelaksana('');
@@ -1132,6 +1135,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     );
 
     setSortirModalTicket(null);
+    setSortirCatatan('');
+    setSortirPetugas('');
   };
 
   // Eksekusi Update Hasil Pengerjaan (Cuci / Permak) & Kembalikan ke Stok Normal jika Grade A

@@ -1576,32 +1576,32 @@ export default function App() {
                   <QualityControlView
                     session={session}
                     productCatalog={productDatabase}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                     onRefreshCatalog={loadProducts}
                   />
               )}
               {activePage === 'karyawan' && (
                   <KaryawanView
                     session={session}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'presensi' && (
                   <PresensiView
                     session={session}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'roster_shift' && (
                   <RosterShiftView
                     session={session}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'lembur_cuti' && (
                   <LemburCutiView
                     session={session}
-                    onNotify={showToast}
+                    onShowToast={showToast}
                   />
               )}
               {activePage === 'hr_approval' && (

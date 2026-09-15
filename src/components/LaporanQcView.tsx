@@ -917,6 +917,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       setVariants([createInitialVariant('sku')]);
       setBatchCatatan('');
       setBatchGdriveLink('');
+      setBatchSumber('Penerimaan CMT');
+      setBatchTanggal(new Date().toISOString().slice(0, 10));
+      setActiveSuggestionVarId(null);
     } catch (err: any) {
       playErrorBeep();
       console.warn('Gagal menyimpan laporan QC batch:', err);
@@ -1345,6 +1348,8 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           'success'
         );
         setQuickSortirReport(null);
+        setQuickSortirLokasi('');
+        setQuickSortirCatatan('');
         if (ticketToPrint) {
           setThermalModalTicket(ticketToPrint);
         }
@@ -1354,6 +1359,8 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           'success'
         );
         setQuickSortirReport(null);
+        setQuickSortirLokasi('');
+        setQuickSortirCatatan('');
       }
     } catch (err: any) {
       console.error('Gagal sortir barang reject:', err);
