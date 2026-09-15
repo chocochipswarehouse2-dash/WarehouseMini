@@ -145,7 +145,7 @@ const parseDeskripsiToItems = (deskripsi: string) => {
 export const CetakLabelView: React.FC = () => {
   const [labels, setLabels] = useState<LabelItem[]>([]);
   
-  // Data Alamat (Google Sheets & Local Cache)
+  // Data Alamat (Database & Local Cache)
   const [addressBook, setAddressBook] = useState<AddressData[]>([]);
   const [isAddressDropdownOpen, setIsAddressDropdownOpen] = useState(false);
   const [searchAddress, setSearchAddress] = useState('');
@@ -153,7 +153,7 @@ export const CetakLabelView: React.FC = () => {
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [isSavingQueue, setIsSavingQueue] = useState(false);
 
-  // Jasa Kirim (Sheet Outlet Kolom C)
+  // Jasa Kirim (Database Config)
   const [jasaKirimList, setJasaKirimList] = useState<string[]>(DEFAULT_JASA_KIRIM);
   const [selectedJasaKirim, setSelectedJasaKirim] = useState<string>('JNE Regular');
   const [isCustomJasaKirim, setIsCustomJasaKirim] = useState<boolean>(false);
@@ -193,7 +193,7 @@ export const CetakLabelView: React.FC = () => {
         }
       }
     } catch (e) {
-      console.warn('Gagal memuat Jasa Kirim dari Sheet:', e);
+      console.warn('Gagal memuat Jasa Kirim dari Database:', e);
     } finally {
       setIsSyncingJasaKirim(false);
     }
@@ -220,7 +220,7 @@ export const CetakLabelView: React.FC = () => {
     return selectedJasaKirim || 'JNE Regular';
   };
 
-  // Simpan Alamat Form ke Sheet 'Data Alamat'
+  // Simpan Alamat Form ke Database
   const handleSaveToAddressBook = async () => {
     if (!penerimaNama.trim() || !penerimaAlamat.trim()) {
       alert('Nama dan Alamat Penerima harus diisi untuk disimpan ke Data Alamat!');
@@ -239,7 +239,7 @@ export const CetakLabelView: React.FC = () => {
       };
       await saveDataAlamatList([newAddress]);
       setAddressBook(prev => [newAddress, ...prev.filter(p => p.nama_penerima !== newAddress.nama_penerima || p.alamat !== newAddress.alamat)]);
-      setImportNotice({ type: 'success', message: 'Alamat berhasil disimpan ke Sheet "Data Alamat" dan Auto-Fill!' });
+      setImportNotice({ type: 'success', message: 'Alamat berhasil disimpan ke Database "Data Alamat" dan Auto-Fill!' });
       setTimeout(() => setImportNotice(null), 5000);
     } catch (e: any) {
       console.error(e);
@@ -249,7 +249,7 @@ export const CetakLabelView: React.FC = () => {
     }
   };
 
-  // Simpan Semua Antrean Cetak ke Sheet 'Data Alamat'
+  // Simpan Semua Antrean Cetak ke Database
   const handleSaveQueueToDatabase = async () => {
     if (labels.length === 0) {
       alert('Antrean cetak masih kosong.');
@@ -280,12 +280,12 @@ export const CetakLabelView: React.FC = () => {
       await loadAddressBook();
       setImportNotice({
         type: 'success',
-        message: `Berhasil menyimpan ${uniqueItems.length} alamat penerima dari antrean ke Sheet "Data Alamat"!`,
+        message: `Berhasil menyimpan ${uniqueItems.length} alamat penerima dari antrean ke Database!`,
       });
       setTimeout(() => setImportNotice(null), 6000);
     } catch (err: any) {
       console.error(err);
-      alert('Gagal menyimpan antrean ke sheet Data Alamat.');
+      alert('Gagal menyimpan antrean ke Database Data Alamat.');
     } finally {
       setIsSavingQueue(false);
     }
@@ -748,7 +748,7 @@ export const CetakLabelView: React.FC = () => {
                   Import CSV
                 </button>
 
-                {/* Dropdown Auto-Fill dari Supabase & Sheet Data Alamat */}
+                {/* Dropdown Auto-Fill dari Supabase Database */}
                 <div className="relative">
                   <button
                     type="button"
@@ -794,7 +794,7 @@ export const CetakLabelView: React.FC = () => {
                               onClick={loadAddressBook}
                               disabled={isLoadingAddresses}
                               className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-bold cursor-pointer"
-                              title="Sinkronisasi dari Supabase & Google Sheet"
+                              title="Sinkronisasi dari Supabase Database"
                             >
                               <RefreshCw className={`w-2.5 h-2.5 ${isLoadingAddresses ? 'animate-spin' : ''}`} />
                               Sinkron
@@ -945,22 +945,22 @@ export const CetakLabelView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. Pilihan Jasa Kirim (Sheet Outlet Kolom C) */}
+                {/* 2. Pilihan Jasa Kirim (Database Config) */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1.5">
                       <Truck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      Pilihan Jasa Kirim (Sheet Outlet Kolom C)
+                      Pilihan Jasa Kirim (Database Config)
                     </label>
                     <button
                       type="button"
                       onClick={loadJasaKirim}
                       disabled={isSyncingJasaKirim}
                       className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                      title="Sinkron dari Google Sheet 'outlet' kolom C"
+                      title="Sinkron dari Database Outlet Config"
                     >
                       <RefreshCw className={`w-2.5 h-2.5 ${isSyncingJasaKirim ? 'animate-spin' : ''}`} />
-                      {isSyncingJasaKirim ? 'Sinkron...' : 'Sinkron Sheet'}
+                      {isSyncingJasaKirim ? 'Sinkron...' : 'Sinkron Database'}
                     </button>
                   </div>
 
@@ -1071,7 +1071,7 @@ export const CetakLabelView: React.FC = () => {
                       className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1.5 disabled:opacity-50 transition-colors cursor-pointer"
                     >
                       {isSavingAddress ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                      Simpan ke Sheet Data Alamat (Auto-Fill)
+                      Simpan ke Database (Auto-Fill)
                     </button>
                   </div>
                 </div>
@@ -1177,20 +1177,20 @@ export const CetakLabelView: React.FC = () => {
                   onClick={handleSaveQueueToDatabase}
                   disabled={isSavingQueue || labels.length === 0}
                   className="flex-1 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 rounded-lg text-[11px] font-bold text-emerald-700 dark:text-emerald-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
-                  title="Simpan seluruh data penerima antrean ke Google Sheet Data Alamat untuk dipanggil via Auto-Fill"
+                  title="Simpan seluruh data penerima antrean ke Database untuk dipanggil via Auto-Fill"
                 >
                   {isSavingQueue ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
                     <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   )}
-                  Simpan ke Sheet
+                  Simpan ke Database
                 </button>
               </div>
 
               {/* Tips 2 Opsi Simpan Data */}
               <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 rounded-lg px-2.5 py-1.5 text-[10px] text-slate-600 dark:text-slate-400 leading-tight">
-                <span className="font-bold text-indigo-700 dark:text-indigo-300">2 Opsi Simpan:</span> Unduh file <strong className="text-slate-800 dark:text-slate-200">Export Antrean</strong> untuk dicetak lagi via <strong className="text-slate-800 dark:text-slate-200">Import CSV</strong>, atau klik <strong className="text-slate-800 dark:text-slate-200">Simpan ke Sheet</strong> agar tersimpan di database & bisa dipanggil via <strong className="text-slate-800 dark:text-slate-200">Auto-Fill</strong>.
+                <span className="font-bold text-indigo-700 dark:text-indigo-300">2 Opsi Simpan:</span> Unduh file <strong className="text-slate-800 dark:text-slate-200">Export Antrean</strong> untuk dicetak lagi via <strong className="text-slate-800 dark:text-slate-200">Import CSV</strong>, atau klik <strong className="text-slate-800 dark:text-slate-200">Simpan ke Database</strong> agar tersimpan di database & bisa dipanggil via <strong className="text-slate-800 dark:text-slate-200">Auto-Fill</strong>.
               </div>
             </div>
 

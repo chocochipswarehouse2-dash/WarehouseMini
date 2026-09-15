@@ -27,7 +27,6 @@ export type ActivePage =
   | 'cetak_label'
   | 'pesanan_saya'
   | 'manual_shipment'
-  | 'tarikan_md'
   | 'roadmap'
   | 'pusat_resolusi'
   | 'supabase_migration';

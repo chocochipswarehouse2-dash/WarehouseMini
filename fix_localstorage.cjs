@@ -1,8 +1,7 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
-import './index.css';
+const fs = require('fs');
+let code = fs.readFileSync('src/main.tsx', 'utf8');
 
+const injection = `
 // GLOBAL OVERRIDE: Prevent QuotaExceededError from crashing the app
 const originalSetItem = localStorage.setItem;
 localStorage.setItem = function(key, value) {
@@ -10,7 +9,7 @@ localStorage.setItem = function(key, value) {
     originalSetItem.apply(this, [key, value]);
   } catch (e) {
     const err = e as any;
-    console.warn(`[QuotaExceeded] localStorage is full when setting ${key}.`);
+    console.warn(\`[QuotaExceeded] localStorage is full when setting \${key}.\`);
     if (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
       // Clear large caches to free up space
       try {
@@ -30,10 +29,9 @@ localStorage.setItem = function(key, value) {
     }
   }
 };
+`;
 
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+if (!code.includes('GLOBAL OVERRIDE')) {
+  code = code.replace("import './index.css';", "import './index.css';\n" + injection);
+  fs.writeFileSync('src/main.tsx', code);
+}

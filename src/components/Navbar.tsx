@@ -122,8 +122,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
       case 'cetak_label':
         return { title: 'Cetak Label A6', subtitle: 'Cetak Resi Pengiriman Manual', icon: Printer };
-      case 'tarikan_md':
-        return { title: 'Pengecekan Surat Jalan', subtitle: 'Pengecekan Penerimaan vs Surat Jalan', icon: ClipboardCheck };
+      
       case 'pusat_resolusi':
         return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };
       default:

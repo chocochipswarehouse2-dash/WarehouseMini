@@ -344,7 +344,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                   type="button"
                   onClick={async () => {
                     await loadJasaKirim();
-                    onShowToast('Daftar jasa kirim disinkronkan dari sheet outlet kolom C', 'info');
+                    onShowToast('Daftar jasa kirim disinkronkan dari Database', 'info');
                   }}
                   disabled={loadingJasaKirim}
                   className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors disabled:opacity-50"

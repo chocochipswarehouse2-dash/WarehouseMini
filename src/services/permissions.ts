@@ -257,8 +257,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'cetak_label': return hasPermission(session, 'action_cetak_label');
     case 'pesanan_saya': return hasPermission(session, 'menu_ops_pesanan_saya') || hasPermission(session, 'tab_ops_pesanan_dashboard') || hasPermission(session, 'tab_ops_pesanan_manual_shipment') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'tab_ops_pesanan_shopee') || hasPermission(session, 'tab_ops_pesanan_tiktok') || hasPermission(session, 'tab_ops_pesanan_website') || hasPermission(session, 'tab_ops_pesanan_woocommerce') || hasPermission(session, 'tab_ops_pesanan_lazada');
     case 'manual_shipment': return hasPermission(session, 'tab_ops_pesanan_manual_shipment');
-    case 'tarikan_md': return hasPermission(session, 'tab_ops_pesanan_transfer_order');
-    case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
+        case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
     case 'pusat_resolusi': return hasPermission(session, 'menu_ops_resolusi') || hasPermission(session, 'tab_ops_resolusi_retur') || hasPermission(session, 'tab_ops_resolusi_refund') || hasPermission(session, 'tab_ops_resolusi_gagal') || hasPermission(session, 'tab_ops_resolusi_komplain') || hasPermission(session, 'tab_ops_resolusi_rating');
     case 'supabase_migration': return false;
     default:

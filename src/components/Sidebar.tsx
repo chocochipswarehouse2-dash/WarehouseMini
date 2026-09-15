@@ -591,27 +591,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       )}
 
-      {/* Pengecekan Surat Jalan (Audit SJ vs Fisik) */}
-      {(userIsAdmin || hasPermission(session, 'tab_ops_pesanan_transfer_order')) && (
-        <button
-          type="button"
-          onClick={() => {
-            handleNavClick('tarikan_md');
-            onCloseMobile();
-          }}
-          title="Pengecekan Surat Jalan vs Fisik Penerimaan"
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activePage === 'tarikan_md'
-              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
-              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          } ${collapsed ? 'justify-center px-2' : ''}`}
-        >
-          <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-            <ClipboardCheck className="w-4 h-4 text-primary-500" />
-          </div>
-          {!collapsed && <span className="truncate">Pengecekan Surat Jalan</span>}
-        </button>
-      )}
+      
 
       {/* Roadmap & Fitur (Semua User dapat Request Fitur & Pantau Dev) */}
       <button

@@ -516,7 +516,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   };
 
   // ==========================================
-  // SUBMIT PENGECEKAN KE DATABASE / GOOGLE SHEET
+  // SUBMIT PENGECEKAN KE DATABASE
   // (KESELURUHAN DATA ITEM DITULIS SAMA SEPERTI MANUAL SHIPMENT)
   // ==========================================
   const handleSubmitPengecekan = async () => {
@@ -1434,7 +1434,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         Lebihan Barang Yang Tidak Ada di Surat Jalan ({Object.keys(activeDraft.unexpected).length} SKU)
                       </div>
                       <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                        Saat disubmit, barang lebihan ini otomatis dicatat ke sheet dengan No SJ yang sama ({activeDraft.no_sj}) dan status pending.
+                        Saat disubmit, barang lebihan ini otomatis dicatat ke Database dengan No SJ yang sama ({activeDraft.no_sj}) dan status pending.
                       </p>
 
                       <div className="space-y-1.5">
@@ -1523,7 +1523,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           : 'Semua barang cocok dengan Surat Jalan ✓'}
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 mb-2">
-                        Keseluruhan data per baris produk akan ditulis ke database sheet.
+                        Keseluruhan data per baris produk akan ditulis ke Database.
                       </p>
                       
                       {summary.has_selisih && summary.kurang > 0 && (
