@@ -327,99 +327,70 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
 
       {/* A4 Print Area */}
       <div id="shopee-print-area" className="hidden print:block bg-white w-full text-black">
-        {orders.map((order, idx) => {
-          const totalQty = order.items.reduce((sum, it) => sum + it.qty, 0);
-          
-          const todayStr = new Date().toLocaleDateString('id-ID', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
+        <style type="text/css" media="print">
+          {`
+            @page { size: landscape; margin: 10mm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          `}
+        </style>
 
-          return (
-            <div
-              key={order.noPesanan}
-              className="page-break p-5 max-w-[800px] mx-auto text-slate-900 bg-white"
-              style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
-            >
-              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
-                <div>
-                  <div className="text-lg font-black tracking-wide text-orange-600 flex items-center gap-2">
-                    <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-5 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                    SHOPEE
-                  </div>
-                  <div className="text-sm font-extrabold mt-0.5">REKAP PICKING LIST PESANAN</div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    Tanggal Cetak: <b>{todayStr}</b>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-base font-black font-mono border-2 border-slate-900 px-2.5 py-1 rounded-md inline-block">
-                    {order.noPesanan}
-                  </div>
-                  <div className="text-xs font-bold text-slate-700 mt-1">
-                    Tujuan: <span className="text-emerald-700">{order.namaPenerima}</span>
-                  </div>
-                </div>
-              </div>
+        <div className="mb-4 flex flex-col justify-center">
+          <div className="text-xl font-bold mb-1">Penjualan Shopee {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+          <div className="text-xs text-gray-600 font-mono">
+            {new Date().toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':')}
+          </div>
+        </div>
 
-              <div className="mb-3 text-[11px] leading-relaxed">
-                <div><strong>No. Resi:</strong> {order.noResi || '-'}</div>
-                <div><strong>Opsi Pengiriman:</strong> {order.opsiPengiriman || '-'}</div>
-                <div><strong>Catatan Pembeli:</strong> {order.catatanPembeli || '-'}</div>
-              </div>
-
-              <table className="w-full border-collapse mb-5 text-[11px]">
-                <thead>
-                  <tr className="bg-slate-100 border-b-2 border-slate-300 text-[10px] uppercase text-slate-600">
-                    <th className="p-2 text-center w-8">NO</th>
-                    <th className="p-2 text-left w-40">SKU</th>
-                    <th className="p-2 text-left">NAMA PRODUK</th>
-                    <th className="p-2 text-center w-24">VARIASI</th>
-                    <th className="p-2 text-center w-14">QTY</th>
-                    <th className="p-2 text-center w-10">CEK</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.items.map((it, itemIdx) => (
-                    <tr key={itemIdx} className="border-b border-slate-200 text-[11px]">
-                      <td className="p-1.5 text-center text-slate-500">{itemIdx + 1}</td>
-                      <td className="p-1.5 font-mono font-bold text-slate-900">{it.sku || '-'}</td>
-                      <td className="p-1.5 font-semibold text-slate-800">{it.namaProduk}</td>
-                      <td className="p-1.5 text-center font-bold">{it.namaVariasi || '-'}</td>
-                      <td className="p-1.5 text-center font-extrabold text-orange-600 text-xs">{it.qty}</td>
-                      <td className="p-1.5 text-center">
-                        <div className="w-3.5 h-3.5 border-2 border-slate-400 rounded-xs mx-auto" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="flex justify-between items-end mt-6 pt-3 border-t border-dashed border-slate-300 text-[11px]">
-                <div className="text-slate-500">
-                  Total Item: <b>{order.items.length} SKU</b> • Total Qty: <b>{totalQty} Pcs</b>
-                </div>
-                <div className="flex gap-10 text-center">
-                  <div>
-                    <div className="mb-9 text-slate-500">Petugas Picking</div>
-                    <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
-                      (...................)
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-9 text-slate-500">Checker / QC</div>
-                    <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
-                      (...................)
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        <table className="w-full border-collapse text-[10px]">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border border-black p-1 text-center font-bold w-[3%]">No</th>
+              <th className="border border-black p-1 text-center font-bold w-[12%]">No Pesanan</th>
+              <th className="border border-black p-1 text-center font-bold w-[13%]">Nama Customer</th>
+              <th className="border border-black p-1 text-center font-bold w-[9%]">No Hp</th>
+              <th className="border border-black p-1 text-center font-bold w-[25%]">Nama Barang</th>
+              <th className="border border-black p-1 text-center font-bold w-[4%]">Qty</th>
+              <th className="border border-black p-1 text-center font-bold w-[4%]">Pick</th>
+              <th className="border border-black p-1 text-center font-bold w-[4%]">Ceklis</th>
+              <th className="border border-black p-1 text-center font-bold w-[14%]">Catatan pembeli</th>
+              <th className="border border-black p-1 text-center font-bold w-[12%]">Pengiriman</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((order, orderIdx) => {
+              return order.items.map((item, itemIdx) => (
+                <tr key={`${order.noPesanan}-${itemIdx}`}>
+                  {itemIdx === 0 && (
+                    <>
+                      <td rowSpan={order.items.length} className="border border-black p-1 text-center align-middle">{orderIdx + 1}</td>
+                      <td rowSpan={order.items.length} className="border border-black p-1 align-middle text-center font-mono">{order.noPesanan}</td>
+                      <td rowSpan={order.items.length} className="border border-black p-1 align-middle">{order.namaPenerima}</td>
+                      <td rowSpan={order.items.length} className="border border-black p-1 align-middle text-center font-mono">{order.noTelepon || '---'}</td>
+                    </>
+                  )}
+                  <td className="border border-black p-1">
+                    <div className="font-bold">{item.namaProduk}</div>
+                    {item.namaVariasi && item.namaVariasi !== 'Default' && <div className="text-gray-600 mt-0.5">{item.namaVariasi}</div>}
+                    {item.sku && <div className="text-gray-500 font-mono mt-0.5">{item.sku}</div>}
+                  </td>
+                  <td className="border border-black p-1 text-center align-middle font-bold text-sm">{item.qty}</td>
+                  <td className="border border-black p-1 align-middle">
+                    <div className="w-4 h-4 border border-black mx-auto"></div>
+                  </td>
+                  <td className="border border-black p-1 align-middle">
+                    <div className="w-4 h-4 border border-black mx-auto"></div>
+                  </td>
+                  {itemIdx === 0 && (
+                    <>
+                      <td rowSpan={order.items.length} className="border border-black p-1 align-middle whitespace-pre-wrap">{order.catatanPembeli || '---'}</td>
+                      <td rowSpan={order.items.length} className="border border-black p-1 align-middle text-center">{order.opsiPengiriman}</td>
+                    </>
+                  )}
+                </tr>
+              ));
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
