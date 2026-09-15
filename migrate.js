@@ -92,38 +92,33 @@ async function main() {
           const parsed = JSON.parse(row.raw_payload);
           shToInsert.push({
             id: parsed.id || String(row.id),
-            order_id: parsed.order_id || row.invoice,
-            order_date: parsed.order_date || row.created_at.slice(0, 10),
-            source: parsed.source || row.area,
-            destination: parsed.destination || row.lokasi,
-            total_qty: Number(parsed.total_qty || row.qty || 0),
-            status: parsed.status || 'pending',
-            courier: parsed.courier || '-',
-            resi: parsed.resi || '',
-            catatan: parsed.catatan || row.keterangan || '',
-            items: parsed.items,
-            items_json: JSON.stringify(parsed.items || []),
-            sync_status: 'synced',
-            created_at: parsed.created_at || row.created_at,
+            no_pesanan: parsed.order_id || row.invoice || `MS-${row.id}`,
+            no_resi: parsed.resi || '',
+            nama_penerima: parsed.destination || row.lokasi || 'Customer',
+            no_telp: parsed.no_telp || '',
+            alamat: parsed.alamat || '',
+            keterangan: parsed.catatan || row.keterangan || '',
+            jasa_kirim: parsed.courier || '-',
+            status: parsed.status || 'Pending',
+            tanggal_scan: parsed.order_date ? new Date(parsed.order_date).toISOString() : row.created_at,
+            created_at: parsed.created_at || row.created_at || new Date().toISOString()
           });
           continue;
         } catch(e) {}
       }
 
-      const order_id = row.invoice || `MS-${row.id}`;
+      const no_pesanan = row.invoice || `MS-${row.id}`;
       shToInsert.push({
         id: String(row.id),
-        order_id,
-        order_date: String(row.created_at || '').slice(0, 10),
-        source: row.area || 'Gudang Pusat',
-        destination: row.lokasi || 'Customer',
-        total_qty: Number(row.qty || 0),
-        status: 'pending',
-        courier: '-',
-        resi: '',
-        catatan: row.keterangan || '',
-        items_json: '[]',
-        sync_status: 'synced',
+        no_pesanan,
+        no_resi: '',
+        nama_penerima: row.lokasi || 'Customer',
+        no_telp: '',
+        alamat: '',
+        keterangan: row.keterangan || '',
+        jasa_kirim: '-',
+        status: 'Pending',
+        tanggal_scan: row.created_at || new Date().toISOString(),
         created_at: row.created_at || new Date().toISOString()
       });
     }

@@ -22,14 +22,12 @@ async function testEndToEnd() {
     .insert({
       id: testId,
       no_pesanan: testOrderNo,
-      nama_pengirim: 'BOT TESTER',
-      nama_tujuan: 'Joko Widodo',
-      alamat_tujuan: 'Istana Negara',
+      nama_penerima: 'Joko Widodo',
+      no_telp: '08123456789',
+      alamat: 'Istana Negara',
       jasa_kirim: 'JNE Express',
-      status: 'diterima',
-      notes_paket: 'Ini adalah data test webhook',
-      submitted_by: 'system_test',
-      items: [{ sku: 'TEST-SKU', nama_produk: 'Barang Uji Coba', qty: 1 }]
+      status: 'Pending',
+      keterangan: 'Ini adalah data test webhook'
     })
     .select();
 
@@ -57,7 +55,7 @@ async function testEndToEnd() {
       const foundItem = result.data.find((item: any) => item.id === testId);
       if (foundItem) {
         console.log('✅ BINGO! Data ditemukan di Google Spreadsheet melalui GAS API!');
-        console.log('Detail data dari GAS:', foundItem.no_pesanan, foundItem.nama_tujuan, foundItem.status);
+        console.log('Detail data dari GAS:', foundItem.no_pesanan, foundItem.nama_penerima, foundItem.status);
       } else {
         console.log('❌ Oops, data belum masuk ke GAS. Mungkin webhook gagal atau schema kolom tidak pas.');
         console.log(`Total data di GAS: ${result.count}`);
