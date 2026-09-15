@@ -4827,6 +4827,11 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
     }
   }
 
+  // Jika gagal menyimpan ke Supabase, berikan mock ID agar tidak dihapus oleh sinkronisasi fetch
+  if (!inserted && !savedTicket.id) {
+    savedTicket.id = Date.now() + Math.floor(Math.random() * 1000000);
+  }
+
   // Update local cache
   try {
     const cachedStr = localStorage.getItem('wms_local_perbaikan_tickets');
@@ -5140,6 +5145,9 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
 
   const preparedReports: QcReport[] = reports.map((r, idx) => {
     const reportCopy = { ...r };
+    if (!reportCopy.id) {
+      reportCopy.id = Date.now() + idx + Math.floor(Math.random() * 100000);
+    }
     if (!reportCopy.report_no) {
       const rand = Math.floor(100 + Math.random() * 900);
       reportCopy.report_no = `QC-${dateStr}-${timestamp}-${idx + 1}-${rand}`;
