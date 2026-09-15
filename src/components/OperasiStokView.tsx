@@ -19,9 +19,9 @@ export function OperasiStokView({
   const userIsAdmin = isSuperadmin(session);
   
   const tabs = [
-    { id: 'scanner', permissionKey: 'tab_ops_stok_scanner' },
-    { id: 'mutasi', permissionKey: 'tab_ops_stok_mutasi_log' },
-    { id: 'opname', permissionKey: 'tab_ops_stok_stock_opname' }
+    { id: 'scanner', permissionKey: 'tab_ops_mutasi_scanner' },
+    { id: 'mutasi', permissionKey: 'tab_ops_mutasi_log' },
+    { id: 'opname', permissionKey: 'tab_ops_mutasi_so' }
   ].filter(t => userIsAdmin || hasPermission(session, t.permissionKey));
 
   const [activeTab, setActiveTab] = useState<'scanner' | 'mutasi' | 'opname'>(
