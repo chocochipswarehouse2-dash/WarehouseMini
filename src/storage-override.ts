@@ -5,7 +5,8 @@ localStorage.setItem = function(key: string, value: string) {
     originalLocalSetItem.apply(this, [key, value]);
   } catch (e: any) {
     console.warn(`[QuotaExceeded] localStorage is full when setting ${key}.`);
-    if (e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+    const msg = String(e?.message || e?.name || e).toLowerCase();
+    if (e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || msg.includes('quota'))) {
       // Clear large caches to free up space
       try {
         localStorage.removeItem('wms_product_cache');
@@ -33,7 +34,8 @@ sessionStorage.setItem = function(key: string, value: string) {
   try {
     originalSessionSetItem.apply(this, [key, value]);
   } catch (e: any) {
-    if (e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+    const msg = String(e?.message || e?.name || e).toLowerCase();
+    if (e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || msg.includes('quota'))) {
       console.warn(`[QuotaExceeded] sessionStorage is full when setting ${key}. Clearing...`);
       sessionStorage.clear();
       try {
