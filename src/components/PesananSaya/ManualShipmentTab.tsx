@@ -1700,37 +1700,53 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                   
                        {/* 2. Sender / Receiver + QR Code block */}
                        <div className="flex border-b-[2px] border-black bg-white break-inside-avoid">
-                          {/* Pengirim */}
-                          <div className="w-[30%] p-3 border-r-[2px] border-black flex flex-col shrink-0">
-                            <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Dari / Pengirim:</div>
-                            <div className="text-sm font-black uppercase text-black leading-tight mb-1">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
-                            {order.pic_store && <div className="text-[11px] font-black mb-0.5 text-gray-800">PIC: {order.pic_store}</div>}
-                            {order.no_telp_store && <div className="text-xs font-bold font-mono text-gray-800 leading-tight">{order.no_telp_store}</div>}
-                          </div>
-                          
-                          {/* Penerima */}
-                          <div className="flex-1 p-3 border-r-[2px] border-black min-w-0">
-                            <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
-                            <div className="text-[17px] font-black uppercase mb-1 leading-tight text-black line-clamp-1">{order.nama_tujuan || '-'}</div>
-                            {order.no_telp_tujuan && (
-                              <div className="text-sm font-black font-mono text-black mb-1 leading-none">{order.no_telp_tujuan}</div>
-                            )}
-                            <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black line-clamp-4">{order.alamat_tujuan || '-'}</div>
-                            {order.notes_paket && (
-                              <div className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300">
-                                <span className="text-[10px] font-black uppercase text-gray-500 mr-1">NOTE:</span>
-                                <span className="text-[11px] font-bold text-black">{order.notes_paket}</span>
+                          {/* Main Left Column (Penerima & Pengirim Stacked) */}
+                          <div className="flex-1 flex flex-col border-r-[2px] border-black min-w-0">
+                            
+                            {/* PENERIMA (Top, Gets Maximum Space) */}
+                            <div className="p-3 border-b-[2px] border-black flex-1">
+                              <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
+                              <div className="text-[18px] font-black uppercase mb-1 leading-tight text-black">{order.nama_tujuan || '-'}</div>
+                              {order.no_telp_tujuan && (
+                                <div className="text-[14px] font-black font-mono text-black mb-1.5 leading-none">{order.no_telp_tujuan}</div>
+                              )}
+                              <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black">{order.alamat_tujuan || '-'}</div>
+                              {order.notes_paket && (
+                                <div className="mt-2 pt-1.5 border-t border-dashed border-gray-300">
+                                  <span className="text-[10px] font-black uppercase text-gray-500 mr-1">NOTE:</span>
+                                  <span className="text-[12px] font-bold text-black whitespace-pre-wrap">{order.notes_paket}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* PENGIRIM (Bottom) */}
+                            <div className="p-2.5 flex items-center justify-between gap-2 shrink-0 bg-white">
+                              <div className="flex-1">
+                                <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">Dari / Pengirim:</div>
+                                <div className="text-[12px] font-black uppercase text-black leading-tight">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
                               </div>
-                            )}
+                              {order.pic_store && (
+                                <div className="px-2 border-l border-gray-300">
+                                  <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">PIC:</div>
+                                  <div className="text-[11px] font-bold text-gray-800 leading-tight">{order.pic_store}</div>
+                                </div>
+                              )}
+                              {order.no_telp_store && (
+                                <div className="text-right pl-2 border-l border-gray-300">
+                                  <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">No. Telp:</div>
+                                  <div className="text-[11px] font-bold font-mono text-gray-800 leading-tight">{order.no_telp_store}</div>
+                                </div>
+                              )}
+                            </div>
                           </div>
                   
                           {/* QR Code and ID */}
-                          <div className="w-[120px] p-2 flex flex-col items-center justify-center shrink-0">
+                          <div className="w-[110px] p-2 flex flex-col items-center justify-center shrink-0">
                             {qrDataUrl && (
                               <img
                                 src={qrDataUrl}
                                 alt="QR Code"
-                                className="w-[80px] h-[80px] block object-contain mb-1.5"
+                                className="w-[75px] h-[75px] block object-contain mb-1.5"
                               />
                             )}
                             <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">

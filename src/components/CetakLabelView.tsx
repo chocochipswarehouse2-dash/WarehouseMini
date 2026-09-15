@@ -1321,35 +1321,46 @@ export const CetakLabelView: React.FC = () => {
             
                  {/* 2. Sender / Receiver + QR Code block (Grid or Flex) */}
                  <div className="flex border-b-[2px] border-black bg-white break-inside-avoid">
-                    {/* Pengirim - fixed width or percentage */}
-                    <div className="w-[30%] p-3 border-r-[2px] border-black flex flex-col shrink-0">
-                      <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Dari / Pengirim:</div>
-                      <div className="text-sm font-black uppercase text-black leading-tight mb-1">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
-                      {lbl.pengirim_telp && <div className="text-xs font-bold font-mono text-gray-800 leading-tight">{lbl.pengirim_telp}</div>}
-                    </div>
-                    
-                    {/* Penerima - takes remaining space */}
-                    <div className="flex-1 p-3 border-r-[2px] border-black min-w-0">
-                      <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
-                      <div className="text-[17px] font-black uppercase mb-1 leading-tight text-black line-clamp-1">{lbl.penerima_nama}</div>
-                      {lbl.penerima_telp && (
-                        <div className="text-sm font-black font-mono text-black mb-1 leading-none">{lbl.penerima_telp}</div>
-                      )}
-                      <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black line-clamp-4">{lbl.penerima_alamat}</div>
+                    {/* Main Left Column (Penerima & Pengirim Stacked) */}
+                    <div className="flex-1 flex flex-col border-r-[2px] border-black min-w-0">
+                      
+                      {/* PENERIMA (Top, Gets Maximum Space) */}
+                      <div className="p-3 border-b-[2px] border-black flex-1">
+                        <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
+                        <div className="text-[18px] font-black uppercase mb-1 leading-tight text-black">{lbl.penerima_nama}</div>
+                        {lbl.penerima_telp && (
+                          <div className="text-[14px] font-black font-mono text-black mb-1.5 leading-none">{lbl.penerima_telp}</div>
+                        )}
+                        <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black">{lbl.penerima_alamat}</div>
+                      </div>
+
+                      {/* PENGIRIM (Bottom) */}
+                      <div className="p-2.5 flex items-center justify-between gap-2 shrink-0 bg-white">
+                        <div className="flex-1">
+                          <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">Dari / Pengirim:</div>
+                          <div className="text-[12px] font-black uppercase text-black leading-tight">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
+                        </div>
+                        {lbl.pengirim_telp && (
+                          <div className="text-right pl-2 border-l border-gray-300">
+                            <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">No. Telp:</div>
+                            <div className="text-[11px] font-bold font-mono text-gray-800 leading-tight">{lbl.pengirim_telp}</div>
+                          </div>
+                        )}
+                      </div>
                     </div>
             
                     {/* QR Code and ID */}
-                    <div className="w-[120px] p-2 flex flex-col items-center justify-center shrink-0">
+                    <div className="w-[110px] p-2 flex flex-col items-center justify-center shrink-0">
                       {lbl.qr_data_url ? (
                         <img
                           src={lbl.qr_data_url}
                           alt="QR Code"
-                          className="w-[80px] h-[80px] block object-contain mb-1.5"
+                          className="w-[75px] h-[75px] block object-contain mb-1.5"
                         />
                       ) : (
                         <QrCodeImage
                           text={lbl.qr_content || `Manual paket + ID: ${lbl.invoice_no}`}
-                          size={80}
+                          size={75}
                         />
                       )}
                       <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">

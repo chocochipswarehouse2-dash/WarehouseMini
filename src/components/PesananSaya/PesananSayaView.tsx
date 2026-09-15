@@ -16,6 +16,7 @@ interface PesananSayaViewProps {
 type TabType = 'dashboard' | 'manual_shipment' | 'distribusi' | 'shopee' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
 
 import { hasPermission, isSuperadmin } from '../../services/permissions';
+import { ShopeeTab } from './ShopeeTab';
 
 // Add to TabConfig
 interface TabConfig {
@@ -39,7 +40,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
     { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard, color: 'bg-blue-600 shadow-blue-600/25 ring-blue-500/50', permissionKey: 'tab_ops_pesanan_dashboard' },
     { id: 'manual_shipment', label: 'Manual Shipment', shortLabel: 'Manual', icon: Truck, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50', permissionKey: 'tab_ops_pesanan_manual_shipment' },
     { id: 'distribusi', label: 'Transfer Order', shortLabel: 'Transfer', icon: Store, color: 'bg-emerald-600 shadow-emerald-600/25 ring-emerald-500/50', permissionKey: 'tab_ops_pesanan_transfer_order' },
-    { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_shopee' },
+    { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', permissionKey: 'tab_ops_pesanan_shopee' },
     { id: 'tiktok', label: 'Tiktok', shortLabel: 'Tiktok', icon: ShoppingBag, color: 'bg-rose-600 shadow-rose-600/25 ring-rose-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_tiktok' },
     { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_website' },
     { id: 'woocommerce', label: 'WooCommerce', shortLabel: 'Woo', icon: ShoppingCart, color: 'bg-purple-600 shadow-purple-600/25 ring-purple-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_woocommerce' },
@@ -176,7 +177,11 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
           </div>
         )}
 
-        {activeTab === 'shopee' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('Shopee')}</div>}
+        {activeTab === 'shopee' && (
+          <div className="h-full overflow-hidden flex flex-col">
+            <ShopeeTab onShowToast={onShowToast} />
+          </div>
+        )}
         {activeTab === 'tiktok' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('Tiktok')}</div>}
         {activeTab === 'website' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('Website')}</div>}
         {activeTab === 'woocommerce' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('WooCommerce')}</div>}
