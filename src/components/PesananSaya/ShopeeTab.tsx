@@ -325,138 +325,95 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         </div>
       </div>
 
-      {/* A6 Print Area */}
+      {/* A4 Print Area */}
       <div id="shopee-print-area" className="hidden print:block bg-white w-full text-black">
         {orders.map((order, idx) => {
           const totalQty = order.items.reduce((sum, it) => sum + it.qty, 0);
           
+          const todayStr = new Date().toLocaleDateString('id-ID', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+
           return (
             <div
               key={order.noPesanan}
-              className="page-break w-[105mm] h-[148mm] max-h-[148mm] p-[2mm] relative bg-white box-border overflow-hidden flex flex-col justify-between"
-              style={{
-                pageBreakAfter: idx < orders.length - 1 ? 'always' : 'avoid',
-                breakAfter: idx < orders.length - 1 ? 'page' : 'avoid',
-                pageBreakInside: 'avoid',
-                breakInside: 'avoid',
-              }}
+              className="page-break p-5 max-w-[800px] mx-auto text-slate-900 bg-white"
+              style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
             >
-              <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
-                {/* TOP FIXED AREA */}
-                <div className="flex flex-col shrink-0">
-                  {/* 1. Header Label */}
-                  <div className="border-b-[2px] border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
-                    <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center">
-                      <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-7 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                    </div>
-                    <div className="text-[16px] font-black tracking-wider uppercase leading-none text-black text-right max-w-[60%] line-clamp-2">
-                      {order.opsiPengiriman || 'SHOPEE STANDARD'}
-                    </div>
+              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
+                <div>
+                  <div className="text-lg font-black tracking-wide text-orange-600 flex items-center gap-2">
+                    <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-5 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                    SHOPEE
                   </div>
-              
-                  {/* 2. Sender / Receiver + QR Code block */}
-                  <div className="flex border-b-[2px] border-black bg-white break-inside-avoid">
-                    {/* Main Left Column (Penerima & Pengirim Stacked) */}
-                    <div className="flex-1 flex flex-col border-r-[2px] border-black min-w-0">
-                      
-                      {/* PENERIMA (Top, Gets Maximum Space) */}
-                      <div className="p-3 border-b-[2px] border-black flex-1">
-                        <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
-                        <div className="text-[18px] font-black uppercase mb-1 leading-tight text-black">{order.namaPenerima || '-'}</div>
-                        {order.noTelepon && (
-                          <div className="text-[14px] font-black font-mono text-black mb-1.5 leading-none">{order.noTelepon}</div>
-                        )}
-                        <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black">{order.alamatPengiriman || '-'}</div>
-                        {(order.catatan || order.catatanPembeli) && (
-                          <div className="mt-2 pt-1.5 border-t border-dashed border-gray-300">
-                            <span className="text-[10px] font-black uppercase text-gray-500 mr-1">NOTE:</span>
-                            <span className="text-[12px] font-bold text-black whitespace-pre-wrap">{order.catatanPembeli || order.catatan}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* PENGIRIM (Bottom) */}
-                      <div className="p-2.5 flex items-center justify-between gap-2 shrink-0 bg-white">
-                        <div className="flex-1">
-                          <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">Dari / Pengirim:</div>
-                          <div className="text-[12px] font-black uppercase text-black leading-tight">CHOCOCHIPS (SHOPEE)</div>
-                        </div>
-                        <div className="text-right pl-2 border-l border-gray-300">
-                          <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">No. Telp:</div>
-                          <div className="text-[11px] font-bold font-mono text-gray-800 leading-tight">628118299898</div>
-                        </div>
-                      </div>
-                    </div>
-            
-                    {/* QR Code and ID */}
-                    <div className="w-[110px] p-2 flex flex-col items-center justify-center shrink-0">
-                      {order.qrDataUrl && (
-                        <img
-                          src={order.qrDataUrl}
-                          alt="QR Code"
-                          className="w-[75px] h-[75px] block object-contain mb-1.5"
-                        />
-                      )}
-                      <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">
-                        {order.noPesanan}
-                      </div>
-                      {order.noResi && (
-                        <div className="text-[10px] font-bold text-center break-all text-neutral-600 leading-tight mt-0.5 font-mono">
-                          {order.noResi}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-              
-                  {/* 3. Warning Box */}
-                  <div className="border-b-[2px] border-black py-1.5 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
-                    <div className="text-[10px] font-black text-black tracking-wide uppercase leading-tight">
-                      ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
-                    </div>
+                  <div className="text-sm font-extrabold mt-0.5">REKAP PICKING LIST PESANAN</div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    Tanggal Cetak: <b>{todayStr}</b>
                   </div>
                 </div>
-              
-                {/* BOTTOM DYNAMIC AREA: Table for Shopee Shipment */}
-                <div className="p-3 bg-white flex-1 overflow-hidden min-h-0 flex flex-col">
-                  <div className="text-[12px] font-black uppercase text-gray-600 border-b border-black pb-1 mb-1.5">ISI PRODUK PESANAN</div>
-                  <div className="flex-1 overflow-hidden">
-                    <table className="w-full border-collapse text-[12px]">
-                      <thead>
-                        <tr className="border-b border-dashed border-black">
-                          <th className="text-left py-1 w-[5%] font-bold">No.</th>
-                          <th className="text-left py-1 w-[50%] font-bold">Nama Produk</th>
-                          <th className="text-left py-1 w-[15%] font-bold">Variasi</th>
-                          <th className="text-left py-1 w-[20%] font-bold">SKU</th>
-                          <th className="text-center py-1 w-[10%] font-bold">Qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {order.items && order.items.length > 0 ? (
-                          order.items.map((it, idx) => {
-                            let cleanName = it.namaProduk;
-                            return (
-                              <tr key={idx} className="border-b border-dashed border-black">
-                                <td className="py-1 align-top">{idx + 1}.</td>
-                                <td className="py-1 align-top leading-snug line-clamp-2 pr-1">{cleanName}</td>
-                                <td className="py-1 align-top">{it.namaVariasi}</td>
-                                <td className="py-1 align-top">{it.sku || ''}</td>
-                                <td className="py-1 align-top text-center font-bold">{it.qty || 1}</td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr>
-                            <td colSpan={5} className="py-2 text-center border-b border-dashed border-black text-gray-500">
-                              Tidak ada detail produk
-                            </td>
-                          </tr>
-                        )}
-                        <tr>
-                          <td colSpan={4} className="text-right py-1 pr-2 font-bold uppercase">Total Item</td>
-                          <td className="text-center py-1 font-bold text-[14px]">{totalQty}</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                <div className="text-right">
+                  <div className="text-base font-black font-mono border-2 border-slate-900 px-2.5 py-1 rounded-md inline-block">
+                    {order.noPesanan}
+                  </div>
+                  <div className="text-xs font-bold text-slate-700 mt-1">
+                    Tujuan: <span className="text-emerald-700">{order.namaPenerima}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-3 text-[11px] leading-relaxed">
+                <div><strong>No. Resi:</strong> {order.noResi || '-'}</div>
+                <div><strong>Opsi Pengiriman:</strong> {order.opsiPengiriman || '-'}</div>
+                <div><strong>Catatan Pembeli:</strong> {order.catatanPembeli || '-'}</div>
+              </div>
+
+              <table className="w-full border-collapse mb-5 text-[11px]">
+                <thead>
+                  <tr className="bg-slate-100 border-b-2 border-slate-300 text-[10px] uppercase text-slate-600">
+                    <th className="p-2 text-center w-8">NO</th>
+                    <th className="p-2 text-left w-40">SKU</th>
+                    <th className="p-2 text-left">NAMA PRODUK</th>
+                    <th className="p-2 text-center w-24">VARIASI</th>
+                    <th className="p-2 text-center w-14">QTY</th>
+                    <th className="p-2 text-center w-10">CEK</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map((it, itemIdx) => (
+                    <tr key={itemIdx} className="border-b border-slate-200 text-[11px]">
+                      <td className="p-1.5 text-center text-slate-500">{itemIdx + 1}</td>
+                      <td className="p-1.5 font-mono font-bold text-slate-900">{it.sku || '-'}</td>
+                      <td className="p-1.5 font-semibold text-slate-800">{it.namaProduk}</td>
+                      <td className="p-1.5 text-center font-bold">{it.namaVariasi || '-'}</td>
+                      <td className="p-1.5 text-center font-extrabold text-orange-600 text-xs">{it.qty}</td>
+                      <td className="p-1.5 text-center">
+                        <div className="w-3.5 h-3.5 border-2 border-slate-400 rounded-xs mx-auto" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="flex justify-between items-end mt-6 pt-3 border-t border-dashed border-slate-300 text-[11px]">
+                <div className="text-slate-500">
+                  Total Item: <b>{order.items.length} SKU</b> • Total Qty: <b>{totalQty} Pcs</b>
+                </div>
+                <div className="flex gap-10 text-center">
+                  <div>
+                    <div className="mb-9 text-slate-500">Petugas Picking</div>
+                    <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
+                      (...................)
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-9 text-slate-500">Checker / QC</div>
+                    <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
+                      (...................)
+                    </div>
                   </div>
                 </div>
               </div>

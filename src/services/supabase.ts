@@ -2619,7 +2619,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
-          fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+          fetch(`${supaUrl}/rest/v1/master_produk?select=*&order=sku.asc&limit=${pageSize}&offset=${off}`, {
             headers: {
               apikey: supaKey,
               Authorization: 'Bearer ' + supaKey,
@@ -2693,9 +2693,23 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
         let item = productsMap.get(sku);
         if (!item) {
-          // ONLY associate stock with products that exist in master_produk!
-          // Products outside master_produk must NEVER be created as catalog products.
-          continue;
+          // If a product has physical stock but is missing in master_produk, create a placeholder
+          item = {
+            k: sku,
+            sku: sku,
+            p: sku,
+            nama_produk: sku,
+            category: 'Uncategorized',
+            s: '',
+            size: '',
+            lokasi: '',
+            price: 0,
+            f: {},
+            l: [],
+            dealpos_channels: {},
+            q: 0
+          };
+          productsMap.set(sku, item);
         }
 
         if (item && r.lokasi) {
