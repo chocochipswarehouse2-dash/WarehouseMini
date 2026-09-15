@@ -2806,36 +2806,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // =========================================================================
   return (
     <div className="max-w-4xl mx-auto space-y-4 animate-in fade-in duration-200">
-      {/* Header & Stats */}
-      <div className="flex flex-wrap justify-between items-center gap-3 bg-white dark:bg-[#131d31] p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div>
-          <h1 className="text-lg font-black text-slate-800 dark:text-white uppercase flex items-center gap-2">
-            <Package className="w-5 h-5 text-primary-500" /> Tugas Picking (Per Surat Jalan)
-          </h1>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Pilih 1 Surat Jalan untuk memulai pengambilan barang secara terpandu.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadPickingList}
-            disabled={loading}
-            className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 text-slate-600 dark:text-slate-300 transition-colors"
-            title="Muat Ulang / Sinkronisasi Database"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-500' : ''}`} />
-          </button>
-
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-3.5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" /> Buat SJ Baru
-          </button>
-        </div>
-      </div>
-
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2918,15 +2888,33 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           </div>
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari Nomor SJ / Tujuan / SKU / Nama Produk..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-white focus:border-primary-500 outline-none"
-          />
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari Nomor SJ / Tujuan / SKU / Nama Produk..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-white focus:border-primary-500 outline-none"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={loadPickingList}
+              disabled={loading}
+              className="p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 text-slate-600 dark:text-slate-300 transition-colors"
+              title="Muat Ulang / Sinkronisasi Database"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-500' : ''}`} />
+            </button>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex-1 sm:flex-none px-3.5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" /> Buat SJ Baru
+            </button>
+          </div>
         </div>
       </div>
 
