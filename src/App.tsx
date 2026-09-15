@@ -1467,6 +1467,7 @@ export default function App() {
             <>
               {activePage === 'operasi_stok' && (
                 <OperasiStokView
+                  session={session}
                   scannerComponent={
                     <div className="w-full max-w-2xl mx-auto space-y-4">
                       {/* Scanner Method & Input Card */}

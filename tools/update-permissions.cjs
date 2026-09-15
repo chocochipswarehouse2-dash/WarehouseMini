@@ -1,26 +1,11 @@
-import { UserSession, UserPermissions, ActivePage } from '../types';
+const fs = require('fs');
+const path = require('path');
 
-export const isSuperadmin = (session: UserSession | null): boolean => {
-  if (!session) return false;
-  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
-  const user = String(session.username || '').trim().toLowerCase();
-  const email = String(session.email || '').trim().toLowerCase();
-  const nik = String(session.nik || '').trim().toLowerCase();
+const filePath = path.join(__dirname, '../src/services/permissions.ts');
+let content = fs.readFileSync(filePath, 'utf8');
 
-  return (
-    role === 'superadmin' ||
-    role === 'admin' ||
-    user === 'admin' ||
-    user === 'admin2' ||
-    user === 'chocoadm' ||
-    user === 'warehouse' ||
-    nik === 'wh0001' ||
-    email.startsWith('admin') ||
-    email.includes('warehouse2@gmail.com') ||
-    email.includes('chocoadm')
-  );
-};
-
+// 1. Define PERMISSION_GROUPS
+const permissionGroupsCode = `
 export const PERMISSION_GROUPS = [
   {
     id: 'g_ops_dashboard',
@@ -161,73 +146,15 @@ export const ALL_PERMISSIONS: Partial<UserPermissions> = PERMISSION_GROUPS.reduc
 export const INITIAL_ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermissions>> = {
   Superadmin: { ...ALL_PERMISSIONS },
 };
+`;
 
-export const INITIAL_ROLE_DETAILS: Record<string, { badge: string; icon: string; name: string }> = {
-  Superadmin: { badge: 'bg-red-500', icon: '👑', name: 'Superadmin' },
-  Manager: { badge: 'bg-purple-500', icon: '📊', name: 'Manager' },
-  Operator: { badge: 'bg-blue-500', icon: '📦', name: 'Operator' },
-  'Tugas Picking': { badge: 'bg-amber-500', icon: '🛒', name: 'Tugas Picking' },
-  Peminjaman: { badge: 'bg-indigo-500', icon: '📑', name: 'Peminjaman' },
-  HR: { badge: 'bg-emerald-500', icon: '👥', name: 'HR' },
-  'HR & Admin': { badge: 'bg-emerald-500', icon: '👥', name: 'HR & Admin' },
-  'QC/Repair': { badge: 'bg-rose-500', icon: '🔧', name: 'QC/Repair' },
-  Perbaikan: { badge: 'bg-rose-500', icon: '🔧', name: 'Perbaikan' },
-  'Scanner Barcode': { badge: 'bg-cyan-500', icon: '📷', name: 'Scanner Barcode' },
-  Inventory: { badge: 'bg-teal-500', icon: '📚', name: 'Inventory' },
-  'Stock Opname': { badge: 'bg-violet-500', icon: '📋', name: 'Stock Opname' },
-  Mutasi: { badge: 'bg-orange-500', icon: '🔄', name: 'Mutasi' },
-};
+// Replace from export const ALL_PERMISSIONS to the end of INITIAL_ROLE_DEFAULT_PERMISSIONS
+content = content.replace(/export const ALL_PERMISSIONS[\s\S]*?Mutasi: {[\s\S]*?},\n};/, permissionGroupsCode);
 
-export let ROLE_DEFAULT_PERMISSIONS: Record<string, Partial<UserPermissions>> = {
-  ...INITIAL_ROLE_DEFAULT_PERMISSIONS,
-};
+// Remove the old PERMISSION_GROUPS at the bottom (lines 401 to 473)
+content = content.replace(/export const PERMISSION_GROUPS = \[[\s\S]*?}\n  \},\n\];\n/g, '');
 
-export let ROLE_DETAILS: Record<string, any> = {
-  ...INITIAL_ROLE_DETAILS,
-};
-
-export const updateRoleTemplates = (roles: Record<string, any>) => {
-  const newPerms: Record<string, any> = { ...INITIAL_ROLE_DEFAULT_PERMISSIONS };
-  const newDetails: Record<string, any> = { ...INITIAL_ROLE_DETAILS };
-
-  if (roles && typeof roles === 'object') {
-    Object.keys(roles).forEach((key) => {
-      const role = roles[key];
-      if (role) {
-        newPerms[key] = { ...(newPerms[key] || {}), ...(role.permissions || {}) };
-        newDetails[key] = {
-          badge: role.badge || newDetails[key]?.badge || 'bg-slate-500',
-          icon: role.icon || newDetails[key]?.icon || '📦',
-          name: role.name || key,
-        };
-      }
-    });
-  }
-
-  ROLE_DEFAULT_PERMISSIONS = newPerms;
-  ROLE_DETAILS = newDetails;
-};
-
-export const hasPermission = (session: UserSession | null, permission: string): boolean => {
-  if (!session) return false;
-  if (isSuperadmin(session)) return true;
-
-  // 1. Explicit permission defined in user session object
-  const userPerms = session.permissions;
-  if (userPerms && typeof userPerms[permission as keyof UserPermissions] === 'boolean') {
-    return userPerms[permission as keyof UserPermissions]!;
-  }
-
-  // 2. Role template default fallback
-  const roleKey = session.role || 'Operator';
-  const roleDefaults = ROLE_DEFAULT_PERMISSIONS[roleKey] || ROLE_DEFAULT_PERMISSIONS['Operator'];
-  if (roleDefaults && typeof roleDefaults[permission as keyof UserPermissions] === 'boolean') {
-    return !!roleDefaults[permission as keyof UserPermissions];
-  }
-
-  return false;
-};
-
+const accessPageCode = `
 export const canAccessPage = (session: UserSession | null, page: ActivePage): boolean => {
   if (!session) return false;
   if (isSuperadmin(session)) return true;
@@ -305,14 +232,9 @@ export const canViewDashboard = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_dashboard') || isSuperadmin(session);
 export const canPeminjaman = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_peminjaman') || isSuperadmin(session);
+`;
 
-export const TOTAL_PERMISSIONS_COUNT = PERMISSION_GROUPS.reduce(
-  (acc, g) => acc + g.permissions.length,
-  0
-);
+content = content.replace(/export const canAccessPage = [\s\S]*?hasPermission\(session, 'can_peminjaman'\) \|\| isSuperadmin\(session\);/, accessPageCode);
 
-export const countGrantedPermissions = (perms: Partial<UserPermissions> | undefined | null) => {
-  if (!perms || typeof perms !== 'object') return 0;
-  const validKeys = new Set(PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key)));
-  return Object.entries(perms).filter(([key, value]) => validKeys.has(key) && value).length;
-};
+fs.writeFileSync(filePath, content);
+console.log('Update complete');

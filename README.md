@@ -37,44 +37,60 @@ Setiap kali ada perubahan struktur UI, list di bawah ini harus terus di-update!
 2. **Alat & Utilitas**: Menu ini bersifat **Superadmin ONLY**. User biasa tidak boleh mengaksesnya.
 3. **Konfigurasi Kustom**: User selain superadmin memiliki akses kosong (blank) pada awalnya, dan role akses mereka harus diatur (di-*setup*) satu per satu secara granular oleh Superadmin. (Role/Jabatan hanya sebagai penanda/label).
 
-### Hierarki Struktur Menu & Tab (Draft Saat Ini)
+### Hierarki Struktur Menu, Tab & Action (Final)
 
 **1. OPERASIONAL WAREHOUSE**
-* **Dashboard** (Single Page)
-* **Agenda dan Project**
-  * Tab: Kalendar Kerja
-  * Tab: Project & Task
-* **Pesanan Saya**
-  * Tab: Dashboard
-  * Tab: Manual Shipment
-  * Tab: Transfer Order
-  * Tab: Shopee
-  * Tab: Tiktok
-  * Tab: Website
-  * Tab: Woocommerce
-  * Tab: Lazada
-* **Pusat Resolusi**
-  * Tab: Retur Penukaran
-  * Tab: Pengembalian Dana
-  * Tab: Pengiriman Gagal
-  * Tab: Komplain Customer
-  * Tab: Report Rating
-* **Loading Dock**
-  * Tab: Penerimaan Produksi
-  * Tab: Penerimaan Barang
-  * Tab: Pengiriman Barang
-* **Scanner | Mutasi | SO**
-  * Tab: Scanner
-  * Tab: Mutasi Log
-  * Tab: Stock Opname
-* **Quality Control**
-  * (4 Tab)
-* **Inventory** (Single Page)
-* *(Dan menu operasional lainnya...)*
+* **Dashboard** (`menu_ops_dashboard`)
+* **Agenda dan Project** (`menu_ops_agenda`)
+  * Tab: Kalendar Kerja (`tab_ops_agenda_kalendar`)
+  * Tab: Project & Task (`tab_ops_agenda_project`)
+* **Pesanan Saya** (`menu_ops_pesanan_saya`)
+  * Tab: Dashboard (`tab_ops_pesanan_dashboard`)
+  * Tab: Manual Shipment (`tab_ops_pesanan_manual_shipment`)
+  * Tab: Transfer Order (`tab_ops_pesanan_transfer_order`)
+  * Tab: Shopee (`tab_ops_pesanan_shopee`)
+  * Tab: Tiktok (`tab_ops_pesanan_tiktok`)
+  * Tab: Website (`tab_ops_pesanan_website`)
+  * Tab: Woocommerce (`tab_ops_pesanan_woocommerce`)
+  * Tab: Lazada (`tab_ops_pesanan_lazada`)
+* **Pusat Resolusi** (`menu_ops_resolusi`)
+  * Tab: Retur Penukaran (`tab_ops_resolusi_retur`)
+  * Tab: Pengembalian Dana (`tab_ops_resolusi_refund`)
+  * Tab: Pengiriman Gagal (`tab_ops_resolusi_gagal`)
+  * Tab: Komplain Customer (`tab_ops_resolusi_komplain`)
+  * Tab: Report Rating (`tab_ops_resolusi_rating`)
+* **Loading Dock** (`menu_ops_loading_dock`)
+  * Tab: Penerimaan Produksi (`tab_ops_loading_produksi`)
+  * Tab: Penerimaan Barang (`tab_ops_loading_penerimaan`)
+  * Tab: Pengiriman Barang (`tab_ops_loading_pengiriman`)
+* **Operasi Stok (Scanner, Mutasi, SO)** (`menu_ops_mutasi`)
+  * Tab: Scanner (`tab_ops_mutasi_scanner`)
+  * Tab: Mutasi Log (`tab_ops_mutasi_log`)
+  * Tab: Stock Opname (`tab_ops_mutasi_so`)
+* **Quality Control** (`menu_ops_qc`)
+  * Tab: Reject (`tab_ops_qc_reject`)
+  * Tab: Cuci (`tab_ops_qc_cuci`)
+  * Tab: Permak (`tab_ops_qc_permak`)
+  * Tab: Defect (`tab_ops_qc_defect`)
+* **Inventory** (`menu_ops_inventory`)
+* **Tugas Picking** (`menu_ops_picking`)
+* **Peminjaman** (`menu_ops_peminjaman`)
+* **Roadmap & Update** (`menu_ops_roadmap`)
 
 **2. KARYAWAN & PRESENSI**
-* *(Akan di-mapping sesuai struktur menu HR saat ini)*
+* **Data Karyawan** (`menu_hr_karyawan`)
+* **Presensi & Jadwal** (`menu_hr_presensi`)
+* **Roster Shift** (`menu_hr_roster`)
+* **Lembur & Cuti** (`menu_hr_lembur_cuti`)
+* **HR Approval** (`menu_hr_approval`)
 
 **3. ALAT & UTILITAS**
 * *(Superadmin ONLY)*
 
+**4. ACTION / EXTRA PERMISSIONS**
+* `action_cetak_label`: Akses cetak label.
+* `action_export_data`: Ekspor data ke CSV/Excel.
+* `action_import_data`: Impor data.
+* `action_sync_dealpos`: Sinkronisasi dengan API DealPOS.
+* `action_edit_master`: Izin edit master data.
+* `action_delete_master`: Izin delete master data.

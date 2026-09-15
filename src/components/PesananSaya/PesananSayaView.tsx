@@ -15,6 +15,9 @@ interface PesananSayaViewProps {
 
 type TabType = 'dashboard' | 'manual_shipment' | 'distribusi' | 'shopee' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
 
+import { hasPermission, isSuperadmin } from '../../services/permissions';
+
+// Add to TabConfig
 interface TabConfig {
   id: TabType;
   label: string;
@@ -22,6 +25,7 @@ interface TabConfig {
   icon: React.ComponentType<{ className?: string }>;
   color: string;
   isComingSoon?: boolean;
+  permissionKey?: string;
 }
 
 export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
@@ -29,18 +33,24 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   productCatalog,
   onShowToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-
-  const tabs: TabConfig[] = [
-    { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard, color: 'bg-blue-600 shadow-blue-600/25 ring-blue-500/50' },
-    { id: 'manual_shipment', label: 'Manual Shipment', shortLabel: 'Manual', icon: Truck, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50' },
-    { id: 'distribusi', label: 'Transfer Order', shortLabel: 'Transfer', icon: Store, color: 'bg-emerald-600 shadow-emerald-600/25 ring-emerald-500/50' },
-    { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', isComingSoon: true },
-    { id: 'tiktok', label: 'Tiktok', shortLabel: 'Tiktok', icon: ShoppingBag, color: 'bg-rose-600 shadow-rose-600/25 ring-rose-500/50', isComingSoon: true },
-    { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', isComingSoon: true },
-    { id: 'woocommerce', label: 'WooCommerce', shortLabel: 'Woo', icon: ShoppingCart, color: 'bg-purple-600 shadow-purple-600/25 ring-purple-500/50', isComingSoon: true },
-    { id: 'lazada', label: 'Lazada', shortLabel: 'Lazada', icon: Tag, color: 'bg-sky-700 shadow-sky-700/25 ring-sky-600/50', isComingSoon: true },
+  const userIsAdmin = isSuperadmin(session);
+  
+  const allTabs: TabConfig[] = [
+    { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard, color: 'bg-blue-600 shadow-blue-600/25 ring-blue-500/50', permissionKey: 'tab_ops_pesanan_dashboard' },
+    { id: 'manual_shipment', label: 'Manual Shipment', shortLabel: 'Manual', icon: Truck, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50', permissionKey: 'tab_ops_pesanan_manual_shipment' },
+    { id: 'distribusi', label: 'Transfer Order', shortLabel: 'Transfer', icon: Store, color: 'bg-emerald-600 shadow-emerald-600/25 ring-emerald-500/50', permissionKey: 'tab_ops_pesanan_transfer_order' },
+    { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_shopee' },
+    { id: 'tiktok', label: 'Tiktok', shortLabel: 'Tiktok', icon: ShoppingBag, color: 'bg-rose-600 shadow-rose-600/25 ring-rose-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_tiktok' },
+    { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_website' },
+    { id: 'woocommerce', label: 'WooCommerce', shortLabel: 'Woo', icon: ShoppingCart, color: 'bg-purple-600 shadow-purple-600/25 ring-purple-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_woocommerce' },
+    { id: 'lazada', label: 'Lazada', shortLabel: 'Lazada', icon: Tag, color: 'bg-sky-700 shadow-sky-700/25 ring-sky-600/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_lazada' },
   ];
+
+  const tabs = allTabs.filter(tab => 
+    userIsAdmin || !tab.permissionKey || hasPermission(session, tab.permissionKey)
+  );
+
+  const [activeTab, setActiveTab] = useState<TabType>(tabs.length > 0 ? tabs[0].id : 'dashboard');
 
   const renderDummyTab = (name: string) => (
     <div className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
@@ -101,7 +111,21 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
 
       {/* Tab Content Area */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'dashboard' && (
+        {tabs.length === 0 && (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm max-w-sm w-full mx-auto">
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Globe className="w-8 h-8" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Akses Ditolak</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Anda tidak memiliki akses ke fitur pesanan apapun. Silakan hubungi Superadmin.
+              </p>
+            </div>
+          </div>
+        )}
+        
+        {tabs.length > 0 && activeTab === 'dashboard' && (
           <div className="h-full overflow-y-auto p-4 sm:p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Dummy Dashboard Content as requested */}

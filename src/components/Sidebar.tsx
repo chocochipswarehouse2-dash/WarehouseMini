@@ -81,23 +81,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
   hasNewPickingAlert = false,
 }) => {
   const userIsAdmin = isSuperadmin(session);
-  const canViewDashboard = userIsAdmin || hasPermission(session, 'can_view_dashboard');
-  const canPenerimaanBarang = userIsAdmin || hasPermission(session, 'can_penerimaan_barang');
-  const canPacking = userIsAdmin || hasPermission(session, 'can_packing');
-  const canPengiriman = userIsAdmin || hasPermission(session, 'can_pengiriman');
-  const canAgenda = userIsAdmin || hasPermission(session, 'can_agenda');
-  const canScan = userIsAdmin || hasPermission(session, 'can_scan');
-  const canPenerimaan = userIsAdmin || hasPermission(session, 'can_penerimaan') || hasPermission(session, 'can_scan');
-  const canPicking = userIsAdmin || hasPermission(session, 'can_picking');
-  const canPeminjaman = userIsAdmin || hasPermission(session, 'can_peminjaman');
-  const canViewInventory = userIsAdmin || hasPermission(session, 'can_view_inventory');
-  const canApproveSo = userIsAdmin || hasPermission(session, 'can_approve_so');
-  const canViewMutasi = userIsAdmin || hasPermission(session, 'can_view_mutasi');
-  const canPerbaikan = userIsAdmin || hasPermission(session, 'can_perbaikan');
-  const canManualShipment = userIsAdmin || hasPermission(session, 'can_manual_shipment_view') || hasPermission(session, 'can_manual_shipment_action');
-  const canTarikanMD = userIsAdmin || hasPermission(session, 'can_tarikan_md');
-  const canCetakLabel = userIsAdmin || hasPermission(session, 'can_cetak_label');
   const userCanAccessSettings = canAccessSettings(session);
+
+  // Operasional
+  const canViewDashboard = userIsAdmin || hasPermission(session, 'menu_ops_dashboard');
+  const canAgenda = userIsAdmin || hasPermission(session, 'menu_ops_agenda') || 
+    hasPermission(session, 'tab_ops_agenda_kalendar') || 
+    hasPermission(session, 'tab_ops_agenda_project');
+  const canPesanan = userIsAdmin || hasPermission(session, 'menu_ops_pesanan_saya') ||
+    hasPermission(session, 'tab_ops_pesanan_dashboard') ||
+    hasPermission(session, 'tab_ops_pesanan_manual_shipment') ||
+    hasPermission(session, 'tab_ops_pesanan_transfer_order') ||
+    hasPermission(session, 'tab_ops_pesanan_shopee') ||
+    hasPermission(session, 'tab_ops_pesanan_tiktok') ||
+    hasPermission(session, 'tab_ops_pesanan_website') ||
+    hasPermission(session, 'tab_ops_pesanan_woocommerce') ||
+    hasPermission(session, 'tab_ops_pesanan_lazada');
+  const canResolusi = userIsAdmin || hasPermission(session, 'menu_ops_resolusi') ||
+    hasPermission(session, 'tab_ops_resolusi_retur') ||
+    hasPermission(session, 'tab_ops_resolusi_refund') ||
+    hasPermission(session, 'tab_ops_resolusi_gagal') ||
+    hasPermission(session, 'tab_ops_resolusi_komplain') ||
+    hasPermission(session, 'tab_ops_resolusi_rating');
+  const canLoadingDock = userIsAdmin || hasPermission(session, 'menu_ops_loading_dock') ||
+    hasPermission(session, 'tab_ops_loading_produksi') ||
+    hasPermission(session, 'tab_ops_loading_penerimaan') ||
+    hasPermission(session, 'tab_ops_loading_pengiriman');
+  const canMutasi = userIsAdmin || hasPermission(session, 'menu_ops_mutasi') ||
+    hasPermission(session, 'tab_ops_mutasi_scanner') ||
+    hasPermission(session, 'tab_ops_mutasi_log') ||
+    hasPermission(session, 'tab_ops_mutasi_so');
+  const canQC = userIsAdmin || hasPermission(session, 'menu_ops_qc') ||
+    hasPermission(session, 'tab_ops_qc_reject') ||
+    hasPermission(session, 'tab_ops_qc_cuci') ||
+    hasPermission(session, 'tab_ops_qc_permak') ||
+    hasPermission(session, 'tab_ops_qc_defect');
+  const canInventory = userIsAdmin || hasPermission(session, 'menu_ops_inventory');
+  const canPicking = userIsAdmin || hasPermission(session, 'menu_ops_picking');
+  const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
+  const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
+
+  // HR
+  const canViewKaryawan = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
+  const canViewPresensi = userIsAdmin || hasPermission(session, 'menu_hr_presensi');
+  const canViewRoster = userIsAdmin || hasPermission(session, 'menu_hr_roster');
+  const canViewLemburCuti = userIsAdmin || hasPermission(session, 'menu_hr_lembur_cuti');
+  const canApproveHr = userIsAdmin || hasPermission(session, 'menu_hr_approval');
 
   const navItems = [
     {
@@ -122,7 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Pesanan',
       icon: Package,
       description: 'Manajemen semua pesanan',
-      access: canManualShipment || canTarikanMD,
+      access: canPesanan,
     },
     {
       id: 'pusat_resolusi' as ActivePage,
@@ -130,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Resolusi',
       icon: ShieldAlert,
       description: 'Layanan CS, Retur & Kendala',
-      access: userIsAdmin || hasPermission(session, 'can_view_resolusi'),
+      access: canResolusi,
     },
     {
       id: 'loading_dock' as ActivePage,
@@ -138,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Loading Dock',
       icon: Truck,
       description: 'Penerimaan & Pengiriman Terpadu',
-      access: canPenerimaanBarang || canPengiriman || canPenerimaan,
+      access: canLoadingDock,
     },
     {
       id: 'operasi_stok' as ActivePage,
@@ -146,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Scan | Mutasi',
       icon: ScanBarcode,
       description: 'Scan Rak, Mutasi Log & SO',
-      access: canScan || canViewMutasi || canApproveSo,
+      access: canMutasi,
     },
     {
       id: 'perbaikan' as ActivePage,
@@ -154,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'QC',
       icon: ClipboardCheck,
       description: 'Laporan QC, Perbaikan & Defect',
-      access: canPerbaikan,
+      access: canQC,
     },
     {
       id: 'inventory' as ActivePage,
@@ -162,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Inventory',
       icon: Layers,
       description: 'Stok fisik rak & per SKU',
-      access: canViewInventory,
+      access: canInventory,
     },
     {
       id: 'picking_tasks' as ActivePage,
@@ -189,12 +218,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       access: canCetakLabel,
     },
   ].filter((item) => item.access);
-
-  const canApproveHr = userIsAdmin || hasPermission(session, 'can_approve_hr');
-  const canViewKaryawan = userIsAdmin || hasPermission(session, 'can_view_karyawan');
-  const canViewPresensi = userIsAdmin || hasPermission(session, 'can_view_presensi');
-  const canViewRoster = userIsAdmin || hasPermission(session, 'can_view_roster');
-  const canViewLemburCuti = userIsAdmin || hasPermission(session, 'can_view_lembur_cuti');
 
   const hrNavItems = [
     {
@@ -400,7 +423,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   // Common quick tools section
-  const renderQuickTools = (collapsed: boolean) => (
+  const renderQuickTools = (collapsed: boolean) => {
+    if (!userIsAdmin) return null;
+    
+    return (
     <div className="space-y-1 px-2 pt-3 border-t border-slate-200/80 dark:border-slate-800/80">
       <div
         className={`px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${
@@ -566,7 +592,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Pengecekan Surat Jalan (Audit SJ vs Fisik) */}
-      {canTarikanMD && (
+      {(userIsAdmin || hasPermission(session, 'tab_ops_pesanan_transfer_order')) && (
         <button
           type="button"
           onClick={() => {
@@ -648,7 +674,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </button>
     </div>
-  );
+    );
+  };
 
   return (
     <>

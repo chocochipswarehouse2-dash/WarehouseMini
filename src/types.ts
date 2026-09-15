@@ -47,69 +47,60 @@ export type UserRole =
   | string;
 
 export type UserPermissionKey =
-  | 'can_view_dashboard'
-  | 'can_penerimaan_barang'
-  | 'can_packing'
-  | 'can_pengiriman'
-  | 'can_agenda'
-  | 'can_scan'
-  | 'can_penerimaan'
-  | 'can_picking'
-  | 'can_peminjaman'
-  | 'can_view_inventory'
-  | 'can_approve_so'
-  | 'can_export_data'
-  | 'can_sync_dealpos'
-  | 'can_manage_users'
-  | 'can_manage_settings'
-  | 'can_edit_data'
-  | 'can_delete_data'
-  | 'can_view_mutasi'
-  | 'can_import_export_data'
-  | 'can_view_karyawan'
-  | 'can_view_presensi'
-  | 'can_view_roster'
-  | 'can_view_lembur_cuti'
-  | 'can_approve_hr'
-  | 'can_perbaikan'
-  | 'can_manual_shipment_view'
-  | 'can_manual_shipment_action'
-  | 'can_tarikan_md'
-  | 'can_cetak_label';
+  // OPERASIONAL WAREHOUSE
+  | 'menu_ops_dashboard'
+  | 'menu_ops_agenda'
+  | 'tab_ops_agenda_kalendar'
+  | 'tab_ops_agenda_project'
+  | 'menu_ops_pesanan_saya'
+  | 'tab_ops_pesanan_dashboard'
+  | 'tab_ops_pesanan_manual_shipment'
+  | 'tab_ops_pesanan_transfer_order'
+  | 'tab_ops_pesanan_shopee'
+  | 'tab_ops_pesanan_tiktok'
+  | 'tab_ops_pesanan_website'
+  | 'tab_ops_pesanan_woocommerce'
+  | 'tab_ops_pesanan_lazada'
+  | 'menu_ops_resolusi'
+  | 'tab_ops_resolusi_retur'
+  | 'tab_ops_resolusi_refund'
+  | 'tab_ops_resolusi_gagal'
+  | 'tab_ops_resolusi_komplain'
+  | 'tab_ops_resolusi_rating'
+  | 'menu_ops_loading_dock'
+  | 'tab_ops_loading_produksi'
+  | 'tab_ops_loading_penerimaan'
+  | 'tab_ops_loading_pengiriman'
+  | 'menu_ops_mutasi'
+  | 'tab_ops_mutasi_scanner'
+  | 'tab_ops_mutasi_log'
+  | 'tab_ops_mutasi_so'
+  | 'menu_ops_qc'
+  | 'tab_ops_qc_reject'
+  | 'tab_ops_qc_cuci'
+  | 'tab_ops_qc_permak'
+  | 'tab_ops_qc_defect'
+  | 'menu_ops_inventory'
+  | 'menu_ops_picking'
+  | 'menu_ops_peminjaman'
+  | 'menu_ops_roadmap'
+  // KARYAWAN & PRESENSI
+  | 'menu_hr_karyawan'
+  | 'menu_hr_presensi'
+  | 'menu_hr_roster'
+  | 'menu_hr_lembur_cuti'
+  | 'menu_hr_approval'
+  // ACTION / EXTRA
+  | 'action_cetak_label'
+  | 'action_export_data'
+  | 'action_import_data'
+  | 'action_sync_dealpos'
+  | 'action_edit_master'
+  | 'action_delete_master';
 
-export interface UserPermissions {
-  can_view_dashboard?: boolean;
-  can_penerimaan_barang?: boolean;
-  can_packing?: boolean;
-  can_pengiriman?: boolean;
-  can_agenda?: boolean;
-  can_scan?: boolean;
-  can_penerimaan?: boolean;
-  can_picking?: boolean;
-  can_peminjaman?: boolean;
-  can_view_inventory?: boolean;
-  can_approve_so?: boolean;
-  can_export_data?: boolean;
-  can_sync_dealpos?: boolean;
-  can_manage_users?: boolean;
-  can_manage_settings?: boolean;
-  can_edit_data?: boolean;
-  can_delete_data?: boolean;
-  can_view_mutasi?: boolean;
-  can_import_export_data?: boolean;
-  can_view_karyawan?: boolean;
-  can_view_presensi?: boolean;
-  can_view_roster?: boolean;
-  can_view_lembur_cuti?: boolean;
-  can_approve_hr?: boolean;
-  can_perbaikan?: boolean;
-  can_manual_shipment_view?: boolean;
-  can_manual_shipment_action?: boolean;
-  can_tarikan_md?: boolean;
-  can_cetak_label?: boolean;
-  can_view_resolusi?: boolean;
-  can_view_roadmap?: boolean;
-}
+export type UserPermissions = {
+  [K in UserPermissionKey]?: boolean;
+};
 
 export interface WmsUser {
   id?: string;
