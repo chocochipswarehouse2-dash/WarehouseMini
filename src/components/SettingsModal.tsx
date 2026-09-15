@@ -65,6 +65,7 @@ import {
   saveWmsUserToSupabase,
   deleteWmsUserFromSupabase,
   fetchKaryawanDirectory,
+  supabaseFetch,
 } from '../services/supabase';
 import {
   DEFAULT_GDRIVE_FOLDER_URL,
@@ -501,13 +502,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     // Sync to Database table in background
     setIsLoadingUsers(true);
+    
+    // Hanya simpan permission yang berbeda dari default Role agar sinkronisasi role template tetap bekerja
+    const defaultPerms = ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS['Operator'];
+    const finalPermissions: Partial<UserPermissions> = {};
+    Object.keys(newPermissions).forEach((key) => {
+      const k = key as UserPermissionKey;
+      if (!!newPermissions[k] !== !!defaultPerms[k]) {
+        finalPermissions[k] = !!newPermissions[k];
+      }
+    });
+
     const res = await saveWmsUserToSupabase({
       id: userToSave.id,
       username: cleanU,
       name: cleanName,
       role: newRole,
       password: cleanP ? cleanP : undefined,
-      permissions: newPermissions,
+      permissions: finalPermissions,
       nik: newNik.trim() || undefined,
       no_hp: newPhone.trim() || undefined,
       email: newEmail.trim() || undefined,
@@ -618,7 +630,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     let updatedList = [...roleList];
+    let oldRoleName = '';
+    
     if (editingRoleIndex !== null) {
+      oldRoleName = updatedList[editingRoleIndex].name;
       updatedList[editingRoleIndex] = newRoleObj;
     } else {
       const existing = updatedList.find(r => r.name.toLowerCase() === roleName.toLowerCase());
@@ -643,6 +658,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     try {
       await saveWmsSettings({ roles: roleDict });
+      
+      // Jika rename role, update user yang terdampak di supabase & lokal
+      if (editingRoleIndex !== null && oldRoleName && oldRoleName !== roleName) {
+         const updatedUsers = userList.map(u => u.role === oldRoleName ? { ...u, role: roleName } : u);
+         setUserList(updatedUsers);
+         saveLocalUsersList(updatedUsers);
+         supabaseFetch('wms_users', 'PATCH', { role: roleName }, `role=eq.${encodeURIComponent(oldRoleName)}`, true).catch(console.error);
+      }
+      
       onNotify('Template Role berhasil disimpan ke Cloud!', 'success');
       setIsRoleFormOpen(false);
       setEditingRoleIndex(null);
@@ -679,6 +703,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         try {
           await saveWmsSettings({ roles: roleDict });
+          
+          // Cascading delete: fallback user dengan role terhapus ke 'Operator'
+          const roleName = target.name;
+          const updatedUsers = userList.map(u => u.role === roleName ? { ...u, role: 'Operator' } : u);
+          setUserList(updatedUsers);
+          saveLocalUsersList(updatedUsers);
+          supabaseFetch('wms_users', 'PATCH', { role: 'Operator' }, `role=eq.${encodeURIComponent(roleName)}`, true).catch(console.error);
+          
           onNotify(`Role "${target.name}" berhasil dihapus.`, 'success');
         } catch {
           onNotify('Gagal menghapus role dari Cloud', 'error');

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.wms_users (
 
 -- Seed user default awal (bisa login langsung)
 INSERT INTO public.wms_users (username, name, password, role)
-VALUES ('admin', 'Super Administrator', 'admin123', 'All'),
+VALUES ('admin', 'Super Administrator', 'admin123', 'Superadmin'),
        ('operator', 'Petugas Gudang', '123456', 'Operator')
 ON CONFLICT (username) DO NOTHING;
 
