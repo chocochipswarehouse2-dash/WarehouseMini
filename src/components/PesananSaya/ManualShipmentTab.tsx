@@ -1685,73 +1685,85 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                     breakInside: 'avoid',
                   }}
                 >
-                  <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden justify-between">
-                    {/* 1. Header */}
-                    <div className="flex justify-between items-center px-3 py-2 border-b-2 border-black bg-gray-50 shrink-0">
-                      <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black flex items-center gap-1.5">
-                        <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-4 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                        
-                      </div>
-                      <div className="text-[13px] font-black tracking-wider uppercase text-right leading-tight text-black">
-                        {order.jasa_kirim || 'PENGIRIMAN PAKET'}
-                      </div>
+                  <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
+                    {/* TOP FIXED AREA */}
+                    <div className="flex flex-col shrink-0">
+                       {/* 1. Header Label */}
+                       <div className="border-b-[2px] border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
+                         <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center">
+                           <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-7 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                         </div>
+                         <div className="text-lg font-black tracking-wider uppercase leading-none text-black">
+                           {order.jasa_kirim || 'PENGIRIMAN PAKET'}
+                         </div>
+                       </div>
+                  
+                       {/* 2. Sender / Receiver + QR Code block */}
+                       <div className="flex border-b-[2px] border-black bg-white break-inside-avoid">
+                          {/* Pengirim */}
+                          <div className="w-[30%] p-3 border-r-[2px] border-black flex flex-col shrink-0">
+                            <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Dari / Pengirim:</div>
+                            <div className="text-sm font-black uppercase text-black leading-tight mb-1">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
+                            {order.pic_store && <div className="text-[11px] font-black mb-0.5 text-gray-800">PIC: {order.pic_store}</div>}
+                            {order.no_telp_store && <div className="text-xs font-bold font-mono text-gray-800 leading-tight">{order.no_telp_store}</div>}
+                          </div>
+                          
+                          {/* Penerima */}
+                          <div className="flex-1 p-3 border-r-[2px] border-black min-w-0">
+                            <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
+                            <div className="text-[17px] font-black uppercase mb-1 leading-tight text-black line-clamp-1">{order.nama_tujuan || '-'}</div>
+                            {order.no_telp_tujuan && (
+                              <div className="text-sm font-black font-mono text-black mb-1 leading-none">{order.no_telp_tujuan}</div>
+                            )}
+                            <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black line-clamp-4">{order.alamat_tujuan || '-'}</div>
+                            {order.notes_paket && (
+                              <div className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300">
+                                <span className="text-[10px] font-black uppercase text-gray-500 mr-1">NOTE:</span>
+                                <span className="text-[11px] font-bold text-black">{order.notes_paket}</span>
+                              </div>
+                            )}
+                          </div>
+                  
+                          {/* QR Code and ID */}
+                          <div className="w-[120px] p-2 flex flex-col items-center justify-center shrink-0">
+                            {qrDataUrl && (
+                              <img
+                                src={qrDataUrl}
+                                alt="QR Code"
+                                className="w-[80px] h-[80px] block object-contain mb-1.5"
+                              />
+                            )}
+                            <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">
+                              ID: {order.no_pesanan || ''}
+                            </div>
+                            {order.no_transaksi_customer && (
+                              <div className="text-[9px] font-bold text-center break-all text-neutral-600 leading-tight mt-0.5">
+                                Ref: {order.no_transaksi_customer}
+                              </div>
+                            )}
+                          </div>
+                       </div>
+                  
+                       {/* 3. Warning Box */}
+                       <div className="border-b-[2px] border-black py-1.5 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
+                         <div className="text-[10px] font-black text-black tracking-wide uppercase leading-tight">
+                           ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
+                         </div>
+                       </div>
                     </div>
-
-                    {/* 2. Order ID Box */}
-                    <div className="text-center border-b-2 border-black py-1 px-2 text-[11px] font-black uppercase tracking-wider bg-white text-black shrink-0">
-                      ORDER ID: {order.no_pesanan || ''}
-                    </div>
-
-                    {/* 3. Address Block */}
-                    <div className="flex border-b-2 border-black bg-white shrink-0">
-                      {/* Left: Penerima */}
-                      <div className="flex-1 p-2 border-r-2 border-black min-w-0">
-                        <div className="text-[9px] font-black uppercase mb-0.5 text-gray-600">
-                          PENERIMA: <span className="text-[11px] font-black text-black">{order.nama_tujuan || '-'}</span>
-                        </div>
-                        {order.no_telp_tujuan && (
-                          <div className="text-[10px] font-black mb-0.5 text-black font-mono">{order.no_telp_tujuan}</div>
-                        )}
-                        <div className="text-[9.5px] font-bold leading-tight text-black line-clamp-3">{order.alamat_tujuan || '-'}</div>
-
-                        {order.notes_paket && (
-                          <>
-                            <div className="mt-1 text-[8px] font-black uppercase text-gray-500">NOTE:</div>
-                            <div className="text-[9px] font-bold text-black line-clamp-2">{order.notes_paket}</div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Right: Pengirim */}
-                      <div className="w-[130px] flex flex-col p-2 text-black shrink-0">
-                        <div className="text-[9px] font-black uppercase mb-0.5 text-gray-600">PENGIRIM:</div>
-                        <div className="text-[11px] font-black uppercase mb-0.5 text-black leading-tight">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
-                        {order.pic_store && (
-                          <div className="text-[9px] font-black mb-0.5 text-gray-800">PIC: {order.pic_store}</div>
-                        )}
-                        {order.no_telp_store && (
-                          <div className="text-[9px] font-bold font-mono text-gray-700">{order.no_telp_store}</div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 4. Warning Box */}
-                    <div className="py-1 px-2 border-b-2 border-black text-[8.5px] font-black text-center uppercase bg-gray-100 text-black shrink-0">
-                      ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA • WAJIB VIDEO UNBOXING
-                    </div>
-
-                    {/* 5. Table Box & QR Code */}
-                    <div className="flex flex-1 bg-white overflow-hidden min-h-0">
-                      {/* Left Table */}
-                      <div className="flex-1 p-2 border-r-2 border-black overflow-hidden flex flex-col justify-between">
-                        <table className="w-full border-collapse text-[9.5px]">
+                  
+                    {/* BOTTOM DYNAMIC AREA: Table for Manual Shipment */}
+                    <div className="p-3 bg-white flex-1 overflow-hidden min-h-0 flex flex-col">
+                      <div className="text-[12px] font-black uppercase text-gray-600 border-b border-black pb-1 mb-1.5">ISI PRODUK PESANAN</div>
+                      <div className="flex-1 overflow-hidden">
+                        <table className="w-full border-collapse text-[12px]">
                           <thead>
                             <tr className="border-b border-dashed border-black">
-                              <th className="text-left py-0.5 px-0.5 w-[7%] font-normal">No.</th>
-                              <th className="text-left py-0.5 px-0.5 w-[47%] font-normal">Nama Produk</th>
-                              <th className="text-left py-0.5 px-0.5 w-[14%] font-normal">Size</th>
-                              <th className="text-left py-0.5 px-0.5 w-[22%] font-normal">SKU</th>
-                              <th className="text-center py-0.5 px-0.5 w-[10%] font-normal">Qty</th>
+                              <th className="text-left py-1 w-[5%] font-bold">No.</th>
+                              <th className="text-left py-1 w-[50%] font-bold">Nama Produk</th>
+                              <th className="text-left py-1 w-[15%] font-bold">Size</th>
+                              <th className="text-left py-1 w-[20%] font-bold">SKU</th>
+                              <th className="text-center py-1 w-[10%] font-bold">Qty</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1766,46 +1778,27 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                                 }
                                 return (
                                   <tr key={idx} className="border-b border-dashed border-black">
-                                    <td className="py-0.5 px-0.5 align-top">{idx + 1}.</td>
-                                    <td className="py-0.5 px-0.5 align-top leading-tight line-clamp-1">{cleanName}</td>
-                                    <td className="py-0.5 px-0.5 align-top">{size}</td>
-                                    <td className="py-0.5 px-0.5 align-top">{it.sku || ''}</td>
-                                    <td className="py-0.5 px-0.5 align-top text-center">{it.qty || 1}</td>
+                                    <td className="py-1 align-top">{idx + 1}.</td>
+                                    <td className="py-1 align-top leading-snug line-clamp-2 pr-1">{cleanName}</td>
+                                    <td className="py-1 align-top">{size}</td>
+                                    <td className="py-1 align-top">{it.sku || ''}</td>
+                                    <td className="py-1 align-top text-center font-bold">{it.qty || 1}</td>
                                   </tr>
                                 );
                               })
                             ) : (
                               <tr>
-                                <td colSpan={5} className="py-1 text-center border-b border-dashed border-black text-gray-500">
+                                <td colSpan={5} className="py-2 text-center border-b border-dashed border-black text-gray-500">
                                   Tidak ada detail produk
                                 </td>
                               </tr>
                             )}
                             <tr>
-                              <td colSpan={4} className="text-right py-1 pr-2 font-normal">TOTAL</td>
-                              <td className="text-center py-1 font-normal">{totalQty}</td>
+                              <td colSpan={4} className="text-right py-1 pr-2 font-bold uppercase">Total Item</td>
+                              <td className="text-center py-1 font-bold text-[14px]">{totalQty}</td>
                             </tr>
                           </tbody>
                         </table>
-                      </div>
-
-                      {/* Right QR */}
-                      <div className="w-[100px] p-2 flex flex-col items-center justify-start bg-white shrink-0">
-                        {qrDataUrl && (
-                          <img
-                            src={qrDataUrl}
-                            className="w-[70px] h-[70px] object-contain mb-1"
-                            alt="QR Code"
-                          />
-                        )}
-                        <div className="text-[8px] font-bold text-center break-all mb-0.5 text-black leading-tight">
-                          {order.no_pesanan || ''}
-                        </div>
-                        {order.no_transaksi_customer && (
-                          <div className="text-[7.5px] text-center break-all text-neutral-600 leading-tight">
-                            {order.no_transaksi_customer}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>

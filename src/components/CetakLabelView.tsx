@@ -1305,118 +1305,73 @@ export const CetakLabelView: React.FC = () => {
             }}
           >
             {/* Outline box disesuaikan untuk A6 */}
-            <div className="w-full h-full max-h-[144mm] border-2 border-black flex flex-col justify-between relative bg-white box-border overflow-hidden">
+            <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
               
-              {/* 1. Header Label: Kiri Jasa Kirim, Kanan CHOCOCHIPS */}
-              <div className="border-b-2 border-black px-2.5 py-1.5 bg-gray-50 flex justify-between items-center break-inside-avoid shrink-0">
-                <div className="text-sm font-black tracking-wider uppercase leading-none text-black">
-                  {lbl.ekspedisi || 'PENGIRIMAN PAKET'}
-                </div>
-                <div className="text-[15px] font-black tracking-widest uppercase leading-none text-black flex items-center gap-1.5">
-                  <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-4 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                  
-                </div>
+              {/* TOP FIXED AREA: Header + Pengirim/Penerima + Warning + ID/QR */}
+              <div className="flex flex-col shrink-0">
+                 {/* 1. Header Label */}
+                 <div className="border-b-[2px] border-black px-3 py-2 bg-gray-50 flex justify-between items-center break-inside-avoid">
+                   <div className="text-xl font-black tracking-widest uppercase leading-none text-black flex items-center">
+                     <img src="/logo.png" alt="" referrerPolicy="no-referrer" className="h-7 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                   </div>
+                   <div className="text-lg font-black tracking-wider uppercase leading-none text-black">
+                     {lbl.ekspedisi || 'PENGIRIMAN PAKET'}
+                   </div>
+                 </div>
+            
+                 {/* 2. Sender / Receiver + QR Code block (Grid or Flex) */}
+                 <div className="flex border-b-[2px] border-black bg-white break-inside-avoid">
+                    {/* Pengirim - fixed width or percentage */}
+                    <div className="w-[30%] p-3 border-r-[2px] border-black flex flex-col shrink-0">
+                      <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Dari / Pengirim:</div>
+                      <div className="text-sm font-black uppercase text-black leading-tight mb-1">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
+                      {lbl.pengirim_telp && <div className="text-xs font-bold font-mono text-gray-800 leading-tight">{lbl.pengirim_telp}</div>}
+                    </div>
+                    
+                    {/* Penerima - takes remaining space */}
+                    <div className="flex-1 p-3 border-r-[2px] border-black min-w-0">
+                      <div className="text-[11px] font-black uppercase text-gray-600 mb-1">Kepada / Penerima:</div>
+                      <div className="text-[17px] font-black uppercase mb-1 leading-tight text-black line-clamp-1">{lbl.penerima_nama}</div>
+                      {lbl.penerima_telp && (
+                        <div className="text-sm font-black font-mono text-black mb-1 leading-none">{lbl.penerima_telp}</div>
+                      )}
+                      <div className="text-[13px] font-bold leading-snug whitespace-pre-wrap text-black line-clamp-4">{lbl.penerima_alamat}</div>
+                    </div>
+            
+                    {/* QR Code and ID */}
+                    <div className="w-[120px] p-2 flex flex-col items-center justify-center shrink-0">
+                      {lbl.qr_data_url ? (
+                        <img
+                          src={lbl.qr_data_url}
+                          alt="QR Code"
+                          className="w-[80px] h-[80px] block object-contain mb-1.5"
+                        />
+                      ) : (
+                        <QrCodeImage
+                          text={lbl.qr_content || `Manual paket + ID: ${lbl.invoice_no}`}
+                          size={80}
+                        />
+                      )}
+                      <div className="text-[10px] font-black text-center break-all mb-0.5 text-black leading-tight">
+                        ID: {lbl.invoice_no || ''}
+                      </div>
+                    </div>
+                 </div>
+            
+                 {/* 3. Warning Box: PERHATIAN JANGAN DITERIMA JIKA RUSAK */}
+                 <div className="border-b-[2px] border-black py-1.5 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
+                   <div className="text-[10px] font-black text-black tracking-wide uppercase leading-tight">
+                     ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
+                   </div>
+                 </div>
               </div>
-
-              {/* 2. Penerima Box (Utama & Besar) */}
-              <div className="p-2 border-b-2 border-black bg-white flex flex-col justify-center break-inside-avoid shrink-0">
-                <div className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Kepada / Penerima:</div>
-                <div className="text-base font-black uppercase mb-0.5 leading-tight text-black line-clamp-1">{lbl.penerima_nama}</div>
-                {lbl.penerima_telp && (
-                  <div className="text-[11px] font-extrabold font-mono text-gray-900 mb-0.5 leading-none">{lbl.penerima_telp}</div>
-                )}
-                <div className="text-[10px] font-bold leading-tight whitespace-pre-wrap text-black line-clamp-3">{lbl.penerima_alamat}</div>
-              </div>
-
-              {/* 3. Warning Box: PERHATIAN JANGAN DITERIMA JIKA RUSAK */}
-              <div className="border-b-2 border-black py-1 px-1.5 bg-gray-100 flex items-center justify-center text-center break-inside-avoid shrink-0">
-                <div className="text-[8.5px] font-black text-black tracking-tight uppercase leading-tight">
-                  ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
-                </div>
-              </div>
-
-              {/* 4. Pengirim & Total Item */}
-              <div className="flex border-b-2 border-black break-inside-avoid shrink-0">
-                {/* Pengirim */}
-                <div className="p-2 border-r-2 border-black flex-1">
-                  <div className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider mb-0.5">Dari / Pengirim:</div>
-                  <div className="text-[12px] font-black uppercase text-black leading-tight">{lbl.pengirim_nama || 'CHOCOCHIPS'}</div>
-                  {lbl.pengirim_telp && <div className="text-[10px] font-bold font-mono text-gray-700 leading-tight">{lbl.pengirim_telp}</div>}
-                </div>
-                {/* Qty / Indikator */}
-                <div className="p-1.5 w-20 flex flex-col items-center justify-center bg-gray-50 shrink-0">
-                  <span className="text-[9px] font-extrabold text-gray-500 uppercase">PAKET</span>
-                  <span className="text-xs font-black text-black">1/1</span>
-                </div>
-              </div>
-
-              {/* 5. Footer: QR Code & ID Paket */}
-              <div className="px-2.5 py-1.5 bg-gray-50 flex items-center justify-between gap-2 box-border border-b-2 border-black break-inside-avoid shrink-0">
-                {/* Left: ID Paket details */}
-                <div className="flex-1 min-w-0 pr-1">
-                  <div className="inline-block px-1 py-0.5 bg-black text-white text-[8px] font-black uppercase tracking-wider rounded mb-0.5">
-                    MANUAL PAKET
-                  </div>
-                  <div className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider">ID Paket:</div>
-                  <div className="text-xs font-black font-mono tracking-tight text-black truncate leading-tight">
-                    {lbl.invoice_no}
-                  </div>
-                  <div className="text-[9.5px] font-mono text-gray-600 truncate">
-                    {lbl.ekspedisi ? `Jasa Kirim: ${lbl.ekspedisi}` : `ID: ${lbl.invoice_no}`}
-                  </div>
-                </div>
-
-                {/* Right: Clean QR Code (Tanpa Border Luar & Tanpa Caption) */}
-                <div className="flex items-center justify-center flex-shrink-0">
-                  {lbl.qr_data_url ? (
-                    <img
-                      src={lbl.qr_data_url}
-                      alt="QR Code"
-                      className="w-[56px] h-[56px] block object-contain"
-                    />
-                  ) : (
-                    <QrCodeImage
-                      text={lbl.qr_content || `Manual paket + ID: ${lbl.invoice_no}`}
-                      size={56}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* 6. Deskripsi Paket (Isi Paket - Paling Bawah) */}
-              <div className="p-2 bg-white flex-1 overflow-hidden min-h-0 flex flex-col justify-between">
-                <table className="w-full text-left border-collapse text-[9.5px]">
-                  <thead>
-                    <tr>
-                      <th className="border-b border-dashed border-black py-0.5 px-0.5 font-normal w-5">No.</th>
-                      <th className="border-b border-dashed border-black py-0.5 px-0.5 font-normal">Nama Produk</th>
-                      <th className="border-b border-dashed border-black py-0.5 px-0.5 font-normal w-10">Size</th>
-                      <th className="border-b border-dashed border-black py-0.5 px-0.5 font-normal text-center w-7">Qty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parseDeskripsiToItems(lbl.deskripsi).length > 0 ? (
-                      <>
-                        {parseDeskripsiToItems(lbl.deskripsi).map((item, idx) => (
-                          <tr key={idx}>
-                            <td className="border-b border-dashed border-black py-0.5 px-0.5 align-top">{idx + 1}.</td>
-                            <td className="border-b border-dashed border-black py-0.5 px-0.5 align-top leading-tight line-clamp-1">{item.name}</td>
-                            <td className="border-b border-dashed border-black py-0.5 px-0.5 align-top">{item.size}</td>
-                            <td className="border-b border-dashed border-black py-0.5 px-0.5 align-top text-center">{item.qty}</td>
-                          </tr>
-                        ))}
-                        <tr>
-                          <td colSpan={3} className="py-1 px-2 text-right font-normal">TOTAL</td>
-                          <td className="py-1 px-0.5 text-center font-normal">{parseDeskripsiToItems(lbl.deskripsi).reduce((acc, curr) => acc + curr.qty, 0)}</td>
-                        </tr>
-                      </>
-                    ) : (
-                      <tr>
-                        <td colSpan={4} className="py-1 px-1 text-center text-gray-500">-</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+            
+              {/* BOTTOM DYNAMIC AREA: Catatan/Deskripsi for Cetak Label */}
+              <div className="p-3 bg-white flex-1 overflow-hidden min-h-0 flex flex-col">
+                 <div className="text-[12px] font-black uppercase text-gray-600 border-b border-black pb-1 mb-2">CATATAN / DESKRIPSI PAKET</div>
+                 <div className="text-[14px] font-bold text-black whitespace-pre-wrap flex-1 overflow-hidden">
+                    {lbl.deskripsi || '-'}
+                 </div>
               </div>
 
             </div>
