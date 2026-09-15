@@ -31,6 +31,7 @@ export default defineConfig(({ command }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           importScripts: ['pwa-extras.js'],
           navigateFallback: 'index.html',
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
@@ -90,7 +91,7 @@ export default defineConfig(({ command }) => {
               type: 'application/json',
               icons: [
                 {
-                  src: 'logo.png',
+                  src: 'app-logo.png',
                   sizes: '192x192',
                   type: 'image/png'
                 }
@@ -126,25 +127,25 @@ export default defineConfig(({ command }) => {
           ],
           icons: [
             {
-              src: 'logo.png',
+              src: 'app-logo.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'logo.png',
+              src: 'app-logo.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: 'logo.png',
+              src: 'app-logo.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'logo.png',
+              src: 'app-logo.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
@@ -152,14 +153,14 @@ export default defineConfig(({ command }) => {
           ],
           screenshots: [
             {
-              src: 'logo.png',
+              src: 'app-logo.png',
               sizes: '512x512',
               type: 'image/png',
               form_factor: 'wide',
               label: 'Warehouse Mini Dashboard'
             },
             {
-              src: 'logo.png',
+              src: 'app-logo.png',
               sizes: '512x512',
               type: 'image/png',
               form_factor: 'narrow',
@@ -172,7 +173,7 @@ export default defineConfig(({ command }) => {
               short_name: 'Scan',
               description: 'Buka pemindai',
               url: './',
-              icons: [{ src: 'logo.png', sizes: '192x192' }]
+              icons: [{ src: 'app-logo.png', sizes: '192x192' }]
             }
           ]
         } as any
