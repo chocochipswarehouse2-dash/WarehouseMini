@@ -22,7 +22,8 @@ import {
   Database,
   Truck,
   FileSpreadsheet,
-  Search
+  Search,
+  Edit2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import QRCode from 'qrcode';
@@ -382,6 +383,33 @@ export const CetakLabelView: React.FC = () => {
   };
 
   const handleRemoveLabel = (id: string) => {
+    setLabels(labels.filter(l => l.id !== id));
+  };
+
+  const handleEditLabel = (id: string) => {
+    const lbl = labels.find((l) => l.id === id);
+    if (!lbl) return;
+    
+    // Load back into state
+    setPenerimaNama(lbl.penerima_nama);
+    setPenerimaTelp(lbl.penerima_telp || '');
+    setPenerimaAlamat(lbl.penerima_alamat);
+    setPengirimNama(lbl.pengirim_nama || '');
+    setPengirimTelp(lbl.pengirim_telp || '');
+    setDeskripsi(lbl.deskripsi || '');
+    
+    if (lbl.ekspedisi) {
+      if (jasaKirimList.includes(lbl.ekspedisi)) {
+        setSelectedJasaKirim(lbl.ekspedisi);
+        setIsCustomJasaKirim(false);
+      } else {
+        setSelectedJasaKirim('Lainnya');
+        setIsCustomJasaKirim(true);
+        setCustomJasaKirim(lbl.ekspedisi);
+      }
+    }
+    
+    // Remove from queue so it can be re-added
     setLabels(labels.filter(l => l.id !== id));
   };
 
@@ -1225,14 +1253,24 @@ export const CetakLabelView: React.FC = () => {
                             {lbl.invoice_no}
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLabel(lbl.id)}
-                          className="text-slate-400 hover:text-rose-500 p-1 rounded transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                          title="Hapus dari antrean"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleEditLabel(lbl.id)}
+                            className="text-slate-400 hover:text-indigo-500 p-1 rounded transition-colors cursor-pointer"
+                            title="Edit antrean"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLabel(lbl.id)}
+                            className="text-slate-400 hover:text-rose-500 p-1 rounded transition-colors cursor-pointer"
+                            title="Hapus dari antrean"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{lbl.penerima_alamat}</p>
                       
@@ -1296,16 +1334,16 @@ export const CetakLabelView: React.FC = () => {
         {labels.map((lbl, lblIdx) => (
           <div
             key={lbl.id}
-            className="page-break w-[105mm] h-[148mm] max-h-[148mm] p-[2mm] relative bg-white box-border overflow-hidden flex flex-col justify-between"
+            className="page-break w-[105mm] min-h-[148mm] p-[2mm] relative bg-white box-border flex flex-col justify-between"
             style={{
-              pageBreakAfter: lblIdx < labels.length - 1 ? 'always' : 'avoid',
-              breakAfter: lblIdx < labels.length - 1 ? 'page' : 'avoid',
+              pageBreakAfter: lblIdx < labels.length - 1 ? 'always' : 'auto',
+              breakAfter: lblIdx < labels.length - 1 ? 'page' : 'auto',
               pageBreakInside: 'avoid',
               breakInside: 'avoid',
             }}
           >
             {/* Outline box disesuaikan untuk A6 */}
-            <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
+            <div className="w-full h-full min-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black">
               
               {/* TOP FIXED AREA: Header + Pengirim/Penerima + Warning + ID/QR */}
               <div className="flex flex-col shrink-0">
@@ -1371,16 +1409,16 @@ export const CetakLabelView: React.FC = () => {
             
                  {/* 3. Warning Box: PERHATIAN JANGAN DITERIMA JIKA RUSAK */}
                  <div className="border-b-[2px] border-black py-1.5 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
-                   <div className="text-[10px] font-black text-black tracking-wide uppercase leading-tight">
-                     ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
+                   <div className="text-[8.5px] font-black text-black tracking-wide uppercase leading-tight">
+                     ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; MOHON DOKUMENTASIKAN PENERIMAAN DAN UNBOXING PAKET UNTUK KLAIM KOMPLAIN PAKET YANG DITERIMA
                    </div>
                  </div>
               </div>
             
               {/* BOTTOM DYNAMIC AREA: Catatan/Deskripsi for Cetak Label */}
-              <div className="p-3 bg-white flex-1 overflow-hidden min-h-0 flex flex-col">
+              <div className="p-3 bg-white flex-1 flex flex-col">
                  <div className="text-[12px] font-black uppercase text-gray-600 border-b border-black pb-1 mb-2">CATATAN / DESKRIPSI PAKET</div>
-                 <div className="text-[14px] font-bold text-black whitespace-pre-wrap flex-1 overflow-hidden">
+                 <div className="text-[14px] font-bold text-black whitespace-pre-wrap flex-1">
                     {lbl.deskripsi || '-'}
                  </div>
               </div>

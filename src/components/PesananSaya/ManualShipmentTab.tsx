@@ -1677,15 +1677,15 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
               return (
                 <div
                   key={order.no_pesanan || orderIdx}
-                  className="page-break w-[105mm] h-[148mm] max-h-[148mm] p-[2mm] box-border bg-white relative overflow-hidden flex flex-col justify-between"
+                  className="page-break w-[105mm] min-h-[140mm] p-[2mm] box-border bg-white relative flex flex-col justify-between"
                   style={{
-                    pageBreakAfter: orderIdx < printPayload.orders.length - 1 ? 'always' : 'avoid',
-                    breakAfter: orderIdx < printPayload.orders.length - 1 ? 'page' : 'avoid',
+                    pageBreakAfter: orderIdx < printPayload.orders.length - 1 ? 'always' : 'auto',
+                    breakAfter: orderIdx < printPayload.orders.length - 1 ? 'page' : 'auto',
                     pageBreakInside: 'avoid',
                     breakInside: 'avoid',
                   }}
                 >
-                  <div className="w-full h-full max-h-[144mm] border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
+                  <div className="w-full h-full min-h-[136mm] border-[2px] border-black flex flex-col bg-white box-border text-black">
                     {/* TOP FIXED AREA */}
                     <div className="flex flex-col shrink-0">
                        {/* 1. Header Label */}
@@ -1762,16 +1762,16 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                   
                        {/* 3. Warning Box */}
                        <div className="border-b-[2px] border-black py-1.5 px-2 bg-gray-100 flex items-center justify-center text-center break-inside-avoid">
-                         <div className="text-[10px] font-black text-black tracking-wide uppercase leading-tight">
-                           ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; WAJIB VIDEO UNBOXING
+                         <div className="text-[8.5px] font-black text-black tracking-wide uppercase leading-tight">
+                           ⚠️ PERHATIAN: JANGAN DITERIMA JIKA KONDISI PAKET RUSAK ATAU SEGEL TERBUKA &bull; MOHON DOKUMENTASIKAN PENERIMAAN DAN UNBOXING PAKET UNTUK KLAIM KOMPLAIN PAKET YANG DITERIMA
                          </div>
                        </div>
                     </div>
                   
                     {/* BOTTOM DYNAMIC AREA: Table for Manual Shipment */}
-                    <div className="p-3 bg-white flex-1 overflow-hidden min-h-0 flex flex-col">
+                    <div className="p-3 bg-white flex-1 flex flex-col">
                       <div className="text-[12px] font-black uppercase text-gray-600 border-b border-black pb-1 mb-1.5">ISI PRODUK PESANAN</div>
-                      <div className="flex-1 overflow-hidden">
+                      <div className="flex-1">
                         <table className="w-full border-collapse text-[12px]">
                           <thead>
                             <tr className="border-b border-dashed border-black">
