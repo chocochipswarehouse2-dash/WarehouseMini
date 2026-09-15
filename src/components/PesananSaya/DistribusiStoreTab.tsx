@@ -1522,9 +1522,29 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           ? `Terdapat ${summary.kurang + summary.lebih + summary.unexpectedCount} SKU berselisih.`
                           : 'Semua barang cocok dengan Surat Jalan ✓'}
                       </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 mb-2">
                         Keseluruhan data per baris produk akan ditulis ke database sheet.
                       </p>
+                      
+                      {summary.has_selisih && summary.kurang > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const kurangItems = activeDraft.items.filter(it => (activeDraft.scanQty[it.sku] || 0) < it.qty_sj);
+                            const text = `*⚠️ Pengecekan Surat Jalan - Selisih (Kurang)*\nNo Surat Jalan: *${activeDraft.no_sj}*\nTujuan: *${activeDraft.destination}*\n\n*Daftar Barang Kurang:*\n${kurangItems.map((item, idx) => {
+                              const prod = productCatalog.find(p => p.sku === item.sku);
+                              const lokasi = prod?.lokasi || 'Tidak diketahui';
+                              const kurangQty = item.qty_sj - (activeDraft.scanQty[item.sku] || 0);
+                              return `${idx + 1}. ${item.sku} - ${item.nama_produk}\n   Kurang: ${kurangQty} pcs\n   Lokasi Picking: ${lokasi}`;
+                            }).join('\n\n')}\n\nTolong dicek kembali ya, takutnya lupa belum diambil. Terima kasih.`;
+                            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#1DA851] text-white text-[11px] font-bold rounded-lg transition-colors mt-2"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          Share ke WA (Selisih Kurang)
+                        </button>
+                      )}
                     </div>
                   </div>
 
