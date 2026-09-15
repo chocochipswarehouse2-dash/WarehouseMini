@@ -165,14 +165,14 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900/50">
-      {/* CSS Print A6 Setup */}
+      {/* CSS Print A4 Setup */}
       <style>{`
         @media print {
           html, body {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
-            width: 105mm !important;
+            width: 100% !important;
             overflow: visible !important;
           }
           body * {
@@ -185,7 +185,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 105mm !important;
+            width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
@@ -195,7 +195,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             print-color-adjust: exact !important;
           }
           @page {
-            size: 105mm 148mm;
+            size: A4 portrait;
             margin: 0 !important;
           }
         }
@@ -208,10 +208,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2">
                 <ShoppingBag className="w-6 h-6 text-orange-500" />
-                Shopee Print Center
+                Rekap & Picking List Shopee
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Import file <strong className="text-slate-700 dark:text-slate-300">Order.toship.xxxx.xlsx</strong> dan cetak resi A6.
+                Import file <strong className="text-slate-700 dark:text-slate-300">Order.toship.xxxx.xlsx</strong> dan cetak rekap pesanan (Picking List).
               </p>
             </div>
             
@@ -237,7 +237,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                 className="flex-1 sm:flex-none px-4 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
               >
                 <Printer className="w-4 h-4" />
-                Cetak {orders.length} Resi
+                Cetak Picking List
               </button>
             </div>
           </div>
@@ -311,7 +311,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
               </div>
               <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Belum ada data Shopee</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-md mx-auto">
-                Silakan upload file Excel export dari Seller Centre Shopee (Kolom No. Pesanan dsb harus sesuai) untuk memulai mencetak resi A6.
+                Silakan upload file Excel export dari Seller Centre Shopee (Kolom No. Pesanan dsb harus sesuai) untuk memulai rekap dan cetak picking list.
               </p>
               <button
                 onClick={() => fileInputRef.current?.click()}
