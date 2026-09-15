@@ -51,8 +51,10 @@ import {
   FileCode,
   CheckCheck, Share2, Loader2, UploadCloud,
   ShieldAlert,
-  Pencil
+  Pencil,
+  Store
 } from 'lucide-react';
+import { fetchOutlets, saveOutlet, deleteOutlet } from '../services/gasManualShipment';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
 import {
@@ -109,7 +111,7 @@ interface SettingsModalProps {
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type SettingsTab = 'database' | 'supabase' | 'users' | 'roles' | 'device' | 'deploy_apk' | 'whatsapp';
+type SettingsTab = 'database' | 'supabase' | 'users' | 'roles' | 'device' | 'deploy_apk' | 'whatsapp' | 'outlets';
 
 interface LocalRole {
   name: string;
@@ -157,6 +159,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [fonnteGroupTarget, setFonnteGroupTarget] = useState<string>('');
   const [fonnteAutoSend, setFonnteAutoSend] = useState<boolean>(true);
   const [isTestingWa, setIsTestingWa] = useState<boolean>(false);
+
+  // Outlets Management State
+  const [outletList, setOutletList] = useState<{ id?: string; nama: string; fulfillment: string }[]>([]);
+  const [isLoadingOutlets, setIsLoadingOutlets] = useState<boolean>(false);
+  const [editingOutlet, setEditingOutlet] = useState<{ id?: string; nama: string; fulfillment: string } | null>(null);
 
   // Users Management State
   const [userList, setUserList] = useState<LocalUserRecord[]>([]);
@@ -223,6 +230,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const loadOutlets = async () => {
+    setIsLoadingOutlets(true);
+    try {
+      const data = await fetchOutlets();
+      setOutletList(data);
+    } catch (err) {
+      console.warn('Error fetching outlets', err);
+    } finally {
+      setIsLoadingOutlets(false);
+    }
+  };
+
+  const handleDeleteOutlet = async (id?: string) => {
+    if (!id) return;
+    if (!confirm('Yakin ingin menghapus store ini?')) return;
+    
+    setIsLoadingOutlets(true);
+    const res = await deleteOutlet(id);
+    if (res.success) {
+      onNotify('Store dihapus', 'success');
+      loadOutlets();
+    } else {
+      onNotify(res.message, 'error');
+    }
+    setIsLoadingOutlets(false);
+  };
+
+  const handleSaveOutlet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOutlet) return;
+    setIsLoadingOutlets(true);
+    const res = await saveOutlet(editingOutlet);
+    if (res.success) {
+      onNotify(res.message, 'success');
+      setEditingOutlet(null);
+      loadOutlets();
+    } else {
+      onNotify(res.message, 'error');
+    }
+    setIsLoadingOutlets(false);
+  };
+
   // Initialize values when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -254,7 +303,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             setFonnteAutoSend(settings.fonnte_auto_send);
           }
         }
-      }).catch((err) => console.warn('Gagal memuat konfigurasi dari Supabase:', err));
+      }).catch(err => {
+        console.warn('Gagal memuat wms settings dari supabase', err);
+      });
+
+      // Load outlets when modal opens
+      loadOutlets();
 
       loadUsersFromSupabase();
       setGdriveStatus('idle');
@@ -918,6 +972,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             >
               <Share2 className="w-4 h-4" />
               <span>Integrasi WhatsApp</span>
+            </button>
+          )}
+
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('outlets')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'outlets'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Store className="w-4 h-4" />
+              <span>Store & Outlet</span>
             </button>
           )}
         </div>
@@ -2389,6 +2458,130 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span>Test Kirim Pesan</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+          {/* ========================================================================= */}
+          {/* TAB: OUTLETS CONFIGURATION */}
+          {/* ========================================================================= */}
+          {activeTab === 'outlets' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
+                    <Store className="w-4 h-4 text-primary-500" />
+                    Manajemen Store & Outlet
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Atur daftar nama store/outlet untuk Manual Shipment.</p>
+                </div>
+                <button
+                  onClick={() => setEditingOutlet({ nama: '', fulfillment: '1 - 2 Hari' })}
+                  className="px-3 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-primary-600 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Tambah Store
+                </button>
+              </div>
+
+              {editingOutlet && (
+                <form onSubmit={handleSaveOutlet} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 pb-2">
+                    {editingOutlet.id ? 'Edit Store' : 'Tambah Store Baru'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Store</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingOutlet.nama}
+                        onChange={e => setEditingOutlet({...editingOutlet, nama: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                        placeholder="Misal: Shopee Chocochips"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estimasi Fulfillment</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingOutlet.fulfillment}
+                        onChange={e => setEditingOutlet({...editingOutlet, fulfillment: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                        placeholder="Misal: 1 - 2 Hari"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingOutlet(null)}
+                      className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isLoadingOutlets}
+                      className="px-4 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-2"
+                    >
+                      {isLoadingOutlets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Simpan
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-500">
+                      <th className="px-4 py-3">Nama Store</th>
+                      <th className="px-4 py-3">Estimasi Fulfillment</th>
+                      <th className="px-4 py-3 w-20 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoadingOutlets && outletList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-primary-500 mb-2" />
+                          Memuat data store...
+                        </td>
+                      </tr>
+                    ) : outletList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500 text-xs">Belum ada data store.</td>
+                      </tr>
+                    ) : (
+                      outletList.map((outlet, idx) => (
+                        <tr key={outlet.id || idx} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {outlet.nama}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {outlet.fulfillment}
+                          </td>
+                          <td className="px-4 py-3 flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => setEditingOutlet(outlet)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+                              title="Edit Store"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteOutlet(outlet.id)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                              title="Hapus Store"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

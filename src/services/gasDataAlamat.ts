@@ -20,7 +20,7 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
         no_telp: String(row.no_telp || '').trim(),
         alamat: String(row.alamat).trim(),
         keterangan: String(row.keterangan || '').trim(),
-        jasa_kirim: '',
+        jasa_kirim: row.jasa_kirim ? String(row.jasa_kirim).trim() : '',
         created_at: row.created_at || '',
       }));
     }

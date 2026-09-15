@@ -37,9 +37,9 @@ export async function fetchJasaKirimList(): Promise<string[]> {
   return DEFAULT_JASA_KIRIM;
 }
 
-export async function fetchOutlets(): Promise<{ nama: string; fulfillment: string }[]> {
+export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfillment: string }[]> {
   try {
-    const data = await supabaseFetch<any[]>('outlet_config', 'GET', null, 'select=*');
+    const data = await supabaseFetch<any[]>('outlet_config', 'GET', null, 'select=*&order=nama.asc');
     if (data && data.length > 0) {
       return data;
     }
@@ -47,6 +47,36 @@ export async function fetchOutlets(): Promise<{ nama: string; fulfillment: strin
     console.warn('Error fetching outlets', err);
   }
   return DEFAULT_OUTLETS;
+}
+
+export async function saveOutlet(outlet: { id?: string, nama: string, fulfillment: string }): Promise<{ success: boolean; message: string }> {
+  try {
+    if (outlet.id) {
+      await supabaseFetch('outlet_config', 'PATCH', {
+        nama: outlet.nama,
+        fulfillment: outlet.fulfillment
+      }, `id=eq.${outlet.id}`);
+      return { success: true, message: 'Berhasil mengupdate store' };
+    } else {
+      await supabaseFetch('outlet_config', 'POST', [{
+        nama: outlet.nama,
+        fulfillment: outlet.fulfillment,
+        created_at: new Date().toISOString()
+      }]);
+      return { success: true, message: 'Berhasil menambahkan store baru' };
+    }
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal menyimpan data store' };
+  }
+}
+
+export async function deleteOutlet(id: string): Promise<{ success: boolean; message: string }> {
+  try {
+    await supabaseFetch('outlet_config', 'DELETE', null, `id=eq.${id}`);
+    return { success: true, message: 'Berhasil menghapus store' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal menghapus store' };
+  }
 }
 
 export async function submitManualShipment(payload: ManualShipmentOrder): Promise<{ success: boolean; message: string }> {
