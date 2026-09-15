@@ -237,7 +237,8 @@ export const CetakLabelView: React.FC = () => {
         jasa_kirim: getEffectiveJasaKirim(),
         created_at: new Date().toISOString(),
       };
-      await saveDataAlamatList([newAddress]);
+      const res = await saveDataAlamatList([newAddress]);
+      if (!res.success) throw new Error(res.message);
       setAddressBook(prev => [newAddress, ...prev.filter(p => p.nama_penerima !== newAddress.nama_penerima || p.alamat !== newAddress.alamat)]);
       setImportNotice({ type: 'success', message: 'Alamat berhasil disimpan ke Database "Data Alamat" dan Auto-Fill!' });
       setTimeout(() => setImportNotice(null), 5000);
@@ -276,7 +277,8 @@ export const CetakLabelView: React.FC = () => {
         }
       }
 
-      await saveDataAlamatList(uniqueItems);
+      const res = await saveDataAlamatList(uniqueItems);
+      if (!res.success) throw new Error(res.message);
       await loadAddressBook();
       setImportNotice({
         type: 'success',

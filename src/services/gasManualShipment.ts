@@ -51,8 +51,9 @@ export async function fetchOutlets(): Promise<{ nama: string; fulfillment: strin
 
 export async function submitManualShipment(payload: ManualShipmentOrder): Promise<{ success: boolean; message: string }> {
   try {
+    const { id, ...rest } = payload as any;
     const submitPayload = {
-      ...payload,
+      ...rest,
       created_at: payload.created_at || new Date().toISOString()
     };
     await supabaseFetch('manual_shipment', 'POST', [submitPayload]);

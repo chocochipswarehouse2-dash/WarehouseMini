@@ -32,10 +32,13 @@ export async function fetchDataAlamatList(): Promise<AddressData[]> {
 
 export async function saveDataAlamatList(newItems: Omit<AddressData, 'id'>[]): Promise<{ success: boolean; message: string }> {
   try {
-    const payload = newItems.map(item => ({
-      ...item,
-      created_at: item.created_at || new Date().toISOString()
-    }));
+    const payload = newItems.map(item => {
+      const { id, ...rest } = item as any;
+      return {
+        ...rest,
+        created_at: item.created_at || new Date().toISOString()
+      };
+    });
     await supabaseFetch('address_book', 'POST', payload);
     return { success: true, message: 'Berhasil menyimpan data ke address_book Supabase' };
   } catch (err: any) {
