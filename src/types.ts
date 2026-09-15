@@ -630,6 +630,7 @@ export interface WmsSettings {
   fonnte_auto_send?: boolean;
   config_json?: string;
   roles?: Record<string, any>;
+  agenda_categories?: Record<string, any>;
   updated_at?: string;
 }
 
@@ -746,7 +747,7 @@ export interface SystemDoc {
 // ------------------------------------------------------------
 // MODUL AGENDA & KALENDER KERJA
 // ------------------------------------------------------------
-export type AgendaCategory = 'meeting' | 'operasional' | 'project' | 'supplier' | 'urgent' | 'umum';
+export type AgendaCategory = string;
 
 export interface AgendaAttachment {
   id: string;

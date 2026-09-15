@@ -225,6 +225,7 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           gdrive_gas_url: row1.gdrive_gas_url || gasConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
           gdrive_folder_url: row1.gdrive_folder_url || gasConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
           roles: gasConfig.roles || null,
+          agenda_categories: gasConfig.agenda_categories || null,
           updated_at: row1.updated_at || new Date().toISOString(),
         };
 
@@ -263,6 +264,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
       gdrive_gas_url: updated.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
       gdrive_folder_url: updated.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
       roles: updated.roles || null,
+      agenda_categories: updated.agenda_categories || null,
     };
 
     // A. Simpan row id: 1 (Fonnte & kolom spesifik jika sudah ada di database)

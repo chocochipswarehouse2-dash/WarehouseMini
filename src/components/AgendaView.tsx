@@ -11,6 +11,8 @@ import {
   getAgendaEvents, saveAgendaEvent, deleteAgendaEvent, 
   getProjects, saveProject, deleteProject 
 } from '../services/supabase';
+import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
+import { AgendaCategoryModal } from './AgendaCategoryModal';
 import { 
   AgendaEvent, ProjectItem, AgendaCategory, ProjectStatus, 
   ProjectPriority, AgendaAttachment, ProjectTask 
@@ -21,7 +23,8 @@ interface AgendaViewProps {
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-const CATEGORY_CONFIG: Record<AgendaCategory, { 
+export const DEFAULT_CATEGORY_CONFIG: Record<string, { 
+  id?: string;
   label: string; 
   badgeBg: string; 
   badgeText: string; 
@@ -125,7 +128,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filters & Search
-  const [selectedCategories, setSelectedCategories] = useState<Record<AgendaCategory, boolean>>({
+  const [selectedCategories, setSelectedCategories] = useState<Record<string, boolean>>({
     meeting: true,
     operasional: true,
     project: true,
@@ -133,7 +136,34 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     urgent: true,
     umum: true
   });
-  const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+  
+  const [categoryConfig, setCategoryConfig] = useState<Record<string, any>>(DEFAULT_CATEGORY_CONFIG);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+
+  useEffect(() => {
+    fetchWmsSettings().then(settings => {
+      if (settings?.agenda_categories) {
+        setCategoryConfig(settings.agenda_categories);
+        
+        // Update selected categories based on loaded config
+        const initialSelected: Record<string, boolean> = {};
+        Object.keys(settings.agenda_categories).forEach(k => {
+          initialSelected[k] = true;
+        });
+        setSelectedCategories(initialSelected);
+      }
+    });
+    
+    const handleSettingsChange = (e: any) => {
+      if (e.detail?.agenda_categories) {
+        setCategoryConfig(e.detail.agenda_categories);
+      }
+    };
+    window.addEventListener('wms_settings_changed', handleSettingsChange);
+    return () => window.removeEventListener('wms_settings_changed', handleSettingsChange);
+  }, []);
+
   const [projectStatusFilter, setProjectStatusFilter] = useState<string>('all');
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
@@ -743,19 +773,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Filter Kategori
                 </span>
-                <button 
-                  onClick={() => setSelectedCategories({
-                    meeting: true, operasional: true, project: true, supplier: true, urgent: true, umum: true
-                  })}
-                  className="text-[10px] text-primary-500 font-bold hover:underline"
-                >
-                  Reset
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setIsCategoryModalOpen(true)}
+                    className="text-[10px] text-slate-500 hover:text-slate-700 font-bold flex items-center gap-1"
+                  >
+                    <Edit3 className="w-3 h-3" /> Edit
+                  </button>
+                  <button 
+                    onClick={() => setSelectedCategories(Object.keys(categoryConfig).reduce((acc, k) => ({...acc, [k]: true}), {}))}
+                    className="text-[10px] text-primary-500 font-bold hover:underline"
+                  >
+                    Reset
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-1.5">
-                {(Object.keys(CATEGORY_CONFIG) as AgendaCategory[]).map(catKey => {
-                  const cfg = CATEGORY_CONFIG[catKey];
+                {(Object.keys(categoryConfig) as AgendaCategory[]).map(catKey => {
+                  const cfg = categoryConfig[catKey];
                   const isChecked = selectedCategories[catKey];
                   const count = events.filter(e => e.category === catKey).length;
 
@@ -805,10 +841,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           <div className="lg:col-span-9 space-y-4">
             
             {/* Calendar Controls Toolbar (Like Reference Image) */}
-            <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+            <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-row flex-wrap justify-between items-center gap-3">
               
               {/* Left Navigation: Today, < >, and Title */}
-              <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3">
+              <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 sm:gap-3">
                 <button
                   onClick={handleToday}
                   className="px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors"
@@ -839,7 +875,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               </div>
 
               {/* Right View Switchers & Search */}
-              <div className="flex items-center justify-between sm:justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
                 
                 {/* Search input */}
                 <div className="relative hidden sm:block w-44 md:w-52">
@@ -1006,7 +1042,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                         className="p-1 border-r border-slate-200 dark:border-slate-800 last:border-0 space-y-1 hover:bg-slate-100/50 dark:hover:bg-slate-800/40 cursor-pointer"
                       >
                         {dayEvents.map(evt => {
-                          const cfg = CATEGORY_CONFIG[evt.category];
+                          const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                           return (
                             <div
                               key={evt.id}
@@ -1049,7 +1085,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                             className="p-1 border-r border-slate-100 dark:border-slate-800/40 last:border-0 relative hover:bg-slate-50/70 dark:hover:bg-slate-800/20 cursor-pointer transition-colors"
                           >
                             {dayTimedEvents.map(evt => {
-                              const cfg = CATEGORY_CONFIG[evt.category];
+                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                               return (
                                 <div
                                   key={evt.id}
@@ -1122,7 +1158,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
                         <div className="space-y-1 mt-1 overflow-hidden">
                           {dayEvents.slice(0, 2).map(evt => {
-                            const cfg = CATEGORY_CONFIG[evt.category];
+                            const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                             return (
                               <div
                                 key={evt.id}
@@ -1165,7 +1201,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[600px] overflow-y-auto">
                   {/* All day section in day view */}
                   {((eventsByDate.get(formatIsoDate(currentDate)) || []).filter(e => e.is_all_day)).map(evt => {
-                    const cfg = CATEGORY_CONFIG[evt.category];
+                    const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                     return (
                       <div 
                         key={evt.id} 
@@ -1199,7 +1235,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                           className="flex-1 p-2 space-y-2 cursor-pointer"
                         >
                           {slotEvents.map(evt => {
-                            const cfg = CATEGORY_CONFIG[evt.category];
+                            const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                             return (
                               <div
                                 key={evt.id}
@@ -1281,7 +1317,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                           {/* Event Cards for this Day */}
                           <div className="space-y-3">
                             {dayEvts.map(evt => {
-                              const cfg = CATEGORY_CONFIG[evt.category];
+                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                               return (
                                 <div
                                   key={evt.id}
@@ -1597,8 +1633,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   Kategori Agenda
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(Object.keys(CATEGORY_CONFIG) as AgendaCategory[]).map(catKey => {
-                    const cfg = CATEGORY_CONFIG[catKey];
+                  {(Object.keys(categoryConfig) as AgendaCategory[]).map(catKey => {
+                    const cfg = categoryConfig[catKey];
                     const isSelected = editingEvent.category === catKey;
 
                     return (
@@ -2092,8 +2128,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 p-6 space-y-4">
             
             <div className="flex justify-between items-start">
-              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${CATEGORY_CONFIG[detailEvent.category].badgeBg} ${CATEGORY_CONFIG[detailEvent.category].badgeText}`}>
-                {CATEGORY_CONFIG[detailEvent.category].label}
+              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).badgeBg} ${(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).badgeText}`}>
+                {(categoryConfig[detailEvent.category] || Object.values(categoryConfig)[0] || { label: detailEvent.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' }).label}
               </span>
               <button 
                 onClick={() => setDetailEvent(null)}
