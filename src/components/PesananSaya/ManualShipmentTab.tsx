@@ -38,7 +38,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   onShowToast,
 }) => {
   const userIsAdmin = isSuperadmin(session);
-  const canAction = userIsAdmin || hasPermission(session, 'can_manual_shipment_action');
+  const canAction = userIsAdmin || hasPermission(session, 'tab_ops_pesanan_manual_shipment');
 
   const [activeTab, setActiveTab] = useState<'form' | 'rekap'>('form');
   const [viewMode, setViewMode] = useState<'table' | 'card'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');

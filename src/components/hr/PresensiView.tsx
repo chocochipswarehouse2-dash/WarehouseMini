@@ -201,7 +201,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const isShiftLibur = todayRoster?.shift?.toLowerCase().includes('libur');
 
   const userIsAdmin = isSuperadmin(session);
-  const canViewPresensi = userIsAdmin || hasPermission(session, 'can_view_presensi');
+  const canViewPresensi = userIsAdmin || hasPermission(session, 'menu_hr_presensi');
 
   if (!canViewPresensi) {
     return (

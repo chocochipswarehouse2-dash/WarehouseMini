@@ -286,8 +286,8 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     session?.role === 'Admin' ||
     session?.role === 'HR & Admin' ||
     session?.role === 'Kepala Gudang';
-  const canEditData = userIsAdmin || hasPermission(session, 'can_edit_data');
-  const canDeleteData = userIsAdmin || hasPermission(session, 'can_delete_data');
+  const canEditData = userIsAdmin || hasPermission(session, 'action_edit_master');
+  const canDeleteData = userIsAdmin || hasPermission(session, 'action_delete_master');
 
   // Delete Confirmation Modal State
   const [deleteConfirmReport, setDeleteConfirmReport] = useState<QcReport | null>(null);

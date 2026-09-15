@@ -219,10 +219,10 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     session?.role === 'Admin' ||
     session?.role === 'HR & Admin' ||
     session?.role === 'Kepala Gudang';
-  const canEditData = userIsAdmin || hasPermission(session, 'can_edit_data');
-  const canDeleteData = userIsAdmin || hasPermission(session, 'can_delete_data');
-  const canExport = userIsAdmin || hasPermission(session, 'can_export_data');
-  const canAccHarga = userIsAdmin || session?.role === 'Superadmin' || session?.role === 'All' || hasPermission(session, 'can_edit_data');
+  const canEditData = userIsAdmin || hasPermission(session, 'action_edit_master');
+  const canDeleteData = userIsAdmin || hasPermission(session, 'action_delete_master');
+  const canExport = userIsAdmin || hasPermission(session, 'action_export_data');
+  const canAccHarga = userIsAdmin || session?.role === 'Superadmin' || session?.role === 'All' || hasPermission(session, 'action_edit_master');
 
   // State: Tickets with Supabase Realtime Sync
   const [tickets, setTickets] = useState<PerbaikanTicket[]>(() => {

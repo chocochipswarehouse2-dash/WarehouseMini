@@ -211,8 +211,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     setModalDisplayLimit(50);
   }, [kpiModal, kpiMapTab, kpiBlokFTab, kpiPerbaikanTab, kpiModalSearch]);
 
-  const canExportData = hasPermission(session, 'can_export_data');
-  const canSyncDealpos = hasPermission(session, 'can_sync_dealpos');
+  const canExportData = hasPermission(session, 'action_export_data');
+  const canSyncDealpos = hasPermission(session, 'action_sync_dealpos');
 
   // Close area dropdown on outside click
   useEffect(() => {

@@ -71,9 +71,9 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
 
   // Access checks
   const userIsAdmin = isSuperadmin(session);
-  const canView = userIsAdmin || hasPermission(session, 'can_view_karyawan');
-  const canEdit = userIsAdmin || hasPermission(session, 'can_edit_data') || hasPermission(session, 'can_manage_users');
-  const canDelete = userIsAdmin || hasPermission(session, 'can_delete_data');
+  const canView = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
+  const canEdit = userIsAdmin || hasPermission(session, 'action_edit_master') || isSuperadmin(session);
+  const canDelete = userIsAdmin || hasPermission(session, 'action_delete_master');
   const canSeeSalary = userIsAdmin;
 
   // Load Karyawan Directory

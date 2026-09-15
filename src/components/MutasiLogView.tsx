@@ -138,7 +138,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     onConfirm: () => Promise<void> | void;
   } | null>(null);
 
-  const canExportData = hasPermission(session, 'can_export_data');
+  const canExportData = hasPermission(session, 'action_export_data');
   const userIsAdmin = isSuperadmin(session);
 
   // Map product catalog for fast SKU lookups

@@ -1902,10 +1902,7 @@ export async function verifySupabaseLogin(
   }
 
   // Hash password for comparison (SHA-256 with universal fallback)
-  let hashedPass = '';
-  if (cleanPass) {
-    hashedPass = await computeSha256(cleanPass);
-  }
+  let hashedPass = cleanPass;
 
   // 1. Direct check in Supabase wms_users table (supports Username or NIK)
   try {
@@ -2096,15 +2093,7 @@ export async function saveWmsUserToSupabase(
 
   // Only hash & update password if a non-empty password was provided
   if (user.password && user.password.trim() !== '') {
-    let processedPassword = user.password.trim();
-    if (processedPassword.length !== 64) {
-      try {
-        processedPassword = await computeSha256(processedPassword);
-      } catch (e) {
-        console.warn('Error hashing password:', e);
-      }
-    }
-    payload.password = processedPassword;
+    payload.password = user.password.trim();
   }
 
   try {

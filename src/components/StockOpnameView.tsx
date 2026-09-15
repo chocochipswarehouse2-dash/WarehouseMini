@@ -70,8 +70,8 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     onConfirm: () => Promise<void> | void;
   } | null>(null);
 
-  const canApproveSo = hasPermission(session, 'can_approve_so');
-  const canExportData = hasPermission(session, 'can_export_data');
+  const canApproveSo = hasPermission(session, 'tab_ops_mutasi_so');
+  const canExportData = hasPermission(session, 'action_export_data');
   const currentOperator = session?.username || 'Operator';
 
   const loadSoData = async () => {
