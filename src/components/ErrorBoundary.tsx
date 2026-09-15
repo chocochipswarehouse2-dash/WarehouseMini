@@ -27,9 +27,20 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private handleReset = () => {
+    try {
+      // Clear huge caches to prevent recurring QuotaExceeded errors immediately upon reload
+      localStorage.removeItem('wms_product_cache');
+      localStorage.removeItem('wms_picking_cache');
+      localStorage.removeItem('wms_raw_picking_list_cache');
+    } catch {}
+
     this.setState({ hasError: false, error: null });
+    
     if (this.props.onReset) {
       this.props.onReset();
+    } else {
+      // If no custom reset handler is provided, force a page reload to recover state cleanly
+      window.location.reload();
     }
   };
 
