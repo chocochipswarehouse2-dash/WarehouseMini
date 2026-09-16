@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import confetti from 'canvas-confetti';
 import {
-  Menu, Scan, FileText, ShieldAlert, Package, X } from 'lucide-react';
+  Menu, Scan, FileText, ShieldAlert, Package, X, Tag } from 'lucide-react';
+
 import {
   CategoryType,
   ProductItem,
@@ -521,6 +522,7 @@ export default function App() {
   const [productDatabase, setProductDatabase] = useState<ProductItem[]>([]);
   const [hasScannedSku, setHasScannedSku] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [showQuickTags, setShowQuickTags] = useState<boolean>(true);
 
   // Synchronous refs to prevent stale closure during camera barcode callbacks
   const currentCategoryRef = useRef<CategoryType>(currentCategory);
@@ -1452,38 +1454,40 @@ export default function App() {
                   session={session}
                   scannerComponent={
                     <div className="w-full max-w-2xl mx-auto space-y-4">
-                      {/* Scanner Method & Input Card */}
-                      <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                        <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800">
-                          <div className="flex-1 min-w-0">
-                            <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                      {/* STICKY / FREEZE SCANNER METHOD & INPUT CARD */}
+                      <div className="sticky top-0 z-20 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pt-0 pb-1.5 backdrop-blur-md">
+                        <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
+                          <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800">
+                            <div className="flex-1 min-w-0">
+                              <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowQuickTags(prev => !prev)}
+                              className="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-sm cursor-pointer select-none"
+                              title={showQuickTags ? "Sembunyikan Pengaturan Tag" : "Tampilkan Pengaturan Tag"}
+                            >
+                              <Tag className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">{showQuickTags ? "Sembunyikan Tag" : "Tampilkan Tag"}</span>
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => ((_val: boolean) => {})(!true)}
-                            className="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-sm"
-                            title={true ? "Sembunyikan Pengaturan Tag" : "Tampilkan Pengaturan Tag"}
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>
-                            <span className="hidden sm:inline">{true ? "Sembunyikan Tag" : "Tampilkan Tag"}</span>
-                          </button>
-                        </div>
-                        {(scanMode === 'fisik' || scanMode === 'manual') && (
-                          <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
-                        )}
-                        {scanMode === 'kamera' && (
-                          <CameraScanner
-                            onScan={handleScannedItem}
-                            onRequestWakeLock={requestScreenWakeLock}
+                          {(scanMode === 'fisik' || scanMode === 'manual') && (
+                            <PhysicalScanInput onScan={handleScannedItem} products={productDatabase} />
+                          )}
+                          {scanMode === 'kamera' && (
+                            <CameraScanner
+                              onScan={handleScannedItem}
+                              onRequestWakeLock={requestScreenWakeLock}
+                            />
+                          )}
+                          <QuickTagToolbar
+                            isVisible={showQuickTags}
+                            currentCategory={currentCategory}
+                            currentLocation={currentLocation}
+                            onSelectCategory={handleSelectQuickCategory}
+                            onSelectLocation={handleSelectQuickLocation}
                           />
-                        )}
-                        <QuickTagToolbar
-                          isVisible={true}
-                          currentCategory={currentCategory}
-                          currentLocation={currentLocation}
-                          onSelectCategory={handleSelectQuickCategory}
-                          onSelectLocation={handleSelectQuickLocation}
-                        />
+                        </div>
                       </div>
 
                       {/* Scanned Items List */}

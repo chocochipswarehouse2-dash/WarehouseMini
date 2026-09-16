@@ -1888,35 +1888,37 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   };
 
   // =========================================================================
-  // VIEW 2: ACTIVE PICKING WORKSPACE (Petugas Sedang Mengambil 1 SJ)
+  // RENDER WORKSPACE: VIEW 1 (Daftar SJ) vs VIEW 2 (Active SJ Workspace)
   // =========================================================================
-  if (activeSJ) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-2 pb-8">
-        {/* Top Header Bar */}
-        <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="flex flex-wrap justify-between items-start gap-3">
-            <div>
-              <button
-                onClick={() => {
-                  if (activeStats.regularPicked > 0) {
-                    setConfirmDialog({
-                      isOpen: true,
-                      title: 'Kembali ke Daftar?',
-                      message: 'Progress picking belum diselesaikan. Kembali ke daftar Surat Jalan?',
-                      onConfirm: () => {
-                        setActiveSJ(null);
-                        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-                      }
-                    });
-                  } else {
-                    setActiveSJ(null);
-                  }
-                }}
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 mb-2 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4 text-primary-500" /> Kembali ke Daftar Surat Jalan
-              </button>
+  return (
+    <>
+      {activeSJ ? (
+        <div className="max-w-4xl mx-auto space-y-2 pb-8">
+          {/* Top Header Bar */}
+          <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-wrap justify-between items-start gap-3">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeStats.regularPicked > 0) {
+                      setConfirmDialog({
+                        isOpen: true,
+                        title: 'Kembali ke Daftar?',
+                        message: 'Progress picking belum diselesaikan. Kembali ke daftar Surat Jalan?',
+                        onConfirm: () => {
+                          setActiveSJ(null);
+                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                        }
+                      });
+                    } else {
+                      setActiveSJ(null);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 mb-2 transition-colors cursor-pointer py-1 px-1.5 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
+                >
+                  <ArrowLeft className="w-4 h-4 text-primary-500" /> Kembali ke Daftar Surat Jalan
+                </button>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
                   {activeSJ.no_sj}
@@ -2833,14 +2835,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           </div>
         )}
       </div>
-    );
-  }
-
-  // =========================================================================
-  // VIEW 1: DAFTAR SURAT JALAN / INVOICE (List Per SJ)
-  // =========================================================================
-  return (
-    <div className="max-w-4xl mx-auto space-y-2 animate-in fade-in duration-200">
+    ) : (
+      /* =========================================================================
+         VIEW 1: DAFTAR SURAT JALAN / INVOICE (List Per SJ)
+         ========================================================================= */
+      <div className="max-w-4xl mx-auto space-y-2 animate-in fade-in duration-200">
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -3139,6 +3138,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           })
         )}
       </div>
+    </div>
+    )}
 
       {/* MODAL LIHAT DETAIL REKAP SJ YANG SUDAH SELESAI */}
       {viewCompletedSJ && (
@@ -3724,20 +3725,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       {/* MODAL FULFILLMENT REFILL (MULTI-CSV & MANUAL) */}
       {/* Custom Confirm Dialog */}
       {confirmDialog.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
             <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{confirmDialog.title}</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">{confirmDialog.message}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button
+                type="button"
                 onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-                className="px-2 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                className="px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
               >
                 Batal
               </button>
               <button
+                type="button"
                 onClick={confirmDialog.onConfirm}
-                className="px-2 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
+                className="px-5 py-2.5 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-md shadow-primary-500/25 transition-all active:scale-95 cursor-pointer"
               >
                 Ya, Lanjutkan
               </button>
@@ -3773,7 +3776,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         }}
         onNotify={onNotify}
       />
-    </div>
+    </>
   );
 });
 
