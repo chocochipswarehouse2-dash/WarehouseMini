@@ -233,6 +233,7 @@ CREATE TABLE IF NOT EXISTS public.manual_shipment (
   no_resi TEXT DEFAULT '',
   status TEXT DEFAULT 'diterima' CHECK (status IN ('diterima', 'diproses', 'dikirim', 'batal', 'DELETED')),
   submitted_by TEXT DEFAULT '',
+  pic_store TEXT DEFAULT '',
   items JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
@@ -415,7 +416,60 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
 );
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 15. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
+-- 15. TABEL ROADMAP & REQUEST FITUR WMS (wms_roadmap)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.wms_roadmap (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  status TEXT DEFAULT 'ideation' CHECK (status IN ('ideation', 'planned', 'in_progress', 'completed', 'canceled')),
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  type TEXT DEFAULT 'feature' CHECK (type IN ('feature', 'improvement', 'bugfix', 'infra')),
+  created_by TEXT DEFAULT '',
+  target_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 16. TABEL DOKUMENTASI SISTEM & SOP WMS (wms_system_docs)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.wms_system_docs (
+  section_id TEXT PRIMARY KEY,
+  content TEXT NOT NULL DEFAULT '',
+  updated_by TEXT DEFAULT '',
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 17. TABEL KONFIGURASI STORE & OUTLET (outlet_config)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.outlet_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nama TEXT NOT NULL,
+  fulfillment TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 18. TABEL PENGATURAN GLOBAL WMS & INTEGRASI (wms_settings)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.wms_settings (
+  id BIGINT PRIMARY KEY,
+  fonnte_token TEXT DEFAULT '',
+  fonnte_group_target TEXT DEFAULT '',
+  fonnte_auto_send BOOLEAN DEFAULT true,
+  gas_endpoint TEXT DEFAULT '',
+  manual_shipment_gas_url TEXT DEFAULT '',
+  gdrive_gas_url TEXT DEFAULT '',
+  gdrive_folder_url TEXT DEFAULT '',
+  roles JSONB DEFAULT '{}'::jsonb,
+  agenda_categories JSONB DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 19. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW public.stok_real_fisik AS
 SELECT 
@@ -454,7 +508,7 @@ FROM public.log_produk lp
 GROUP BY lp.sku, lp.lokasi, lp.area, lp.nama_produk, lp.size;
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 16. INDEKS PENCARIAN & PERFORMA
+-- 20. INDEKS PENCARIAN & PERFORMA
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_log_produk_sku ON public.log_produk(sku);
 CREATE INDEX IF NOT EXISTS idx_log_produk_lokasi ON public.log_produk(lokasi);
@@ -481,9 +535,12 @@ CREATE INDEX IF NOT EXISTS idx_wms_projects_deadline ON public.wms_projects(dead
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_category ON public.wms_agenda(category);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_project_id ON public.wms_agenda(project_id);
+CREATE INDEX IF NOT EXISTS idx_wms_roadmap_status ON public.wms_roadmap(status);
+CREATE INDEX IF NOT EXISTS idx_wms_roadmap_created_at ON public.wms_roadmap(created_at);
+CREATE INDEX IF NOT EXISTS idx_outlet_config_nama ON public.outlet_config(nama);
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 17. ROW LEVEL SECURITY (RLS) & ACCESS POLICIES
+-- 21. ROW LEVEL SECURITY (RLS) & ACCESS POLICIES
 -- ──────────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
@@ -493,7 +550,7 @@ DECLARE
     'penerimaan_produksi', 'picking_list', 'peminjaman', 'perbaikan_tickets',
     'qc_reports', 'manual_shipment', 'pengecekan_sj', 'address_book',
     'karyawan', 'master_shift', 'roster_shift', 'presensi', 'lembur', 'perijinan_cuti',
-    'wms_projects', 'wms_agenda'
+    'wms_projects', 'wms_agenda', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
@@ -504,7 +561,7 @@ BEGIN
 END $$;
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- 18. AKTIFKAN REALTIME REPLICATION UNTUK TABEL UTAMA
+-- 22. AKTIFKAN REALTIME REPLICATION UNTUK TABEL UTAMA
 -- ──────────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
@@ -512,7 +569,8 @@ DECLARE
   tables text[] := ARRAY[
     'log_produk', 'stock_opname_queue', 'peminjaman', 'picking_list',
     'perbaikan_tickets', 'qc_reports', 'manual_shipment', 'pengecekan_sj',
-    'karyawan', 'presensi', 'lembur', 'wms_projects', 'wms_agenda'
+    'karyawan', 'presensi', 'lembur', 'wms_projects', 'wms_agenda',
+    'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
@@ -529,6 +587,6 @@ BEGIN
 END $$;
 
 -- ==============================================================================
--- SELESAI! Seluruh skema database Supabase telah siap digunakan 100%.
+-- SELESAI! Seluruh 24 tabel & skema database Supabase telah siap digunakan 100%.
 -- ==============================================================================
 

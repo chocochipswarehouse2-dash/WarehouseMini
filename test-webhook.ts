@@ -17,19 +17,26 @@ async function testEndToEnd() {
   // 1. TEST INSERT KE SUPABASE
   // ==========================================
   console.log(`\n[1] INSERT data ke Supabase (ID: ${testId})...`);
-  const { data: insertData, error: insertError } = await supabase
-    .from('manual_shipment')
-    .insert({
-      id: testId,
-      no_pesanan: testOrderNo,
-      nama_penerima: 'Joko Widodo',
-      no_telp: '08123456789',
-      alamat: 'Istana Negara',
-      jasa_kirim: 'JNE Express',
-      status: 'Pending',
-      keterangan: 'Ini adalah data test webhook'
-    })
-    .select();
+    const { data: insertData, error: insertError } = await supabase
+      .from('manual_shipment')
+      .insert({
+        id: testId,
+        no_pesanan: testOrderNo,
+        nama_pengirim: 'CHOCOCHIPS PUSAT',
+        pic_store: 'Store Central',
+        no_telp_store: '08111111111',
+        no_transaksi_pengirim: ['TX-TEST-001'],
+        nama_tujuan: 'Joko Widodo',
+        no_telp_tujuan: '08123456789',
+        alamat_tujuan: 'Istana Negara',
+        notes_paket: 'Ini adalah data test webhook',
+        no_transaksi_customer: 'CUST-TEST-001',
+        jasa_kirim: 'JNE Express',
+        status: 'diterima',
+        submitted_by: 'tester',
+        items: []
+      })
+      .select();
 
   if (insertError) {
     console.error('❌ INSERT Gagal:', insertError.message);

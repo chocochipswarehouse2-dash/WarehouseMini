@@ -75,6 +75,10 @@ const TABLES_TO_MIGRATE = [
   'address_book',
   'wms_projects',
   'wms_agenda',
+  'wms_roadmap',
+  'wms_system_docs',
+  'outlet_config',
+  'wms_settings',
 ];
 
 const BATCH_SIZE = 500;

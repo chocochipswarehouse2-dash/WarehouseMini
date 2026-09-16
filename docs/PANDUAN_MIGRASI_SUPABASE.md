@@ -12,7 +12,7 @@ WMS Inventory menyediakan 2 cara fleksibel untuk migrasi:
    - Dapat diakses langsung dari menu **Sidebar -> Alat & Utilitas -> Migrasi Supabase** (khusus Superadmin).
    - Terdapat 5-step wizard otomatis:
      - Step 1: Petunjuk buat project Supabase baru.
-     - Step 2: Copy/Download 1-klik seluruh skrip DDL SQL (18 tabel, index, view saldo fisik, RLS, realtime).
+     - Step 2: Copy/Download 1-klik seluruh skrip DDL SQL (24 tabel, index, view saldo fisik, RLS, realtime).
      - Step 3: Input URL & Anon Key project baru + tes koneksi instan.
      - Step 4: Scan baris tabel & Kloning data otomatis langsung di dalam browser (batching aman & progress bar realtime).
      - Step 5: Switch akun Supabase aktif di browser seketika + copy env variable untuk Vercel.
@@ -54,7 +54,7 @@ Database baru belum memiliki tabel apapun. Anda perlu mengeksekusi DDL master ya
 6. Pastikan muncul pesan **"Success. No rows returned"**.
 
 > **Apa saja yang dibuat oleh skrip ini?**
-> - Seluruh 18 tabel WMS: `wms_users`, `master_produk`, `log_produk`, `stock_opname_queue`, `penerimaan_produksi`, `picking_list`, `peminjaman`, `perbaikan_tickets`, `qc_reports`, `manual_shipment`, `pengecekan_sj`, `address_book`, `karyawan`, `master_shift`, `roster_shift`, `presensi`, `lembur`, `perijinan_cuti`.
+> - Seluruh 24 tabel WMS: `wms_users`, `master_produk`, `log_produk`, `stock_opname_queue`, `penerimaan_produksi`, `picking_list`, `peminjaman`, `perbaikan_tickets`, `qc_reports`, `manual_shipment`, `pengecekan_sj`, `address_book`, `karyawan`, `master_shift`, `roster_shift`, `presensi`, `lembur`, `perijinan_cuti`, `wms_projects`, `wms_agenda`, `wms_roadmap`, `wms_system_docs`, `outlet_config`, `wms_settings`.
 > - View `stok_real_fisik` dan `view_stok_realtime`.
 > - Indeks performa pencarian barcode, tanggal, SKU, status.
 > - Row Level Security (RLS) permissive policies.

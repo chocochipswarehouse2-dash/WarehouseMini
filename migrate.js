@@ -91,17 +91,23 @@ async function main() {
         try {
           const parsed = JSON.parse(row.raw_payload);
           shToInsert.push({
-            id: parsed.id || String(row.id),
-            no_pesanan: parsed.order_id || row.invoice || `MS-${row.id}`,
-            no_resi: parsed.resi || '',
-            nama_penerima: parsed.destination || row.lokasi || 'Customer',
-            no_telp: parsed.no_telp || '',
-            alamat: parsed.alamat || '',
-            keterangan: parsed.catatan || row.keterangan || '',
-            jasa_kirim: parsed.courier || '-',
-            status: parsed.status || 'Pending',
-            tanggal_scan: parsed.order_date ? new Date(parsed.order_date).toISOString() : row.created_at,
-            created_at: parsed.created_at || row.created_at || new Date().toISOString()
+            no_pesanan: parsed.no_pesanan || parsed.order_id || row.invoice || `MS-${row.id}`,
+            nama_pengirim: parsed.nama_pengirim || 'CHOCOCHIPS',
+            pic_store: parsed.pic_store || '',
+            no_telp_store: parsed.no_telp_store || '',
+            no_transaksi_pengirim: Array.isArray(parsed.no_transaksi_pengirim) ? parsed.no_transaksi_pengirim : [],
+            nama_tujuan: parsed.nama_tujuan || parsed.destination || parsed.nama_penerima || row.lokasi || 'Customer',
+            no_telp_tujuan: parsed.no_telp_tujuan || parsed.no_telp || '',
+            alamat_tujuan: parsed.alamat_tujuan || parsed.alamat || '',
+            notes_paket: parsed.notes_paket || parsed.catatan || parsed.keterangan || row.keterangan || '',
+            no_transaksi_customer: parsed.no_transaksi_customer || '',
+            jasa_kirim: parsed.jasa_kirim || parsed.courier || '-',
+            no_resi: parsed.no_resi || parsed.resi || '',
+            status: parsed.status || 'diterima',
+            submitted_by: parsed.submitted_by || row.operator || '',
+            items: parsed.items || [],
+            created_at: parsed.created_at || row.created_at || new Date().toISOString(),
+            updated_at: parsed.updated_at || row.created_at || new Date().toISOString()
           });
           continue;
         } catch(e) {}
@@ -109,17 +115,23 @@ async function main() {
 
       const no_pesanan = row.invoice || `MS-${row.id}`;
       shToInsert.push({
-        id: String(row.id),
         no_pesanan,
-        no_resi: '',
-        nama_penerima: row.lokasi || 'Customer',
-        no_telp: '',
-        alamat: '',
-        keterangan: row.keterangan || '',
+        nama_pengirim: 'CHOCOCHIPS',
+        pic_store: '',
+        no_telp_store: '',
+        no_transaksi_pengirim: [],
+        nama_tujuan: row.lokasi || 'Customer',
+        no_telp_tujuan: '',
+        alamat_tujuan: '',
+        notes_paket: row.keterangan || '',
+        no_transaksi_customer: '',
         jasa_kirim: '-',
-        status: 'Pending',
-        tanggal_scan: row.created_at || new Date().toISOString(),
-        created_at: row.created_at || new Date().toISOString()
+        no_resi: '',
+        status: 'diterima',
+        submitted_by: row.operator || '',
+        items: [],
+        created_at: row.created_at || new Date().toISOString(),
+        updated_at: row.created_at || new Date().toISOString()
       });
     }
 
