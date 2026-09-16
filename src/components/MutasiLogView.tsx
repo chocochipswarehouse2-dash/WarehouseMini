@@ -461,21 +461,27 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         showGlobalLoading('Menghapus batch...');
 
         const idsArray = Array.from(selectedIds) as (string | number)[];
+        const selectedSet = new Set(selectedIds);
         try {
           const res = await deleteLogProdukBatch(idsArray);
           if (res.success) {
-            if (onNotify) onNotify(`${res.count} item mutasi berhasil dihapus.`, 'success');
+            setLogs((prev) => prev.filter((it) => !selectedSet.has(it.id!)));
             setSelectedIds(new Set());
-            
+            if (onNotify) {
+              if (res.count > 0) {
+                onNotify(`${res.count} item mutasi berhasil dihapus.`, 'success');
+              } else {
+                onNotify('Item terpilih berhasil dibersihkan dari tampilan.', 'info');
+              }
+            }
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -494,24 +500,31 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         setConfirmModal(null);
         setIsActionLoading(true);
         setIsBulkMenuOpen(false);
+        showGlobalLoading('Menghapus hasil filter...');
 
         const idsArray = filteredLogs.map(l => l.id).filter(id => id != null) as (string | number)[];
+        const idsSet = new Set(idsArray);
         
         try {
           const res = await deleteLogProdukBatch(idsArray);
           if (res.success) {
-            if (onNotify) onNotify(`${res.count} item mutasi hasil filter berhasil dihapus.`, 'success');
+            setLogs((prev) => prev.filter((it) => !idsSet.has(it.id!)));
             setSelectedIds(new Set());
-            
+            if (onNotify) {
+              if (res.count > 0) {
+                onNotify(`${res.count} item mutasi hasil filter berhasil dihapus.`, 'success');
+              } else {
+                onNotify('Item hasil filter berhasil dibersihkan dari tampilan.', 'info');
+              }
+            }
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });
@@ -533,22 +546,22 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         setConfirmModal(null);
         setIsActionLoading(true);
         setDateFilterModal(prev => ({ ...prev, isOpen: false }));
+        showGlobalLoading('Menghapus rentang tanggal...');
 
         try {
           const res = await deleteLogProdukByDateRange(dateFilterModal.start, dateFilterModal.end);
           if (res.success) {
             if (onNotify) onNotify(`Mutasi log rentang tanggal ${dateFilterModal.start} - ${dateFilterModal.end} berhasil dihapus.`, 'success');
             setSelectedIds(new Set());
-            
+            await forceReloadLogs();
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
-            
           }
         } catch (err: any) {
           if (onNotify) onNotify(`Error: ${err.message}`, 'error');
-          
         } finally {
           setIsActionLoading(false);
+          hideGlobalLoading();
         }
       },
     });

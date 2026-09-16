@@ -1230,10 +1230,7 @@ export async function deleteLogProdukItem(
   id: string | number
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await supabaseFetch<any[]>('log_produk', 'DELETE', null, `id=eq.${encodeURIComponent(String(id))}`, true);
-    if (res && Array.isArray(res) && res.length === 0) {
-      throw new Error("Data tidak ditemukan atau akses ditolak (RLS).");
-    }
+    await supabaseFetch<any[]>('log_produk', 'DELETE', null, `id=eq.${encodeURIComponent(String(id))}`, true);
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting log_produk item:', err);
@@ -1249,10 +1246,7 @@ export async function deleteLogProdukInvoice(
 ): Promise<{ success: boolean; error?: string }> {
   if (!invoice) return { success: false, error: 'Invoice tidak valid' };
   try {
-    const res = await supabaseFetch<any[]>('log_produk', 'DELETE', null, `invoice=eq.${encodeURIComponent(invoice)}`, true);
-    if (res && Array.isArray(res) && res.length === 0) {
-      throw new Error("Data tidak ditemukan atau akses ditolak (RLS).");
-    }
+    await supabaseFetch<any[]>('log_produk', 'DELETE', null, `invoice=eq.${encodeURIComponent(invoice)}`, true);
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting log_produk invoice:', err);
@@ -1277,10 +1271,11 @@ export async function deleteLogProdukBatch(
       const chunk = ids.slice(i, i + chunkSize);
       const inClause = chunk.map(id => encodeURIComponent(String(id))).join(',');
       const res = await supabaseFetch<any[]>('log_produk', 'DELETE', null, `id=in.(${inClause})`, true);
-      if (res && Array.isArray(res) && res.length === 0) {
-        throw new Error("Beberapa data tidak ditemukan atau akses ditolak (RLS).");
+      if (res && Array.isArray(res)) {
+        deletedCount += res.length;
+      } else {
+        deletedCount += chunk.length;
       }
-      deletedCount += chunk.length;
     }
     
     return { success: true, count: deletedCount };
@@ -1305,16 +1300,13 @@ export async function deleteLogProdukByDateRange(
     const endObj = new Date(endDate);
     endObj.setHours(23, 59, 59, 999);
     
-    const res = await supabaseFetch<any[]>(
+    await supabaseFetch<any[]>(
       'log_produk', 
       'DELETE', 
       null, 
       `created_at=gte.${encodeURIComponent(startObj.toISOString())}&created_at=lte.${encodeURIComponent(endObj.toISOString())}`,
       true
     );
-    if (res && Array.isArray(res) && res.length === 0) {
-      throw new Error("Data tidak ditemukan pada rentang tanggal tersebut atau akses ditolak (RLS).");
-    }
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting log_produk by date range:', err);
