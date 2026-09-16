@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, X, Copy, Check, Info } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface ThermalStickerModalProps {
   isOpen: boolean;
@@ -26,11 +27,15 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 }) => {
   const [printCopies, setPrintCopies] = useState<number>(() => ticket?.qty || 1);
   const [isCopied, setIsCopied] = useState(false);
+  const [qrSrc, setQrSrc] = useState<string>('');
 
-  // Sync print copies when ticket changes
-  React.useEffect(() => {
+  // Sync print copies and generate QR Code when ticket changes
+  useEffect(() => {
     if (ticket) {
       setPrintCopies(ticket.qty > 0 ? ticket.qty : 1);
+      QRCode.toDataURL(ticket.ticket_no, { margin: 0, width: 80, errorCorrectionLevel: 'M' })
+        .then((url) => setQrSrc(url))
+        .catch((err) => console.error(err));
     }
   }, [ticket]);
 
@@ -44,20 +49,6 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
     navigator.clipboard.writeText(ticket.ticket_no);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
-  };
-
-  // Generate simple deterministic barcode pattern bars for Code128-like appearance
-  const generateBarcodeLines = (str: string) => {
-    const chars = str.toUpperCase().split('');
-    return chars.flatMap((c, idx) => {
-      const code = c.charCodeAt(0);
-      const isThick = code % 2 === 0;
-      const isGapThick = (code + idx) % 3 === 0;
-      return [
-        <div key={`bar-${idx}-1`} className={`${isThick ? 'w-1 sm:w-1.5' : 'w-0.5'} bg-black self-stretch shrink-0`} />,
-        <div key={`gap-${idx}-1`} className={`${isGapThick ? 'w-1' : 'w-0.5'} bg-white self-stretch shrink-0`} />,
-      ];
-    });
   };
 
   const copiesArray = Array.from({ length: Math.max(1, printCopies) });
@@ -101,16 +92,34 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 max-width: 50mm !important;
                 max-height: 20mm !important;
                 box-sizing: border-box !important;
-                padding: 1mm 1.5mm !important;
+                padding: 1.5mm 2mm !important;
                 page-break-after: always !important;
                 break-after: page !important;
                 display: flex !important;
-                flex-direction: column !important;
-                justify-content: space-between !important;
+                flex-direction: row !important;
+                align-items: center !important;
                 background: white !important;
                 color: black !important;
                 font-family: monospace, sans-serif !important;
                 overflow: hidden !important;
+              }
+              .thermal-qr-container {
+                width: 15mm !important;
+                height: 15mm !important;
+                margin-right: 2mm !important;
+                flex-shrink: 0 !important;
+              }
+              .thermal-qr-container img {
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: contain !important;
+              }
+              .thermal-text-container {
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: center !important;
+                overflow: hidden !important;
+                width: 100% !important;
               }
             }
           `
@@ -118,42 +127,26 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 
         {copiesArray.map((_, i) => (
           <div key={`print-copy-${i}`} className="thermal-page-50x20">
-            {/* Header: Label Type & No Tiket */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', lineHeight: '1.1' }}>
-              <span style={{ fontSize: '7pt', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.3px' }}>
-                [DEFECT] {ticket.lokasi_sekarang ? `• ${ticket.lokasi_sekarang}` : ''}
-              </span>
-              <span style={{ fontSize: '7.5pt', fontWeight: 900, fontFamily: 'monospace' }}>
-                {ticket.ticket_no}
-              </span>
+            {/* QR Code on the left */}
+            <div className="thermal-qr-container">
+              {qrSrc && <img src={qrSrc} alt="QR Code" />}
             </div>
-
-            {/* Middle: SKU & Size */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', lineHeight: '1.1', marginTop: '0.5mm' }}>
-              <span style={{ fontSize: '7.5pt', fontWeight: 900, letterSpacing: '-0.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '34mm' }}>
+            {/* Text on the right */}
+            <div className="thermal-text-container">
+              <div style={{ fontSize: '7pt', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-0.2px' }}>
                 {ticket.sku}
-              </span>
-              <span style={{ fontSize: '7pt', fontWeight: 800 }}>
-                {ticket.size ? `SZ: ${ticket.size}` : ''} {copiesArray.length > 1 ? `(${i + 1}/${copiesArray.length})` : ''}
-              </span>
-            </div>
-
-            {/* Defect Description */}
-            <div style={{ fontSize: '6pt', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1', marginTop: '0.4mm' }}>
-              {ticket.kategori_rusak || 'CACAT DEFECT'} {ticket.acc_harga_defect ? `• ACC: Rp${ticket.acc_harga_defect.toLocaleString('id-ID')}` : ''}
-            </div>
-
-            {/* Simulated Barcode Pattern Lines */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '4.5mm', overflow: 'hidden', marginTop: '0.5mm', width: '100%' }}>
-              <div style={{ display: 'flex', height: '100%', width: '92%', justifyContent: 'space-between' }}>
-                {generateBarcodeLines(ticket.ticket_no)}
               </div>
-            </div>
-
-            {/* Bottom: Ticket Text & Date */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '5.5pt', lineHeight: '1', fontWeight: 600 }}>
-              <span>*{ticket.ticket_no}*</span>
-              <span>{ticket.tanggal ? ticket.tanggal.slice(0, 10) : new Date().toISOString().slice(0, 10)}</span>
+              <div style={{ fontSize: '6pt', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2', marginTop: '0.5mm' }}>
+                {ticket.nama_produk}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1mm' }}>
+                <span style={{ fontSize: '6.5pt', fontWeight: 900 }}>
+                  {ticket.size ? `SZ: ${ticket.size}` : ''}
+                </span>
+                <span style={{ fontSize: '6pt', fontWeight: 700, fontFamily: 'monospace' }}>
+                  *{ticket.ticket_no}*
+                </span>
+              </div>
             </div>
           </div>
         ))}
@@ -168,8 +161,8 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
               <Printer className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-black tracking-tight">Cetak Stiker Barcode 50x20 mm</h3>
-              <p className="text-[11px] text-slate-500">Standar label thermal roll stiker pakaian defect</p>
+              <h3 className="text-sm font-black tracking-tight">Cetak Stiker QR 50x20 mm</h3>
+              <p className="text-[11px] text-slate-500">Label thermal tiket produk defect</p>
             </div>
           </div>
           <button
@@ -216,7 +209,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           <div className="flex items-start gap-1.5 text-[10px] text-slate-500 leading-snug">
             <Info className="w-3.5 h-3.5 text-purple-500 shrink-0 mt-0.5" />
             <span>
-              Aturan WMS: Jika 1 produk memiliki qty {ticket.qty} pcs dengan defect yang sama, setiap baju ditempelkan 1 lembar stiker dengan nomor tiket yang sama (<strong>{ticket.ticket_no}</strong>).
+              Aturan WMS: Jika 1 produk memiliki qty {ticket.qty} pcs, stiker perlu ditempel 1 lembar per baju. Stiker QR ini tidak menampilkan detail kerusakan, keterangan defect dapat dicek di tabel Defect.
             </span>
           </div>
         </div>
@@ -237,35 +230,17 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 
           <div className="flex justify-center p-4 bg-slate-100 dark:bg-slate-950 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
             {/* Box representing 50mm x 20mm (aspect ratio 2.5:1) */}
-            <div className="w-[280px] h-[112px] bg-white text-black p-2 rounded shadow-md border border-slate-300 flex flex-col justify-between select-none font-sans">
-              {/* Header */}
-              <div className="flex items-center justify-between text-[10px] font-black leading-none">
-                <span className="bg-black text-white px-1 py-0.2 rounded text-[9px]">DEFECT</span>
-                <span className="font-mono tracking-tight text-[11px] font-black">{ticket.ticket_no}</span>
+            <div className="w-[280px] h-[112px] bg-white text-black p-2 rounded shadow-md border border-slate-300 flex items-center select-none font-sans gap-2">
+              <div className="w-[85px] h-[85px] shrink-0">
+                {qrSrc && <img src={qrSrc} alt="QR Code" className="w-full h-full object-contain" />}
               </div>
-
-              {/* SKU & Size */}
-              <div className="flex items-center justify-between text-[11px] font-black leading-tight pt-1">
-                <span className="truncate max-w-[190px]">{ticket.sku}</span>
-                <span className="text-[10px] font-bold shrink-0">{ticket.size ? `SZ: ${ticket.size}` : ''}</span>
-              </div>
-
-              {/* Defect note */}
-              <div className="text-[9px] font-semibold text-slate-700 truncate leading-none">
-                {ticket.kategori_rusak || 'Cacat Defect'} {ticket.acc_harga_defect ? `• ACC: Rp${ticket.acc_harga_defect.toLocaleString('id-ID')}` : ''}
-              </div>
-
-              {/* Barcode Visualization */}
-              <div className="h-5 flex items-center justify-center overflow-hidden my-0.5">
-                <div className="flex h-full w-full justify-between items-stretch px-1">
-                  {generateBarcodeLines(ticket.ticket_no)}
+              <div className="flex flex-col justify-center overflow-hidden flex-1 py-1">
+                <div className="text-[12px] font-black truncate">{ticket.sku}</div>
+                <div className="text-[10px] font-bold truncate mt-0.5 text-slate-800 leading-tight">{ticket.nama_produk}</div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-[11px] font-black">{ticket.size ? `SZ: ${ticket.size}` : ''}</span>
+                  <span className="text-[9px] font-mono font-bold">*{ticket.ticket_no}*</span>
                 </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between text-[8px] font-mono font-semibold text-slate-600 leading-none">
-                <span>*{ticket.ticket_no}*</span>
-                <span>{ticket.tanggal ? ticket.tanggal.slice(0, 10) : new Date().toISOString().slice(0, 10)}</span>
               </div>
             </div>
           </div>
@@ -281,17 +256,6 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             <span>Lokasi Rak Defect:</span>
             <span className="font-mono font-bold text-purple-600">{ticket.lokasi_sekarang || 'DF-01'}</span>
           </div>
-          {ticket.acc_harga_defect ? (
-            <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 font-bold">
-              <span>Harga ACC Defect:</span>
-              <span>Rp {ticket.acc_harga_defect.toLocaleString('id-ID')}</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between text-amber-600 font-bold">
-              <span>Status Otorisasi:</span>
-              <span>Menunggu ACC Manager/Buyer</span>
-            </div>
-          )}
         </div>
 
         {/* Action Buttons */}
@@ -302,7 +266,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             className="flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-purple-600/30 transition-all cursor-pointer active:scale-95"
           >
             <Printer className="w-4 h-4" />
-            <span>Cetak {printCopies}x Label (50x20mm)</span>
+            <span>Cetak {printCopies}x Label QR (50x20mm)</span>
           </button>
           <button
             type="button"
@@ -316,3 +280,4 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
     </div>
   );
 };
+

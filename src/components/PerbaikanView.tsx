@@ -38,6 +38,7 @@ import {
   PerbaikanStatusPengerjaan,
   ProductItem,
   UserSession,
+  QcReport,
 } from '../types';
 import { compressImage, formatBytes } from '../utils/imageCompressor';
 import { isSuperadmin, hasPermission } from '../services/permissions';
@@ -50,6 +51,8 @@ import {
   deletePerbaikanTicketFromSupabase,
   recordPerbaikanStockMutation,
   getSupabaseClient,
+  fetchQcReportsFromSupabase,
+  updateQcReportInSupabase,
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
@@ -233,6 +236,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     return INITIAL_DEMO_TICKETS;
   });
   const [isLoadingDb, setIsLoadingDb] = useState(false);
+  const [qcReports, setQcReports] = useState<QcReport[]>([]);
 
   // Sync from Supabase on mount + listen to Supabase Realtime changes + window events
   useEffect(() => {
@@ -240,31 +244,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     const loadFromSupabase = async () => {
       setIsLoadingDb(true);
       try {
-        let data = await fetchPerbaikanTicketsFromSupabase();
-
-        // Auto-reconcile orphan tickets: jika ada tiket perbaikan yang berasal dari laporan QC
-        // tetapi laporan QC tersebut sudah dihapus oleh user
-        try {
-          const cachedQcStr = localStorage.getItem('wms_local_qc_reports');
-          if (cachedQcStr) {
-            const qcList: any[] = JSON.parse(cachedQcStr);
-            const validQcNos = new Set(qcList.map((q) => q.report_no).filter(Boolean));
-            const orphanTickets = data.filter(
-              (t) => t.qc_report_no && !validQcNos.has(t.qc_report_no)
-            );
-            if (orphanTickets.length > 0) {
-              for (const orphan of orphanTickets) {
-                deletePerbaikanTicketFromSupabase(orphan.ticket_no);
-              }
-              data = data.filter(
-                (t) => !t.qc_report_no || validQcNos.has(t.qc_report_no)
-              );
-            }
-          }
-        } catch (cleanErr) {
-          console.warn('Orphan tickets reconcile warning:', cleanErr);
-        }
-
+        const data = await fetchPerbaikanTicketsFromSupabase();
         if (isMounted && data) {
           setTickets(data);
         }
@@ -276,27 +256,41 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     };
     loadFromSupabase();
 
+    // Load QC Reports for drop-list reference connection
+    const loadQcReports = async () => {
+      try {
+        const reports = await fetchQcReportsFromSupabase();
+        if (isMounted && reports && reports.length > 0) {
+          setQcReports(reports);
+        } else {
+          const cached = localStorage.getItem('wms_local_qc_reports');
+          if (isMounted && cached) setQcReports(JSON.parse(cached));
+        }
+      } catch {
+        const cached = localStorage.getItem('wms_local_qc_reports');
+        if (isMounted && cached) setQcReports(JSON.parse(cached));
+      }
+    };
+    loadQcReports();
+
     // Listen to window events from LaporanQcView or Supabase services
     const handleTicketEvent = (e: any) => {
       const deletedTicketNo = e?.detail?.deletedTicketNo;
-      const deletedReportNo = e?.detail?.deletedReportNo || e?.detail?.deleted;
-      if (deletedTicketNo || deletedReportNo) {
+      if (deletedTicketNo) {
         if (isMounted) {
-          setTickets((prev) =>
-            prev.filter(
-              (t) =>
-                (!deletedTicketNo || t.ticket_no !== deletedTicketNo) &&
-                (!deletedReportNo || t.qc_report_no !== deletedReportNo)
-            )
-          );
+          setTickets((prev) => prev.filter((t) => t.ticket_no !== deletedTicketNo));
         }
       } else {
         loadFromSupabase();
       }
     };
 
+    const handleQcEvent = () => {
+      loadQcReports();
+    };
+
     window.addEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
-    window.addEventListener('wms_qc_reports_updated', handleTicketEvent);
+    window.addEventListener('wms_qc_reports_updated', handleQcEvent);
 
     let debounceTimer: any = null;
     const triggerDebouncedSync = async () => {
@@ -410,6 +404,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [editBiayaReparasi, setEditBiayaReparasi] = useState<number>(0);
   const [editPhotos, setEditPhotos] = useState<Array<{ dataUrl: string; sizeText: string; savedPercent: number }>>([]);
   const [editIsCompressing, setEditIsCompressing] = useState(false);
+  const [editQcReportNo, setEditQcReportNo] = useState('');
 
   // Filter khusus Arsip & Histori Pengecekan
   const [filterArsipStatus, setFilterArsipStatus] = useState<'ALL' | 'SELESAI_GRADE_A' | 'SELESAI_DEFECT_SALE' | 'SELESAI_SCRAP'>('ALL');
@@ -438,6 +433,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   // Modal Lightbox Foto & Print Tag
   const [lightboxImages, setLightboxImages] = useState<string[] | null>(null);
   const [printModalTicket, setPrintModalTicket] = useState<PerbaikanTicket | null>(null);
+  const [detailModalTicket, setDetailModalTicket] = useState<PerbaikanTicket | null>(null);
 
   // Fast indexed catalog map for O(1) SKU lookup
   const catalogSkuMap = useMemo(() => {
@@ -620,55 +616,67 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       );
 
       if (!exists) {
-        addedCount++;
         const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         const prefix = item.tahap === 'CUCI' ? 'CC' : item.tahap === 'PERMAK' ? 'PMK' : 'DF';
-        const ticketNo = `${prefix}-${todayStr}-${Math.floor(100 + Math.random() * 900)}`;
+        
+        const createTicket = (qty: number, extraIdOffset = 0) => {
+          addedCount++;
+          const ticketRand = Math.floor(100 + Math.random() * 900);
+          const ticketNo = `${prefix}-${todayStr}-${ticketRand}-${extraIdOffset}`;
 
-        const newSyncedTicket: PerbaikanTicket = {
-          id: Date.now() + idx,
-          ticket_no: ticketNo,
-          tanggal: new Date().toLocaleString('id-ID', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          sku: item.sku,
-          nama_produk: item.nama,
-          size: item.size || 'Default',
-          qty: item.qty,
-          lokasi_asal: item.lokasi,
-          lokasi_sekarang: item.lokasi,
-          is_already_in_repair: true,
-          sumber_barang: 'Gudang Fisik',
-          kategori_rusak:
-            item.tahap === 'CUCI'
-              ? 'Noda / Kotor'
-              : item.tahap === 'PERMAK'
-              ? 'Jahitan Rusak'
-              : 'Cacat Kain / Warna',
-          detail_kerusakan: `Stok fisik terdeteksi di rak ${item.lokasi}. Silakan lengkapi foto dan keterangan via tombol Edit Data & Foto.`,
-          foto_urls: [],
-          tahap: item.tahap,
-          status_pengerjaan: item.tahap === 'DEFECT' ? 'GAGAL' : 'SEDANG_PROSES',
-          qc_pic: 'Stok Fisik Gudang',
-          qc_tanggal: new Date().toLocaleDateString('id-ID'),
-          qc_catatan: `Sinkronisasi otomatis dari data rak ${item.lokasi}`,
-          petugas_reparasi:
-            item.tahap === 'CUCI'
-              ? 'Laundry / Vendor Cuci'
-              : item.tahap === 'PERMAK'
-              ? 'Penjahit Gudang'
-              : undefined,
-          operator_input: session?.name || getUserPersonName(session?.username) || 'System',
-          created_at: new Date().toISOString(),
+          const newSyncedTicket: PerbaikanTicket = {
+            id: Date.now() + idx * 1000 + extraIdOffset,
+            ticket_no: ticketNo,
+            tanggal: new Date().toLocaleString('id-ID', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            sku: item.sku,
+            nama_produk: item.nama,
+            size: item.size || 'Default',
+            qty: qty,
+            lokasi_asal: item.lokasi,
+            lokasi_sekarang: item.lokasi,
+            is_already_in_repair: true,
+            sumber_barang: 'Gudang Fisik',
+            kategori_rusak:
+              item.tahap === 'CUCI'
+                ? 'Noda / Kotor'
+                : item.tahap === 'PERMAK'
+                ? 'Jahitan Rusak'
+                : 'Cacat Kain / Warna',
+            detail_kerusakan: `Stok fisik terdeteksi di rak ${item.lokasi}. Silakan lengkapi foto dan keterangan via tombol Edit Data & Foto.`,
+            foto_urls: [],
+            tahap: item.tahap,
+            status_pengerjaan: item.tahap === 'DEFECT' ? 'GAGAL' : 'SEDANG_PROSES',
+            qc_pic: 'Stok Fisik Gudang',
+            qc_tanggal: new Date().toLocaleDateString('id-ID'),
+            qc_catatan: `Sinkronisasi otomatis dari data rak ${item.lokasi}`,
+            petugas_reparasi:
+              item.tahap === 'CUCI'
+                ? 'Laundry / Vendor Cuci'
+                : item.tahap === 'PERMAK'
+                ? 'Penjahit Gudang'
+                : undefined,
+            operator_input: session?.name || getUserPersonName(session?.username) || 'System',
+            created_at: new Date().toISOString(),
+          };
+
+          updatedTickets.unshift(newSyncedTicket);
+          savePerbaikanTicketToSupabase(newSyncedTicket).catch(console.warn);
         };
 
-        updatedTickets.unshift(newSyncedTicket);
-        // Sync to Supabase in background
-        savePerbaikanTicketToSupabase(newSyncedTicket).catch(console.warn);
+        if (item.tahap === 'DEFECT' && item.qty > 1) {
+          // Aturan WMS: Untuk DEFECT, 1 Pcs = 1 Tiket
+          for (let i = 0; i < item.qty; i++) {
+            createTicket(1, i + 1);
+          }
+        } else {
+          createTicket(item.qty, 1);
+        }
       }
     });
 
@@ -699,6 +707,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     setEditPetugasReparasi(t.petugas_reparasi || '');
     setEditReparasiCatatan(t.reparasi_catatan || '');
     setEditBiayaReparasi(t.biaya_reparasi || 0);
+    setEditQcReportNo(t.qc_report_no || '');
     setEditPhotos(
       (t.foto_urls || []).map((url) => ({
         dataUrl: url,
@@ -777,6 +786,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       petugas_reparasi: editPetugasReparasi.trim() || undefined,
       reparasi_catatan: editReparasiCatatan.trim() || undefined,
       biaya_reparasi: Number(editBiayaReparasi) || 0,
+      qc_report_no: editQcReportNo.trim() || undefined,
       foto_urls: uploadedUrls,
       updated_at: new Date().toISOString(),
     };
@@ -787,6 +797,25 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
     // Sync Update to Supabase
     updatePerbaikanTicketInSupabase(editModalTicket.id || editModalTicket.ticket_no, updated).catch(console.warn);
+
+    // Update lokasi pada Laporan QC terkait agar riwayat laporan mencatat lokasi fisik saat ini
+    const cleanEditQcNo = editQcReportNo.trim();
+    if (cleanEditQcNo) {
+      const matchedQc = qcReports.find((q) => q.report_no === cleanEditQcNo);
+      if (matchedQc) {
+        const updatedQc: QcReport = {
+          ...matchedQc,
+          lokasi_barang: newTargetLokasi,
+          perbaikan_ticket_no: editModalTicket.ticket_no,
+          updated_at: new Date().toISOString(),
+        };
+        updateQcReportInSupabase(updatedQc).catch(console.warn);
+        setQcReports((prev) => prev.map((q) => (q.report_no === cleanEditQcNo ? updatedQc : q)));
+        window.dispatchEvent(
+          new CustomEvent('wms_qc_reports_updated', { detail: { updatedReport: updatedQc } })
+        );
+      }
+    }
 
     // Jika lokasi fisik rak diedit berpindah, catat mutasi di log_produk
     if (editModalTicket.lokasi_sekarang.toUpperCase() !== newTargetLokasi) {
@@ -849,6 +878,85 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     } finally {
       setIsDeletingTicket(false);
     }
+  };
+
+  // Helper: Dapatkan list riwayat laporan QC untuk produk terkait
+  const getMatchingQcOptions = (sku: string) => {
+    const cleanSku = (sku || '').trim().toUpperCase();
+    if (!cleanSku) return qcReports;
+    const matched = qcReports.filter(
+      (q) =>
+        (q.sku && q.sku.toUpperCase() === cleanSku) ||
+        (q.kode_produksi && cleanSku.includes(q.kode_produksi.toUpperCase()))
+    );
+    return matched.length > 0 ? matched : qcReports;
+  };
+
+  // Handler: Menghubungkan Tiket Cuci / Permak ke No Referensi Laporan QC
+  const handleQuickLinkQcReport = async (item: PerbaikanTicket, selectedQcNo: string) => {
+    const targetQcNo = selectedQcNo.trim();
+    const updated: PerbaikanTicket = {
+      ...item,
+      qc_report_no: targetQcNo || undefined,
+      updated_at: new Date().toISOString(),
+    };
+
+    setTickets((prev) =>
+      prev.map((t) => (t.id === item.id || t.ticket_no === item.ticket_no ? updated : t))
+    );
+    updatePerbaikanTicketInSupabase(item.id || item.ticket_no, updated).catch(console.warn);
+
+    if (targetQcNo) {
+      const matched = qcReports.find((q) => q.report_no === targetQcNo);
+      if (matched) {
+        const updatedQc: QcReport = {
+          ...matched,
+          lokasi_barang: item.lokasi_sekarang || (item.tahap === 'CUCI' ? 'CC-01' : 'PMK-01'),
+          perbaikan_ticket_no: item.ticket_no,
+          updated_at: new Date().toISOString(),
+        };
+        await updateQcReportInSupabase(updatedQc).catch(console.warn);
+        setQcReports((prev) => prev.map((q) => (q.report_no === targetQcNo ? updatedQc : q)));
+        window.dispatchEvent(
+          new CustomEvent('wms_qc_reports_updated', { detail: { updatedReport: updatedQc } })
+        );
+      }
+      playSuccessBeep();
+      onShowToast(
+        `Berhasil menghubungkan barang ke Laporan QC #${targetQcNo}! Lokasi fisik diperbarui ke ${item.lokasi_sekarang || 'rak perbaikan'}.`,
+        'success'
+      );
+    } else {
+      playSuccessBeep();
+      onShowToast(`Koneksi referensi Laporan QC untuk ${item.sku} dilepas.`, 'info');
+    }
+  };
+
+  // Handler: Pecah Tiket Defect 1 Pcs = 1 Tiket Defect (Aturan SOP Defect)
+  const handleSplitDefectTicket = async (item: PerbaikanTicket) => {
+    if (item.qty <= 1) return;
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const newSubTickets: PerbaikanTicket[] = [];
+    for (let i = 0; i < item.qty; i++) {
+      const rand = Math.floor(100 + Math.random() * 900);
+      const subTicket: PerbaikanTicket = {
+        ...item,
+        id: Date.now() + i * 50,
+        ticket_no: `DFT-${todayStr}-${rand}-${i + 1}`,
+        qty: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      newSubTickets.push(subTicket);
+      savePerbaikanTicketToSupabase(subTicket).catch(console.warn);
+    }
+    deletePerbaikanTicketFromSupabase(item.ticket_no).catch(console.warn);
+    setTickets((prev) => [
+      ...newSubTickets,
+      ...prev.filter((t) => t.id !== item.id && t.ticket_no !== item.ticket_no),
+    ]);
+    playSuccessBeep();
+    onShowToast(`Tiket #${item.ticket_no} (${item.qty} pcs) berhasil dipecah menjadi ${item.qty} tiket individual (1 Pcs = 1 Tiket Defect)!`, 'success');
   };
 
   // Handle Photo Selection & Canvas WebP Compression pada Form Input
@@ -989,14 +1097,38 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       created_at: new Date().toISOString(),
     };
 
-    setTickets((prev) => [newTicket, ...prev]);
-    playSuccessBeep();
-    vibrateDevice([80, 50, 80]);
+    // SOP DEFECT: 1 Pcs = 1 Tiket Defect (Dibuat otomatis oleh sistem untuk dicetak)
+    if (targetTahap === 'DEFECT' && Number(formQty) > 1) {
+      const qtyNum = Number(formQty);
+      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const splittedTickets: PerbaikanTicket[] = [];
+      for (let i = 0; i < qtyNum; i++) {
+        const rand = Math.floor(100 + Math.random() * 900);
+        const subTicketNo = `DFT-${todayStr}-${rand}-${i + 1}`;
+        const subTicket: PerbaikanTicket = {
+          ...newTicket,
+          id: Date.now() + i * 50,
+          ticket_no: subTicketNo,
+          qty: 1,
+        };
+        splittedTickets.push(subTicket);
+        savePerbaikanTicketToSupabase(subTicket).catch((err) =>
+          console.warn('Gagal menyimpan tiket defect ke Supabase:', err)
+        );
+      }
+      setTickets((prev) => [...splittedTickets, ...prev]);
+      playSuccessBeep();
+      vibrateDevice([80, 50, 80]);
+    } else {
+      setTickets((prev) => [newTicket, ...prev]);
+      playSuccessBeep();
+      vibrateDevice([80, 50, 80]);
 
-    // 1. Simpan ke database Supabase
-    savePerbaikanTicketToSupabase(newTicket).catch((err) =>
-      console.warn('Gagal menyimpan tiket baru ke Supabase:', err)
-    );
+      // 1. Simpan ke database Supabase
+      savePerbaikanTicketToSupabase(newTicket).catch((err) =>
+        console.warn('Gagal menyimpan tiket baru ke Supabase:', err)
+      );
+    }
 
     // 2. Jika bukan barang yang memang sudah di perbaikan fisik (baru ditarik dari rak reguler), catat mutasi IN/OUT
     if (!formIsAlreadyInRepair) {
@@ -1094,12 +1226,32 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       updated_at: new Date().toISOString(),
     };
 
-    setTickets((prev) => prev.map((t) => (t.id === sortirModalTicket.id ? updated : t)));
+    // SOP DEFECT: 1 Pcs = 1 Tiket Defect
+    if (sortirTargetTahap === 'DEFECT' && sortirModalTicket.qty > 1) {
+      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const splitted: PerbaikanTicket[] = [];
+      for (let i = 0; i < sortirModalTicket.qty; i++) {
+        const rand = Math.floor(100 + Math.random() * 900);
+        const subTicket: PerbaikanTicket = {
+          ...updated,
+          id: Date.now() + i * 50,
+          ticket_no: `DFT-${todayStr}-${rand}-${i + 1}`,
+          qty: 1,
+        };
+        splitted.push(subTicket);
+        savePerbaikanTicketToSupabase(subTicket).catch(console.warn);
+      }
+      deletePerbaikanTicketFromSupabase(sortirModalTicket.ticket_no).catch(console.warn);
+      setTickets((prev) => [
+        ...splitted,
+        ...prev.filter((t) => t.id !== sortirModalTicket.id && t.ticket_no !== sortirModalTicket.ticket_no),
+      ]);
+    } else {
+      setTickets((prev) => prev.map((t) => (t.id === sortirModalTicket.id ? updated : t)));
+      updatePerbaikanTicketInSupabase(sortirModalTicket.id || sortirModalTicket.ticket_no, updated).catch(console.warn);
+    }
     playSuccessBeep();
     vibrateDevice(60);
-
-    // Update ke Supabase
-    updatePerbaikanTicketInSupabase(sortirModalTicket.id || sortirModalTicket.ticket_no, updated).catch(console.warn);
 
     // Jika lokasi fisik rak berubah saat sortir, catat mutasi perpindahan stok
     if (sortirModalTicket.lokasi_sekarang.toUpperCase() !== targetLokasi.toUpperCase()) {
@@ -2728,6 +2880,50 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     </div>
                   )}
 
+                  {/* Koneksi Riwayat Laporan QC untuk Cuci / Permak */}
+                  {(item.tahap === 'CUCI' || item.tahap === 'PERMAK') && (
+                    <div className="p-2.5 bg-blue-50/70 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-900/60 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
+                          <History className="w-3.5 h-3.5 text-blue-600" />
+                          <span>No. Ref Laporan QC</span>
+                        </span>
+                        {item.qc_report_no ? (
+                          <span className="font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                            Terkoneksi #{item.qc_report_no}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">Belum terhubung</span>
+                        )}
+                      </div>
+                      <select
+                        value={item.qc_report_no || ''}
+                        onChange={(e) => handleQuickLinkQcReport(item, e.target.value)}
+                        className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">-- Hubungkan No. Referensi QC --</option>
+                        {getMatchingQcOptions(item.sku).map((q) => (
+                          <option key={q.report_no} value={q.report_no}>
+                            #{q.report_no} • {q.tanggal?.slice(0, 10)} • {q.status} {q.qty_reject ? `[Reject ${q.qty_reject}]` : ''} {q.kategori_rusak ? `(${q.kategori_rusak})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* SOP DEFECT: 1 Pcs = 1 Tiket Defect */}
+                  {item.tahap === 'DEFECT' && item.qty > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSplitDefectTicket(item)}
+                      className="w-full py-1.5 px-3 bg-purple-100 hover:bg-purple-200 dark:bg-purple-950/70 dark:hover:bg-purple-900/70 text-purple-800 dark:text-purple-200 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border border-purple-300 dark:border-purple-700 transition-all cursor-pointer shadow-xs"
+                      title="Sesuai SOP: 1 Pcs = 1 Tiket Defect untuk dicetak label QR individual"
+                    >
+                      <Scissors className="w-3.5 h-3.5" />
+                      <span>Pecah Jadi {item.qty} Tiket (1 Pcs = 1 Tiket)</span>
+                    </button>
+                  )}
+
                   {/* Tombol Aksi Berdasarkan Tahap */}
                   <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                     {(item.tahap === 'DEFECT' || item.tahap?.startsWith('SELESAI')) && (
@@ -2740,6 +2936,15 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => setDetailModalTicket(item)}
+                      className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-xl transition-colors cursor-pointer"
+                      title="Lihat Detail Lengkap Kerusakan, Asal & Foto"
+                    >
+                      <Eye className="w-4 h-4 text-blue-500" />
+                    </button>
 
                     <button
                       type="button"
@@ -3441,6 +3646,40 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 )}
               </div>
 
+              {/* Koneksi ke Riwayat Laporan QC */}
+              <div className="space-y-1.5 p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-900/60">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-xs text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-blue-600" />
+                    <span>No. Referensi Laporan QC (Opsional)</span>
+                  </label>
+                  {editQcReportNo && (
+                    <button
+                      type="button"
+                      onClick={() => setEditQcReportNo('')}
+                      className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Lepas Koneksi
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80 leading-snug">
+                  Hubungkan dengan nomor inspeksi QC agar riwayat laporan otomatis mencatat lokasi fisik barang ini.
+                </p>
+                <select
+                  value={editQcReportNo}
+                  onChange={(e) => setEditQcReportNo(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Tanpa Referensi Laporan QC --</option>
+                  {getMatchingQcOptions(editModalTicket?.sku || '').map((q) => (
+                    <option key={q.report_no} value={q.report_no}>
+                      #{q.report_no} • {q.tanggal?.slice(0, 10)} • {q.status} {q.qty_reject ? `[Reject ${q.qty_reject}]` : ''} {q.kategori_rusak ? `(${q.kategori_rusak})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Kategori & Lokasi Rak */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -3707,6 +3946,162 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     <span>Ya, Hapus Sekarang</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Detail Lengkap Tiket (Defect / Perbaikan) */}
+      {detailModalTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white max-w-lg w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center font-bold">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black tracking-tight">Detail Tiket #{detailModalTicket.ticket_no}</h3>
+                  <p className="text-[11px] text-slate-500">Informasi lengkap kerusakan, asal barang & dokumentasi</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailModalTicket(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Status & Identitas Produk */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-black text-primary-500">{detailModalTicket.sku}</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    detailModalTicket.tahap === 'REJECT'
+                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-950/60 dark:text-primary-300'
+                      : detailModalTicket.tahap === 'CUCI'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                      : detailModalTicket.tahap === 'PERMAK'
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                      : detailModalTicket.tahap === 'DEFECT'
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  }`}
+                >
+                  {detailModalTicket.tahap}
+                </span>
+              </div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white">
+                {detailModalTicket.nama_produk}
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-[11px] pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Size:</span>
+                  <b className="text-slate-700 dark:text-slate-200">{detailModalTicket.size || '-'}</b>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Qty Fisik:</span>
+                  <b className="text-slate-700 dark:text-slate-200">{detailModalTicket.qty} pcs</b>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Lokasi Rak:</span>
+                  <b className="font-mono text-indigo-600 dark:text-indigo-400">{detailModalTicket.lokasi_sekarang}</b>
+                </div>
+              </div>
+            </div>
+
+            {/* Asal Barang & Laporan QC */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-400 block">Asal / Sumber Barang:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{detailModalTicket.sumber_barang || 'Warehouse'}</span>
+                <div className="text-[10px] text-slate-400 mt-1">
+                  Input oleh: <b>{detailModalTicket.operator_input || 'Operator'}</b>
+                </div>
+              </div>
+              <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-900/60 space-y-1">
+                <span className="text-[10px] text-blue-800 dark:text-blue-300 block font-semibold">Referensi Laporan QC:</span>
+                {detailModalTicket.qc_report_no ? (
+                  <span className="font-mono font-bold text-xs text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 inline-block">
+                    #{detailModalTicket.qc_report_no}
+                  </span>
+                ) : (
+                  <span className="text-slate-400 text-[11px] italic">Tidak terhubung ke Laporan QC</span>
+                )}
+                {detailModalTicket.qc_pic && (
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    PIC QC: <b>{detailModalTicket.qc_pic}</b>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Detail Kerusakan */}
+            <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-200 dark:border-rose-900/50 space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="text-rose-700 dark:text-rose-300">Kategori Kerusakan:</span>
+                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 font-bold text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 text-[11px]">
+                  {detailModalTicket.kategori_rusak}
+                </span>
+              </div>
+              <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed pt-1">
+                {detailModalTicket.detail_kerusakan || 'Tidak ada catatan kerusakan.'}
+              </div>
+              {detailModalTicket.qc_catatan && (
+                <div className="p-2 bg-white dark:bg-slate-800 rounded-lg text-[11px] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 mt-2">
+                  <b className="text-indigo-600 dark:text-indigo-400">Instruksi Sortir QC:</b> {detailModalTicket.qc_catatan}
+                </div>
+              )}
+            </div>
+
+            {/* Dokumentasi Foto Kerusakan */}
+            {detailModalTicket.foto_urls && detailModalTicket.foto_urls.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                  <span>Foto Dokumentasi Kerusakan ({detailModalTicket.foto_urls.length}):</span>
+                  <span className="text-[10px] text-slate-400">Klik foto untuk memperbesar</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {detailModalTicket.foto_urls.map((imgUrl, i) => (
+                    <div
+                      key={`detail-img-${i}`}
+                      onClick={() => setLightboxImages(detailModalTicket.foto_urls)}
+                      className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-black aspect-video flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+                    >
+                      <img src={imgUrl} alt="Bukti" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tombol Aksi Modal */}
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              {(detailModalTicket.tahap === 'DEFECT' || detailModalTicket.tahap?.startsWith('SELESAI')) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = detailModalTicket;
+                    setDetailModalTicket(null);
+                    setPrintModalTicket(t);
+                  }}
+                  className="py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Label QR (50x20mm)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setDetailModalTicket(null)}
+                className="ml-auto py-2 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Tutup
               </button>
             </div>
           </div>

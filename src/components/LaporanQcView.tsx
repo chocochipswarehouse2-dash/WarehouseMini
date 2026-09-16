@@ -758,96 +758,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
         // Penanganan Reject Berdasarkan Kategori Alur
         if (v.status === 'REJECT' || qtyReject > 0) {
-          let mappedSumber: PerbaikanTicket['sumber_barang'] = 'Gudang Fisik';
-          if (batchSumber.includes('CMT') || batchSumber.includes('Produksi')) {
-            mappedSumber = 'Penerimaan CMT';
-          } else if (batchSumber.includes('Retur')) {
-            mappedSumber = 'Retur Marketplace';
-          } else if (batchSumber.includes('Studio') || batchSumber.includes('Live')) {
-            mappedSumber = 'Live/Studio';
-          } else if (batchSumber.includes('Toko')) {
-            mappedSumber = 'Toko';
-          }
-
-          const defectDetail = v.detail_kerusakan.trim()
-            ? `[QC #${reportNo}] ${v.detail_kerusakan.trim()}`
-            : `[QC #${reportNo}] Ditemukan cacat ${v.kategori_rusak || 'Defect'} pada inspeksi QC`;
-
-          if (v.target_penanganan === 'DEFECT') {
-            // HANYA DEFECT YANG MENDAPATKAN NOMOR TIKET ACC (DFT-...)
-            const ticketRand = Math.floor(100 + Math.random() * 900);
-            perbaikanTicketNo = `DFT-${dateStr}-${ticketRand}-${i + 1}`;
-
-            const newTicket: PerbaikanTicket = {
-              ticket_no: perbaikanTicketNo,
-              tanggal: now.toISOString(),
-              sku: finalSku,
-              nama_produk: finalNamaProduk,
-              size: finalSize,
-              qty: qtyReject > 0 ? qtyReject : 1,
-              lokasi_asal: 'Area QC',
-              lokasi_sekarang: finalLokasiReject,
-              is_already_in_repair: false,
-              sumber_barang: mappedSumber,
-              kategori_rusak: (v.kategori_rusak as any) || 'Defect Berat / BS',
-              detail_kerusakan: defectDetail,
-              foto_urls: uploadedPhotoUrls,
-              tahap: 'DEFECT',
-              status_pengerjaan: 'PENDING',
-              qc_pic: currentPicName,
-              qc_tanggal: now.toISOString(),
-              qc_catatan: `Inspeksi QC: Vonis DEFECT (${qtyReject} pcs) di ${finalLokasiReject}. ${v.catatan.trim()}`,
-              operator_input: currentPicName,
-              qc_report_no: reportNo,
-              created_at: now.toISOString(),
-            };
-
-            try {
-              await savePerbaikanTicketToSupabase(newTicket);
-              if (onRejectCreated) onRejectCreated(newTicket);
-              totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
-            } catch (errTicket) {
-              console.warn('Gagal simpan tiket defect:', errTicket);
-            }
-          } else if (v.target_penanganan === 'CUCI' || v.target_penanganan === 'PERMAK') {
-            // CUCI & PERMAK: CUKUP DATA LOKASI FISIK, TIDAK PERLU NOMOR TIKET
-            const internalQueueId = `${v.target_penanganan === 'CUCI' ? 'CC' : 'PMK'}-${dateStr}-${Date.now().toString().slice(-4)}-${i + 1}`;
-
-            const newTicket: PerbaikanTicket = {
-              ticket_no: internalQueueId,
-              tanggal: now.toISOString(),
-              sku: finalSku,
-              nama_produk: finalNamaProduk,
-              size: finalSize,
-              qty: qtyReject > 0 ? qtyReject : 1,
-              lokasi_asal: 'Area QC',
-              lokasi_sekarang: finalLokasiReject,
-              is_already_in_repair: false,
-              sumber_barang: mappedSumber,
-              kategori_rusak: (v.kategori_rusak as any) || (v.target_penanganan === 'CUCI' ? 'Noda / Kotor' : 'Jahitan Rusak'),
-              detail_kerusakan: defectDetail,
-              foto_urls: uploadedPhotoUrls,
-              tahap: v.target_penanganan,
-              status_pengerjaan: 'PENDING',
-              qc_pic: currentPicName,
-              qc_tanggal: now.toISOString(),
-              qc_catatan: `Antrean Perbaikan (${v.target_penanganan}): ${qtyReject} pcs di lokasi ${finalLokasiReject}`,
-              operator_input: currentPicName,
-              qc_report_no: reportNo,
-              created_at: now.toISOString(),
-            };
-
-            try {
-              await savePerbaikanTicketToSupabase(newTicket);
-              if (onRejectCreated) onRejectCreated(newTicket);
-              totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
-            } catch (errTicket) {
-              console.warn('Gagal simpan antrean perbaikan:', errTicket);
-            }
-          } else {
-            // REJECT Kontainer KNR (Belum Disortir)
-            totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
-          }
+          totalRejectCreated += qtyReject > 0 ? qtyReject : 1;
         } else {
           totalOkeCreated += qtyOke > 0 ? qtyOke : qtyChecked;
         }
@@ -2587,9 +2498,16 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between w-full">
-                                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
-                                    {r.target_penanganan === 'CUCI' ? '🫧 Di Antrean Cuci' : '🪡 Di Antrean Permak'}
-                                  </span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                                      {r.target_penanganan === 'CUCI' ? '🫧 Di Antrean Cuci' : r.target_penanganan === 'PERMAK' ? '🪡 Di Antrean Permak' : 'Proses Perbaikan'}
+                                    </span>
+                                    {r.perbaikan_ticket_no && (
+                                      <span className="font-mono text-[9px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900">
+                                        #{r.perbaikan_ticket_no}
+                                      </span>
+                                    )}
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2995,16 +2913,23 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (onNavigateToPerbaikan) onNavigateToPerbaikan(r.perbaikan_ticket_no);
-                                  }}
-                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-blue-600 transition-colors"
-                                >
-                                  <span>Lihat di Tab Perbaikan</span>
-                                  <ArrowRight className="w-2.5 h-2.5" />
-                                </button>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {r.perbaikan_ticket_no && (
+                                    <span className="font-mono text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                                      #{r.perbaikan_ticket_no}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (onNavigateToPerbaikan) onNavigateToPerbaikan(r.perbaikan_ticket_no);
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-blue-600 transition-colors"
+                                  >
+                                    <span>Lihat di Tab Perbaikan</span>
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
                               )}
                             </div>
                           )}
