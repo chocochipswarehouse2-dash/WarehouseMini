@@ -1188,7 +1188,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             qc_tanggal: now.toISOString(),
             qc_catatan: `Sortir Defect dari Kontainer ${quickSortirReport.lokasi_barang || 'KNR-01'} ke lokasi ${finalLokasi}`,
             operator_input: picName,
-            qc_report_no: String(quickSortirReport.id),
+            qc_report_no: quickSortirReport.report_no || String(quickSortirReport.id),
             created_at: now.toISOString(),
           };
 
@@ -1223,7 +1223,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             qc_tanggal: now.toISOString(),
             qc_catatan: `Sortir ke ${quickSortirTarget} di lokasi ${finalLokasi}`,
             operator_input: picName,
-            qc_report_no: String(quickSortirReport.id),
+            qc_report_no: quickSortirReport.report_no || String(quickSortirReport.id),
             created_at: now.toISOString(),
           };
 
