@@ -63,6 +63,7 @@ import {
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
 import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
+import { isSuperadmin, hasPermission } from '../services/permissions';
 
 interface ProductLocationInfo {
   lokasi: string;
@@ -85,6 +86,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   onShowToast,
   onRefreshCatalog,
 }) => {
+  // Permission checks
+  const userIsAdmin = isSuperadmin(session);
+  const canEditData = userIsAdmin || hasPermission(session, 'action_edit_master');
+  const canDeleteData = userIsAdmin || hasPermission(session, 'action_delete_master');
+  const canExportData = userIsAdmin || hasPermission(session, 'action_export_data');
+
   // Navigation tabs for mobile / view switcher
   const [activeTab, setActiveTab] = useState<'form' | 'stok' | 'riwayat'>('form');
   const [displayLimit, setDisplayLimit] = useState(30);
@@ -982,6 +989,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Export Channel Stock to CSV
   const handleExportStockCSV = () => {
+    if (!canExportData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk mengekspor data stok.', 'warning');
+      return;
+    }
     if (filteredStocks.length === 0) {
       onShowToast('Tidak ada data stok untuk diexport', 'warning');
       return;
@@ -1278,6 +1289,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Toggle return status
   const handleToggleReturn = async (recordId: string) => {
+    if (!canEditData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk mengubah status peminjaman.', 'warning');
+      return;
+    }
     const target = records.find((r) => r.id === recordId || r.noPeminjaman === recordId);
     const nextStatus = target?.status === 'Dipinjam' ? 'Dikembalikan' : 'Dipinjam';
 
@@ -1305,6 +1320,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Open Edit Modal
   const handleStartEdit = (rec: PeminjamanRecord) => {
+    if (!canEditData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk mengedit data peminjaman.', 'warning');
+      return;
+    }
     setEditingRecord(JSON.parse(JSON.stringify(rec)));
     setEditProductSearch('');
     setShowEditProductDropdown(false);
@@ -1356,6 +1375,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Save Edit to Supabase & Local Cache
   const handleSaveEdit = async () => {
+    if (!canEditData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk menyimpan perubahan peminjaman.', 'warning');
+      return;
+    }
     if (!editingRecord) return;
     const no = editingRecord.noPeminjaman || editingRecord.id;
     if (!no) return;
@@ -1409,6 +1432,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Delete Record from Supabase & Local Cache
   const handleDeleteRecord = async (rec: PeminjamanRecord) => {
+    if (!canDeleteData) {
+      onShowToast('Akses ditolak: Anda tidak memiliki izin untuk menghapus data peminjaman.', 'warning');
+      return;
+    }
     const no = rec.noPeminjaman || rec.id;
     if (!no) return;
 
@@ -1959,14 +1986,16 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={handleExportStockCSV}
-                title="Export Stok ke CSV"
-                className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 text-xs transition-colors cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
+              {canExportData && (
+                <button
+                  type="button"
+                  onClick={handleExportStockCSV}
+                  title="Export Stok ke CSV"
+                  className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 text-xs transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -2269,17 +2298,30 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                     <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
                       {rec.noPeminjaman}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleReturn(rec.id)}
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all border ${
-                        rec.status === 'Dipinjam'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50'
-                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50'
-                      }`}
-                    >
-                      {rec.status}
-                    </button>
+                    {canEditData ? (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleReturn(rec.id)}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-all border ${
+                          rec.status === 'Dipinjam'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50 hover:opacity-80'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50 hover:opacity-80'
+                        }`}
+                        title="Klik untuk mengubah status peminjaman"
+                      >
+                        {rec.status}
+                      </button>
+                    ) : (
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded border select-none ${
+                          rec.status === 'Dipinjam'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50'
+                        }`}
+                      >
+                        {rec.status}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -2335,24 +2377,30 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleStartEdit(rec)}
-                        className="py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmRecord(rec)}
-                        className="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Hapus</span>
-                      </button>
-                    </div>
+                    {(canEditData || canDeleteData) && (
+                      <div className={`grid ${canEditData && canDeleteData ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}>
+                        {canEditData && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(rec)}
+                            className="py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                        )}
+                        {canDeleteData && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmRecord(rec)}
+                            className="py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Hapus</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -2621,29 +2669,33 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             {/* Footer Buttons */}
             <div className="p-4 bg-slate-50/80 dark:bg-[#0b1324] border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const rec = selectedRecordForModal;
-                    setSelectedRecordForModal(null);
-                    handleStartEdit(rec);
-                  }}
-                  className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const rec = selectedRecordForModal;
-                    setDeleteConfirmRecord(rec);
-                  }}
-                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Hapus</span>
-                </button>
+                {canEditData && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rec = selectedRecordForModal;
+                      setSelectedRecordForModal(null);
+                      handleStartEdit(rec);
+                    }}
+                    className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
+                {canDeleteData && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rec = selectedRecordForModal;
+                      setDeleteConfirmRecord(rec);
+                    }}
+                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
