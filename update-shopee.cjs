@@ -1,4 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+const fs = require('fs');
+
+const content = `import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Printer, Package, Search, Trash2, CheckCircle2, FileSpreadsheet, X, ShoppingBag, ArrowRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
@@ -203,11 +205,11 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         if (newOrders.length > 0) {
           const sortedNewOrders = sortOrders(newOrders);
           await saveShopeeOrders(sortedNewOrders);
-          onShowToast(`Berhasil mengimpor ${sortedNewOrders.length} pesanan baru`, 'success');
+          onShowToast(\`Berhasil mengimpor \${sortedNewOrders.length} pesanan baru\`, 'success');
         }
 
         if (duplicateCount > 0) {
-          onShowToast(`${duplicateCount} baris diabaikan karena sudah pernah diimport`, 'info');
+          onShowToast(\`\${duplicateCount} baris diabaikan karena sudah pernah diimport\`, 'info');
         }
 
         if (newOrders.length === 0 && duplicateCount === 0) {
@@ -258,7 +260,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
     await saveShopeeOrders(updated);
     await loadOrders();
     setActiveTab('diproses');
-    onShowToast(`${updated.length} pesanan dipindah ke Siap Proses`, 'success');
+    onShowToast(\`\${updated.length} pesanan dipindah ke Siap Proses\`, 'success');
   };
 
   // Group current tab orders
@@ -273,7 +275,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900/50">
       {/* CSS Print Setup */}
-      <style>{`
+      <style>{\`
         @media print {
           html, body {
             margin: 0 !important;
@@ -299,13 +301,13 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             break-after: page;
           }
         }
-      `}</style>
+      \`}</style>
 
       {/* TABS */}
       <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex px-4 gap-6 shrink-0 print:hidden overflow-x-auto">
         <button
           onClick={() => setActiveTab('uploaded')}
-          className={`py-4 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'uploaded' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+          className={\`py-4 text-sm font-bold border-b-2 whitespace-nowrap transition-colors \${activeTab === 'uploaded' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}\`}
         >
           Baru Upload
           <span className="ml-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-0.5 px-2 rounded-full text-xs">
@@ -314,7 +316,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         </button>
         <button
           onClick={() => setActiveTab('diproses')}
-          className={`py-4 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'diproses' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+          className={\`py-4 text-sm font-bold border-b-2 whitespace-nowrap transition-colors \${activeTab === 'diproses' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}\`}
         >
           Siap Proses (Cetak)
           <span className="ml-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-0.5 px-2 rounded-full text-xs">
@@ -323,7 +325,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         </button>
         <button
           onClick={() => setActiveTab('on_progress')}
-          className={`py-4 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'on_progress' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+          className={\`py-4 text-sm font-bold border-b-2 whitespace-nowrap transition-colors \${activeTab === 'on_progress' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}\`}
         >
           On Progress
           <span className="ml-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-0.5 px-2 rounded-full text-xs">
@@ -470,16 +472,16 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
       {/* A4 Print Area */}
       <div id="shopee-print-area" className="hidden print:block bg-white w-full text-black">
         <style type="text/css" media="print">
-          {`
+          {\`
             @page { size: landscape; margin: 10mm; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          `}
+          \`}
         </style>
 
         <div className="mb-4 flex flex-col justify-center">
           <div className="text-xl font-bold mb-1">Picking List Shopee - {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
           <div className="text-xs text-gray-600 font-mono">
-            {new Date().toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/./g, ':')}
+            {new Date().toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':')}
           </div>
         </div>
 
@@ -501,7 +503,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
           <tbody>
             {orders.filter(o => o.status_sistem === 'diproses').map((order, orderIdx) => {
               return order.items.map((item, itemIdx) => (
-                <tr key={`${order.noPesanan}-${itemIdx}`}>
+                <tr key={\`\${order.noPesanan}-\${itemIdx}\`}>
                   {itemIdx === 0 && (
                     <>
                       <td rowSpan={order.items.length} className="border border-black p-1 text-center align-middle">{orderIdx + 1}</td>
@@ -540,3 +542,6 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
     </div>
   );
 };
+`
+
+fs.writeFileSync('src/components/PesananSaya/ShopeeTab.tsx', content);

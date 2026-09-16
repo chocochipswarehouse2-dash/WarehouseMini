@@ -7,7 +7,7 @@ import { ProductItem, StockRealtimeItem } from '../types';
 import { isDummyProduct } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -29,7 +29,6 @@ export async function getLocalDb(): Promise<IDBDatabase> {
   if (dbPromise) {
     return dbPromise;
   }
-
   if (!isIndexedDBSupported()) {
     return Promise.reject(new Error('IndexedDB is not supported in this browser environment'));
   }
@@ -39,6 +38,7 @@ export async function getLocalDb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;
+      const oldVersion = event.oldVersion;
 
       // 1. Products Store: Keyed by uppercase SKU ('k')
       if (!db.objectStoreNames.contains('products')) {
@@ -56,6 +56,13 @@ export async function getLocalDb(): Promise<IDBDatabase> {
       // 3. Metadata Store: Keyed by 'key' (last_sync, catalog_version, item_count, etc.)
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' });
+      }
+
+      // 4. Shopee Orders Store
+      if (!db.objectStoreNames.contains('shopee_orders')) {
+        const orderStore = db.createObjectStore('shopee_orders', { keyPath: 'noPesanan' });
+        orderStore.createIndex('status_sistem', 'status_sistem', { unique: false });
+        orderStore.createIndex('tanggal_upload', 'tanggal_upload', { unique: false });
       }
     };
 
@@ -444,5 +451,52 @@ export async function clearLocalDb(): Promise<void> {
     });
   } catch (err) {
     console.warn('Failed to clear local db:', err);
+  }
+}
+
+// --- SHOPEE ORDERS STORE ---
+
+export async function saveShopeeOrders(orders: any[]): Promise<void> {
+  if (!orders.length) return;
+  const db = await getLocalDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('shopee_orders', 'readwrite');
+    const store = tx.objectStore('shopee_orders');
+    for (const order of orders) {
+      store.put(order);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getShopeeOrders(): Promise<any[]> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('shopee_orders', 'readonly');
+      const store = tx.objectStore('shopee_orders');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.warn('Failed to get shopee orders', err);
+    return [];
+  }
+}
+
+export async function getShopeeOrder(noPesanan: string): Promise<any | null> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('shopee_orders', 'readonly');
+      const store = tx.objectStore('shopee_orders');
+      const request = store.get(noPesanan);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    return null;
   }
 }
