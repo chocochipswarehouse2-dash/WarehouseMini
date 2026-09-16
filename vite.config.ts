@@ -91,7 +91,7 @@ export default defineConfig(({ command }) => {
               type: 'application/json',
               icons: [
                 {
-                  src: 'app-logo.png',
+                  src: 'icon-192.png',
                   sizes: '192x192',
                   type: 'image/png'
                 }
@@ -127,25 +127,25 @@ export default defineConfig(({ command }) => {
           ],
           icons: [
             {
-              src: 'app-logo.png',
+              src: 'icon-192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'app-logo.png',
+              src: 'icon-192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: 'app-logo.png',
+              src: 'icon-512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'app-logo.png',
+              src: 'icon-512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
@@ -153,14 +153,14 @@ export default defineConfig(({ command }) => {
           ],
           screenshots: [
             {
-              src: 'app-logo.png',
+              src: 'icon-512.png',
               sizes: '512x512',
               type: 'image/png',
               form_factor: 'wide',
               label: 'Warehouse Mini Dashboard'
             },
             {
-              src: 'app-logo.png',
+              src: 'icon-512.png',
               sizes: '512x512',
               type: 'image/png',
               form_factor: 'narrow',
@@ -173,7 +173,7 @@ export default defineConfig(({ command }) => {
               short_name: 'Scan',
               description: 'Buka pemindai',
               url: './',
-              icons: [{ src: 'app-logo.png', sizes: '192x192' }]
+              icons: [{ src: 'icon-192.png', sizes: '192x192' }]
             }
           ]
         } as any
