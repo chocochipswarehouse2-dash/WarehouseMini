@@ -17,6 +17,7 @@ import {
   Plus,
   Minus,
   SlidersHorizontal,
+  RotateCw,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -86,6 +87,10 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
   // Single ticket state: Defaults to ticket.qty (1 per physical piece)
   const [singleCopies, setSingleCopies] = useState<number>(1);
   const [isCopied, setIsCopied] = useState(false);
+
+  // Print orientation & rotation settings
+  const [printOrientation, setPrintOrientation] = useState<'landscape' | 'portrait'>('landscape');
+  const [isRotated180, setIsRotated180] = useState<boolean>(false);
 
   // Bulk mode state
   const [selectedLocation, setSelectedLocation] = useState<string>(initialLocationFilter || 'ALL');
@@ -328,8 +333,13 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
       printFrame.style.position = 'fixed';
       printFrame.style.top = '-9999px';
       printFrame.style.left = '-9999px';
-      printFrame.style.width = '50mm';
-      printFrame.style.height = '20mm';
+      const isPortrait = printOrientation === 'portrait';
+      const pageW = isPortrait ? '20mm' : '50mm';
+      const pageH = isPortrait ? '50mm' : '20mm';
+      const orientMode = isPortrait ? 'portrait' : 'landscape';
+
+      printFrame.style.width = pageW;
+      printFrame.style.height = pageH;
       printFrame.style.border = 'none';
       document.body.appendChild(printFrame);
 
@@ -369,7 +379,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             <title>Cetak Label Barcode 50x20mm</title>
             <style>
               @page {
-                size: 50mm 20mm;
+                size: ${pageW} ${pageH} ${orientMode};
                 margin: 0mm !important;
               }
               *, *::before, *::after {
@@ -378,8 +388,8 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 padding: 0;
               }
               html, body {
-                width: 50mm !important;
-                height: 20mm !important;
+                width: ${pageW} !important;
+                height: ${pageH} !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 background: #ffffff !important;
@@ -391,10 +401,10 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
               .thermal-page-wrapper {
                 display: block !important;
                 position: relative !important;
-                width: 50mm !important;
-                height: 20mm !important;
-                max-width: 50mm !important;
-                max-height: 20mm !important;
+                width: ${pageW} !important;
+                height: ${pageH} !important;
+                max-width: ${pageW} !important;
+                max-height: ${pageH} !important;
                 page-break-before: auto !important;
                 page-break-inside: avoid !important;
                 break-before: auto !important;
@@ -403,25 +413,28 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
+                ${isRotated180 ? 'transform: rotate(180deg); transform-origin: center center;' : ''}
               }
               .thermal-page-inner {
-                width: 50mm !important;
-                height: 20mm !important;
-                max-width: 50mm !important;
-                max-height: 20mm !important;
+                width: ${pageW} !important;
+                height: ${pageH} !important;
+                max-width: ${pageW} !important;
+                max-height: ${pageH} !important;
                 box-sizing: border-box !important;
                 padding: 1.2mm 1.8mm !important;
                 display: flex !important;
-                flex-direction: row !important;
+                flex-direction: ${isPortrait ? 'column' : 'row'} !important;
                 align-items: center !important;
+                justify-content: ${isPortrait ? 'center' : 'flex-start'} !important;
                 overflow: hidden !important;
                 background: #ffffff !important;
                 color: #000000 !important;
               }
               .thermal-qr-container {
-                width: 15.5mm !important;
-                height: 15.5mm !important;
-                margin-right: 1.5mm !important;
+                width: ${isPortrait ? '13.5mm' : '15.5mm'} !important;
+                height: ${isPortrait ? '13.5mm' : '15.5mm'} !important;
+                margin-right: ${isPortrait ? '0' : '1.5mm'} !important;
+                margin-bottom: ${isPortrait ? '1mm' : '0'} !important;
                 flex-shrink: 0 !important;
                 display: flex !important;
                 align-items: center !important;
@@ -441,9 +454,10 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 justify-content: center !important;
                 overflow: hidden !important;
                 line-height: 1.15 !important;
+                ${isPortrait ? 'text-align: center; width: 100%;' : ''}
               }
               .thermal-sku-title {
-                font-size: 7.5pt !important;
+                font-size: ${isPortrait ? '6.5pt' : '7.5pt'} !important;
                 font-weight: 900 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
@@ -451,7 +465,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 letter-spacing: -0.2px !important;
               }
               .thermal-name-title {
-                font-size: 6.2pt !important;
+                font-size: ${isPortrait ? '5.5pt' : '6.2pt'} !important;
                 font-weight: 700 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
@@ -459,10 +473,11 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 color: #111 !important;
               }
               .thermal-meta-row {
-                font-size: 6.5pt !important;
+                font-size: ${isPortrait ? '5.8pt' : '6.5pt'} !important;
                 font-weight: 800 !important;
                 display: flex !important;
-                justify-content: space-between !important;
+                justify-content: ${isPortrait ? 'center' : 'space-between'} !important;
+                gap: ${isPortrait ? '4px' : '0'} !important;
                 align-items: baseline !important;
                 margin-top: 0.8mm !important;
               }
@@ -557,7 +572,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             __html: `
             @media print {
               @page {
-                size: 50mm 20mm;
+                size: ${printOrientation === 'portrait' ? '20mm 50mm portrait' : '50mm 20mm landscape'};
                 margin: 0mm !important;
               }
               body {
@@ -577,7 +592,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 position: absolute !important;
                 left: 0 !important;
                 top: 0 !important;
-                width: 50mm !important;
+                width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
                 display: block !important;
                 margin: 0 !important;
                 padding: 0 !important;
@@ -585,10 +600,10 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
               .thermal-page-wrapper {
                 display: block !important;
                 position: relative !important;
-                width: 50mm !important;
-                height: 20mm !important;
-                max-width: 50mm !important;
-                max-height: 20mm !important;
+                width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
+                height: ${printOrientation === 'portrait' ? '50mm' : '20mm'} !important;
+                max-width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
+                max-height: ${printOrientation === 'portrait' ? '50mm' : '20mm'} !important;
                 page-break-before: auto !important;
                 page-break-inside: avoid !important;
                 break-before: auto !important;
@@ -597,26 +612,29 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
+                ${isRotated180 ? 'transform: rotate(180deg); transform-origin: center center;' : ''}
               }
               .thermal-page-inner {
-                width: 50mm !important;
-                height: 20mm !important;
-                max-width: 50mm !important;
-                max-height: 20mm !important;
+                width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
+                height: ${printOrientation === 'portrait' ? '50mm' : '20mm'} !important;
+                max-width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
+                max-height: ${printOrientation === 'portrait' ? '50mm' : '20mm'} !important;
                 box-sizing: border-box !important;
                 padding: 1.2mm 1.8mm !important;
                 display: flex !important;
-                flex-direction: row !important;
+                flex-direction: ${printOrientation === 'portrait' ? 'column' : 'row'} !important;
                 align-items: center !important;
+                justify-content: ${printOrientation === 'portrait' ? 'center' : 'flex-start'} !important;
                 background: white !important;
                 color: black !important;
                 font-family: monospace, sans-serif !important;
                 overflow: hidden !important;
               }
               .thermal-qr-container {
-                width: 15.5mm !important;
-                height: 15.5mm !important;
-                margin-right: 1.5mm !important;
+                width: ${printOrientation === 'portrait' ? '13.5mm' : '15.5mm'} !important;
+                height: ${printOrientation === 'portrait' ? '13.5mm' : '15.5mm'} !important;
+                margin-right: ${printOrientation === 'portrait' ? '0' : '1.5mm'} !important;
+                margin-bottom: ${printOrientation === 'portrait' ? '1mm' : '0'} !important;
                 flex-shrink: 0 !important;
                 display: flex !important;
                 align-items: center !important;
@@ -972,12 +990,61 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           {/* ========================================================= */}
           {/* REALISTIC SCREEN PREVIEW (50x20 mm aspect ratio 2.5:1)    */}
           {/* ========================================================= */}
-          <div className="space-y-1.5">
+          <div className="space-y-2">
+            {/* Control Bar: Orientasi Kertas Cetak & Rotasi */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/50 rounded-xl text-xs">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-extrabold text-slate-700 dark:text-slate-300">Orientasi Kertas:</span>
+                <div className="inline-flex rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPrintOrientation('landscape')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                      printOrientation === 'landscape'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
+                    }`}
+                    title="Orientasi mendatar 50×20 mm (Standar Roll Thermal)"
+                  >
+                    ↔️ Lanskap (50×20 mm)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintOrientation('portrait')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                      printOrientation === 'portrait'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
+                    }`}
+                    title="Pilih jika driver printer thermal Anda mewajibkan cetak tegak / vertikal"
+                  >
+                    ↕️ Portret (20×50 mm)
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsRotated180((prev) => !prev)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                    isRotated180
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50'
+                  }`}
+                  title="Putar balik 180 derajat jika label terpasang terbalik pada printer"
+                >
+                  <RotateCw className={`w-3 h-3 transition-transform duration-200 ${isRotated180 ? 'rotate-180' : ''}`} />
+                  <span>{isRotated180 ? 'Rotasi 180° Aktif' : 'Putar 180°'}</span>
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
               <span className="flex items-center gap-1.5">
                 <Eye className="w-3.5 h-3.5 text-purple-500" />
                 <span>
-                  Pratinjau Fisik Stiker (Skala Thermal 50 × 20 mm)
+                  Pratinjau Fisik Stiker ({printOrientation === 'portrait' ? '20 × 50 mm Portret' : '50 × 20 mm Lanskap'})
                   {isBulkMode && filteredBulkTickets.length > 1 && (
                     <span className="ml-1 text-purple-600 font-normal">
                       [Tiket {previewIndex + 1} dari {filteredBulkTickets.length}]
@@ -1000,8 +1067,20 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 
             <div className="flex flex-col items-center justify-center p-3 bg-slate-100 dark:bg-slate-950 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
               {currentPreviewTicket ? (
-                <div className="w-[280px] h-[112px] bg-white text-black p-2 rounded shadow-md border border-slate-300 flex items-center select-none font-sans gap-2 relative overflow-hidden">
-                  <div className="w-[85px] h-[85px] shrink-0 flex items-center justify-center">
+                <div
+                  className={`bg-white text-black p-2 rounded shadow-md border border-slate-300 flex select-none font-sans gap-2 relative overflow-hidden transition-all ${
+                    printOrientation === 'portrait'
+                      ? 'w-[140px] h-[260px] flex-col items-center justify-center text-center'
+                      : 'w-[280px] h-[112px] flex-row items-center justify-between'
+                  } ${isRotated180 ? 'rotate-180' : ''}`}
+                >
+                  <div
+                    className={`${
+                      printOrientation === 'portrait'
+                        ? 'w-[90px] h-[90px] mb-1'
+                        : 'w-[85px] h-[85px]'
+                    } shrink-0 flex items-center justify-center`}
+                  >
                     {qrMap[currentPreviewTicket.ticket_no] ? (
                       <img
                         src={qrMap[currentPreviewTicket.ticket_no]}
@@ -1012,14 +1091,22 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                       <div className="text-[10px] text-slate-400 animate-pulse">Membuat QR...</div>
                     )}
                   </div>
-                  <div className="flex flex-col justify-center overflow-hidden flex-1 py-1">
+                  <div
+                    className={`flex flex-col justify-center overflow-hidden flex-1 py-1 ${
+                      printOrientation === 'portrait' ? 'w-full text-center' : ''
+                    }`}
+                  >
                     <div className="text-[12px] font-black truncate leading-tight">
                       {currentPreviewTicket.sku}
                     </div>
                     <div className="text-[10px] font-bold truncate mt-0.5 text-slate-800 leading-tight">
                       {currentPreviewTicket.nama_produk}
                     </div>
-                    <div className="flex items-center justify-between mt-2">
+                    <div
+                      className={`flex items-center mt-2 ${
+                        printOrientation === 'portrait' ? 'justify-center gap-2' : 'justify-between'
+                      }`}
+                    >
                       <span className="text-[11px] font-black">
                         {currentPreviewTicket.size ? `SZ: ${currentPreviewTicket.size}` : ''}
                         {currentPreviewTicket.lokasi_sekarang ? ` [${currentPreviewTicket.lokasi_sekarang}]` : ''}
@@ -1199,12 +1286,23 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           )}
         </div>
 
-        {/* Tips Setting Thermal Printer */}
-        <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-2 shrink-0">
-          <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="leading-snug">
-            <span className="font-extrabold text-amber-900 dark:text-amber-100">Tips Cetak Thermal 50×20 mm:</span> Di layar cetak browser, pastikan <b>Tujuan: Printer Thermal Anda</b>, <b>Ukuran Kertas: 50×20 mm</b> (atau Custom Roll), <b>Margin: None (Tanpa Margin)</b>, dan <b>Skala: 100%</b> agar pas 1 stiker per potongan kertas.
+        {/* Tips Setting Thermal Printer & Orientasi Cetak */}
+        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl text-[11px] text-amber-900 dark:text-amber-100 space-y-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 font-black text-amber-950 dark:text-amber-50">
+            <Info className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Panduan Cetak Thermal 50×20 mm (Agar Tidak Miring / Posisi Portret):</span>
           </div>
+          <ul className="list-disc pl-5 space-y-0.5 text-[10.5px] leading-relaxed text-amber-900/90 dark:text-amber-200">
+            <li>
+              <b>Penyebab Cetak Miring/Tegak:</b> Di dialog cetak Chrome/Edge, pilihan <b>"Tata Letak / Layout"</b> bawaan sering kali masih terpilih <i>"Portret"</i>.
+            </li>
+            <li>
+              <b>Cara Atasi di Dialog Cetak:</b> Pastikan pilih <b>Tata Letak: Lanskap (Landscape)</b>, <b>Ukuran: 50×20 mm</b>, <b>Margin: None</b>, dan <b>Skala: 100%</b>.
+            </li>
+            <li>
+              <b>Jika Roll Printer Anda Berjalan Tegak:</b> Anda dapat langsung klik tombol <b>"↕️ Portret"</b> di atas sebelum menekan Cetak.
+            </li>
+          </ul>
         </div>
 
         {/* Action Buttons */}
