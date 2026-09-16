@@ -573,15 +573,16 @@ DECLARE
     'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings'
   ];
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+
   FOREACH tbl IN ARRAY tables LOOP
     IF NOT EXISTS (
       SELECT 1 FROM pg_publication_tables 
       WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = tbl
     ) THEN
-      BEGIN
-        EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I;', tbl);
-      EXCEPTION WHEN OTHERS THEN NULL;
-      END;
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I;', tbl);
     END IF;
   END LOOP;
 END $$;
