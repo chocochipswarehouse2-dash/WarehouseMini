@@ -993,7 +993,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   };
 
   return (
-    <div className="space-y-3.5 sm:space-y-6 pb-16">
+    <div className="space-y-3.5 sm:space-y-3 pb-16">
       {/* 1. Header Page & Tabs Combined */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1002,7 +1002,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('riwayat')}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
                 activeTab === 'riwayat'
                   ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 sm:bg-emerald-600 sm:text-white sm:shadow-emerald-600/25 sm:ring-2 sm:ring-emerald-600/30'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
@@ -1024,7 +1024,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('input')}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
                 activeTab === 'input'
                   ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 sm:bg-teal-600 sm:text-white sm:shadow-teal-600/25 sm:ring-2 sm:ring-teal-600/30'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
@@ -1071,7 +1071,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           TAB 1: INPUT KEDATANGAN BARANG (BATCH INPUT)
           ======================================================== */}
       {activeTab === 'input' && (
-        <form onSubmit={handleSubmitPenerimaan} className="space-y-4 sm:space-y-6">
+        <form onSubmit={handleSubmitPenerimaan} className="space-y-2 sm:space-y-3">
           {/* Card 1: Informasi Header Surat Jalan */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-6 shadow-xs">
             <div className="flex items-center gap-2 mb-3.5 sm:mb-5 pb-2.5 sm:pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -1081,7 +1081,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-2">
               {/* Kategori Toggle */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -1161,7 +1161,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           </div>
 
           {/* Card 2: Multi-Product Batch Blocks */}
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-3 sm:space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Package className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400" />
@@ -1185,7 +1185,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-5 shadow-xs transition-all hover:border-slate-300 dark:hover:border-slate-700"
               >
                 {/* Block Header */}
-                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-2">
                     <span className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-black">
                       {blockIdx + 1}
@@ -1303,8 +1303,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   </div>
 
                   {/* Kode Produksi & Varian Table Column */}
-                  <div className="lg:col-span-9 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="lg:col-span-9 space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                           Kode Produksi <span className="text-primary-500">*</span>
@@ -1459,7 +1459,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           </div>
 
           {/* Action Bar & Summary Footer */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-md sticky bottom-4 z-20 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-3 shadow-md sticky bottom-4 z-20 flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-500">Ringkasan Input:</span>
               <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
@@ -1472,7 +1472,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 type="button"
                 onClick={handleResetForm}
                 disabled={isSaving}
-                className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                className="flex-1 sm:flex-initial px-2 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
               >
                 Reset Form
               </button>
@@ -1480,7 +1480,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               <button
                 type="submit"
                 disabled={isSaving}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50"
               >
                 {isSaving ? (
                   <>
@@ -1503,7 +1503,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           TAB 2: RIWAYAT PENERIMAAN BARANG (VIEW & TABLE)
           ======================================================== */}
       {activeTab === 'riwayat' && (
-        <div className="space-y-3 sm:space-y-6">
+        <div className="space-y-3 sm:space-y-3">
           {/* Filter Toolbar - Clean & space-efficient */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 shadow-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3">
@@ -1628,7 +1628,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       </div>
 
           {/* View Mode Switcher: Kartu (1 SJ = 1 Kartu) vs Tabel */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-2 sm:py-3 shadow-xs">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Mode Tampilan:
@@ -1680,7 +1680,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           {/* Conditional View: Card vs Table */}
           {viewMode === 'card' ? (
             /* Card View Layout (1 Kartu = 1 No. Surat Jalan) */
-            <div className="space-y-4">
+            <div className="space-y-2">
               {isLoading ? (
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 shadow-xs">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
@@ -1696,11 +1696,11 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                   {paginatedCards.map((group) => (
                     <div
                       key={group.no_surat_jalan}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-700/60 transition flex flex-col justify-between group"
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-3 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-700/60 transition flex flex-col justify-between group"
                     >
                       <div>
                         {/* Top Meta Bar */}
@@ -1882,7 +1882,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               )}
 
               {/* Pagination Cards */}
-              <div className="px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs">
+              <div className="px-2 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs">
                 <span className="text-slate-500">
                   Menampilkan {suratJalanGroups.length === 0 ? 0 : (cardPage - 1) * cardsPerPage + 1} -{' '}
                   {Math.min(cardPage * cardsPerPage, suratJalanGroups.length)} dari {suratJalanGroups.length} Surat Jalan
@@ -2107,7 +2107,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
 
             {/* Pagination Controls */}
-            <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="px-2 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <span className="text-slate-500">
                 Menampilkan {filteredData.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1} -{' '}
                 {Math.min(currentPage * rowsPerPage, filteredData.length)} dari {filteredData.length} data
@@ -2167,7 +2167,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       {shareModal.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
@@ -2183,7 +2183,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </button>
             </div>
             
-            <div className="p-4 sm:p-5 space-y-4">
+            <div className="p-2 sm:p-3 space-y-2">
               <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                 <p className="text-xs text-slate-500 font-medium">No. Surat Jalan</p>
                 <p className="text-sm font-bold text-slate-800 dark:text-white">{shareModal.noSuratJalan}</p>
@@ -2224,18 +2224,18 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </div>
             </div>
 
-            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-850">
+            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-850">
               <button
                 type="button"
                 onClick={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition"
+                className="px-2 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition"
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={handleShareSubmit}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition"
+                className="px-2 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition"
               >
                 Kirim
               </button>
@@ -2272,7 +2272,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Edit className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <div>
@@ -2294,7 +2294,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
 
             {/* Modal Scrollable Content */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-5">
+            <div className="p-2 sm:p-3 overflow-y-auto space-y-5">
               {/* Header Details */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
                 <div>
@@ -2549,7 +2549,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-850">
+            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-850">
               <button
                 type="button"
                 onClick={() => handleConfirmDeleteBatch(editingBatch.orig_no_surat_jalan)}
@@ -2564,7 +2564,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   type="button"
                   onClick={() => setEditingBatch(null)}
                   disabled={isUpdatingBatch}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition"
+                  className="px-2 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition"
                 >
                   Batal
                 </button>
@@ -2638,12 +2638,12 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-2.5">
+            <div className="mt-3 flex items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setDeletingTarget(null)}
                 disabled={isDeleting}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition"
+                className="px-2 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition"
               >
                 Batal
               </button>
@@ -2651,7 +2651,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 type="button"
                 onClick={handleExecuteDelete}
                 disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-primary-600 hover:bg-primary-700 shadow-md shadow-primary-600/30 transition disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-2 py-2 rounded-xl text-xs font-black text-white bg-primary-600 hover:bg-primary-700 shadow-md shadow-primary-600/30 transition disabled:opacity-50"
               >
                 {isDeleting ? (
                   <>
@@ -2761,7 +2761,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </button>
             </div>
 
-            <div className="w-full h-64 sm:h-72 bg-black rounded-xl overflow-hidden relative mb-4">
+            <div className="w-full h-64 sm:h-72 bg-black rounded-xl overflow-hidden relative mb-2">
               <video
                 ref={videoRef}
                 autoPlay
@@ -2834,7 +2834,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-2 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 transition cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Cetak / PDF</span>
@@ -2856,8 +2856,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               className="p-6 sm:p-10 overflow-y-auto text-slate-900 bg-white font-sans text-xs print:p-0 print:overflow-visible"
             >
               {/* Kop Surat / Header */}
-              <div className="border-b-2 border-slate-900 pb-4 mb-6">
-                <div className="flex items-start justify-between gap-4">
+              <div className="border-b-2 border-slate-900 pb-4 mb-3">
+                <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 block">
                       WAREHOUSE MANAGEMENT SYSTEM
@@ -2886,7 +2886,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </div>
 
               {/* Metadata Box */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 mb-6 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 mb-3 text-xs">
                 <div>
                   <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     No. Surat Jalan
@@ -2922,14 +2922,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </div>
 
               {printSJData.keterangan && (
-                <div className="mb-4 p-3 bg-amber-50/60 border border-amber-200 rounded-lg text-xs text-amber-900">
+                <div className="mb-2 p-3 bg-amber-50/60 border border-amber-200 rounded-lg text-xs text-amber-900">
                   <span className="font-bold uppercase text-[10px] block text-amber-700">Catatan Penerimaan:</span>
                   <span>{printSJData.keterangan}</span>
                 </div>
               )}
 
               {/* Table of Items */}
-              <div className="border border-slate-300 rounded-lg overflow-hidden mb-6">
+              <div className="border border-slate-300 rounded-lg overflow-hidden mb-3">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-100 border-b border-slate-300 text-[11px] font-black text-slate-700 uppercase">
@@ -2980,7 +2980,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </div>
 
               {/* Signature Blocks */}
-              <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-200 text-center text-xs">
+              <div className="grid grid-cols-3 gap-3 pt-6 border-t border-slate-200 text-center text-xs">
                 <div>
                   <span className="block text-slate-500 text-[10px] uppercase font-bold mb-14">
                     Diserahkan Oleh (Pengirim / CMT)

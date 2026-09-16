@@ -91,7 +91,7 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={placeholder || "Tembak Barcode / Tulis SKU..."}
+            placeholder={placeholder || "Scan Barcode / Ketik..."}
             className="w-full bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-mono font-bold text-sm sm:text-base rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block pl-11 pr-12 py-2.5 outline-none uppercase transition-all placeholder-slate-400 dark:placeholder-slate-600"
             autoComplete="off"
           />

@@ -1,16 +1,27 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/services/supabase.ts', 'utf-8');
+let content = fs.readFileSync('src/components/PickingTasksView.tsx', 'utf8');
 
-const originalPeminjamanSync = `// Skip items that are already returned to avoid re-adding them to picking list
-      if (pStatus === 'DIKEMBALIKAN' || pStatus === 'SELESAI') continue;`;
-      
-const newPeminjamanSync = `// Skip items that are already returned to avoid re-adding them to picking list
-      if (pStatus === 'DIKEMBALIKAN' || pStatus === 'SELESAI') continue;
-      
-      // Additional safety check: If it already exists in the map as SELESAI, don't overwrite it with a PENDING status from Peminjaman
-      const existing = itemsMap.get(\`\${no_sj}__\${sku}\`);
-      if (existing && existing.status === 'SELESAI') continue;`;
+content = content.replace(`            const reqQty = Math.max(1, Number(item.qty_req) || 1);
+            const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+            const isCompleted = pickedQty >= reqQty;
+            if (hideCompleted && isCompleted) return null;
+            if (!item) return null;
+            const reqQty = Math.max(1, Number(item.qty_req) || 1);
+            const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+            const isCompleted = pickedQty === reqQty;`,
+            `            if (!item) return null;
+            const reqQty = Math.max(1, Number(item.qty_req) || 1);
+            const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+            const isCompleted = pickedQty >= reqQty;
+            if (hideCompleted && isCompleted) return null;`);
 
-code = code.replace(originalPeminjamanSync, newPeminjamanSync);
-fs.writeFileSync('src/services/supabase.ts', code);
-console.log('Fixed picking overwrite bug');
+content = content.replace('`\\\\s*\\\\(?\\\\[?\\\\s*${item.size}\\\\s*\\\\]?\\\\)?\\\\s*$`, \'i\')', 
+                          '`\\\\s*\\\\(?\\\\[?\\\\s*` + item.size + `\\\\s*\\\\]?\\\\)?\\\\s*$`, \'i\')');
+
+// also, let's fix the other error: Expected ")" but found "$" in line 2668
+// Oh, the error was because I broke something with regex maybe?
+// Wait, the error was: `supabaseData.map((d) => \`${(d.no_sj || '').toUpperCase()}__${(d.sku || '').toUpperCase()}\`)`
+// Let's see if that was broken.
+
+fs.writeFileSync('src/components/PickingTasksView.tsx', content, 'utf8');
+console.log('Fixed');

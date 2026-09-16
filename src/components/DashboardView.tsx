@@ -4,7 +4,7 @@ import { ConstructionBanner } from './ConstructionBanner';
 
 export const DashboardView: React.FC = () => {
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto pb-24">
+    <div className="p-2 sm:p-3 space-y-3 max-w-7xl mx-auto pb-24">
       <ConstructionBanner />
       {/* Header Section */}
       <div className="flex flex-col gap-2">
@@ -15,7 +15,7 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         {[
           { label: 'Pesanan Diproses', value: '1,284', trend: '+12%', icon: Package, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
           { label: 'Barang Masuk', value: '8,432', trend: '+5%', icon: Truck, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
@@ -38,16 +38,16 @@ export const DashboardView: React.FC = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Recent Activity */}
         <div className="lg:col-span-2 bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
             <h2 className="text-sm font-black text-slate-900 dark:text-white">Aktivitas Terkini</h2>
             <button className="text-xs font-bold text-primary-500 hover:text-primary-600">Lihat Semua</button>
           </div>
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-2">
             {[1, 2, 3, 4].map((_, i) => (
-              <div key={i} className="flex gap-4 items-start">
+              <div key={i} className="flex gap-2 items-start">
                 <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
                   <Clock className="w-4 h-4 text-slate-500" />
                 </div>
@@ -69,7 +69,7 @@ export const DashboardView: React.FC = () => {
               Anda memiliki 3 tugas picking prioritas tinggi yang membutuhkan penyelesaian segera.
             </p>
           </div>
-          <button className="mt-6 w-full bg-white text-primary-600 font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl transition-shadow">
+          <button className="mt-3 w-full bg-white text-primary-600 font-bold py-3 px-2 rounded-xl shadow-lg hover:shadow-xl transition-shadow">
             Mulai Tugas Sekarang
           </button>
         </div>

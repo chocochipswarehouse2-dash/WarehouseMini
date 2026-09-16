@@ -1,55 +1,72 @@
 const fs = require('fs');
 
-let appContent = fs.readFileSync('src/App.tsx', 'utf-8');
+let content = fs.readFileSync('src/components/PickingTasksView.tsx', 'utf8');
 
-// 1. Add import OperasiStokView
-appContent = appContent.replace(
-  "import { Sidebar } from './components/Sidebar';",
-  "import { Sidebar } from './components/Sidebar';\nimport { OperasiStokView } from './components/OperasiStokView';"
-);
-
-// 2. Remove standalone 'scanner', 'stock_opname', and 'mutasi_log' from render. 
-// We will replace 'scanner' block with 'operasi_stok' block, and delete 'stock_opname' & 'mutasi_log'.
-
-// First, we extract the scanner block
-const scannerRegex = /\{activePage === 'scanner' && \([\s\S]*?\}\s*\)/;
-const scannerMatch = appContent.match(scannerRegex);
-if (!scannerMatch) {
-  console.log('Scanner block not found');
-  process.exit(1);
+// 1. Add hideCompleted state
+if (!content.includes('hideCompleted, setHideCompleted')) {
+  content = content.replace(
+    /const \[activeSJ, setActiveSJ\] = useState/,
+    "const [hideCompleted, setHideCompleted] = useState(true);\n  const [activeSJ, setActiveSJ] = useState"
+  );
 }
 
-const scannerContent = scannerMatch[0].replace("{activePage === 'scanner' && (", "").slice(0, -1).trim();
+// 2. Hide completed logic in activeItems rendering
+// Replace `{(activeItems || []).map((item, index) => {` 
+// with logic that filters `activeItems` based on `hideCompleted`
 
-// Next, extract stock opname block
-const soRegex = /\{activePage === 'stock_opname' && \([\s\S]*?\}\s*\)/;
-const soMatch = appContent.match(soRegex);
-const soContent = soMatch ? soMatch[0].replace("{activePage === 'stock_opname' && (", "").slice(0, -1).trim() : '';
+const activeItemsMapStr = "{(activeItems || []).map((item, index) => {";
+if (content.includes(activeItemsMapStr)) {
+  content = content.replace(
+    activeItemsMapStr,
+    `{(activeItems || []).map((item, index) => {
+            const reqQty = Math.max(1, Number(item.qty_req) || 1);
+            const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+            const isCompleted = pickedQty >= reqQty;
+            if (hideCompleted && isCompleted) return null;`
+  );
+}
 
-// Extract mutasi log block
-const mutasiRegex = /\{activePage === 'mutasi_log' && \([\s\S]*?\}\s*\)/;
-const mutasiMatch = appContent.match(mutasiRegex);
-const mutasiContent = mutasiMatch ? mutasiMatch[0].replace("{activePage === 'mutasi_log' && (", "").slice(0, -1).trim() : '';
+// Add the eye toggle button near "Daftar Barang Surat Jalan"
+const dftrBarangHeader = `<h2 className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+              Daftar Barang Surat Jalan ({activeItems.length} SKU)
+            </h2>`;
+const toggleButton = `<div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHideCompleted(!hideCompleted)}
+                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm"
+              >
+                {hideCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {hideCompleted ? 'Tampilkan Selesai' : 'Sembunyikan Selesai'}
+              </button>
+              <span className="text-[11px] font-bold text-slate-500">
+                {activeLocation ? \`📍 Filter Rak: \${activeLocation}\` : 'Semua Rak'}
+              </span>
+            </div>`;
 
-// Now replace scanner block with operasi_stok block
-const newOperasiStokBlock = `{activePage === 'operasi_stok' && (
-  <OperasiStokView
-    scannerComponent={
-      ${scannerContent}
-    }
-    mutasiLogComponent={
-      ${mutasiContent}
-    }
-    stockOpnameComponent={
-      ${soContent}
-    }
-  />
-)}`;
+content = content.replace(
+  /<span className="text-\[11px\] font-bold text-slate-500">\s*\{activeLocation \? \`📍 Filter Rak: \$\{activeLocation\}\` : 'Semua Lokasi Rak'\}\s*<\/span>/g,
+  ""
+);
+content = content.replace(dftrBarangHeader, dftrBarangHeader + "\n" + toggleButton);
 
-appContent = appContent.replace(scannerMatch[0], newOperasiStokBlock);
-appContent = appContent.replace(soMatch[0], '');
-appContent = appContent.replace(mutasiMatch[0], '');
 
-fs.writeFileSync('src/App.tsx', appContent);
-console.log('Successfully patched App.tsx');
+// 3. Regex for cleaning size out of the product name.
+// e.g. "Azura Set Dark Red [S]" -> "Azura Set Dark Red" if size is "S".
+// Let's modify the place where displayName is set.
+const displayNameLine = "const displayName = item.nama_produk || itemSku;";
+if (content.includes(displayNameLine)) {
+  const newDisplayNameLine = `let displayName = item.nama_produk || itemSku;
+            if (item.size && displayName.toUpperCase().includes(item.size.toUpperCase())) {
+              displayName = displayName.replace(new RegExp(\`\\\\s*\\\\(?\\\\[?\\\\s*\${item.size}\\\\s*\\\\]?\\\\)?\\\\s*$\`, 'i'), '');
+            }`;
+  content = content.replace(displayNameLine, newDisplayNameLine);
+}
 
+// 4. Imports for Eye and EyeOff if missing
+if (!content.includes('EyeOff')) {
+  content = content.replace('AlertTriangle,', 'AlertTriangle, Eye, EyeOff,');
+}
+
+fs.writeFileSync('src/components/PickingTasksView.tsx', content, 'utf8');
+console.log("PickingTasksView patched.");

@@ -1441,7 +1441,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   };
 
   return (
-    <div id="peminjamanContainer" className="flex-1 p-2 sm:p-4 max-w-7xl mx-auto w-full space-y-3 sm:space-y-4">
+    <div id="peminjamanContainer" className="flex-1 p-2 sm:p-4 max-w-7xl mx-auto w-full space-y-3 sm:space-y-2">
       {/* 3 Tabs Peminjaman Sementara - Standar Style Quality Control */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
         <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-1.5">
@@ -1524,10 +1524,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       </div>
 
       {/* Main 2-Panel Split Container for Desktop & Responsive Mobile */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-5 items-start">
         {/* LEFT COLUMN: FORM PENGAJUAN (Visible in 'form' tab or on lg screens) */}
         <div
-          className={`lg:col-span-6 xl:col-span-7 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4 ${
+          className={`lg:col-span-6 xl:col-span-7 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 p-2 sm:p-3 shadow-xs space-y-2 ${
             activeTab === 'stok' ? 'hidden lg:block' : activeTab === 'riwayat' ? 'hidden' : 'block'
           }`}
         >
@@ -1556,7 +1556,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-2">
             <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider font-mono">
               1. INFORMASI PEMINJAM (DIVISI LIVE / STUDIO)
             </div>
@@ -1935,7 +1935,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
         {/* RIGHT COLUMN: STOK TERSEDIA (Visible in 'stok' tab or on lg screens) */}
         <div
-          className={`lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-4 sm:p-5 shadow-xs space-y-4 ${
+          className={`lg:col-span-6 xl:col-span-5 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-2 sm:p-3 shadow-xs space-y-2 ${
             activeTab === 'form' ? 'hidden lg:block' : activeTab === 'riwayat' ? 'hidden' : 'block'
           }`}
         >
@@ -2205,7 +2205,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => setDisplayLimit((prev) => prev + 30)}
-                          className="px-4 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
+                          className="px-2 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
                         >
                           Tampilkan Lebih Banyak ({filteredStocks.length - displayLimit} baris lagi)
                         </button>
@@ -2221,7 +2221,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
         {/* FULL WIDTH: RIWAYAT PENGAJUAN (Visible in 'riwayat' tab) */}
         {activeTab === 'riwayat' && (
-          <div className="col-span-12 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="col-span-12 bg-white dark:bg-[#09090b] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-2 sm:p-3 shadow-xs space-y-2">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
               <div>
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
@@ -2367,7 +2367,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white dark:bg-[#09090b] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
             {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-[#0b1324]">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-[#0b1324]">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center">
                   <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -2394,7 +2394,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             {(() => {
               const modalFonnteConfig = getFonnteConfig();
               return (
-            <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+            <div className="p-5 overflow-y-auto flex-1 space-y-2 text-xs">
               {/* Document Summary Card */}
               <div className="p-4 bg-slate-50 dark:bg-[#0b1324] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 font-mono">
                 <div className="flex justify-between items-center">
@@ -2650,14 +2650,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 <button
                   type="button"
                   onClick={() => setSelectedRecordForModal(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  className="px-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   Tutup
                 </button>
                 <button
                   type="button"
                   onClick={() => handlePrintSJ(selectedRecordForModal)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Cetak Surat Jalan (PDF)</span>
@@ -2673,7 +2673,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white dark:bg-[#09090b] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
             {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-[#0b1324]">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-[#0b1324]">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
                   <Edit2 className="w-4 h-4" />
@@ -2700,7 +2700,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             </div>
 
             {/* Form Fields */}
-            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+            <div className="p-2 sm:p-3 overflow-y-auto flex-1 space-y-2 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Nama Peminjam */}
                 <div>
@@ -2936,7 +2936,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isSavingEdit}
                 onClick={() => setEditingRecord(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 Batal
               </button>
@@ -2944,7 +2944,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isSavingEdit}
                 onClick={handleSaveEdit}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {isSavingEdit ? (
                   <>
@@ -2966,7 +2966,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       {/* MODAL KONFIRMASI HAPUS PEMINJAMAN */}
       {deleteConfirmRecord && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#09090b] border border-rose-500/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-5 space-y-4">
+          <div className="bg-white dark:bg-[#09090b] border border-rose-500/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-5 space-y-2">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -2996,7 +2996,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => setDeleteConfirmRecord(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
               >
                 Batal
               </button>
@@ -3004,7 +3004,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => handleDeleteRecord(deleteConfirmRecord)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                className="px-2 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {isDeleting ? (
                   <>

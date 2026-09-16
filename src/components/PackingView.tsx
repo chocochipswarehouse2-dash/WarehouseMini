@@ -15,7 +15,7 @@ export const PackingView: React.FC = () => {
   ];
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto pb-24">
+    <div className="p-2 sm:p-3 space-y-3 max-w-5xl mx-auto pb-24">
       <ConstructionBanner />
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
@@ -27,11 +27,11 @@ export const PackingView: React.FC = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Left Column: Scanning & Info */}
-        <div className="space-y-6 lg:col-span-1">
+        <div className="space-y-3 lg:col-span-1">
           {/* SJ Scan Box */}
-          <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-4">
+          <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-2">
             <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">1. Scan Surat Jalan / Order</h2>
             <div className="relative">
               <ScanLine className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -70,7 +70,7 @@ export const PackingView: React.FC = () => {
         </div>
 
         {/* Right Column: Item Validation & Status */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="space-y-3 lg:col-span-2">
            <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-full">
               <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 flex justify-between items-center">
                  <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">2. Validasi Item Produk</h2>
@@ -116,7 +116,7 @@ export const PackingView: React.FC = () => {
               </div>
 
               <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 flex justify-end gap-3">
-                 <button className="px-4 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors flex items-center gap-2 border border-rose-200 dark:border-rose-800/50">
+                 <button className="px-2 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors flex items-center gap-2 border border-rose-200 dark:border-rose-800/50">
                     <AlertTriangle className="w-4 h-4" />
                     Laporkan Kendala
                  </button>

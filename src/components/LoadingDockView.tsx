@@ -29,7 +29,7 @@ export function LoadingDockView({ session, productCatalog, onShowToast }: any) {
               type="button"
               id="tab-loading-produksi"
               onClick={() => setActiveTab('produksi')}
-              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
                 activeTab === 'produksi'
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-1 ring-emerald-500/50'
                   : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -48,7 +48,7 @@ export function LoadingDockView({ session, productCatalog, onShowToast }: any) {
               type="button"
               id="tab-loading-penerimaan"
               onClick={() => setActiveTab('penerimaan')}
-              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
                 activeTab === 'penerimaan'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50'
                   : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -67,7 +67,7 @@ export function LoadingDockView({ session, productCatalog, onShowToast }: any) {
               type="button"
               id="tab-loading-pengiriman"
               onClick={() => setActiveTab('pengiriman')}
-              className={`py-2 sm:py-2.5 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
+              className={`py-2 sm:py-2.5 px-2.5 sm:px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer select-none ${
                 activeTab === 'pengiriman'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
                   : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -87,8 +87,8 @@ export function LoadingDockView({ session, productCatalog, onShowToast }: any) {
       <div className="flex-1 overflow-hidden relative">
         {tabs.length === 0 && (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm max-w-sm w-full mx-auto mt-6">
-              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="text-center p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm max-w-sm w-full mx-auto mt-3">
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
                 <Truck className="w-8 h-8" />
               </div>
               <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Akses Ditolak</h2>

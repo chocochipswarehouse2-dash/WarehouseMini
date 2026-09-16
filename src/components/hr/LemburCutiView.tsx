@@ -184,13 +184,13 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const myCuti = cutiList.filter((c) => c.nik === userNik);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-3 animate-in fade-in duration-200">
       {/* TOP TAB NAVIGATION */}
       <div className="flex bg-white dark:bg-[#131d31] p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 gap-1.5 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('lembur')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex-1 py-3 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'lembur'
               ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
@@ -203,7 +203,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
         <button
           type="button"
           onClick={() => setActiveTab('cuti')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex-1 py-3 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'cuti'
               ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
@@ -216,7 +216,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
         <button
           type="button"
           onClick={() => setActiveTab('team_cuti')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex-1 py-3 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'team_cuti'
               ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
@@ -231,10 +231,10 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
       {/* TAB 1: LEMBUR */}
       {/* ========================================================================= */}
       {activeTab === 'lembur' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* FORM INPUT LEMBUR */}
           <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2.5 mb-4">
+            <div className="flex items-center gap-2.5 mb-2">
               <div className="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500">
                 <PlusCircle className="w-5 h-5" />
               </div>
@@ -246,7 +246,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
               </div>
             </div>
 
-            <form onSubmit={handleSubmitLembur} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmitLembur} className="space-y-2 text-xs">
               <div>
                 <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
                   Tanggal Lembur
@@ -311,7 +311,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
               <button
                 type="submit"
                 disabled={submittingLembur}
-                className="w-full py-3 px-4 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-primary-500/20 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-primary-500/20 cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
                 <span>{submittingLembur ? 'Mengirim...' : 'Kirim Pengajuan Lembur'}</span>
@@ -321,7 +321,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
 
           {/* RIWAYAT LEMBUR SAYA */}
           <div className="lg:col-span-2 bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-primary-500" />
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
@@ -395,10 +395,10 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
       {/* TAB 2: CUTI SAYA */}
       {/* ========================================================================= */}
       {activeTab === 'cuti' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* FORM INPUT CUTI */}
           <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2.5 mb-4">
+            <div className="flex items-center gap-2.5 mb-2">
               <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-500">
                 <Palmtree className="w-5 h-5" />
               </div>
@@ -410,7 +410,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
               </div>
             </div>
 
-            <form onSubmit={handleSubmitCuti} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmitCuti} className="space-y-2 text-xs">
               <div>
                 <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1">
                   Jenis Perijinan
@@ -477,7 +477,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
               <button
                 type="submit"
                 disabled={submittingCuti}
-                className="w-full py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20 cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
                 <span>{submittingCuti ? 'Mengirim...' : 'Kirim Pengajuan Ijin / Cuti'}</span>
@@ -487,7 +487,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
 
           {/* RIWAYAT CUTI SAYA */}
           <div className="lg:col-span-2 bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider mb-4">
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider mb-2">
               Riwayat Cuti & Ijin Saya ({myCuti.length})
             </h3>
 
@@ -545,7 +545,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
       {/* ========================================================================= */}
       {activeTab === 'team_cuti' && (
         <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-primary-500" />
               <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
@@ -554,7 +554,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
             </div>
           </div>
 
-          <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
             Informasi cuti seluruh rekan kerja warehouse untuk memudahkan koordinasi shift harian.
           </p>
 

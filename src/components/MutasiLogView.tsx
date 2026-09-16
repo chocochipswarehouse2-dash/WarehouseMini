@@ -608,10 +608,10 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   };
 
   return (
-    <div id="mutasiLogViewContainer" className="space-y-4 max-w-7xl mx-auto pb-12">
+    <div id="mutasiLogViewContainer" className="space-y-2 max-w-7xl mx-auto pb-12">
       {/* Toolbar Controls */}
-      <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-xs">
               {logs.length.toLocaleString('id-ID')} Baris Data
@@ -688,7 +688,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     <button
                       type="button"
                       onClick={handleDeleteFiltered}
-                      className="w-full text-left px-4 py-2.5 text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
+                      className="w-full text-left px-2 py-2.5 text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
                     >
                       Hapus Hasil Filter ({filteredLogs.length})
                     </button>
@@ -698,7 +698,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                         setDateFilterModal({ isOpen: true, start: '', end: '' });
                         setIsBulkMenuOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2.5 text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
+                      className="w-full text-left px-2 py-2.5 text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
                     >
                       Hapus Rentang Tanggal...
                     </button>
@@ -778,19 +778,19 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             </span>
           </div>
         ) : fetchError ? (
-          <div className="py-16 px-6 text-center space-y-3">
+          <div className="py-16 px-3 text-center space-y-3">
             <AlertTriangle className="w-10 h-10 text-primary-500 mx-auto" />
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Gagal Mengambil Data</div>
             <p className="text-xs text-slate-500 max-w-md mx-auto">{fetchError}</p>
             <button
               onClick={loadLogs}
-              className="px-4 py-2 text-xs font-bold bg-primary-500 text-white rounded-xl shadow-md cursor-pointer"
+              className="px-2 py-2 text-xs font-bold bg-primary-500 text-white rounded-xl shadow-md cursor-pointer"
             >
               Coba Lagi
             </button>
           </div>
                 ) : filteredLogs.length === 0 ? (
-          <div className="py-16 text-center space-y-4">
+          <div className="py-16 text-center space-y-2">
             <Package className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
             <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
               Tidak Ada Mutasi Log Ditemukan
@@ -804,7 +804,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               <button
                 onClick={handleServerSearch}
                 disabled={isServerSearching}
-                className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
+                className="mt-2 px-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
               >
                 {isServerSearching ? (
                   <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
@@ -819,7 +819,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             {viewMode === 'CARD' ? (
               <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {/* Mobile Selection Toolbar */}
-                <div className="flex items-center justify-between px-3.5 sm:px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-slate-800 text-xs">
+                <div className="flex items-center justify-between px-3.5 sm:px-2 py-2.5 bg-slate-50/90 dark:bg-slate-900/70 border-b border-slate-200/80 dark:border-slate-800 text-xs">
                   <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-300 select-none">
                     <input 
                       type="checkbox" 
@@ -1019,7 +1019,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 <table className="w-full min-w-[880px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      <th className="py-3 px-4 w-10 text-center">
+                      <th className="py-3 px-2 w-10 text-center">
                         <input 
                           type="checkbox" 
                           className="rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
@@ -1027,13 +1027,13 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           onChange={toggleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-4">Tipe & Waktu</th>
-                      <th className="py-3 px-4">Invoice</th>
-                      <th className="py-3 px-4">SKU & Produk</th>
-                      <th className="py-3 px-4">Lokasi & Area</th>
-                      <th className="py-3 px-4 text-center">Qty</th>
-                      <th className="py-3 px-4">Operator & Catatan</th>
-                      <th className="py-3 px-4 text-right">Aksi</th>
+                      <th className="py-3 px-2">Tipe & Waktu</th>
+                      <th className="py-3 px-2">Invoice</th>
+                      <th className="py-3 px-2">SKU & Produk</th>
+                      <th className="py-3 px-2">Lokasi & Area</th>
+                      <th className="py-3 px-2 text-center">Qty</th>
+                      <th className="py-3 px-2">Operator & Catatan</th>
+                      <th className="py-3 px-2 text-right">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -1046,7 +1046,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           key={item.id || `${item.invoice}_${item.sku}_${Math.random()}`}
                           className={`transition-colors group ${isSelected ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}`}
                         >
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-3 px-2 text-center">
                             <input 
                               type="checkbox" 
                               className="rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
@@ -1055,7 +1055,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                             />
                           </td>
                           {/* Type & Time */}
-                          <td className="py-3 px-4 whitespace-nowrap">
+                          <td className="py-3 px-2 whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <span
                                 className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
@@ -1087,14 +1087,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           </td>
 
                           {/* Invoice */}
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-2">
                             <span className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md text-[11px] select-all">
                               {item.invoice || '-'}
                             </span>
                           </td>
 
                           {/* SKU & Product */}
-                          <td className="py-3 px-4 max-w-xs">
+                          <td className="py-3 px-2 max-w-xs">
                             <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
                               {item.sku}
                               {item.size && item.size !== '-' && item.size !== 'Default' && (
@@ -1109,7 +1109,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           </td>
 
                           {/* Location & Area */}
-                          <td className="py-3 px-4 whitespace-nowrap">
+                          <td className="py-3 px-2 whitespace-nowrap">
                             <div className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 font-mono">
                               <MapPin className="w-3 h-3" />
                               {item.lokasi}
@@ -1120,7 +1120,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           </td>
 
                           {/* Qty */}
-                          <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <td className="py-3 px-2 text-center whitespace-nowrap">
                             <span
                               className={`inline-block px-2.5 py-1 rounded-lg font-black text-xs font-mono ${
                                 isTypeIn
@@ -1133,7 +1133,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           </td>
 
                           {/* Operator & Note */}
-                          <td className="py-3 px-4 max-w-[220px]">
+                          <td className="py-3 px-2 max-w-[220px]">
                             <div className="font-semibold text-slate-800 dark:text-slate-200 truncate text-[11px]">
                               {formatOperatorWithPersonName(item.operator)}
                             </div>
@@ -1145,7 +1145,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                           </td>
 
                           {/* Actions */}
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <td className="py-3 px-2 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
                               {/* Edit Invoice Button */}
                               <button
@@ -1182,7 +1182,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 <button
                   type="button"
                   onClick={() => setDisplayLimit((prev) => prev + 150)}
-                  className="px-4 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
+                  className="px-2 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
                 >
                   Tampilkan Lebih Banyak ({filteredLogs.length - displayLimit} baris lagi)
                 </button>
@@ -1205,7 +1205,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             className="w-full max-w-4xl bg-white dark:bg-[#121216] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
           >
             {/* Modal Header */}
-            <div className="px-5 py-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="px-5 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-primary-500/10 text-primary-500 flex items-center justify-center shrink-0">
                   <Edit3 className="w-4 h-4" />
@@ -1245,7 +1245,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             </div>
 
             {/* Modal Body: Product List in Invoice */}
-            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+            <div className="p-2 sm:p-3 overflow-y-auto flex-1 space-y-2">
               {isEditLoading ? (
                 <div className="py-12 flex flex-col items-center justify-center gap-2">
                   <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
@@ -1390,7 +1390,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                   type="button"
                   disabled={isSavingEdit}
                   onClick={() => setEditingInvoice(null)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  className="px-2 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
@@ -1422,7 +1422,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       {/* Floating Action Bar for Selected Items */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-md animate-in slide-in-from-bottom-5 fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 flex items-center justify-between gap-2.5">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl px-3.5 py-2.5 sm:px-2 sm:py-3 flex items-center justify-between gap-2.5">
             <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 min-w-0">
               <span className="text-primary-500 font-black">{selectedIds.size}</span>
               <span className="text-slate-600 dark:text-slate-300 truncate">log terpilih</span>
@@ -1432,7 +1432,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={handleDeleteSelected}
-                className="px-3 sm:px-4 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+                className="px-3 sm:px-2 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Hapus Terpilih</span>
@@ -1453,7 +1453,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       {/* Date Filter Modal for Bulk Delete */}
       {dateFilterModal.isOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-[#121216] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-sm bg-white dark:bg-[#121216] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 space-y-2 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-primary-500" />
@@ -1492,7 +1492,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 type="button"
                 onClick={handleDeleteByDateRange}
                 disabled={!dateFilterModal.start || !dateFilterModal.end}
-                className="px-4 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-xl shadow-md transition-colors disabled:opacity-50 cursor-pointer w-full"
+                className="px-2 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-xl shadow-md transition-colors disabled:opacity-50 cursor-pointer w-full"
               >
                 Hapus Data pada Rentang Ini
               </button>
@@ -1509,7 +1509,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         >
           <div
             id="confirmModalBox"
-            className="w-full max-w-sm bg-white dark:bg-[#121216] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+            className="w-full max-w-sm bg-white dark:bg-[#121216] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 space-y-2 animate-in fade-in zoom-in-95 duration-150"
           >
             <div className="flex items-start gap-3">
               <div
@@ -1550,7 +1550,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 type="button"
                 disabled={isActionLoading}
                 onClick={confirmModal.onConfirm}
-                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                className={`px-2 py-1.5 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                   confirmModal.isDanger
                     ? 'bg-primary-600 hover:bg-primary-500 text-white'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white'

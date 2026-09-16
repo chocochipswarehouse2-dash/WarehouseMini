@@ -206,7 +206,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   if (!canViewPresensi) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-lg space-y-4">
+        <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-lg space-y-2">
           <div className="w-16 h-16 bg-primary-100 dark:bg-primary-950/60 rounded-2xl flex items-center justify-center mx-auto text-primary-600 dark:text-primary-400">
             <ShieldAlert className="w-8 h-8" />
           </div>
@@ -231,25 +231,25 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-3 animate-in fade-in duration-200">
       {/* Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => setActiveTab('harian')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'harian' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500'}`}
+          className={`px-2 py-3 text-sm font-bold border-b-2 ${activeTab === 'harian' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500'}`}
         >
           Presensi Harian
         </button>
         <button
           onClick={() => setActiveTab('log')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 ${activeTab === 'log' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500'}`}
+          className={`px-2 py-3 text-sm font-bold border-b-2 ${activeTab === 'log' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500'}`}
         >
           Log Presensi
         </button>
       </div>
       
       {activeTab === 'harian' && (
-        <div className="space-y-6">
+        <div className="space-y-3">
       {/* HEADER CLOCK & PROFILE BANNER */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1e293b] p-6 sm:p-8 text-white shadow-xl border border-slate-700/60">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-primary-500/15 rounded-full blur-3xl pointer-events-none"></div>
@@ -257,7 +257,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
           <Clock className="w-44 h-44" />
         </div>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="px-3 py-1 bg-primary-500/20 border border-primary-500/40 text-primary-500 rounded-full text-xs font-black tracking-wider uppercase flex items-center gap-1.5">
@@ -299,7 +299,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         {/* ACTION CARD */}
         <div className="md:col-span-2 bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500">
                   <UserCheck className="w-5 h-5" />
@@ -327,8 +327,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
             </div>
 
             {/* Status Indicator Box */}
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800/80 mb-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800/80 mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div>
                   <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</div>
                   <div className="mt-1 flex items-center gap-1.5 font-extrabold text-sm">
@@ -406,7 +406,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         {/* SHIFT RULES SUMMARY */}
         <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2.5 mb-4">
+            <div className="flex items-center gap-2.5 mb-2">
               <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
                 <Clock className="w-5 h-5" />
               </div>
@@ -454,7 +454,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
+          <div className="mt-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
             Khusus hari <b>Sabtu</b> Shift 3: 11:00 - 20:00 • Hari Minggu: <b>Libur</b>
           </div>
         </div>
@@ -462,7 +462,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
       {/* UPCOMING 7 DAYS ROSTER PREVIEW */}
       <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500">
               <CalendarDays className="w-5 h-5" />
@@ -537,7 +537,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
       {activeTab === 'log' && (
         <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 border border-slate-200 dark:border-slate-800">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-2">
             <h2 className="font-black text-lg text-slate-900 dark:text-white">Log Presensi (30 Hari Terakhir)</h2>
             <button onClick={loadLogData} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><RotateCcw className="w-4 h-4" /></button>
           </div>

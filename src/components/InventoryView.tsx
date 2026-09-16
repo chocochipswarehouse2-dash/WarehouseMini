@@ -2020,7 +2020,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           <button
             type="button"
             onClick={() => loadStockData(true, true)}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+            className="px-2 py-2 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
           >
             Muat Stok Fisik Sekarang
           </button>
@@ -2076,7 +2076,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => setDisplayLimit(30)}
-              className="px-4 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800/80 rounded-xl transition-all cursor-pointer"
+              className="px-2 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800/80 rounded-xl transition-all cursor-pointer"
             >
               Tampilkan 30 Saja (Mode Ringan)
             </button>
@@ -2096,7 +2096,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         >
           <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-lg">
                   {kpiModal === 'CATEGORY' ? '📦' : kpiModal === 'MAP' ? '🏢' : kpiModal === 'BLOK_F' ? '🎥' : '🛠️'}
@@ -2121,7 +2121,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             </div>
 
             {/* Modal Body Content */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+            <div className="p-2 sm:p-3 overflow-y-auto space-y-2 flex-1">
               {/* MODAL 1: KATEGORI DOUGHNUT BREAKDOWN */}
               {kpiModal === 'CATEGORY' && (
                 (() => {
@@ -2146,7 +2146,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   ];
 
                   return (
-                    <div className="space-y-4">
+                    <div className="space-y-2">
                       {/* Doughnut Chart Progress Visual */}
                       <div className="p-4 bg-slate-50 dark:bg-[#0E1420] rounded-2xl border border-slate-200/80 dark:border-slate-800">
                         <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center justify-between">
@@ -2376,7 +2376,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <button
                             type="button"
                             onClick={() => setModalDisplayLimit((prev) => prev + 50)}
-                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
                           >
                             ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
                           </button>
@@ -2688,7 +2688,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <button
                             type="button"
                             onClick={() => setModalDisplayLimit((prev) => prev + 50)}
-                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
                           >
                             ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
                           </button>
@@ -2887,7 +2887,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <button
                             type="button"
                             onClick={() => setModalDisplayLimit((prev) => prev + 50)}
-                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
                           >
                             ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
                           </button>
@@ -3199,7 +3199,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <button
                             type="button"
                             onClick={() => setModalDisplayLimit((prev) => prev + 50)}
-                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
                           >
                             ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
                           </button>
@@ -3421,7 +3421,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <button
                             type="button"
                             onClick={() => setModalDisplayLimit((prev) => prev + 50)}
-                            className="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
                           >
                             ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
                           </button>

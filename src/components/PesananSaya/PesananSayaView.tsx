@@ -54,15 +54,15 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   const [activeTab, setActiveTab] = useState<TabType>(tabs.length > 0 ? tabs[0].id : 'dashboard');
 
   const renderDummyTab = (name: string) => (
-    <div className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
-      <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+    <div className="flex flex-col items-center justify-center py-20 px-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
+      <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
         <Package className="w-8 h-8 text-slate-400" />
       </div>
       <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Penanganan Pesanan {name}</h3>
       <p className="text-slate-500 dark:text-slate-400 max-w-md">
         Modul integrasi {name} sedang dalam pengembangan. Nantinya semua pesanan dari platform ini akan masuk dan dikelola di sini.
       </p>
-      <div className="mt-6 px-4 py-1.5 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-xs font-bold rounded-full border border-amber-200 dark:border-amber-800/50">
+      <div className="mt-3 px-2 py-1.5 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-xs font-bold rounded-full border border-amber-200 dark:border-amber-800/50">
         Masih Dummy (Coming Soon)
       </div>
     </div>
@@ -82,7 +82,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
                 type="button"
                 id={`tab-pesanan-${tab.id}`}
                 onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-2 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
                   isActive
                     ? `${tab.color} text-white shadow-md ring-1`
                     : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -115,7 +115,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
         {tabs.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm max-w-sm w-full mx-auto">
-              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
                 <Globe className="w-8 h-8" />
               </div>
               <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Akses Ditolak</h2>
@@ -127,15 +127,15 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
         )}
         
         {tabs.length > 0 && activeTab === 'dashboard' && (
-          <div className="h-full overflow-y-auto p-4 sm:p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-full overflow-y-auto p-2 sm:p-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Dummy Dashboard Content as requested */}
               <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-2 border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center gap-2">
                   <LayoutDashboard className="w-4 h-4 text-primary-500" />
                   Progress Semua Penanganan
                 </h3>
-                <div className="space-y-4">
+                <div className="space-y-2">
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1.5">
                       <span className="text-slate-600 dark:text-slate-300">Manual Shipment</span>
@@ -182,10 +182,10 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
             <ShopeeTab onShowToast={onShowToast} />
           </div>
         )}
-        {activeTab === 'tiktok' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('Tiktok')}</div>}
-        {activeTab === 'website' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('Website')}</div>}
-        {activeTab === 'woocommerce' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('WooCommerce')}</div>}
-        {activeTab === 'lazada' && <div className="h-full overflow-y-auto p-4 sm:p-6">{renderDummyTab('Lazada')}</div>}
+        {activeTab === 'tiktok' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('Tiktok')}</div>}
+        {activeTab === 'website' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('Website')}</div>}
+        {activeTab === 'woocommerce' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('WooCommerce')}</div>}
+        {activeTab === 'lazada' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('Lazada')}</div>}
       </div>
     </div>
   );

@@ -31,7 +31,7 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1 flex-shrink-0">
             <Tag className="w-3 h-3 text-emerald-500" /> Mode:
           </span>
-          <div className="flex gap-1.5 overflow-x-auto flex-1 pb-0.5 no-scrollbar">
+          <div className="flex gap-1.5 overflow-x-auto flex-1 min-w-0 pb-0.5 no-scrollbar">
             <button
               type="button"
               onClick={() => onSelectCategory('SO')}
@@ -87,7 +87,7 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1 flex-shrink-0">
             <MapPin className="w-3 h-3 text-slate-400" /> Lokasi:
           </span>
-          <div className="flex items-center gap-1.5 overflow-x-auto flex-1 pb-0.5 no-scrollbar">
+          <div className="flex items-center gap-1.5 overflow-x-auto flex-1 min-w-0 pb-0.5 no-scrollbar">
             {/* Active custom location indicator if set */}
             {currentLocation && (
               <div className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 flex-shrink-0 shadow-sm">

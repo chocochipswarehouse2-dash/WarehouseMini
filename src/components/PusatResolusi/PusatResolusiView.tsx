@@ -41,7 +41,7 @@ export default function PusatResolusiView() {
                 type="button"
                 id={`tab-resolusi-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-2 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer select-none ${
                   isActive
                     ? `${tab.color} text-white shadow-md ring-1`
                     : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -59,10 +59,10 @@ export default function PusatResolusiView() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-auto p-4 sm:p-6">
+      <div className="flex-1 overflow-auto p-2 sm:p-3">
         <div className="max-w-4xl mx-auto mt-10">
           <div className="bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-12 text-center shadow-sm">
-            <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/20 text-rose-500 mx-auto rounded-full flex items-center justify-center mb-6">
+            <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/20 text-rose-500 mx-auto rounded-full flex items-center justify-center mb-3">
               {activeTab === 'retur' && <RefreshCcw className="w-10 h-10" />}
               {activeTab === 'refund' && <Banknote className="w-10 h-10" />}
               {activeTab === 'gagal_kirim' && <PackageX className="w-10 h-10" />}

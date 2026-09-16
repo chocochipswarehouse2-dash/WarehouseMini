@@ -1455,12 +1455,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   };
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto pb-16">
+    <div className="space-y-2 max-w-7xl mx-auto pb-16">
       {/* Section-Specific Header / Navigation if wrapped by QualityControlView */}
       {activeSection ? (
         <>
           {activeSection === 'reject' && (
-            <div className="bg-white dark:bg-[#131d31] p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+            <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
               <div className="flex items-center gap-3.5">
                 <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-900 shadow-xs">
                   <AlertTriangle className="w-5 h-5" />
@@ -1573,7 +1573,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   type="button"
                   id="subtab-perbaikan-cuci"
                   onClick={() => setActiveTab('cuci')}
-                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-2 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
                     activeTab === 'cuci'
                       ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
@@ -1596,7 +1596,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   type="button"
                   id="subtab-perbaikan-permak"
                   onClick={() => setActiveTab('permak')}
-                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-2 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
                     activeTab === 'permak'
                       ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25 ring-1 ring-amber-500/50'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
@@ -1667,7 +1667,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   type="button"
                   id="subtab-defect-ruang"
                   onClick={() => setActiveTab('defect')}
-                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-2 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
                     activeTab === 'defect'
                       ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25 ring-1 ring-purple-500/50'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
@@ -1690,7 +1690,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   type="button"
                   id="subtab-defect-arsip"
                   onClick={() => setActiveTab('rekap')}
-                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-2 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
                     activeTab === 'rekap'
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
@@ -1715,9 +1715,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       ) : (
         <>
           {/* 1. Header Banner & Modul Indicator */}
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-lg border border-indigo-800/40 relative overflow-hidden">
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-2 sm:p-3 rounded-2xl sm:rounded-3xl shadow-lg border border-indigo-800/40 relative overflow-hidden">
         <div className="absolute right-0 top-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-2">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-bold uppercase tracking-wider">
               <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
@@ -1913,7 +1913,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         <button
           type="button"
           onClick={() => setActiveTab('reject')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'reject'
               ? 'bg-primary-600 text-white shadow-md shadow-primary-600/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1926,7 +1926,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         <button
           type="button"
           onClick={() => setActiveTab('cuci')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'cuci'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1939,7 +1939,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         <button
           type="button"
           onClick={() => setActiveTab('permak')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'permak'
               ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1952,7 +1952,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         <button
           type="button"
           onClick={() => setActiveTab('defect')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'defect'
               ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1965,7 +1965,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         <button
           type="button"
           onClick={() => setActiveTab('rekap')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'rekap'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1978,7 +1978,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         <button
           type="button"
           onClick={() => setActiveTab('input')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ml-auto ${
+          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ml-auto ${
             activeTab === 'input'
               ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
               : 'text-primary-500 bg-primary-500/10 hover:bg-primary-500/20'
@@ -1993,7 +1993,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       {/* 4. Tab 1: Form Input Reject Baru */}
       {activeTab === 'input' && (
-        <div className="bg-white dark:bg-[#131d31] p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
             <div>
               <h2 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
@@ -2013,8 +2013,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             </button>
           </div>
 
-          <form onSubmit={handleCreateTicket} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <form onSubmit={handleCreateTicket} className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {/* Field SKU */}
               <div className="space-y-1 relative">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -2276,7 +2276,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-4 text-xs text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                <div className="text-center py-2 text-xs text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
                   Belum ada foto yang dipilih. Foto opsional namun sangat direkomendasikan untuk bukti QC.
                 </div>
               )}
@@ -2441,13 +2441,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setActiveTab('reject')}
-                className="px-4 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="px-2 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="submit"
-                className={`px-6 py-2.5 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-2 ${
+                className={`px-3 py-2.5 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-2 ${
                   formTindakanSortir === 'CUCI'
                     ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
                     : formTindakanSortir === 'PERMAK'
@@ -2841,7 +2841,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 <button
                   type="button"
                   onClick={() => setTicketDisplayLimit((prev) => prev + TICKET_RENDER_STEP)}
-                  className="px-6 py-2.5 bg-white dark:bg-[#131d31] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                  className="px-3 py-2.5 bg-white dark:bg-[#131d31] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-2"
                 >
                   <span>⬇️ Tampilkan Lebih Banyak (+{TICKET_RENDER_STEP} Tiket)</span>
                   <span className="text-[11px] text-slate-400 font-mono">
@@ -2885,7 +2885,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-2 text-xs">
               <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl space-y-1">
                 <div className="font-mono font-bold text-primary-500">
                   #{sortirModalTicket.ticket_no} • {sortirModalTicket.sku}
@@ -2995,7 +2995,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setSortirModalTicket(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
+                className="px-2 py-2 border rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
               >
                 Batal
               </button>
@@ -3031,7 +3031,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-2 text-xs">
               <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl space-y-1">
                 <div className="font-mono font-bold text-primary-500">
                   #{progressModalTicket.ticket_no} • {progressModalTicket.sku}
@@ -3197,7 +3197,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setProgressModalTicket(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
+                className="px-2 py-2 border rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
               >
                 Batal
               </button>
@@ -3231,7 +3231,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-2 text-xs">
               <div className="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800/50 space-y-1">
                 <div className="font-mono font-bold text-purple-700 dark:text-purple-300">
                   #{accModalTicket.ticket_no} • {accModalTicket.sku}
@@ -3323,7 +3323,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setAccModalTicket(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
+                className="px-2 py-2 border rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300"
               >
                 Batal
               </button>
@@ -3364,7 +3364,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditTicket} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleSaveEditTicket} className="p-5 space-y-2 text-xs">
               <div className="p-3 bg-amber-50/60 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900/50 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
@@ -3563,7 +3563,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 <button
                   type="button"
                   onClick={() => setEditModalTicket(null)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-2 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 >
                   Batal
                 </button>
@@ -3614,7 +3614,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       {deleteConfirmTicket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 overflow-hidden">
-            <div className="flex items-start gap-3.5 mb-4">
+            <div className="flex items-start gap-3.5 mb-2">
               <div className="p-2.5 rounded-xl bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 shrink-0">
                 <Trash2 className="w-5 h-5" />
               </div>
@@ -3636,7 +3636,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3.5 text-xs space-y-2 mb-4 border border-slate-200 dark:border-slate-700/60">
+            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3.5 text-xs space-y-2 mb-2 border border-slate-200 dark:border-slate-700/60">
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">Nomor Tiket:</span>
                 <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
@@ -3686,7 +3686,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 type="button"
                 disabled={isDeletingTicket}
                 onClick={() => setDeleteConfirmTicket(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="px-2 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Batal
               </button>
@@ -3694,7 +3694,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                 type="button"
                 disabled={isDeletingTicket}
                 onClick={handleExecuteDeleteTicket}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white transition-all flex items-center gap-1.5 shadow-sm shadow-primary-600/30 cursor-pointer disabled:opacity-50"
+                className="px-2 py-2 rounded-xl text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white transition-all flex items-center gap-1.5 shadow-sm shadow-primary-600/30 cursor-pointer disabled:opacity-50"
               >
                 {isDeletingTicket ? (
                   <>

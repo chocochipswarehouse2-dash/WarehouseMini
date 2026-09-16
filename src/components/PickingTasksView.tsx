@@ -13,7 +13,7 @@ import {
   CornerDownLeft,
   Zap,
   ArrowLeft,
-  AlertTriangle,
+  AlertTriangle, Eye, EyeOff,
   FileText,
   Printer,
   Truck,
@@ -112,6 +112,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
 
   // Active SJ workspace state (when picker gets 1 SJ)
+  const [hideCompleted, setHideCompleted] = useState(true);
   const [activeSJ, setActiveSJ] = useState<PickingSuratJalanGroup | null>(null);
   const [activeItems, setActiveItems] = useState<PickingListItem[]>([]);
   const [unexpectedItems, setUnexpectedItems] = useState<PickingListItem[]>([]);
@@ -1850,9 +1851,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // =========================================================================
   if (activeSJ) {
     return (
-      <div className="max-w-4xl mx-auto space-y-4 pb-8">
+      <div className="max-w-4xl mx-auto space-y-2 pb-8">
         {/* Top Header Bar */}
-        <div className="bg-white dark:bg-[#131d31] p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex flex-wrap justify-between items-start gap-3">
             <div>
               <button
@@ -1913,7 +1914,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           </div>
 
           {/* Progress Bar Visual */}
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="mt-2 pt-3 border-t border-slate-100 dark:border-slate-800/80">
             <div className="flex justify-between items-center text-xs font-bold mb-1.5">
               <span className="text-slate-600 dark:text-slate-400">
                 {activeStats.percentage}% Selesai ({activeItems.filter((i) => i.qty_picked >= i.qty_req).length} dari {activeItems.length} SKU)
@@ -1946,7 +1947,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             {/* METODE PEMINDAIAN SELECTOR */}
             <div
               id="pickingScanMethodContainer"
-              className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-4 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
+              className="bg-white dark:bg-[#0F0F12] rounded-t-[inherit] px-2 py-2.5 border-b border-slate-200 dark:border-slate-800/80 transition-colors"
             >
               <div className="max-w-lg mx-auto">
                 <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 text-center">
@@ -2037,7 +2038,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
             {/* MODE 2: MANUAL SEARCH & AUTOCOMPLETE INPUT */}
             {inputMode === 'manual' && (
-              <div className="bg-transparent px-4 py-3.5 border-b border-slate-200 dark:border-slate-800/80">
+              <div className="bg-transparent px-2 py-3.5 border-b border-slate-200 dark:border-slate-800/80">
                 <form onSubmit={handleManualSearchSubmit} className="max-w-lg mx-auto space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                     <div className="sm:col-span-6 relative">
@@ -2178,7 +2179,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </div>
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-extrabold text-xs rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1 cursor-pointer"
+                        className="px-2 py-2 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-extrabold text-xs rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1 cursor-pointer"
                       >
                         <PlusCircle className="w-3.5 h-3.5" /> Input
                       </button>
@@ -2205,7 +2206,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
             {/* Quick Shelf Selection Pills (Compact horizontal bar inside sticky box) */}
             {uniqueLocations.length > 0 && (
-              <div className="px-4 py-2 bg-slate-50 dark:bg-[#0F0F12] flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t border-slate-100 dark:border-slate-800/80">
+              <div className="px-2 py-2 bg-slate-50 dark:bg-[#0F0F12] flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t border-slate-100 dark:border-slate-800/80">
                 <span className="text-[10px] font-black uppercase text-slate-400 shrink-0">
                   Rak SJ:
                 </span>
@@ -2334,16 +2335,28 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             <h2 className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">
               Daftar Barang Surat Jalan ({activeItems.length} SKU)
             </h2>
-            <span className="text-[11px] font-bold text-slate-500">
-              {activeLocation ? `📍 Filter Rak: ${activeLocation}` : 'Semua Lokasi Rak'}
-            </span>
+<div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHideCompleted(!hideCompleted)}
+                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm"
+              >
+                {hideCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {hideCompleted ? 'Tampilkan Selesai' : 'Sembunyikan Selesai'}
+              </button>
+              <span className="text-[11px] font-bold text-slate-500">
+                {activeLocation ? `📍 Filter Rak: ${activeLocation}` : 'Semua Rak'}
+              </span>
+            </div>
+            
           </div>
 
           {(activeItems || []).map((item, index) => {
             if (!item) return null;
             const reqQty = Math.max(1, Number(item.qty_req) || 1);
             const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
-            const isCompleted = pickedQty === reqQty;
+            const isCompleted = pickedQty >= reqQty;
+            if (hideCompleted && isCompleted) return null;
             const isOver = pickedQty > reqQty;
             const itemSku = String(item.sku || '').trim().toUpperCase();
 
@@ -2389,12 +2402,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             const displaySize = (item.size && item.size !== '-') 
               ? item.size 
               : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(itemSku));
-            const displayName = item.nama_produk || itemSku;
+            let displayName = item.nama_produk || itemSku;
+            if (item.size && displayName.toUpperCase().includes(item.size.toUpperCase())) {
+              displayName = displayName.replace(new RegExp(`\\s*\\(?\\[?\\s*${item.size}\\s*\\]?\\)?\\s*$`, 'i'), '');
+            }
 
             return (
               <div
                 key={item.id || index}
-                className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#131d31] border-2 ${cardBorder} shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-all ${
+                className={`p-2 sm:p-3 rounded-2xl bg-white dark:bg-[#131d31] border-2 ${cardBorder} shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-2 transition-all ${
                   isCurrentShelf ? 'ring-4 ring-primary-500/30 border-primary-500' : ''
                 }`}
               >
@@ -2572,7 +2588,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         </div>
 
         {/* NON-STICKY BOTTOM ACTION BAR (At the end of picking list as requested) */}
-        <div className="mt-6 bg-white dark:bg-[#131d31] p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="mt-3 bg-white dark:bg-[#131d31] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <div className="text-xs">
               <span className="text-slate-400 font-bold block text-[10px] uppercase">Ringkasan SJ</span>
@@ -2589,7 +2605,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
           <button
             onClick={handleOpenRekapModal}
-            className={`px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer ${
+            className={`px-3 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer ${
               activeStats.statusType === 'SEMUA_PAS'
                 ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
                 : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
@@ -2605,7 +2621,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
             <div className="bg-white dark:bg-[#131d31] w-full max-w-2xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               {/* Modal Header */}
-              <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
+              <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
                 <div>
                   <span className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
                     Konfirmasi Penyelesaian
@@ -2623,7 +2639,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </div>
 
               {/* Modal Body */}
-              <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
+              <div className="p-2 sm:p-3 overflow-y-auto space-y-2">
                 {/* Status Evaluation Banner */}
                 {activeStats.statusType === 'SEMUA_PAS' && (
                   <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-2xl flex items-center gap-3">
@@ -2769,11 +2785,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </div>
 
               {/* Modal Footer */}
-              <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-end gap-2">
+              <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsRekapModalOpen(false)}
-                  className="px-4 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl"
+                  className="px-2 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl"
                 >
                   Lanjut Picking
                 </button>
@@ -2805,7 +2821,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // VIEW 1: DAFTAR SURAT JALAN / INVOICE (List Per SJ)
   // =========================================================================
   return (
-    <div className="max-w-4xl mx-auto space-y-4 animate-in fade-in duration-200">
+    <div className="max-w-4xl mx-auto space-y-2 animate-in fade-in duration-200">
       {/* Filter Tabs & Search Bar */}
       <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2931,13 +2947,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
               Tidak ada Surat Jalan dalam kategori ini
             </h3>
-            <p className="text-xs text-slate-400 mt-1 mb-4">
+            <p className="text-xs text-slate-400 mt-1 mb-2">
               Belum ada tugas picking atau semua Surat Jalan sudah diselesaikan.
             </p>
             {sjGroups.length === 0 && (
               <button
                 onClick={handleSeedSampleSJ}
-                className="px-4 py-2.5 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 font-extrabold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5"
+                className="px-2 py-2.5 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 font-extrabold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5"
               >
                 <Sparkles className="w-4 h-4" /> Buat Contoh Surat Jalan Picking
               </button>
@@ -2954,7 +2970,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             return (
               <div
                 key={group.no_sj}
-                className={`p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#131d31] border transition-all shadow-sm ${
+                className={`p-2 sm:p-3 rounded-2xl bg-white dark:bg-[#131d31] border transition-all shadow-sm ${
                   isDone
                     ? 'border-emerald-200 dark:border-emerald-950 bg-emerald-50/10'
                     : 'border-slate-200 dark:border-slate-800 hover:border-primary-500'
@@ -3050,7 +3066,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     )}
                     <button
                       onClick={() => handleSelectSJ(group)}
-                      className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                      className={`px-2 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
                         isDone
                           ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                           : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
@@ -3114,7 +3130,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       {viewCompletedSJ && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#131d31] w-full max-w-2xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
               <div>
                 <span className="text-[10px] font-extrabold text-emerald-500 uppercase tracking-wider">
                   Hasil Rekap Surat Jalan (Selesai)
@@ -3132,7 +3148,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
+            <div className="p-2 sm:p-3 overflow-y-auto space-y-2">
               <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
                 <div className="bg-slate-100 dark:bg-slate-800 px-3 py-2 text-[10px] font-extrabold uppercase text-slate-500 flex justify-between">
                   <span>Item Surat Jalan</span>
@@ -3208,7 +3224,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       {isEditSJModalOpen && editingSJGroup && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#131d31] w-full max-w-3xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
               <div>
                 <span className="text-[10px] font-extrabold text-primary-500 uppercase tracking-wider">
                   Kelola Form Surat Jalan
@@ -3225,7 +3241,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
@@ -3427,7 +3443,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setIsEditSJModalOpen(false)}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 font-bold text-xs rounded-xl"
+                className="px-2 py-2 bg-slate-200 dark:bg-slate-800 font-bold text-xs rounded-xl"
               >
                 Batal
               </button>
@@ -3456,7 +3472,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       {isEditItemModalOpen && editingItemData && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#131d31] w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]">
               <div>
                 <span
                   className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded ${
@@ -3483,7 +3499,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2">
               {/* If this is an unexpected/wrong item: offer conversion to SJ item */}
               {editingItemData.type === 'UNEXPECTED' && (
                 <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/20 rounded-2xl border border-blue-200 dark:border-blue-800/60 space-y-2">
@@ -3674,7 +3690,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     setIsEditItemModalOpen(false);
                     setEditingItemData(null);
                   }}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 font-bold text-xs rounded-xl"
+                  className="px-2 py-2 bg-slate-200 dark:bg-slate-800 font-bold text-xs rounded-xl"
                 >
                   Batal
                 </button>
@@ -3697,17 +3713,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
             <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{confirmDialog.title}</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{confirmDialog.message}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                className="px-2 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
               >
                 Batal
               </button>
               <button
                 onClick={confirmDialog.onConfirm}
-                className="px-4 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
+                className="px-2 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
               >
                 Ya, Lanjutkan
               </button>

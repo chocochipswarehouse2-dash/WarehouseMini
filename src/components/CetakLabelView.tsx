@@ -702,7 +702,7 @@ export const CetakLabelView: React.FC = () => {
         UI APLIKASI (Tidak akan tercetak)
         ========================================================
       */}
-      <div className="max-w-6xl mx-auto space-y-4 print:hidden mb-20 px-2 sm:px-4">
+      <div className="max-w-6xl mx-auto space-y-2 print:hidden mb-20 px-2 sm:px-2">
         
         {/* Notifikasi / Alert Banner */}
         {importNotice && (
@@ -739,7 +739,7 @@ export const CetakLabelView: React.FC = () => {
         />
 
         {/* Grid 2 Kolom: Form Input Label & Antrean Cetak (A6) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
           
           {/* ====================================================
               KOLOM KIRI: FORM INPUT PAKET (Termasuk Import CSV & Auto-Fill)
@@ -936,7 +936,7 @@ export const CetakLabelView: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleAddLabel} className="p-4 sm:p-5 space-y-4">
+            <form onSubmit={handleAddLabel} className="p-2 sm:p-3 space-y-2">
               
               {/* =======================================================
                   BAGIAN ATAS: ID PAKET & PILIHAN JASA KIRIM (SEPERTI MANUAL SHIPMENT)
@@ -1147,7 +1147,7 @@ export const CetakLabelView: React.FC = () => {
                 </div>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  className="flex-1 px-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
                   Tambah ke Antrean
@@ -1183,7 +1183,7 @@ export const CetakLabelView: React.FC = () => {
                 type="button"
                 onClick={handlePrint}
                 disabled={labels.length === 0}
-                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm"
+                className="w-full py-2.5 px-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed text-sm"
               >
                 <Printer className="w-4 h-4" />
                 Cetak {labels.length} Label A6
@@ -1316,7 +1316,7 @@ export const CetakLabelView: React.FC = () => {
             <button
               type="button"
               onClick={handlePrint}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+              className="px-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
             >
               <Printer className="w-3.5 h-3.5" />
               Cetak A6

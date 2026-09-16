@@ -403,9 +403,9 @@ export const SupabaseMigrationView: React.FC = () => {
   const totalTransferredRows = tables.reduce((acc, t) => acc + (t.transferredCount || 0), 0);
 
   return (
-    <div className="flex-1 p-3 sm:p-5 max-w-7xl mx-auto w-full space-y-6">
+    <div className="flex-1 p-3 sm:p-5 max-w-7xl mx-auto w-full space-y-3">
       {/* Header Banner */}
-      <div className="bg-white dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
             <span className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl">
@@ -487,7 +487,7 @@ export const SupabaseMigrationView: React.FC = () => {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
             <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
               <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <ExternalLink className="w-4 h-4 text-emerald-500" />
@@ -600,7 +600,7 @@ export const SupabaseMigrationView: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveStep(3)}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-2 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <span>Sudah Dijalankan, Lanjut ke Langkah 3</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -769,7 +769,7 @@ export const SupabaseMigrationView: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveStep(2)}
-              className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+              className="px-2 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
             >
               Kembali ke Langkah 2
             </button>
@@ -779,7 +779,7 @@ export const SupabaseMigrationView: React.FC = () => {
                 scanTableCounts();
                 setActiveStep(4);
               }}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-2 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <span>Lanjut ke Langkah 4: Kloning Data</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -820,7 +820,7 @@ export const SupabaseMigrationView: React.FC = () => {
                 type="button"
                 disabled={isMigrating || isScanning}
                 onClick={startMigration}
-                className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-[0_0_12px_rgba(16,185,129,0.3)] cursor-pointer"
+                className="px-2 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-[0_0_12px_rgba(16,185,129,0.3)] cursor-pointer"
               >
                 {isMigrating ? (
                   <>
@@ -987,14 +987,14 @@ export const SupabaseMigrationView: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveStep(3)}
-              className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+              className="px-2 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
             >
               Kembali ke Langkah 3
             </button>
             <button
               type="button"
               onClick={() => setActiveStep(5)}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-2 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <span>Lanjut ke Langkah 5: Beralih Akun</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -1022,7 +1022,7 @@ export const SupabaseMigrationView: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Opsi A: Instan di Browser */}
-            <div className="p-4 sm:p-5 bg-slate-50 dark:bg-[#0F0F12] border border-emerald-500/30 rounded-2xl space-y-4">
+            <div className="p-2 sm:p-3 bg-slate-50 dark:bg-[#0F0F12] border border-emerald-500/30 rounded-2xl space-y-2">
               <div className="flex items-center gap-2 text-emerald-500 font-bold text-xs uppercase tracking-wider">
                 <Zap className="w-4 h-4" />
                 <span>Opsi 1: Aktifkan di Browser Ini Sekarang</span>
@@ -1047,7 +1047,7 @@ export const SupabaseMigrationView: React.FC = () => {
             </div>
 
             {/* Opsi B: Update Vercel */}
-            <div className="p-4 sm:p-5 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl space-y-4">
+            <div className="p-2 sm:p-3 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2">
               <div className="flex items-center gap-2 text-blue-500 font-bold text-xs uppercase tracking-wider">
                 <Server className="w-4 h-4" />
                 <span>Opsi 2: Update Permanen untuk Seluruh Tim (Vercel)</span>

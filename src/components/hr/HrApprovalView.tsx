@@ -140,9 +140,9 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-3 animate-in fade-in duration-200">
       {/* HEADER BANNER */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#131d31] shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-6 rounded-3xl bg-white dark:bg-[#131d31] shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-500">
             <ShieldCheck className="w-6 h-6" />
@@ -166,7 +166,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
           type="button"
           onClick={loadData}
           disabled={loading}
-          className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+          className="px-2 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
         >
           <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Data</span>
@@ -174,7 +174,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
       </div>
 
       {/* QUICK SUMMARY CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <button
           type="button"
           onClick={() => setActiveSection('lembur')}
@@ -257,7 +257,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
       {/* SECTION: APPROVAL LEMBUR */}
       {activeSection === 'lembur' && (
         <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-500" />
               <h2 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
@@ -275,7 +275,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
               {pendingLembur.map((item) => (
                 <div
                   key={item.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs"
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
                 >
                   <div>
                     <div className="flex items-center gap-2">
@@ -299,7 +299,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                       type="button"
                       onClick={() => handleApproveLembur(item)}
                       disabled={processingId === item.id}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                      className="px-2 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Setujui</span>
@@ -309,7 +309,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                       type="button"
                       onClick={() => handleRejectLembur(item)}
                       disabled={processingId === item.id}
-                      className="px-4 py-2 rounded-xl bg-primary-500/10 hover:bg-primary-500/20 text-primary-600 dark:text-primary-400 font-bold flex items-center gap-1.5 border border-primary-500/20 cursor-pointer disabled:opacity-50"
+                      className="px-2 py-2 rounded-xl bg-primary-500/10 hover:bg-primary-500/20 text-primary-600 dark:text-primary-400 font-bold flex items-center gap-1.5 border border-primary-500/20 cursor-pointer disabled:opacity-50"
                     >
                       <XCircle className="w-4 h-4" />
                       <span>Tolak</span>
@@ -325,7 +325,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
       {/* SECTION: APPROVAL CUTI */}
       {activeSection === 'cuti' && (
         <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Palmtree className="w-4 h-4 text-teal-500" />
               <h2 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
@@ -343,7 +343,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
               {pendingCuti.map((item) => (
                 <div
                   key={item.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs"
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
                 >
                   <div>
                     <div className="flex items-center gap-2">
@@ -367,7 +367,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                       type="button"
                       onClick={() => handleApproveCuti(item)}
                       disabled={processingId === item.id}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                      className="px-2 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Setujui</span>
@@ -377,7 +377,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
                       type="button"
                       onClick={() => handleRejectCuti(item)}
                       disabled={processingId === item.id}
-                      className="px-4 py-2 rounded-xl bg-primary-500/10 hover:bg-primary-500/20 text-primary-600 dark:text-primary-400 font-bold flex items-center gap-1.5 border border-primary-500/20 cursor-pointer disabled:opacity-50"
+                      className="px-2 py-2 rounded-xl bg-primary-500/10 hover:bg-primary-500/20 text-primary-600 dark:text-primary-400 font-bold flex items-center gap-1.5 border border-primary-500/20 cursor-pointer disabled:opacity-50"
                     >
                       <XCircle className="w-4 h-4" />
                       <span>Tolak</span>
@@ -392,7 +392,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
 
       {/* SECTION: RIWAYAT LEMBUR (DISETUJUI / DITOLAK) */}
       {activeSection === 'riwayat_lembur' && (
-        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <CheckCheck className="w-4 h-4 text-emerald-500" />
@@ -440,7 +440,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
             const totalUang = accList.reduce((acc, curr) => acc + (Number(curr.total_lembur) || 0), 0);
 
             return (
-              <div className="space-y-4">
+              <div className="space-y-2">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
                     <div className="text-slate-500 dark:text-slate-400 font-bold">Total Lembur Disetujui</div>

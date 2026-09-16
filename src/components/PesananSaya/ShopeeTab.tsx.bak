@@ -140,7 +140,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         const productMap = new Map();
         for (const p of masterProducts) {
           if (p.sku) {
-            productMap.set(String(p.sku).toUpperCase(), p.p);
+            productMap.set(p.String(sku)?.toString()?.toUpperCase(), p.p);
           }
         }
 

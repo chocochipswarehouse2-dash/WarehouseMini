@@ -12,7 +12,7 @@ export const PengirimanView: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-4xl mx-auto pb-24">
+    <div className="p-2 sm:p-3 space-y-3 max-w-4xl mx-auto pb-24">
       <ConstructionBanner />
       <div className="flex flex-col gap-1 hidden">
         <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
@@ -31,7 +31,7 @@ export const PengirimanView: React.FC = () => {
             type="button"
             id="tab-pengiriman-input"
             onClick={() => setActiveTab('input')}
-            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer select-none ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-2 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer select-none ${
               activeTab === 'input' 
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50' 
                 : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -44,7 +44,7 @@ export const PengirimanView: React.FC = () => {
             type="button"
             id="tab-pengiriman-history"
             onClick={() => setActiveTab('history')}
-            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer select-none ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-2 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer select-none ${
               activeTab === 'history' 
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50' 
                 : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
@@ -57,7 +57,7 @@ export const PengirimanView: React.FC = () => {
       </div>
 
       {activeTab === 'input' ? (
-        <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-6">
+        <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-3">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Tujuan Pengiriman</label>
             <div className="relative">
@@ -85,7 +85,7 @@ export const PengirimanView: React.FC = () => {
               </button>
             </div>
 
-            <div className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-xl border border-slate-200 dark:border-slate-700 mb-4">
+            <div className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-xl border border-slate-200 dark:border-slate-700 mb-2">
                <div className="relative">
                  <ScanLine className="absolute left-3 top-2.5 w-5 h-5 text-primary-500" />
                  <input type="text" placeholder="Scan Barcode Paket di sini..." className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-bold focus:ring-2 focus:ring-primary-500 outline-none" />
@@ -130,27 +130,27 @@ export const PengirimanView: React.FC = () => {
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-500 dark:text-slate-400">
                 <tr>
-                  <th className="px-4 py-3 font-bold">Waktu</th>
-                  <th className="px-4 py-3 font-bold">Tujuan</th>
-                  <th className="px-4 py-3 font-bold">Total Paket</th>
-                  <th className="px-4 py-3 font-bold">Status</th>
-                  <th className="px-4 py-3 font-bold text-right">Aksi</th>
+                  <th className="px-2 py-3 font-bold">Waktu</th>
+                  <th className="px-2 py-3 font-bold">Tujuan</th>
+                  <th className="px-2 py-3 font-bold">Total Paket</th>
+                  <th className="px-2 py-3 font-bold">Status</th>
+                  <th className="px-2 py-3 font-bold text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {[1, 2, 3].map((item) => (
                   <tr key={item} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">14:{item * 12} WIB</td>
-                    <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-bold">
+                    <td className="px-2 py-3 text-slate-600 dark:text-slate-300">14:{item * 12} WIB</td>
+                    <td className="px-2 py-3 text-slate-900 dark:text-slate-100 font-bold">
                       {item === 1 ? 'Cabang Toko A' : item === 2 ? 'Ekspedisi JNT' : 'Cabang Toko C'}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{item * 3} Paket</td>
-                    <td className="px-4 py-3">
+                    <td className="px-2 py-3 text-slate-600 dark:text-slate-300">{item * 3} Paket</td>
+                    <td className="px-2 py-3">
                       <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-wider">
                         Terkirim
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-2 py-3 text-right">
                        <button className="text-[10px] font-bold text-primary-500 hover:underline">Detail</button>
                     </td>
                   </tr>

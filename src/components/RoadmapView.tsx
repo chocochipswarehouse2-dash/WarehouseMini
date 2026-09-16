@@ -154,7 +154,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
     <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0a0f1c]">
       {/* HEADER */}
       <div className="bg-white dark:bg-[#131d31] border-b border-slate-200 dark:border-slate-800 shrink-0">
-        <div className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-4 sm:px-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h1 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
               <Map className="w-5 h-5 text-primary-500" />
@@ -193,7 +193,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
         </div>
         
         {/* TABS */}
-        <div className="flex items-center gap-6 px-4 sm:px-6 mt-2">
+        <div className="flex items-center gap-3 px-2 sm:px-3 mt-2">
           <button
             onClick={() => setActiveTab('roadmap')}
             className={`pb-3 text-sm font-bold border-b-2 transition-colors cursor-pointer ${
@@ -222,8 +222,8 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
       ) : (
         <>
           {/* BOARD VIEW */}
-          <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 sm:p-6">
-        <div className="flex gap-4 sm:gap-6 h-full min-w-max pb-2">
+          <div className="flex-1 overflow-x-auto overflow-y-hidden p-2 sm:p-3">
+        <div className="flex gap-2 sm:gap-3 h-full min-w-max pb-2">
           {STATUSES.map(status => {
             const colItems = items.filter(it => it.status === status.id);
             return (
@@ -330,7 +330,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
       {showModal && editingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-[#131d31] w-full max-w-lg rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a0f1c]">
+            <div className="flex items-center justify-between p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a0f1c]">
               <h2 className="text-lg font-black text-slate-800 dark:text-white">
                 {editingItem.id ? 'Edit Request / Fitur' : 'Request Fitur Baru'}
               </h2>
@@ -339,8 +339,8 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
               </button>
             </div>
             
-            <div className="p-4 sm:p-5 overflow-y-auto">
-              <form id="roadmapForm" onSubmit={handleSave} className="space-y-4">
+            <div className="p-2 sm:p-3 overflow-y-auto">
+              <form id="roadmapForm" onSubmit={handleSave} className="space-y-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
                     Judul Request
@@ -349,7 +349,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
                     type="text"
                     value={editingItem.title}
                     onChange={e => setEditingItem({ ...editingItem, title: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                     placeholder="Contoh: Tambah filter tanggal di halaman Laporan"
                     required
                   />
@@ -362,12 +362,12 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
                   <textarea
                     value={editingItem.description}
                     onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-primary-500 min-h-[100px]"
+                    className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-3 text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-primary-500 min-h-[100px]"
                     placeholder="Jelaskan kebutuhan Anda secara detail agar tim atau AI paham..."
                   />
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
                       Jenis
@@ -375,7 +375,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
                     <select
                       value={editingItem.type}
                       onChange={e => setEditingItem({ ...editingItem, type: e.target.value as RoadmapType })}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary-500"
+                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary-500"
                     >
                       <option value="feature">Fitur Baru</option>
                       <option value="bug">Bug / Error</option>
@@ -390,7 +390,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
                     <select
                       value={editingItem.priority}
                       onChange={e => setEditingItem({ ...editingItem, priority: e.target.value as RoadmapPriority })}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary-500"
+                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary-500"
                     >
                       <option value="low">Rendah (Low)</option>
                       <option value="medium">Sedang (Medium)</option>
@@ -402,11 +402,11 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
               </form>
             </div>
             
-            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a0f1c] flex justify-end gap-3 shrink-0">
+            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0a0f1c] flex justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                className="px-2 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 Batal
               </button>
@@ -414,7 +414,7 @@ export default function RoadmapView({ session, onShowToast }: { session: any; on
                 type="submit"
                 form="roadmapForm"
                 disabled={saving}
-                className="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-primary-500/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-primary-500/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 Simpan

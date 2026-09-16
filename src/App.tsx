@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import confetti from 'canvas-confetti';
-import { Scan, FileText, ShieldAlert, Package, X } from 'lucide-react';
+import {
+  Menu, Scan, FileText, ShieldAlert, Package, X } from 'lucide-react';
 import {
   CategoryType,
   ProductItem,
@@ -17,7 +18,6 @@ import {
   UserPermissions,
 } from './types';
 import RoadmapView from "./components/RoadmapView";
-import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { OperasiStokView } from './components/OperasiStokView';
 import { LoginModal } from './components/LoginModal';
@@ -382,7 +382,7 @@ export default function App() {
     const preloadTimer = setTimeout(() => {
       const safePreload = (factory: () => Promise<any>) => {
         try {
-          factory().catch(() => {});
+          factory().catch((_val: boolean) => {});
         } catch {
           // Ignore background preload errors
         }
@@ -638,7 +638,7 @@ export default function App() {
               if (cleanCache.length > 0) {
                 setProductDatabase(cleanCache);
                 hasLocalData = true;
-                saveProductsToLocalDb(cleanCache, 'merge').catch(() => {});
+                saveProductsToLocalDb(cleanCache, 'merge').catch((_val: boolean) => {});
               }
             }
           } catch {}
@@ -695,7 +695,7 @@ export default function App() {
       });
       if (!hasNew) return prev;
       if (validNew.length > 0) {
-        bulkUpsertProductsInLocalDb(validNew).catch(() => {});
+        bulkUpsertProductsInLocalDb(validNew).catch((_val: boolean) => {});
       }
       return Array.from(map.values()).filter((it) => !isDummyProduct(it));
     });
@@ -762,7 +762,7 @@ export default function App() {
                           updated.q = Math.max(0, updated.q - qty);
                         }
                       }
-                      upsertProductInLocalDb(updated).catch(() => {});
+                      upsertProductInLocalDb(updated).catch((_val: boolean) => {});
                       return updated;
                     }
                     return p;
@@ -791,7 +791,7 @@ export default function App() {
                   category: raw.kategori || raw.category || 'IN',
                   price: Number(raw.harga || raw.price) || 0,
                 };
-                upsertProductInLocalDb(item).catch(() => {});
+                upsertProductInLocalDb(item).catch((_val: boolean) => {});
                 setProductDatabase(prev => {
                   const idx = prev.findIndex(p => p.k.toUpperCase() === sku);
                   if (idx >= 0) {
@@ -1420,23 +1420,7 @@ export default function App() {
       {/* Main App Container (Navbar + Page Content) */}
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Navigation Header with Hamburger Toggle & Quick Actions */}
-        <Navbar
-          onOpenThemePicker={() => setIsThemePickerOpen(true)}
-          session={session}
-          activePage={activePage}
-          onSelectPage={handleSelectPage}
-          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
-          onToggleSidebarCollapse={toggleSidebarCollapse}
-          isSidebarCollapsed={isSidebarCollapsed}
-          notificationPermission={notificationPermission}
-          onRequestNotification={handleRequestNotification}
-          isRealtimeConnected={isRealtimeConnected}
-          onOpenSettings={handleOpenSettings}
-          onOpenApkModal={() => setIsApkModalOpen(true)}
-          onLogout={handleLogout}
-          totalScannedCount={scannedData.length}
-          hasNewPickingAlert={!!newPickingTaskAlert}
-        />
+        
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
         <main className="flex-1 pb-6 p-1.5 sm:p-4">
@@ -1470,16 +1454,18 @@ export default function App() {
                     <div className="w-full max-w-2xl mx-auto space-y-4">
                       {/* Scanner Method & Input Card */}
                       <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                        <div className="flex items-center justify-between gap-2">
-                          <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                        <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800">
+                          <div className="flex-1 min-w-0">
+                            <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
+                          </div>
                           <button
                             type="button"
-                            onClick={() => setIsToolbarVisible(!isToolbarVisible)}
-                            className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap"
-                            title={isToolbarVisible ? "Sembunyikan Pengaturan Tag" : "Tampilkan Pengaturan Tag"}
+                            onClick={() => ((_val: boolean) => {})(!true)}
+                            className="p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 whitespace-nowrap shadow-sm"
+                            title={true ? "Sembunyikan Pengaturan Tag" : "Tampilkan Pengaturan Tag"}
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>
-                            <span className="hidden sm:inline">{isToolbarVisible ? "Sembunyikan Tag" : "Tampilkan Tag"}</span>
+                            <span className="hidden sm:inline">{true ? "Sembunyikan Tag" : "Tampilkan Tag"}</span>
                           </button>
                         </div>
                         {(scanMode === 'fisik' || scanMode === 'manual') && (
@@ -1492,7 +1478,7 @@ export default function App() {
                           />
                         )}
                         <QuickTagToolbar
-                          isVisible={isToolbarVisible}
+                          isVisible={true}
                           currentCategory={currentCategory}
                           currentLocation={currentLocation}
                           onSelectCategory={handleSelectQuickCategory}
@@ -1536,6 +1522,17 @@ export default function App() {
                   }
                 />
               )}
+          
+              {/* Floating Mobile Sidebar Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="lg:hidden fixed bottom-6 right-6 z-40 p-3.5 bg-primary-500 text-white rounded-full shadow-lg shadow-primary-500/40 hover:bg-primary-600 hover:scale-105 active:scale-95 transition-all"
+                title="Buka Menu Navigasi"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+
           <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
             <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
               {activePage === 'dashboard' && (

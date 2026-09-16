@@ -1372,7 +1372,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {/* 0. (Banner removed) */}
 
 
@@ -1453,7 +1453,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       {/* 2. Form Input Laporan QC (Multi-Variant Support) */}
       {viewMode !== 'riwayat_only' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all">
-          <form onSubmit={handleSubmitBatch} className="p-3.5 sm:p-5 space-y-4 sm:space-y-5">
+          <form onSubmit={handleSubmitBatch} className="p-3.5 sm:p-5 space-y-2 sm:space-y-5">
             {/* Header Informasi Batch & PIC Login */}
             <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-slate-50 dark:from-slate-800/70 dark:via-slate-800/50 dark:to-slate-900 border border-blue-100 dark:border-slate-700/80 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/60 dark:border-slate-700/60 pb-2.5">
@@ -1515,7 +1515,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             </div>
 
             {/* List of Variant Cards */}
-            <div className="space-y-4">
+            <div className="space-y-2">
               {variants.map((variant, index) => {
                 const isKodeProduksi = variant.tipe_identifikasi === 'kode_produksi';
                 const isReject = variant.status === 'REJECT';
@@ -1527,7 +1527,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                       isReject
                         ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/30 dark:bg-rose-950/15'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90'
-                    } p-4 sm:p-5 shadow-xs space-y-4`}
+                    } p-2 sm:p-3 shadow-xs space-y-2`}
                   >
                     {/* Top Row: Variant Badge, Type Switcher, Status Toggle, Duplicate & Remove */}
                     <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -2167,12 +2167,12 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             </div>
 
             {/* Action Bar: Add Variant + Submit Summary */}
-            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={handleAddVariant}
-                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 shadow-xs"
+                  className="px-2 py-2.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-2 shadow-xs"
                 >
                   <Plus className="w-4 h-4 text-blue-600" />
                   <span>+ Tambah Variant / Produk Lain</span>
@@ -2204,7 +2204,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                  className="px-3 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
@@ -2228,7 +2228,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       {viewMode !== 'form_only' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
           {/* Table Header & Controls */}
-          <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
                 Riwayat Laporan Inspeksi Mutu (QC)
@@ -2404,7 +2404,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-2">
                 {filteredReports.map((r, rIdx) => {
                   const isReject = r.status === 'REJECT';
                   const isKode = r.tipe_identifikasi === 'kode_produksi' || !!r.kode_produksi;
@@ -2697,15 +2697,15 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             <table className="w-full min-w-[880px] text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-semibold">
-                  <th className="py-3 px-4">No. Laporan &amp; Tanggal</th>
-                  <th className="py-3 px-4">Identifikasi Produk</th>
-                  <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-center">Qty</th>
-                  <th className="py-3 px-4">Kategori &amp; Detail Kerusakan</th>
-                  <th className="py-3 px-4 text-center">Foto Bukti</th>
-                  <th className="py-3 px-4">PIC QC</th>
-                  <th className="py-3 px-4">Status Alur &amp; Lokasi Fisik</th>
-                  <th className="py-3 px-4 text-center">Aksi</th>
+                  <th className="py-3 px-2">No. Laporan &amp; Tanggal</th>
+                  <th className="py-3 px-2">Identifikasi Produk</th>
+                  <th className="py-3 px-2 text-center">Status</th>
+                  <th className="py-3 px-2 text-center">Qty</th>
+                  <th className="py-3 px-2">Kategori &amp; Detail Kerusakan</th>
+                  <th className="py-3 px-2 text-center">Foto Bukti</th>
+                  <th className="py-3 px-2">PIC QC</th>
+                  <th className="py-3 px-2">Status Alur &amp; Lokasi Fisik</th>
+                  <th className="py-3 px-2 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
@@ -2729,7 +2729,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         className="hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         {/* No Laporan & Tanggal */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-2">
                           <div className="font-mono font-bold text-slate-900 dark:text-white">
                             {r.report_no}
                           </div>
@@ -2756,7 +2756,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Identifikasi Produk */}
-                        <td className="py-3.5 px-4 max-w-[240px]">
+                        <td className="py-3.5 px-2 max-w-[240px]">
                           <div className="flex items-center gap-1.5 mb-0.5">
                             <span
                               className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
@@ -2800,7 +2800,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Status Badge */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-2 text-center">
                           {isReject ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
                               <AlertTriangle className="w-3 h-3" />
@@ -2815,7 +2815,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Qty */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-2 text-center">
                           <div className="font-semibold text-slate-900 dark:text-white">
                             {r.qty_diperiksa} pcs
                           </div>
@@ -2830,7 +2830,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Kategori & Detail Kerusakan */}
-                        <td className="py-3.5 px-4 max-w-[240px]">
+                        <td className="py-3.5 px-2 max-w-[240px]">
                           {isReject ? (
                             <div>
                               <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
@@ -2851,7 +2851,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Foto Bukti */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-2 text-center">
                           {r.foto_urls && r.foto_urls.length > 0 ? (
                             <div className="flex items-center justify-center gap-1">
                               <button
@@ -2893,7 +2893,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* PIC QC */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-2">
                           <div className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                             <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                             <span className="font-semibold">{formatOperatorWithPersonName(r.pic_qc)}</span>
@@ -2901,7 +2901,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Status Alur & Lokasi Fisik */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-2">
                           {r.status === 'OKE' ? (
                             <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
                               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
@@ -3011,7 +3011,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                         </td>
 
                         {/* Aksi */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-2 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {/* Edit Action (Akses Admin) */}
                             <button
@@ -3083,7 +3083,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="mt-4 space-y-4 overflow-y-auto max-h-[75vh]">
+            <div className="mt-2 space-y-2 overflow-y-auto max-h-[75vh]">
               {lightboxImages.map((src, i) => (
                 <div key={`qc-lightbox-${i}-${src.slice(0, 20)}`} className="rounded-xl overflow-hidden bg-black/50 flex items-center justify-center">
                   <img src={src} alt={`Foto ${i + 1}`} referrerPolicy="no-referrer" className="max-w-full max-h-[70vh] object-contain" />
@@ -3101,7 +3101,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           onClick={() => setIsSqlModalOpen(false)}
         >
           <div
-            className="relative max-w-2xl w-full bg-white dark:bg-slate-900 rounded-2xl p-5 sm:p-6 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl space-y-4"
+            className="relative max-w-2xl w-full bg-white dark:bg-slate-900 rounded-2xl p-5 sm:p-6 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl space-y-2"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
@@ -3145,7 +3145,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsSqlModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  className="px-2 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   Tutup
                 </button>
@@ -3157,7 +3157,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     onShowToast('Script SQL berhasil disalin ke clipboard!', 'success');
                     setTimeout(() => setIsCopiedSql(false), 2500);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors"
+                  className="flex items-center gap-2 px-2 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors"
                 >
                   {isCopiedSql ? (
                     <>
@@ -3186,7 +3186,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             className="relative max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3.5 mb-4">
+            <div className="flex items-center gap-3.5 mb-2">
               <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-200 dark:border-rose-900">
                 <Trash2 className="w-6 h-6" />
               </div>
@@ -3246,7 +3246,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => setDeleteConfirmReport(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="px-2 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Batal
               </button>
@@ -3254,7 +3254,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 type="button"
                 disabled={isDeleting}
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all flex items-center gap-1.5 shadow-sm shadow-rose-600/30 cursor-pointer disabled:opacity-50"
+                className="px-2 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition-all flex items-center gap-1.5 shadow-sm shadow-rose-600/30 cursor-pointer disabled:opacity-50"
               >
                 {isDeleting ? (
                   <>
@@ -3284,7 +3284,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header Modal */}
-            <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+            <div className="p-2 sm:p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
                   <Pencil className="w-5 h-5 text-white" />
@@ -3312,7 +3312,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
             </div>
 
             {/* Form Input */}
-            <form onSubmit={handleSaveEdit} className="p-4 sm:p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+            <form onSubmit={handleSaveEdit} className="p-2 sm:p-3 space-y-2 max-h-[78vh] overflow-y-auto">
               {/* Identifikasi Produk */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -3673,7 +3673,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                   type="button"
                   disabled={isSavingEdit}
                   onClick={() => setEditingReport(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  className="px-2 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
@@ -3727,7 +3727,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-2 text-xs">
               {/* Pilihan Target Penanganan */}
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-700 dark:text-slate-300">
@@ -3858,7 +3858,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 type="button"
                 onClick={() => setQuickSortirReport(null)}
                 disabled={isExecutingQuickSortir}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                className="px-2 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 Batal
               </button>
