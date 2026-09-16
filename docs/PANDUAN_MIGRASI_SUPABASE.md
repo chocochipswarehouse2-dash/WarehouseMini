@@ -91,6 +91,9 @@ Jika ingin melakukan migrasi dari terminal / command line:
    ```
 4. Script akan menyalin seluruh data per tabel dengan pagination batch 500 baris.
 
+> ⚠️ **PENTING SETELAH KLONING DATA:**
+> Karena data lama disalin dengan ID eksisting, jalankan skrip sinkronisasi sequence `public/fix_sequences.sql` di SQL Editor Supabase baru (hanya butuh 0.5 detik). Hal ini mencegah error duplicate key ID saat melakukan Scan IN atau menambah data baru.
+
 ---
 
 ### LANGKAH 4: Alihkan Web App ke Database Baru
