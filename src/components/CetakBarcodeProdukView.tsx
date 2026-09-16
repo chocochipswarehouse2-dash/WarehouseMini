@@ -69,11 +69,59 @@ export const getProductMasterPrice = (product?: ProductItem | null): number => {
 };
 
 export const getLabelTitle = (nama?: string | null, size?: unknown, showName = true, showSz = true): string => {
-  const parts: string[] = [];
   const cleanNama = nama ? String(nama).trim() : '';
-  if (showName && cleanNama) parts.push(cleanNama);
-  if (showSz && isRealSize(size)) parts.push(String(size).trim());
-  return parts.length > 0 ? parts.join(' | ') : cleanNama;
+  const cleanSz = isRealSize(size) ? String(size).trim() : '';
+
+  if (!showName && showSz && cleanSz) return cleanSz;
+  if (!showName) return '';
+  if (!showSz || !cleanSz) return cleanNama;
+  if (!cleanNama) return cleanSz;
+
+  // Cek apakah nama produk sudah mengandung atau berakhiran dengan size tersebut agar tidak duplikat
+  const lowerNama = cleanNama.toLowerCase();
+  const lowerSz = cleanSz.toLowerCase();
+  if (
+    lowerNama.endsWith(` ${lowerSz}`) ||
+    lowerNama.endsWith(`-${lowerSz}`) ||
+    lowerNama.endsWith(`/${lowerSz}`) ||
+    lowerNama.endsWith(`|${lowerSz}`) ||
+    lowerNama.endsWith(`(${lowerSz})`)
+  ) {
+    return cleanNama;
+  }
+
+  return `${cleanNama} | ${cleanSz}`;
+};
+
+export interface NameTypographyConfig {
+  fontSize: string;
+  lineClamp: number;
+  lineHeight: string;
+}
+
+export const getNameTypography = (text: string, isPortrait: boolean): NameTypographyConfig => {
+  const len = text.length;
+  if (isPortrait) {
+    if (len <= 20) return { fontSize: '7.0pt', lineClamp: 2, lineHeight: '1.15' };
+    if (len <= 35) return { fontSize: '6.2pt', lineClamp: 2, lineHeight: '1.10' };
+    return { fontSize: '5.6pt', lineClamp: 3, lineHeight: '1.05' };
+  }
+  // Landscape (50mm x 20mm):
+  // Untuk teks hingga 22 karakter (cth: "Taylor Pants - M")
+  if (len <= 22) {
+    return { fontSize: '8.0pt', lineClamp: 2, lineHeight: '1.15' };
+  }
+  // Untuk teks standar seperti "Cassandra Top Grey Black Denim" (30-34 karakter)
+  // Font 7.1pt dengan 2 baris muat 100% utuh tanpa titik-titik (...)
+  if (len <= 35) {
+    return { fontSize: '7.1pt', lineClamp: 2, lineHeight: '1.12' };
+  }
+  // Untuk nama produk yang lebih panjang (36 - 48 karakter)
+  if (len <= 48) {
+    return { fontSize: '6.4pt', lineClamp: 2, lineHeight: '1.08' };
+  }
+  // Untuk nama produk sangat panjang (> 48 karakter)
+  return { fontSize: '5.8pt', lineClamp: 3, lineHeight: '1.05' };
 };
 
 export const parseRawPrice = (val: unknown): number => {
@@ -864,8 +912,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           ? `<img src="${qrUrl}" alt="QR" style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block;" />`
           : `<div style="font-size: 8px; font-weight: bold; text-align: center;">${item.sku}</div>`;
 
-        // Row 1: Nama Produk | Size (Wrap text, up to 2 lines, large font)
-        const line1Text = escapeHtml(getLabelTitle(item.nama, item.size, showProductName, showSize));
+        // Row 1: Nama Produk | Size (Wrap text adaptif tanpa terpotong)
+        const rawTitle = getLabelTitle(item.nama, item.size, showProductName, showSize);
+        const line1Text = escapeHtml(rawTitle);
+        const typo = getNameTypography(rawTitle, isPortrait);
+        const nameStyle = `font-size: ${typo.fontSize} !important; line-height: ${typo.lineHeight} !important; -webkit-line-clamp: ${typo.lineClamp} !important; max-height: calc(${typo.lineClamp} * ${typo.lineHeight} * 1.15em) !important;`;
 
         // Row 2: SKU (Lebih kecil dari Nama & Harga)
         const skuText = escapeHtml(item.sku);
@@ -888,7 +939,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                   ${qrImgTag}
                 </div>
                 <div class="thermal-info-container">
-                  <div class="thermal-line-name-size" title="${line1Text}">${line1Text}</div>
+                  <div class="thermal-line-name-size" style="${nameStyle}" title="${line1Text}">${line1Text}</div>
                   <div class="thermal-line-sku">${skuText} ${locHtml}</div>
                   ${priceHtml}
                 </div>
@@ -898,10 +949,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         }
       }
 
-      // QR size dynamic calculation
+      // QR size dynamic calculation (dioptimalkan 13.8mm di lanskap agar teks nama produk leluasa 2 baris penuh tanpa terpotong)
       const qrDim = isPortrait
-        ? qrSizePreset === 'large' ? '14.5mm' : qrSizePreset === 'small' ? '12mm' : '13.5mm'
-        : qrSizePreset === 'large' ? '17mm' : qrSizePreset === 'small' ? '14mm' : '15.5mm';
+        ? qrSizePreset === 'large' ? '14.0mm' : qrSizePreset === 'small' ? '11.5mm' : '13.0mm'
+        : qrSizePreset === 'large' ? '15.2mm' : qrSizePreset === 'small' ? '12.5mm' : '13.8mm';
 
       const fullHtml = `
         <!DOCTYPE html>
@@ -955,7 +1006,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 max-width: ${pageW} !important;
                 max-height: ${pageH} !important;
                 box-sizing: border-box !important;
-                padding: 1.0mm 1.5mm !important;
+                padding: 0.8mm 1.2mm !important;
                 display: flex !important;
                 flex-direction: ${isPortrait ? 'column' : 'row'} !important;
                 align-items: center !important;
@@ -967,8 +1018,8 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               .thermal-qr-container {
                 width: ${qrDim} !important;
                 height: ${qrDim} !important;
-                margin-right: ${isPortrait ? '0' : '1.5mm'} !important;
-                margin-bottom: ${isPortrait ? '1mm' : '0'} !important;
+                margin-right: ${isPortrait ? '0' : '1.2mm'} !important;
+                margin-bottom: ${isPortrait ? '0.8mm' : '0'} !important;
                 flex-shrink: 0 !important;
                 display: flex !important;
                 align-items: center !important;
@@ -982,25 +1033,24 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 flex-direction: column !important;
                 justify-content: center !important;
                 overflow: hidden !important;
-                line-height: 1.15 !important;
                 ${isPortrait ? 'text-align: center; width: 100%;' : 'text-align: left;'}
               }
               .thermal-line-name-size {
-                font-size: ${isPortrait ? '7.2pt' : '9.5pt'} !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Arial Narrow", Arial, sans-serif !important;
+                font-size: ${isPortrait ? '6.2pt' : '7.1pt'} !important;
                 font-weight: 800 !important;
-                line-height: 1.15 !important;
+                line-height: 1.12 !important;
                 word-break: break-word !important;
                 overflow-wrap: break-word !important;
                 display: -webkit-box !important;
                 -webkit-line-clamp: 2 !important;
                 -webkit-box-orient: vertical !important;
                 overflow: hidden !important;
-                max-height: 2.3em !important;
                 color: #000000 !important;
-                letter-spacing: -0.15px !important;
+                letter-spacing: -0.22px !important;
               }
               .thermal-line-sku {
-                font-size: ${isPortrait ? '6pt' : '7.2pt'} !important;
+                font-size: ${isPortrait ? '5.8pt' : '7.0pt'} !important;
                 font-weight: 600 !important;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif !important;
                 white-space: nowrap !important;
@@ -1008,11 +1058,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 text-overflow: ellipsis !important;
                 color: #222222 !important;
                 line-height: 1.1 !important;
-                margin: 0.3mm 0 !important;
+                margin: 0.25mm 0 !important;
                 letter-spacing: -0.05px !important;
               }
               .thermal-line-price {
-                font-size: ${isPortrait ? '9.5pt' : '12pt'} !important;
+                font-size: ${isPortrait ? '9.0pt' : '11.5pt'} !important;
                 font-weight: 900 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
@@ -1021,7 +1071,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 letter-spacing: -0.2px !important;
               }
               .thermal-loc-badge {
-                font-size: 5.8pt !important;
+                font-size: 5.6pt !important;
                 font-weight: 700 !important;
                 margin-left: 2px !important;
                 color: #444444 !important;
@@ -1697,13 +1747,29 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       printOrientation === 'portrait' ? 'w-full text-center pl-0 pt-1' : 'text-left'
                     }`}
                   >
-                    {/* Row 1: Nama Produk | Size (Wrap text 2 baris, font tebal & jelas) */}
-                    <div
-                      className="text-[12px] font-extrabold text-slate-950 leading-[1.15] tracking-tight line-clamp-2 break-words"
-                      title={getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize)}
-                    >
-                      {getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize)}
-                    </div>
+                    {/* Row 1: Nama Produk | Size (Wrap text adaptif tanpa terpotong) */}
+                    {(() => {
+                      const fullTitle = getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize);
+                      const typo = getNameTypography(fullTitle, printOrientation === 'portrait');
+                      const previewPx = typo.fontSize === '8.0pt' ? 12.5 : typo.fontSize === '7.1pt' ? 11.2 : typo.fontSize === '6.4pt' ? 10.0 : 9.2;
+                      return (
+                        <div
+                          className="font-extrabold text-slate-950 tracking-tight break-words"
+                          style={{
+                            fontSize: `${previewPx}px`,
+                            lineHeight: typo.lineHeight,
+                            display: '-webkit-box',
+                            WebkitLineClamp: typo.lineClamp,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            letterSpacing: '-0.2px',
+                          }}
+                          title={fullTitle}
+                        >
+                          {fullTitle}
+                        </div>
+                      );
+                    })()}
 
                     {/* Row 2: SKU (Lebih kecil dari Nama & Harga) */}
                     <div className="text-[9.5px] font-semibold text-slate-600 font-mono truncate leading-tight my-0.5 tracking-tight flex items-center gap-1">
