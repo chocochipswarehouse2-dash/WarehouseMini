@@ -102,26 +102,26 @@ export interface NameTypographyConfig {
 export const getNameTypography = (text: string, isPortrait: boolean): NameTypographyConfig => {
   const len = text.length;
   if (isPortrait) {
-    if (len <= 20) return { fontSize: '7.0pt', lineClamp: 2, lineHeight: '1.15' };
-    if (len <= 35) return { fontSize: '6.2pt', lineClamp: 2, lineHeight: '1.10' };
-    return { fontSize: '5.6pt', lineClamp: 3, lineHeight: '1.05' };
+    if (len <= 20) return { fontSize: '7.2pt', lineClamp: 2, lineHeight: '1.18' };
+    if (len <= 35) return { fontSize: '6.4pt', lineClamp: 2, lineHeight: '1.14' };
+    return { fontSize: '5.8pt', lineClamp: 3, lineHeight: '1.08' };
   }
-  // Landscape (50mm x 20mm):
-  // Untuk teks hingga 22 karakter (cth: "Taylor Pants - M")
+  // Landscape (50mm x 20mm) dengan font Quicksand Rounded (Ramping & Rapi, Non-Bold):
+  // Untuk teks pendek (cth: "Taylor Pants - M")
   if (len <= 22) {
-    return { fontSize: '8.0pt', lineClamp: 2, lineHeight: '1.15' };
+    return { fontSize: '8.2pt', lineClamp: 2, lineHeight: '1.18' };
   }
-  // Untuk teks standar seperti "Cassandra Top Grey Black Denim" (30-34 karakter)
-  // Font 7.1pt dengan 2 baris muat 100% utuh tanpa titik-titik (...)
-  if (len <= 35) {
-    return { fontSize: '7.1pt', lineClamp: 2, lineHeight: '1.12' };
+  // Untuk teks standar seperti "Cassandra Top Grey Black Denim" (30-36 karakter)
+  // Font 7.4pt Quicksand non-bold muat 100% utuh dalam 2 baris tanpa terpotong
+  if (len <= 36) {
+    return { fontSize: '7.4pt', lineClamp: 2, lineHeight: '1.14' };
   }
-  // Untuk nama produk yang lebih panjang (36 - 48 karakter)
-  if (len <= 48) {
-    return { fontSize: '6.4pt', lineClamp: 2, lineHeight: '1.08' };
+  // Untuk nama produk yang lebih panjang (37 - 50 karakter)
+  if (len <= 50) {
+    return { fontSize: '6.6pt', lineClamp: 2, lineHeight: '1.10' };
   }
-  // Untuk nama produk sangat panjang (> 48 karakter)
-  return { fontSize: '5.8pt', lineClamp: 3, lineHeight: '1.05' };
+  // Untuk nama produk sangat panjang (> 50 karakter)
+  return { fontSize: '5.8pt', lineClamp: 3, lineHeight: '1.06' };
 };
 
 export const parseRawPrice = (val: unknown): number => {
@@ -912,11 +912,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           ? `<img src="${qrUrl}" alt="QR" style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block;" />`
           : `<div style="font-size: 8px; font-weight: bold; text-align: center;">${item.sku}</div>`;
 
-        // Row 1: Nama Produk | Size (Wrap text adaptif tanpa terpotong)
+        // Row 1: Nama Produk | Size (Wrap text adaptif tanpa terpotong, font Quicksand Rounded Non-Bold)
         const rawTitle = getLabelTitle(item.nama, item.size, showProductName, showSize);
         const line1Text = escapeHtml(rawTitle);
         const typo = getNameTypography(rawTitle, isPortrait);
-        const nameStyle = `font-size: ${typo.fontSize} !important; line-height: ${typo.lineHeight} !important; -webkit-line-clamp: ${typo.lineClamp} !important; max-height: calc(${typo.lineClamp} * ${typo.lineHeight} * 1.15em) !important;`;
+        const nameStyle = `font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; font-size: ${typo.fontSize} !important; font-weight: 500 !important; line-height: ${typo.lineHeight} !important; -webkit-line-clamp: ${typo.lineClamp} !important; max-height: calc(${typo.lineClamp} * ${typo.lineHeight} * 1.15em) !important; letter-spacing: -0.05px !important;`;
 
         // Row 2: SKU (Lebih kecil dari Nama & Harga)
         const skuText = escapeHtml(item.sku);
@@ -924,7 +924,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           ? `<span class="thermal-loc-badge">[${escapeHtml(item.lokasi)}]</span>`
           : '';
 
-        // Row 3: HARGA PRODUK (Otomatis dari item/master, font ekstra besar 900)
+        // Row 3: HARGA PRODUK (Otomatis dari item/master, font Quicksand Rounded 700)
         const resolvedPrice = item.price || getProductMasterPrice(catalogMap.get(item.sku.toLowerCase()));
         const priceFormatted = formatProductPrice(resolvedPrice, showCurrencyPrefix);
         const priceHtml = showPrice && priceFormatted
@@ -960,7 +960,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           <head>
             <meta charset="utf-8">
             <title>Cetak Barcode Produk 50x20mm</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
+              @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
               @page {
                 size: ${pageW} ${pageH} ${orientMode};
                 margin: 0mm !important;
@@ -977,7 +981,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 padding: 0 !important;
                 background: #ffffff !important;
                 color: #000000 !important;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+                font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
               }
@@ -1036,10 +1040,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 ${isPortrait ? 'text-align: center; width: 100%;' : 'text-align: left;'}
               }
               .thermal-line-name-size {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Arial Narrow", Arial, sans-serif !important;
-                font-size: ${isPortrait ? '6.2pt' : '7.1pt'} !important;
-                font-weight: 800 !important;
-                line-height: 1.12 !important;
+                font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+                font-size: ${isPortrait ? '6.4pt' : '7.4pt'} !important;
+                font-weight: 500 !important; /* Quicksand Medium, ramping & rapi, tidak bold */
+                line-height: 1.14 !important;
                 word-break: break-word !important;
                 overflow-wrap: break-word !important;
                 display: -webkit-box !important;
@@ -1047,10 +1051,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 -webkit-box-orient: vertical !important;
                 overflow: hidden !important;
                 color: #000000 !important;
-                letter-spacing: -0.22px !important;
+                letter-spacing: -0.05px !important;
               }
               .thermal-line-sku {
-                font-size: ${isPortrait ? '5.8pt' : '7.0pt'} !important;
+                font-size: ${isPortrait ? '5.8pt' : '6.8pt'} !important;
                 font-weight: 600 !important;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif !important;
                 white-space: nowrap !important;
@@ -1059,20 +1063,22 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 color: #222222 !important;
                 line-height: 1.1 !important;
                 margin: 0.25mm 0 !important;
-                letter-spacing: -0.05px !important;
+                letter-spacing: 0px !important;
               }
               .thermal-line-price {
+                font-family: 'Quicksand', sans-serif !important;
                 font-size: ${isPortrait ? '9.0pt' : '11.5pt'} !important;
-                font-weight: 900 !important;
+                font-weight: 700 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
                 color: #000000 !important;
                 line-height: 1.1 !important;
-                letter-spacing: -0.2px !important;
+                letter-spacing: -0.1px !important;
               }
               .thermal-loc-badge {
+                font-family: 'Quicksand', sans-serif !important;
                 font-size: 5.6pt !important;
-                font-weight: 700 !important;
+                font-weight: 600 !important;
                 margin-left: 2px !important;
                 color: #444444 !important;
               }
@@ -1747,22 +1753,24 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       printOrientation === 'portrait' ? 'w-full text-center pl-0 pt-1' : 'text-left'
                     }`}
                   >
-                    {/* Row 1: Nama Produk | Size (Wrap text adaptif tanpa terpotong) */}
+                    {/* Row 1: Nama Produk | Size (Wrap text adaptif, font Quicksand Rounded Non-Bold) */}
                     {(() => {
                       const fullTitle = getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize);
                       const typo = getNameTypography(fullTitle, printOrientation === 'portrait');
-                      const previewPx = typo.fontSize === '8.0pt' ? 12.5 : typo.fontSize === '7.1pt' ? 11.2 : typo.fontSize === '6.4pt' ? 10.0 : 9.2;
+                      const previewPx = typo.fontSize === '8.2pt' ? 12.8 : typo.fontSize === '7.4pt' ? 11.6 : typo.fontSize === '6.6pt' ? 10.4 : 9.2;
                       return (
                         <div
-                          className="font-extrabold text-slate-950 tracking-tight break-words"
+                          className="text-slate-900 break-words"
                           style={{
+                            fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif",
                             fontSize: `${previewPx}px`,
+                            fontWeight: 500, // Quicksand Medium - Rapi & Ramping, tidak bold
                             lineHeight: typo.lineHeight,
                             display: '-webkit-box',
                             WebkitLineClamp: typo.lineClamp,
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
-                            letterSpacing: '-0.2px',
+                            letterSpacing: '-0.05px',
                           }}
                           title={fullTitle}
                         >
@@ -1781,9 +1789,12 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       )}
                     </div>
 
-                    {/* Row 3: HARGA PRODUK (Besar & Font Ekstra Tebal) */}
+                    {/* Row 3: HARGA PRODUK (Font Quicksand Rounded Tebal & Jelas) */}
                     {showPrice && (
-                      <div className="text-[14.5px] font-black text-slate-950 truncate leading-tight tracking-tight mt-0.5">
+                      <div
+                        className="text-[14.5px] font-bold text-slate-950 truncate leading-tight tracking-tight mt-0.5"
+                        style={{ fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif" }}
+                      >
                         {formatProductPrice(
                           currentPreviewItem.price || getProductMasterPrice(catalogMap.get(currentPreviewItem.sku.toLowerCase())),
                           showCurrencyPrefix
