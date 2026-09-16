@@ -50,6 +50,32 @@ export const formatProductPrice = (price?: number | string | null, withPrefix = 
   return withPrefix ? `Rp ${formatted}` : formatted;
 };
 
+export const isRealSize = (sz?: unknown): boolean => {
+  if (sz === undefined || sz === null) return false;
+  const clean = String(sz).trim();
+  return clean !== '' && clean !== '-' && clean.toLowerCase() !== 'default' && clean.toLowerCase() !== 'none';
+};
+
+export const getProductMasterPrice = (product?: ProductItem | null): number => {
+  if (!product) return 0;
+  if (typeof product.price === 'number' && product.price > 0) return product.price;
+  if (typeof product.harga === 'number' && product.harga > 0) return product.harga;
+  const dp = (product as any)?.dealpos_channels;
+  if (dp && typeof dp === 'object') {
+    const tp = Number(dp.TP ?? dp.tag_price ?? dp.TagPrice ?? dp.price ?? dp.harga ?? dp.HARGA ?? 0);
+    if (!isNaN(tp) && tp > 0) return tp;
+  }
+  return 0;
+};
+
+export const getLabelTitle = (nama?: string | null, size?: unknown, showName = true, showSz = true): string => {
+  const parts: string[] = [];
+  const cleanNama = nama ? String(nama).trim() : '';
+  if (showName && cleanNama) parts.push(cleanNama);
+  if (showSz && isRealSize(size)) parts.push(String(size).trim());
+  return parts.length > 0 ? parts.join(' | ') : cleanNama;
+};
+
 export const parseRawPrice = (val: unknown): number => {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   if (!val) return 0;
@@ -159,7 +185,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   const [formSku, setFormSku] = useState<string>('');
   const [formNama, setFormNama] = useState<string>('');
   const [formSize, setFormSize] = useState<string>('');
-  const [formPrice, setFormPrice] = useState<string>('500000');
+  const [formPrice, setFormPrice] = useState<string>('');
   const [formLokasi, setFormLokasi] = useState<string>('');
   const [formCopies, setFormCopies] = useState<number>(1);
 
@@ -212,6 +238,68 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       .slice(0, 20); // Top 20 results
   }, [catalogSearch, productCatalog]);
 
+  // Catalog lookup map for lightning enrichment & price detection
+  const catalogMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    productCatalog.forEach((p) => {
+      if (p.k) map.set(p.k.toLowerCase().trim(), p);
+    });
+    return map;
+  }, [productCatalog]);
+
+  // Auto-enrich existing queue items with master product price and details
+  useEffect(() => {
+    if (!catalogMap.size) return;
+    setQueue((prevQueue) => {
+      let changed = false;
+      const next = prevQueue.map((item) => {
+        const match = catalogMap.get(item.sku.toLowerCase().trim());
+        if (!match) return item;
+        const masterPrice = getProductMasterPrice(match);
+        let updated = false;
+        const copy = { ...item };
+        if ((!copy.price || copy.price === 0) && masterPrice > 0) {
+          copy.price = masterPrice;
+          updated = true;
+        }
+        if ((!copy.nama || copy.nama === copy.sku) && (match.n || match.p || match.nama_produk)) {
+          copy.nama = String(match.n || match.p || match.nama_produk);
+          updated = true;
+        }
+        if (!copy.size && isRealSize(match.s || match.size)) {
+          copy.size = String(match.s || match.size).trim();
+          updated = true;
+        }
+        if (updated) changed = true;
+        return copy;
+      });
+      return changed ? next : prevQueue;
+    });
+  }, [catalogMap]);
+
+  // Handler for SKU input change: auto-lookup catalog
+  const handleSkuChange = (val: string) => {
+    setFormSku(val);
+    const clean = val.trim().toLowerCase();
+    if (clean && catalogMap.has(clean)) {
+      const p = catalogMap.get(clean)!;
+      if (!formNama || formNama === formSku) {
+        setFormNama(String(p.n || p.p || p.nama_produk || ''));
+      }
+      const sz = String(p.s || p.size || '').trim();
+      if (isRealSize(sz)) {
+        setFormSize(sz);
+      }
+      const mp = getProductMasterPrice(p);
+      if (mp > 0 && !formPrice) {
+        setFormPrice(String(mp));
+      }
+      if (p.lokasi && !formLokasi) {
+        setFormLokasi(String(p.lokasi));
+      }
+    }
+  };
+
   // Generate QR Code data URL helper
   const generateQrDataUrl = async (text: string): Promise<string> => {
     if (!text) return '';
@@ -257,9 +345,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   // -------------------------------------------------------------
   const handleSelectFromCatalog = (product: ProductItem) => {
     setFormSku(product.k || '');
-    setFormNama(String(product.n || product.p || ''));
-    setFormSize(String(product.s || ''));
-    const rawPrice = typeof product.price === 'number' ? product.price : (Number(product.harga) || 0);
+    setFormNama(String(product.n || product.p || product.nama_produk || ''));
+    const cleanSz = String(product.s || product.size || '').trim();
+    setFormSize(isRealSize(cleanSz) ? cleanSz : '');
+    const rawPrice = getProductMasterPrice(product);
     setFormPrice(rawPrice > 0 ? String(rawPrice) : '');
     setFormLokasi(String(product.lokasi || ''));
     setIsSearchDropdownOpen(false);
@@ -278,7 +367,17 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
     }
 
     const copiesCount = Math.max(1, formCopies || 1);
-    const parsedPrice = parseRawPrice(formPrice);
+    const catalogHit = catalogMap.get(cleanSku.toLowerCase());
+    const masterPrice = getProductMasterPrice(catalogHit);
+    const inputPrice = parseRawPrice(formPrice);
+    // Prioritaskan input jika diisi, jika tidak gunakan otomatis dari master data
+    const finalPrice = inputPrice > 0 ? inputPrice : (masterPrice > 0 ? masterPrice : undefined);
+
+    const resolvedNama = formNama.trim() || (catalogHit ? String(catalogHit.n || catalogHit.p || catalogHit.nama_produk || '') : 'Produk ' + cleanSku);
+    const resolvedSize = isRealSize(formSize)
+      ? formSize.trim()
+      : (catalogHit && isRealSize(catalogHit.s || catalogHit.size) ? String(catalogHit.s || catalogHit.size).trim() : '');
+    const resolvedLokasi = formLokasi.trim() || (catalogHit ? String(catalogHit.lokasi || '') : '');
 
     // Cek apakah SKU sudah ada dalam antrean
     const existingIndex = queue.findIndex((item) => item.sku.toLowerCase() === cleanSku.toLowerCase());
@@ -291,10 +390,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
             ? {
                 ...item,
                 copies: item.copies + copiesCount,
-                nama: formNama.trim() || item.nama,
-                size: formSize.trim() || item.size,
-                price: parsedPrice > 0 ? parsedPrice : item.price,
-                lokasi: formLokasi.trim() || item.lokasi,
+                nama: resolvedNama || item.nama,
+                size: resolvedSize || item.size,
+                price: finalPrice || item.price,
+                lokasi: resolvedLokasi || item.lokasi,
               }
             : item
         )
@@ -304,10 +403,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       const newItem: ProductBarcodeItem = {
         id: 'BC-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
         sku: cleanSku,
-        nama: formNama.trim() || 'Produk ' + cleanSku,
-        size: formSize.trim(),
-        price: parsedPrice > 0 ? parsedPrice : undefined,
-        lokasi: formLokasi.trim(),
+        nama: resolvedNama,
+        size: resolvedSize,
+        price: finalPrice,
+        lokasi: resolvedLokasi,
         copies: copiesCount,
         selected: true,
       };
@@ -315,11 +414,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       onShowToast?.(`Berhasil memasukkan SKU ${cleanSku} ke antrean cetak (${copiesCount} pcs)`, 'success');
     }
 
-    // Reset form field jika bukan dari input manual
+    // Reset form field
     setFormSku('');
     setFormNama('');
     setFormSize('');
-    setFormPrice('500000');
+    setFormPrice('');
     setFormLokasi('');
     setFormCopies(1);
   };
@@ -407,23 +506,43 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
 
   const currentPreviewItem: ProductBarcodeItem | null = useMemo(() => {
     if (formSku.trim()) {
+      const match = catalogMap.get(formSku.trim().toLowerCase());
+      const mp = getProductMasterPrice(match);
+      const pr = parseRawPrice(formPrice) || (mp > 0 ? mp : 500000);
+      const cleanSz = formSize.trim() || (match && isRealSize(match.s || match.size) ? String(match.s || match.size).trim() : '');
       return {
         id: 'preview-form',
         sku: formSku.trim(),
-        nama: formNama.trim() || 'Taylor Pants Dark Denim',
-        size: formSize.trim() || 'M',
-        price: parseRawPrice(formPrice) || 500000,
-        lokasi: formLokasi.trim(),
+        nama: formNama.trim() || (match ? String(match.n || match.p || match.nama_produk || '') : 'Taylor Pants Dark Denim'),
+        size: isRealSize(cleanSz) ? cleanSz : '',
+        price: pr,
+        lokasi: formLokasi.trim() || (match ? String(match.lokasi || '') : ''),
         copies: formCopies || 1,
       };
     }
     if (selectedItems.length > 0) {
       const safeIndex = Math.min(Math.max(0, previewIndex), selectedItems.length - 1);
-      return selectedItems[safeIndex];
+      const item = selectedItems[safeIndex];
+      const match = catalogMap.get(item.sku.toLowerCase());
+      const mp = getProductMasterPrice(match);
+      return {
+        ...item,
+        nama: item.nama || (match ? String(match.n || match.p || match.nama_produk || '') : item.sku),
+        size: isRealSize(item.size) ? item.size : (match && isRealSize(match.s || match.size) ? String(match.s || match.size).trim() : ''),
+        price: item.price || (mp > 0 ? mp : undefined),
+      };
     }
     if (queue.length > 0) {
       const safeIndex = Math.min(Math.max(0, previewIndex), queue.length - 1);
-      return queue[safeIndex];
+      const item = queue[safeIndex];
+      const match = catalogMap.get(item.sku.toLowerCase());
+      const mp = getProductMasterPrice(match);
+      return {
+        ...item,
+        nama: item.nama || (match ? String(match.n || match.p || match.nama_produk || '') : item.sku),
+        size: isRealSize(item.size) ? item.size : (match && isRealSize(match.s || match.size) ? String(match.s || match.size).trim() : ''),
+        price: item.price || (mp > 0 ? mp : undefined),
+      };
     }
     return {
       id: 'default-preview',
@@ -434,20 +553,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       lokasi: 'RAK-A01',
       copies: 1,
     };
-  }, [formSku, formNama, formSize, formPrice, formLokasi, formCopies, selectedItems, queue, previewIndex]);
+  }, [formSku, formNama, formSize, formPrice, formLokasi, formCopies, selectedItems, queue, previewIndex, catalogMap]);
 
   // -------------------------------------------------------------
   // 10. IMPORT LOGIC: EXCEL / CSV & CLIPBOARD
   // -------------------------------------------------------------
-  // Catalog lookup map for lightning enrichment
-  const catalogMap = useMemo(() => {
-    const map = new Map<string, ProductItem>();
-    productCatalog.forEach((p) => {
-      if (p.k) map.set(p.k.toLowerCase().trim(), p);
-    });
-    return map;
-  }, [productCatalog]);
-
   const parseRawRows = (rows: any[]): ProductBarcodeItem[] => {
     const parsed: ProductBarcodeItem[] = [];
 
@@ -500,10 +610,12 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       // Auto enrich from catalog if nama/size/price/lokasi is missing
       const catalogHit = catalogMap.get(rawSku.toLowerCase());
       if (catalogHit) {
-        if (!rawNama) rawNama = String(catalogHit.n || catalogHit.p || '');
-        if (!rawSize) rawSize = String(catalogHit.s || '');
-        if (!rawPrice) {
-          rawPrice = typeof catalogHit.price === 'number' ? catalogHit.price : (Number(catalogHit.harga) || 0);
+        if (!rawNama) rawNama = String(catalogHit.n || catalogHit.p || catalogHit.nama_produk || '');
+        if (!rawSize && isRealSize(catalogHit.s || catalogHit.size)) {
+          rawSize = String(catalogHit.s || catalogHit.size);
+        }
+        if (!rawPrice || rawPrice <= 0) {
+          rawPrice = getProductMasterPrice(catalogHit);
         }
         if (!rawLokasi) rawLokasi = String(catalogHit.lokasi || '');
       }
@@ -512,7 +624,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         id: 'IMP-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 100),
         sku: rawSku,
         nama: rawNama || rawSku,
-        size: rawSize,
+        size: isRealSize(rawSize) ? rawSize : '',
         price: rawPrice > 0 ? rawPrice : undefined,
         lokasi: rawLokasi,
         copies: Math.max(1, rawQty || 1),
@@ -752,20 +864,18 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           ? `<img src="${qrUrl}" alt="QR" style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block;" />`
           : `<div style="font-size: 8px; font-weight: bold; text-align: center;">${item.sku}</div>`;
 
-        // Row 1: Nama Produk | Size (LEBIH BESAR DARI SKU)
-        const line1Parts: string[] = [];
-        if (showProductName && item.nama) line1Parts.push(escapeHtml(item.nama));
-        if (showSize && item.size) line1Parts.push(escapeHtml(item.size));
-        const line1Text = line1Parts.length > 0 ? line1Parts.join(' | ') : escapeHtml(item.sku);
+        // Row 1: Nama Produk | Size (Wrap text, up to 2 lines, large font)
+        const line1Text = escapeHtml(getLabelTitle(item.nama, item.size, showProductName, showSize));
 
-        // Row 2: SKU (LEBIH KECIL DARI NAMA & HARGA)
+        // Row 2: SKU (Lebih kecil dari Nama & Harga)
         const skuText = escapeHtml(item.sku);
         const locHtml = showLocation && item.lokasi
           ? `<span class="thermal-loc-badge">[${escapeHtml(item.lokasi)}]</span>`
           : '';
 
-        // Row 3: HARGA PRODUK (LEBIH BESAR DARI SKU, BOLD)
-        const priceFormatted = formatProductPrice(item.price, showCurrencyPrefix);
+        // Row 3: HARGA PRODUK (Otomatis dari item/master, font ekstra besar 900)
+        const resolvedPrice = item.price || getProductMasterPrice(catalogMap.get(item.sku.toLowerCase()));
+        const priceFormatted = formatProductPrice(resolvedPrice, showCurrencyPrefix);
         const priceHtml = showPrice && priceFormatted
           ? `<div class="thermal-line-price">${escapeHtml(priceFormatted)}</div>`
           : '';
@@ -778,7 +888,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                   ${qrImgTag}
                 </div>
                 <div class="thermal-info-container">
-                  <div class="thermal-line-name-size">${line1Text}</div>
+                  <div class="thermal-line-name-size" title="${line1Text}">${line1Text}</div>
                   <div class="thermal-line-sku">${skuText} ${locHtml}</div>
                   ${priceHtml}
                 </div>
@@ -845,7 +955,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 max-width: ${pageW} !important;
                 max-height: ${pageH} !important;
                 box-sizing: border-box !important;
-                padding: 1.2mm 1.6mm !important;
+                padding: 1.0mm 1.5mm !important;
                 display: flex !important;
                 flex-direction: ${isPortrait ? 'column' : 'row'} !important;
                 align-items: center !important;
@@ -876,39 +986,42 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 ${isPortrait ? 'text-align: center; width: 100%;' : 'text-align: left;'}
               }
               .thermal-line-name-size {
-                font-size: ${isPortrait ? '6.5pt' : '7.8pt'} !important;
+                font-size: ${isPortrait ? '7.2pt' : '9.5pt'} !important;
                 font-weight: 800 !important;
-                white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
-                color: #000000 !important;
                 line-height: 1.15 !important;
+                word-break: break-word !important;
+                overflow-wrap: break-word !important;
+                display: -webkit-box !important;
+                -webkit-line-clamp: 2 !important;
+                -webkit-box-orient: vertical !important;
+                overflow: hidden !important;
+                max-height: 2.3em !important;
+                color: #000000 !important;
                 letter-spacing: -0.15px !important;
               }
               .thermal-line-sku {
-                font-size: ${isPortrait ? '5.2pt' : '6.2pt'} !important;
+                font-size: ${isPortrait ? '6pt' : '7.2pt'} !important;
                 font-weight: 600 !important;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
                 text-overflow: ellipsis !important;
                 color: #222222 !important;
-                line-height: 1.15 !important;
+                line-height: 1.1 !important;
                 margin: 0.3mm 0 !important;
-                letter-spacing: -0.1px !important;
+                letter-spacing: -0.05px !important;
               }
               .thermal-line-price {
-                font-size: ${isPortrait ? '7.5pt' : '8.8pt'} !important;
+                font-size: ${isPortrait ? '9.5pt' : '12pt'} !important;
                 font-weight: 900 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
-                text-overflow: ellipsis !important;
                 color: #000000 !important;
-                line-height: 1.15 !important;
+                line-height: 1.1 !important;
                 letter-spacing: -0.2px !important;
               }
               .thermal-loc-badge {
-                font-size: 5.2pt !important;
+                font-size: 5.8pt !important;
                 font-weight: 700 !important;
                 margin-left: 2px !important;
                 color: #444444 !important;
@@ -1134,7 +1247,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                         <input
                           type="text"
                           value={formSku}
-                          onChange={(e) => setFormSku(e.target.value)}
+                          onChange={(e) => handleSkuChange(e.target.value)}
                           placeholder="Pilih dari pencarian di atas atau ketik..."
                           className="w-full mt-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
                         />
@@ -1160,12 +1273,27 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                         />
                       </div>
                       <div>
-                        <span className="text-[11px] font-bold text-slate-500">Harga Produk (Rp):</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-500">Harga Produk (Rp):</span>
+                          {(() => {
+                            const match = catalogMap.get(formSku.trim().toLowerCase());
+                            const mp = getProductMasterPrice(match);
+                            return mp > 0 ? (
+                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                ✓ Master Data
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                         <input
                           type="text"
                           value={formPrice}
                           onChange={(e) => setFormPrice(e.target.value)}
-                          placeholder="cth: 500000 atau 500.000"
+                          placeholder={(() => {
+                            const match = catalogMap.get(formSku.trim().toLowerCase());
+                            const mp = getProductMasterPrice(match);
+                            return mp > 0 ? formatProductPrice(mp, true) : 'Otomatis dari master data produk...';
+                          })()}
                           className="w-full mt-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-black text-purple-700 dark:text-purple-300"
                         />
                       </div>
@@ -1338,7 +1466,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       <input
                         type="text"
                         value={formSku}
-                        onChange={(e) => setFormSku(e.target.value)}
+                        onChange={(e) => handleSkuChange(e.target.value)}
                         placeholder="cth: F25JBF310DBM"
                         className="w-full mt-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
                       />
@@ -1368,14 +1496,29 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Harga Produk (Rp)
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Harga Produk (Rp)
+                        </label>
+                        {(() => {
+                          const match = catalogMap.get(formSku.trim().toLowerCase());
+                          const mp = getProductMasterPrice(match);
+                          return mp > 0 ? (
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                              ✓ Master Data
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
                       <input
                         type="text"
                         value={formPrice}
                         onChange={(e) => setFormPrice(e.target.value)}
-                        placeholder="cth: 500000 atau 500.000"
+                        placeholder={(() => {
+                          const match = catalogMap.get(formSku.trim().toLowerCase());
+                          const mp = getProductMasterPrice(match);
+                          return mp > 0 ? formatProductPrice(mp, true) : 'Otomatis dari master data produk...';
+                        })()}
                         className="w-full mt-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-black text-purple-700 dark:text-purple-300"
                       />
                     </div>
@@ -1554,18 +1697,16 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       printOrientation === 'portrait' ? 'w-full text-center pl-0 pt-1' : 'text-left'
                     }`}
                   >
-                    {/* Row 1: Nama Produk | Size */}
-                    <div className="text-[11.5px] font-black text-slate-900 truncate leading-tight tracking-tight">
-                      {(() => {
-                        const parts: string[] = [];
-                        if (showProductName && currentPreviewItem.nama) parts.push(currentPreviewItem.nama);
-                        if (showSize && currentPreviewItem.size) parts.push(currentPreviewItem.size);
-                        return parts.length > 0 ? parts.join(' | ') : currentPreviewItem.sku;
-                      })()}
+                    {/* Row 1: Nama Produk | Size (Wrap text 2 baris, font tebal & jelas) */}
+                    <div
+                      className="text-[12px] font-extrabold text-slate-950 leading-[1.15] tracking-tight line-clamp-2 break-words"
+                      title={getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize)}
+                    >
+                      {getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize)}
                     </div>
 
                     {/* Row 2: SKU (Lebih kecil dari Nama & Harga) */}
-                    <div className="text-[9.5px] font-medium text-slate-600 font-mono truncate leading-tight my-0.5 tracking-tight flex items-center gap-1">
+                    <div className="text-[9.5px] font-semibold text-slate-600 font-mono truncate leading-tight my-0.5 tracking-tight flex items-center gap-1">
                       <span>{currentPreviewItem.sku}</span>
                       {showLocation && currentPreviewItem.lokasi && (
                         <span className="text-[8.5px] font-bold text-slate-400">
@@ -1574,10 +1715,13 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       )}
                     </div>
 
-                    {/* Row 3: HARGA PRODUK (Lebih besar dari SKU, Bold) */}
+                    {/* Row 3: HARGA PRODUK (Besar & Font Ekstra Tebal) */}
                     {showPrice && (
-                      <div className="text-[13.5px] font-black text-slate-950 truncate leading-tight tracking-tight">
-                        {formatProductPrice(currentPreviewItem.price, showCurrencyPrefix) || '500.000'}
+                      <div className="text-[14.5px] font-black text-slate-950 truncate leading-tight tracking-tight mt-0.5">
+                        {formatProductPrice(
+                          currentPreviewItem.price || getProductMasterPrice(catalogMap.get(currentPreviewItem.sku.toLowerCase())),
+                          showCurrencyPrefix
+                        ) || '0'}
                       </div>
                     )}
                   </div>
@@ -1800,22 +1944,25 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                       {item.nama || '-'}
                     </td>
                     <td className="py-3 px-3">
-                      {item.size ? (
+                      {isRealSize(item.size) ? (
                         <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded font-bold">
                           {item.size}
                         </span>
                       ) : (
-                        '-'
+                        <span className="text-slate-400">-</span>
                       )}
                     </td>
                     <td className="py-3 px-3">
-                      {item.price ? (
-                        <span className="font-extrabold text-purple-700 dark:text-purple-300">
-                          {formatProductPrice(item.price, true)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
+                      {(() => {
+                        const pr = item.price || getProductMasterPrice(catalogMap.get(item.sku.toLowerCase()));
+                        return pr ? (
+                          <span className="font-extrabold text-purple-700 dark:text-purple-300">
+                            {formatProductPrice(pr, true)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-3">
                       {item.lokasi ? (

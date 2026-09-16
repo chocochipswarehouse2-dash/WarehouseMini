@@ -2395,7 +2395,33 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     ''
   ).trim();
 
-  const price = typeof row.price === 'number' ? row.price : (typeof row.harga === 'number' ? row.harga : undefined);
+  // Extract price from direct columns (price, harga, tag_price) or DealPOS Tag Price (TP)
+  let price: number | undefined = undefined;
+  const directPrice = row.price ?? row.harga ?? row.harga_jual ?? row.harga_produk ?? row.tag_price;
+  if (typeof directPrice === 'number' && !isNaN(directPrice) && directPrice > 0) {
+    price = directPrice;
+  } else if (typeof directPrice === 'string') {
+    const cleaned = directPrice.replace(/[^0-9]/g, '');
+    if (cleaned) {
+      const num = Number(cleaned);
+      if (!isNaN(num) && num > 0) price = num;
+    }
+  }
+
+  // DealPOS channels often store Tag Price in TP (e.g., TP: 550000)
+  if (!price && row.dealpos_channels && typeof row.dealpos_channels === 'object') {
+    const dp = row.dealpos_channels;
+    const tpRaw = dp.TP ?? dp.tag_price ?? dp.TagPrice ?? dp.price ?? dp.harga ?? dp.HARGA ?? dp.Harga;
+    if (typeof tpRaw === 'number' && !isNaN(tpRaw) && tpRaw > 0) {
+      price = tpRaw;
+    } else if (typeof tpRaw === 'string') {
+      const cleaned = tpRaw.replace(/[^0-9]/g, '');
+      if (cleaned) {
+        const num = Number(cleaned);
+        if (!isNaN(num) && num > 0) price = num;
+      }
+    }
+  }
 
   // Extract DealPOS stock & channel comparison numbers if present in table row
   let stokMap: number | undefined = undefined;
@@ -2649,7 +2675,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
             } else {
               if ((!existing.s || existing.s === '-') && item.s && item.s !== '-') existing.s = item.s;
               if ((!existing.p || existing.p === existing.k) && item.p && item.p !== item.k) existing.p = item.p;
-              if (existing.price === undefined && item.price !== undefined) existing.price = item.price;
+              if ((!existing.price || existing.price === 0) && item.price !== undefined && item.price > 0) existing.price = item.price;
               if (item.dealpos_channels) {
                 existing.dealpos_channels = {
                   ...(typeof existing.dealpos_channels === 'object' ? (existing.dealpos_channels as Record<string, any>) : {}),
