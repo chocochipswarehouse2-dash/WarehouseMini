@@ -30,6 +30,7 @@ import {
   Send,
   Database,
   Printer,
+  QrCode,
   ShieldAlert,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
@@ -122,6 +123,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
       case 'cetak_label':
         return { title: 'Cetak Label A6', subtitle: 'Cetak Resi Pengiriman Manual', icon: Printer };
+      case 'cetak_barcode':
+        return { title: 'Cetak Barcode Produk', subtitle: 'Stiker Thermal 50×20 mm & Import Massal', icon: QrCode };
       
       case 'pusat_resolusi':
         return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };

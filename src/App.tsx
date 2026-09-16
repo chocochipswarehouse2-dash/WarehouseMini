@@ -102,6 +102,7 @@ const LemburCutiView = lazyWithRetry(() => import('./components/hr/LemburCutiVie
 const HrApprovalView = lazyWithRetry(() => import('./components/hr/HrApprovalView').then(m => ({ default: m.HrApprovalView })));
 const HrRekapView = lazyWithRetry(() => import('./components/hr/HrRekapView').then(m => ({ default: m.HrRekapView })));
 const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView').then(m => ({ default: m.CetakLabelView })));
+const CetakBarcodeProdukView = lazyWithRetry(() => import('./components/CetakBarcodeProdukView').then(m => ({ default: m.CetakBarcodeProdukView })));
 const PesananSayaView = lazyWithRetry(() => import('./components/PesananSaya/PesananSayaView').then(m => ({ default: m.PesananSayaView })));
 const PusatResolusiView = lazyWithRetry(() => import('./components/PusatResolusi/PusatResolusiView').then(m => ({ default: m.default })));
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
@@ -160,6 +161,7 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   picking_tasks: 'tugas-picking',
   peminjaman: 'peminjaman',
   cetak_label: 'cetak-label',
+  cetak_barcode: 'cetak-barcode',
   supabase_migration: 'migrasi-supabase',
   karyawan: 'karyawan',
   presensi: 'presensi',
@@ -207,6 +209,9 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'sps': 'peminjaman',
   'cetak-label': 'cetak_label',
   'label': 'cetak_label',
+  'cetak-barcode': 'cetak_barcode',
+  'barcode': 'cetak_barcode',
+  'barcode-produk': 'cetak_barcode',
   'migrasi-supabase': 'supabase_migration',
   'supabase-migration': 'supabase_migration',
   'supabase': 'supabase_migration',
@@ -1577,6 +1582,13 @@ export default function App() {
               )}
               {activePage === 'cetak_label' && (
                   <CetakLabelView />
+              )}
+              {activePage === 'cetak_barcode' && (
+                  <CetakBarcodeProdukView
+                    session={session}
+                    productCatalog={productDatabase}
+                    onShowToast={showToast}
+                  />
               )}
               {activePage === 'picking_tasks' && (
                   <PickingTasksView

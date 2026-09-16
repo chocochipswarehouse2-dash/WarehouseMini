@@ -25,6 +25,7 @@ export type ActivePage =
   | 'hr_approval'
   | 'hr_rekap'
   | 'cetak_label'
+  | 'cetak_barcode'
   | 'pesanan_saya'
   | 'manual_shipment'
   | 'roadmap'
@@ -83,6 +84,7 @@ export type UserPermissionKey =
   | 'menu_ops_picking'
   | 'menu_ops_peminjaman'
   | 'menu_ops_roadmap'
+  | 'menu_ops_cetak_barcode'
   // KARYAWAN & PRESENSI
   | 'menu_hr_karyawan'
   | 'menu_hr_presensi'
@@ -91,6 +93,7 @@ export type UserPermissionKey =
   | 'menu_hr_approval'
   // ACTION / EXTRA
   | 'action_cetak_label'
+  | 'action_cetak_barcode'
   | 'action_export_data'
   | 'action_import_data'
   | 'action_sync_dealpos'

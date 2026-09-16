@@ -31,6 +31,7 @@ import {
   Scissors,
   Truck,
   Printer,
+  QrCode,
   Send,
   Map,
   ShieldAlert,
@@ -120,6 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPicking = userIsAdmin || hasPermission(session, 'menu_ops_picking');
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
+  const canCetakBarcode = userIsAdmin || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || canCetakLabel || canInventory;
 
   // HR
   const canViewKaryawan = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
@@ -216,6 +218,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Printer,
       description: 'Cetak resi pengiriman manual',
       access: canCetakLabel,
+    },
+    {
+      id: 'cetak_barcode' as ActivePage,
+      label: 'Cetak Barcode Produk',
+      shortLabel: 'Barcode 50x20',
+      icon: QrCode,
+      description: 'Stiker Thermal 50×20 mm & Import Massal',
+      access: canCetakBarcode,
     },
   ].filter((item) => item.access);
 
