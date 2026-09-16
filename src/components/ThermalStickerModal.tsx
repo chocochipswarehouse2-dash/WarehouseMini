@@ -72,6 +72,65 @@ export const isLocationMatch = (locA?: string, locB?: string): boolean => {
   return rawA.includes(rawB) || rawB.includes(rawA);
 };
 
+export interface TicketDisplayData {
+  sku: string;
+  nama: string;
+  size: string;
+  lokasi: string;
+  ticketNo: string;
+}
+
+export const getTicketDisplayData = (t?: ThermalTicketItem | null): TicketDisplayData => {
+  if (!t) {
+    return { sku: '', nama: '', size: '-', lokasi: '', ticketNo: '' };
+  }
+
+  const cleanSku = (t.sku || '').trim();
+  let nama = (t.nama_produk || '').trim();
+
+  // Bersihkan size
+  let size = (t.size || '').trim();
+  const isDummySize =
+    !size ||
+    size === '-' ||
+    size.toLowerCase() === 'default' ||
+    size.toLowerCase() === 'none';
+
+  if (isDummySize) {
+    // 1. Cek apakah size tertulis di akhir SKU (cth: ...PWS -> S, ...WHL -> L)
+    const skuSizeRegex = /([A-Z0-9]+)(XS|S|M|L|XL|XXL|XXXL|2XL|3XL)$/i;
+    // 2. Cek apakah size ada di ujung nama produk (cth: "Tifara Dress S", "Torin Skirt Cream XL")
+    const sizeEndRegex =
+      /(?:[\s\-_/|(),]+)(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|all\s*size|onesize|free\s*size)(?:[\s\-_/|()]*)$/i;
+    const matchName = nama.match(sizeEndRegex);
+
+    if (matchName) {
+      size = matchName[1].trim().toUpperCase();
+    } else {
+      const matchSku = cleanSku.match(skuSizeRegex);
+      if (matchSku) {
+        size = matchSku[2].trim().toUpperCase();
+      } else {
+        size = 'ALL SIZE';
+      }
+    }
+  } else {
+    size = size.toUpperCase();
+  }
+
+  // Format Lokasi Rak
+  let lokasi = (t.lokasi_sekarang || '').trim().toUpperCase();
+  if (lokasi === 'DEFAULT' || lokasi === 'NONE') lokasi = '';
+
+  return {
+    sku: cleanSku,
+    nama,
+    size,
+    lokasi,
+    ticketNo: (t.ticket_no || '').trim(),
+  };
+};
+
 export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
   isOpen,
   onClose,
@@ -351,6 +410,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           const qrSrc = qrMap[t.ticket_no] || '';
           const isLast = idx === printableStickers.length - 1;
           const copyBadge = item.totalCopies > 1 ? ` (${item.copyIndex}/${item.totalCopies})` : '';
+          const data = getTicketDisplayData(t);
 
           stickersHtml += `
             <div class="thermal-page-wrapper" style="page-break-after: ${isLast ? 'auto' : 'always'}; break-after: ${isLast ? 'auto' : 'page'};">
@@ -359,11 +419,14 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                   ${qrSrc ? `<img src="${qrSrc}" alt="QR" />` : '<div style="font-size:7pt;text-align:center;">QR</div>'}
                 </div>
                 <div class="thermal-text-container">
-                  <div class="thermal-sku-title">${t.sku}</div>
-                  <div class="thermal-name-title">${t.nama_produk || ''}</div>
-                  <div class="thermal-meta-row">
-                    <span class="thermal-meta-size">${t.size ? 'SZ: ' + t.size : ''}${t.lokasi_sekarang ? ' [' + t.lokasi_sekarang + ']' : ''}</span>
-                    <span class="thermal-meta-ticket">#${t.ticket_no}${copyBadge}</span>
+                  <div class="thermal-sku-title">${data.sku}</div>
+                  <div class="thermal-name-title">${data.nama}</div>
+                  <div class="thermal-meta-details">
+                    <span class="thermal-meta-size">SZ: ${data.size}</span>
+                    ${data.lokasi ? `<span class="thermal-meta-dot">•</span><span class="thermal-meta-loc">Rak: ${data.lokasi}</span>` : ''}
+                  </div>
+                  <div class="thermal-ticket-row">
+                    <span class="thermal-ticket-no">#${data.ticketNo}${copyBadge}</span>
                   </div>
                 </div>
               </div>
@@ -377,6 +440,9 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           <head>
             <meta charset="utf-8" />
             <title>Cetak Label Barcode 50x20mm</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&family=Quicksand:wght@500;600;700;800&display=swap" rel="stylesheet">
             <style>
               @page {
                 size: ${pageW} ${pageH} ${orientMode};
@@ -396,7 +462,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 color: #000000 !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
-                font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+                font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
               }
               .thermal-page-wrapper {
                 display: block !important;
@@ -421,7 +487,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 max-width: ${pageW} !important;
                 max-height: ${pageH} !important;
                 box-sizing: border-box !important;
-                padding: 1.2mm 1.8mm !important;
+                padding: ${isPortrait ? '1.0mm 1.2mm' : '0.8mm 1.5mm'} !important;
                 display: flex !important;
                 flex-direction: ${isPortrait ? 'column' : 'row'} !important;
                 align-items: center !important;
@@ -431,8 +497,8 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 color: #000000 !important;
               }
               .thermal-qr-container {
-                width: ${isPortrait ? '13.5mm' : '15.5mm'} !important;
-                height: ${isPortrait ? '13.5mm' : '15.5mm'} !important;
+                width: ${isPortrait ? '13.0mm' : '13.5mm'} !important;
+                height: ${isPortrait ? '13.0mm' : '13.5mm'} !important;
                 margin-right: ${isPortrait ? '0' : '1.5mm'} !important;
                 margin-bottom: ${isPortrait ? '1mm' : '0'} !important;
                 flex-shrink: 0 !important;
@@ -457,39 +523,59 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 ${isPortrait ? 'text-align: center; width: 100%;' : ''}
               }
               .thermal-sku-title {
-                font-size: ${isPortrait ? '6.5pt' : '7.5pt'} !important;
-                font-weight: 900 !important;
+                font-size: ${isPortrait ? '6.8pt' : '7.5pt'} !important;
+                font-weight: 800 !important;
+                line-height: 1.15 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
                 text-overflow: ellipsis !important;
-                letter-spacing: -0.2px !important;
+                letter-spacing: -0.1px !important;
+                color: #000000 !important;
               }
               .thermal-name-title {
-                font-size: ${isPortrait ? '5.5pt' : '6.2pt'} !important;
-                font-weight: 700 !important;
-                white-space: nowrap !important;
+                font-size: ${isPortrait ? '5.8pt' : '6.2pt'} !important;
+                font-weight: 600 !important;
+                line-height: 1.15 !important;
+                color: #111111 !important;
+                display: -webkit-box !important;
+                -webkit-line-clamp: 2 !important;
+                -webkit-box-orient: vertical !important;
                 overflow: hidden !important;
-                text-overflow: ellipsis !important;
-                color: #111 !important;
+                word-break: break-word !important;
               }
-              .thermal-meta-row {
-                font-size: ${isPortrait ? '5.8pt' : '6.5pt'} !important;
-                font-weight: 800 !important;
+              .thermal-meta-details {
+                font-size: ${isPortrait ? '5.8pt' : '6.2pt'} !important;
+                font-weight: 700 !important;
+                line-height: 1.15 !important;
                 display: flex !important;
-                justify-content: ${isPortrait ? 'center' : 'space-between'} !important;
-                gap: ${isPortrait ? '4px' : '0'} !important;
-                align-items: baseline !important;
-                margin-top: 0.8mm !important;
+                align-items: center !important;
+                gap: 3px !important;
+                margin-top: 0.3mm !important;
+                color: #111111 !important;
+                ${isPortrait ? 'justify-content: center;' : ''}
               }
               .thermal-meta-size {
                 white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
               }
-              .thermal-meta-ticket {
-                font-size: 5.8pt !important;
-                font-family: monospace !important;
+              .thermal-meta-dot {
+                color: #666666 !important;
+                font-size: 5.5pt !important;
+              }
+              .thermal-meta-loc {
                 white-space: nowrap !important;
+              }
+              .thermal-ticket-row {
+                margin-top: 0.3mm !important;
+                line-height: 1.1 !important;
+                ${isPortrait ? 'text-align: center;' : ''}
+              }
+              .thermal-ticket-no {
+                font-size: ${isPortrait ? '5.6pt' : '6.0pt'} !important;
+                font-family: 'JetBrains Mono', monospace !important;
+                font-weight: 700 !important;
+                color: #000000 !important;
+                white-space: nowrap !important;
+                letter-spacing: -0.1px !important;
               }
             </style>
           </head>
@@ -620,19 +706,19 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 max-width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
                 max-height: ${printOrientation === 'portrait' ? '50mm' : '20mm'} !important;
                 box-sizing: border-box !important;
-                padding: 1.2mm 1.8mm !important;
+                padding: ${printOrientation === 'portrait' ? '1.0mm 1.2mm' : '0.8mm 1.5mm'} !important;
                 display: flex !important;
                 flex-direction: ${printOrientation === 'portrait' ? 'column' : 'row'} !important;
                 align-items: center !important;
                 justify-content: ${printOrientation === 'portrait' ? 'center' : 'flex-start'} !important;
                 background: white !important;
                 color: black !important;
-                font-family: monospace, sans-serif !important;
+                font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
                 overflow: hidden !important;
               }
               .thermal-qr-container {
-                width: ${printOrientation === 'portrait' ? '13.5mm' : '15.5mm'} !important;
-                height: ${printOrientation === 'portrait' ? '13.5mm' : '15.5mm'} !important;
+                width: ${printOrientation === 'portrait' ? '13.0mm' : '13.5mm'} !important;
+                height: ${printOrientation === 'portrait' ? '13.0mm' : '13.5mm'} !important;
                 margin-right: ${printOrientation === 'portrait' ? '0' : '1.5mm'} !important;
                 margin-bottom: ${printOrientation === 'portrait' ? '1mm' : '0'} !important;
                 flex-shrink: 0 !important;
@@ -647,45 +733,69 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 image-rendering: pixelated !important;
               }
               .thermal-text-container {
+                flex: 1 !important;
+                min-width: 0 !important;
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: center !important;
                 overflow: hidden !important;
-                width: 100% !important;
                 line-height: 1.15 !important;
+                ${printOrientation === 'portrait' ? 'text-align: center; width: 100%;' : ''}
               }
               .thermal-sku-title {
-                font-size: 7.5pt !important;
-                font-weight: 900 !important;
+                font-size: ${printOrientation === 'portrait' ? '6.8pt' : '7.5pt'} !important;
+                font-weight: 800 !important;
+                line-height: 1.15 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
                 text-overflow: ellipsis !important;
-                letter-spacing: -0.2px !important;
+                letter-spacing: -0.1px !important;
+                color: #000000 !important;
               }
               .thermal-name-title {
-                font-size: 6.2pt !important;
-                font-weight: 700 !important;
-                white-space: nowrap !important;
+                font-size: ${printOrientation === 'portrait' ? '5.8pt' : '6.2pt'} !important;
+                font-weight: 600 !important;
+                line-height: 1.15 !important;
+                color: #111111 !important;
+                display: -webkit-box !important;
+                -webkit-line-clamp: 2 !important;
+                -webkit-box-orient: vertical !important;
                 overflow: hidden !important;
-                text-overflow: ellipsis !important;
+                word-break: break-word !important;
               }
-              .thermal-meta-row {
-                font-size: 6.5pt !important;
-                font-weight: 800 !important;
+              .thermal-meta-details {
+                font-size: ${printOrientation === 'portrait' ? '5.8pt' : '6.2pt'} !important;
+                font-weight: 700 !important;
+                line-height: 1.15 !important;
                 display: flex !important;
-                justify-content: space-between !important;
-                align-items: baseline !important;
-                margin-top: 0.8mm !important;
+                align-items: center !important;
+                gap: 3px !important;
+                margin-top: 0.3mm !important;
+                color: #111111 !important;
+                ${printOrientation === 'portrait' ? 'justify-content: center;' : ''}
               }
               .thermal-meta-size {
                 white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
               }
-              .thermal-meta-ticket {
-                font-size: 5.8pt !important;
-                font-family: monospace !important;
+              .thermal-meta-dot {
+                color: #666666 !important;
+                font-size: 5.5pt !important;
+              }
+              .thermal-meta-loc {
                 white-space: nowrap !important;
+              }
+              .thermal-ticket-row {
+                margin-top: 0.3mm !important;
+                line-height: 1.1 !important;
+                ${printOrientation === 'portrait' ? 'text-align: center;' : ''}
+              }
+              .thermal-ticket-no {
+                font-size: ${printOrientation === 'portrait' ? '5.6pt' : '6.0pt'} !important;
+                font-family: 'JetBrains Mono', monospace !important;
+                font-weight: 700 !important;
+                color: #000000 !important;
+                white-space: nowrap !important;
+                letter-spacing: -0.1px !important;
               }
             }
           `,
@@ -697,6 +807,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           const qrSrc = qrMap[t.ticket_no];
           const isLast = idx === printableStickers.length - 1;
           const copyBadge = item.totalCopies > 1 ? ` (${item.copyIndex}/${item.totalCopies})` : '';
+          const data = getTicketDisplayData(t);
 
           return (
             <div
@@ -718,20 +829,26 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 
                 <div className="thermal-text-container">
                   <div className="thermal-sku-title">
-                    {t.sku}
+                    {data.sku}
                   </div>
 
                   <div className="thermal-name-title">
-                    {t.nama_produk}
+                    {data.nama}
                   </div>
 
-                  <div className="thermal-meta-row">
-                    <span className="thermal-meta-size">
-                      {t.size ? `SZ: ${t.size}` : ''}
-                      {t.lokasi_sekarang ? ` [${t.lokasi_sekarang}]` : ''}
-                    </span>
-                    <span className="thermal-meta-ticket">
-                      #{t.ticket_no}{copyBadge}
+                  <div className="thermal-meta-details">
+                    <span className="thermal-meta-size">SZ: {data.size}</span>
+                    {data.lokasi && (
+                      <>
+                        <span className="thermal-meta-dot">•</span>
+                        <span className="thermal-meta-loc">Rak: {data.lokasi}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="thermal-ticket-row">
+                    <span className="thermal-ticket-no">
+                      #{data.ticketNo}{copyBadge}
                     </span>
                   </div>
                 </div>
@@ -1066,58 +1183,70 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             </div>
 
             <div className="flex flex-col items-center justify-center p-3 bg-slate-100 dark:bg-slate-950 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
-              {currentPreviewTicket ? (
-                <div
-                  className={`bg-white text-black p-2 rounded shadow-md border border-slate-300 flex select-none font-sans gap-2 relative overflow-hidden transition-all ${
-                    printOrientation === 'portrait'
-                      ? 'w-[140px] h-[260px] flex-col items-center justify-center text-center'
-                      : 'w-[280px] h-[112px] flex-row items-center justify-between'
-                  } ${isRotated180 ? 'rotate-180' : ''}`}
-                >
+              {currentPreviewTicket ? (() => {
+                const previewData = getTicketDisplayData(currentPreviewTicket);
+                return (
                   <div
-                    className={`${
+                    className={`bg-white text-black p-2.5 rounded-xl shadow-md border border-slate-300 flex select-none gap-2 relative overflow-hidden transition-all ${
                       printOrientation === 'portrait'
-                        ? 'w-[90px] h-[90px] mb-1'
-                        : 'w-[85px] h-[85px]'
-                    } shrink-0 flex items-center justify-center`}
+                        ? 'w-[150px] h-[270px] flex-col items-center justify-center text-center'
+                        : 'w-[310px] h-[124px] flex-row items-center justify-between'
+                    } ${isRotated180 ? 'rotate-180' : ''}`}
+                    style={{ fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif" }}
                   >
-                    {qrMap[currentPreviewTicket.ticket_no] ? (
-                      <img
-                        src={qrMap[currentPreviewTicket.ticket_no]}
-                        alt="QR Code"
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <div className="text-[10px] text-slate-400 animate-pulse">Membuat QR...</div>
-                    )}
-                  </div>
-                  <div
-                    className={`flex flex-col justify-center overflow-hidden flex-1 py-1 ${
-                      printOrientation === 'portrait' ? 'w-full text-center' : ''
-                    }`}
-                  >
-                    <div className="text-[12px] font-black truncate leading-tight">
-                      {currentPreviewTicket.sku}
-                    </div>
-                    <div className="text-[10px] font-bold truncate mt-0.5 text-slate-800 leading-tight">
-                      {currentPreviewTicket.nama_produk}
+                    <div
+                      className={`${
+                        printOrientation === 'portrait'
+                          ? 'w-[84px] h-[84px] mb-1'
+                          : 'w-[84px] h-[84px]'
+                      } shrink-0 flex items-center justify-center bg-white p-1 rounded-lg border border-slate-100`}
+                    >
+                      {qrMap[currentPreviewTicket.ticket_no] ? (
+                        <img
+                          src={qrMap[currentPreviewTicket.ticket_no]}
+                          alt="QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-[10px] text-slate-400 animate-pulse">Membuat QR...</div>
+                      )}
                     </div>
                     <div
-                      className={`flex items-center mt-2 ${
-                        printOrientation === 'portrait' ? 'justify-center gap-2' : 'justify-between'
+                      className={`flex flex-col justify-center overflow-hidden flex-1 ${
+                        printOrientation === 'portrait' ? 'w-full text-center' : ''
                       }`}
                     >
-                      <span className="text-[11px] font-black">
-                        {currentPreviewTicket.size ? `SZ: ${currentPreviewTicket.size}` : ''}
-                        {currentPreviewTicket.lokasi_sekarang ? ` [${currentPreviewTicket.lokasi_sekarang}]` : ''}
-                      </span>
-                      <span className="text-[9px] font-mono font-bold">
-                        *{currentPreviewTicket.ticket_no}*
-                      </span>
+                      <div className="text-[12px] font-extrabold tracking-tight truncate leading-tight text-slate-950">
+                        {previewData.sku}
+                      </div>
+                      <div className="text-[10.5px] font-semibold text-slate-700 leading-snug line-clamp-2 mt-0.5">
+                        {previewData.nama}
+                      </div>
+                      <div
+                        className={`flex items-center gap-1.5 text-[9.5px] font-bold text-slate-800 mt-1 ${
+                          printOrientation === 'portrait' ? 'justify-center' : ''
+                        }`}
+                      >
+                        <span className="bg-slate-100 px-1 py-0.5 rounded text-slate-900 border border-slate-200">
+                          SZ: {previewData.size}
+                        </span>
+                        {previewData.lokasi && (
+                          <span className="bg-blue-50 text-blue-700 px-1 py-0.5 rounded border border-blue-200">
+                            Rak: {previewData.lokasi}
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className={`mt-1 font-mono text-[9.5px] font-bold text-slate-900 tracking-tight ${
+                          printOrientation === 'portrait' ? 'text-center' : ''
+                        }`}
+                      >
+                        #{previewData.ticketNo}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
+                );
+              })() : (
                 <div className="text-xs text-slate-400 py-6">Tidak ada tiket yang dipilih untuk dipratinjau</div>
               )}
 
