@@ -114,6 +114,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       stokStudio: 0,
       stokShp: 0,
       stokTtk: 0,
+      selected: false,
     },
   ]);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -475,6 +476,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       stokStudio: 0,
       stokShp: 0,
       stokTtk: 0,
+      selected: false,
     };
     setItems((prev) => [...prev, newItem]);
   };
@@ -571,70 +573,89 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: nameMap };
   }, [productCatalog, channelStocks]);
 
-  // Fast Product Input Change Handler (Handles Datalist chip click / barcode scan / typing)
+  // Select a product from suggestions, Enter key, or barcode scanner
+  const selectProduct = (
+    itemId: string,
+    p: {
+      sku: string;
+      produk: string;
+      size: string;
+      lokasi: string;
+      stok: number;
+      studioQty?: number;
+      shpQty?: number;
+      ttkQty?: number;
+    }
+  ) => {
+    handleItemChange(itemId, {
+      sku: p.sku,
+      produk: p.produk,
+      size: p.size,
+      lokasi: p.lokasi,
+      stokMap: p.stok,
+      stokStudio: p.studioQty || 0,
+      stokShp: p.shpQty || 0,
+      stokTtk: p.ttkQty || 0,
+      selected: true,
+    });
+    setFocusedItemId(null);
+    setActiveComboIndex(-1);
+  };
+
+  // Fast Product Input Change Handler (Handles typing / scanning / deleting)
   const handleProductInputChange = (itemId: string, rawVal: string) => {
     setActiveComboIndex(-1);
     const trimmed = rawVal.trim();
     const upper = trimmed.toUpperCase();
 
-    
+    // If input is cleared or empty, reset item fields completely
+    if (!trimmed) {
+      handleItemChange(itemId, {
+        sku: '',
+        produk: '',
+        size: '',
+        stokMap: 0,
+        selected: false,
+      });
+      return;
+    }
 
-    // 1. Direct O(1) matching against SKU map
-    if (skuLookupMap.has(upper)) {
+    // Direct O(1) matching against SKU map ONLY for complete SKU / Barcode scans (minimum 4 characters)
+    // NEVER match 1-3 characters (e.g. 'X') and NEVER auto-match against product names on typing!
+    if (upper.length >= 4 && skuLookupMap.has(upper)) {
       const matched = skuLookupMap.get(upper)!;
-      handleItemChange(itemId, {
-        sku: matched.sku,
-        produk: matched.produk,
-        size: matched.size,
-        lokasi: matched.lokasi,
-        stokMap: matched.stok,
-        stokStudio: matched.studioQty,
-        stokShp: matched.shpQty,
-        stokTtk: matched.ttkQty,
-      });
+      selectProduct(itemId, matched);
       return;
     }
 
-    // 2. Direct O(1) matching against Name map
-    const lower = trimmed.toLowerCase();
-    if (nameLookupMap.has(lower)) {
-      const matched = nameLookupMap.get(lower)!;
-      handleItemChange(itemId, {
-        sku: matched.sku,
-        produk: matched.produk,
-        size: matched.size,
-        lokasi: matched.lokasi,
-        stokMap: matched.stok,
-        stokStudio: matched.studioQty,
-        stokShp: matched.shpQty,
-        stokTtk: matched.ttkQty,
-      });
-      return;
-    }
-
-    // If typing custom / in-progress text
+    // User is actively typing / searching text (e.g. "x", "xerina", etc.)
     const inferredSize = extractSizeFromSku(rawVal);
     handleItemChange(itemId, {
       sku: rawVal,
       produk: rawVal,
       size: inferredSize !== '-' ? inferredSize : '',
+      selected: false,
     });
   };
 
   // Fast custom dropdown renderer inside form with keyboard navigation
-  const renderSuggestions = (itemId: string, currentVal: string) => {
-    if (focusedItemId !== itemId || !currentVal.trim()) return null;
+  const renderSuggestions = (itemId: string, currentVal: string, isSelected?: boolean) => {
+    if (focusedItemId !== itemId || !currentVal.trim() || isSelected) return null;
     const lower = currentVal.trim().toLowerCase();
     const keywords = lower.split(/\s+/).filter(Boolean);
-    
-    // Exact SKU match doesn't need dropdown if it's already selected
-    if (skuLookupMap.has(currentVal.trim().toUpperCase())) return null;
 
     // Multi-keyword filter + cap to 30 items
     const suggestions = productOptionsList
       .filter((p) => {
         const text = `${p.sku} ${p.produk} ${p.size}`.toLowerCase();
         return keywords.every((kw) => text.includes(kw));
+      })
+      .sort((a, b) => {
+        const aStarts = a.produk.toLowerCase().startsWith(lower) || a.sku.toLowerCase().startsWith(lower);
+        const bStarts = b.produk.toLowerCase().startsWith(lower) || b.sku.toLowerCase().startsWith(lower);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return 0;
       })
       .slice(0, 30);
 
@@ -659,18 +680,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               data-index={idx}
               onMouseDown={(e) => {
                 e.preventDefault();
-                handleItemChange(itemId, {
-                  sku: s.sku,
-                  produk: s.produk,
-                  size: s.size,
-                  lokasi: s.lokasi,
-                  stokMap: s.stok,
-                  stokStudio: s.studioQty,
-                  stokShp: s.shpQty,
-                  stokTtk: s.ttkQty,
-                });
-                setFocusedItemId(null);
-                setActiveComboIndex(-1);
+                selectProduct(itemId, s);
               }}
               className={`px-3 py-2.5 text-xs cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 transition-colors ${
                 isActive
@@ -730,8 +740,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Keyboard navigation handler for Combobox input
   const handleProductInputKeyDown = (e: React.KeyboardEvent, itemId: string, currentVal: string) => {
-    const lower = currentVal.trim().toLowerCase();
+    const trimmed = currentVal.trim();
+    const lower = trimmed.toLowerCase();
     const keywords = lower.split(/\s+/).filter(Boolean);
+    const upper = trimmed.toUpperCase();
+
     const suggestions = productOptionsList
       .filter((p) => {
         const text = `${p.sku} ${p.produk} ${p.size}`.toLowerCase();
@@ -739,30 +752,32 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       })
       .slice(0, 30);
 
-    if (suggestions.length === 0) return;
-
     if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveComboIndex((prev) => (prev + 1) % suggestions.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveComboIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
-    } else if (e.key === 'Enter') {
-      if (activeComboIndex >= 0 && activeComboIndex < suggestions.length) {
+      if (suggestions.length > 0) {
         e.preventDefault();
-        const s = suggestions[activeComboIndex];
-        handleItemChange(itemId, {
-          sku: s.sku,
-          produk: s.produk,
-          size: s.size,
-          lokasi: s.lokasi,
-          stokMap: s.stok,
-          stokStudio: s.studioQty,
-          stokShp: s.shpQty,
-          stokTtk: s.ttkQty,
-        });
-        setFocusedItemId(null);
-        setActiveComboIndex(-1);
+        setActiveComboIndex((prev) => (prev + 1) % suggestions.length);
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (suggestions.length > 0) {
+        e.preventDefault();
+        setActiveComboIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // 1. If an item from dropdown is highlighted via arrow keys:
+      if (activeComboIndex >= 0 && activeComboIndex < suggestions.length) {
+        selectProduct(itemId, suggestions[activeComboIndex]);
+        return;
+      }
+      // 2. Exact SKU match (e.g. barcode scanner ended with Enter):
+      if (skuLookupMap.has(upper)) {
+        selectProduct(itemId, skuLookupMap.get(upper)!);
+        return;
+      }
+      // 3. If there are filtered suggestions, pick the first one on Enter:
+      if (suggestions.length > 0) {
+        selectProduct(itemId, suggestions[0]);
+        return;
       }
     } else if (e.key === 'Escape') {
       setFocusedItemId(null);
@@ -770,31 +785,19 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
   };
 
-  // Blur / Enter matching for partial input (e.g. typing "Taylor" then tapping outside / next)
+  // Blur handler: Only commit if exact SKU of length >= 4
   const handleProductInputBlur = (itemId: string, currentVal: string) => {
     const trimmed = currentVal.trim();
     if (!trimmed) return;
     const upper = trimmed.toUpperCase();
-    if (skuLookupMap.has(upper)) return;
 
-    // Check prefix / substring match (case insensitive)
-    const found = productOptionsList.find((p) =>
-      p.sku.toUpperCase() === upper ||
-      p.sku.toUpperCase().includes(upper) ||
-      p.produk.toLowerCase().includes(trimmed.toLowerCase())
-    );
-    if (found) {
-      handleItemChange(itemId, {
-        sku: found.sku,
-        produk: found.produk,
-        size: found.size,
-        lokasi: found.lokasi,
-        stokMap: found.stok,
-        stokStudio: found.studioQty,
-        stokShp: found.shpQty,
-        stokTtk: found.ttkQty,
-      });
+    // If exact SKU in lookup map and length >= 4, ensure it's selected
+    if (upper.length >= 4 && skuLookupMap.has(upper)) {
+      const matched = skuLookupMap.get(upper)!;
+      selectProduct(itemId, matched);
+      return;
     }
+    // No fuzzy substring match on blur!
   };
 
   // Submit Peminjaman Form
@@ -1704,7 +1707,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
               {/* Items List */}
               <div className="space-y-3" id="itemContainer">
                 {items.map((item, index) => {
-                  const hasSelected = Boolean(item.sku || item.produk);
+                  const hasSelected = Boolean(item.selected && item.sku);
                   const mapStok = item.stokMap || 0;
                   const isKosong = mapStok <= 0;
                   const isKurang = Number(item.qty) > mapStok;
@@ -1759,11 +1762,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                               className="w-full pl-3 pr-8 py-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
                               autoComplete="off"
                             />
-                            {item.sku && (
+                            {(item.sku || item.produk) && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  handleItemChange(item.id, { produk: '', sku: '', size: '', stokMap: 0 });
+                                  handleItemChange(item.id, { produk: '', sku: '', size: '', stokMap: 0, selected: false });
                                 }}
                                 className="absolute right-2 top-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
                                 title="Hapus / Reset"
@@ -1771,11 +1774,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {renderSuggestions(item.id, item.sku || item.produk || '')}
+                            {renderSuggestions(item.id, item.sku || item.produk || '', item.selected)}
                           </div>
 
                           {/* Selected Item Detail preview card */}
-                          {item.produk && item.sku && (
+                          {item.selected && item.produk && item.sku && (
                             <div className="mt-1.5 px-2.5 py-1.5 bg-white dark:bg-[#131d31] border border-slate-200/80 dark:border-slate-800 rounded-lg flex flex-col gap-1.5 text-xs">
                               <div className="flex items-center justify-between min-w-0">
                                 <div className="min-w-0 pr-2">

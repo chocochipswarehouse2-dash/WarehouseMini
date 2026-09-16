@@ -302,6 +302,7 @@ export interface PeminjamanItemForm {
   stokTtk?: number;
   stokBlokF?: number;
   stokWh?: number;
+  selected?: boolean;
   [key: string]: unknown;
 }
 
