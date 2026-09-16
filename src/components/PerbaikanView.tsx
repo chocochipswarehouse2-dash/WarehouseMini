@@ -31,6 +31,7 @@ import {
   Edit3,
   Database,
   History,
+  MapPin,
 } from 'lucide-react';
 import {
   PerbaikanTicket,
@@ -56,7 +57,7 @@ import {
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
-import { ThermalStickerModal } from './ThermalStickerModal';
+import { ThermalStickerModal, isLocationMatch } from './ThermalStickerModal';
 
 interface PerbaikanViewProps {
   session: UserSession | null;
@@ -358,6 +359,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const deferredSearch = useDeferredValue(searchQuery);
   const [filterKategori, setFilterKategori] = useState<string>('ALL');
+  const [filterLokasi, setFilterLokasi] = useState<string>('ALL');
+  const [selectedTicketNos, setSelectedTicketNos] = useState<Set<string>>(new Set());
+  const [isBulkPrintModalOpen, setIsBulkPrintModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     if (initialSearchQuery) {
@@ -372,7 +376,34 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   // Reset ticket display limit when tab or filters change
   useEffect(() => {
     setTicketDisplayLimit(24);
-  }, [activeTab, filterKategori, deferredSearch]);
+  }, [activeTab, filterKategori, filterLokasi, deferredSearch]);
+
+  // List unik lokasi yang ada di tiket untuk dropdown filter
+  const uniqueLocations = useMemo(() => {
+    const set = new Set<string>();
+    tickets.forEach((t) => {
+      const loc = t.lokasi_sekarang?.trim().toUpperCase();
+      if (loc) set.add(loc);
+    });
+    return Array.from(set).sort();
+  }, [tickets]);
+
+  const handleToggleSelectTicket = (ticketNo: string) => {
+    setSelectedTicketNos((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticketNo)) next.delete(ticketNo);
+      else next.add(ticketNo);
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedTicketNos(new Set(filteredTickets.map((t) => t.ticket_no)));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedTicketNos(new Set());
+  };
 
   // Form Input Reject State (Pendataan & Sortir Sekaligus)
   const [formSku, setFormSku] = useState('');
@@ -577,6 +608,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       // Kategori filter
       if (filterKategori !== 'ALL' && t.kategori_rusak !== filterKategori) return false;
 
+      // Filter Lokasi Rak (Normalisasi agar DF001 cocok dengan DF-01, DF-001, dll)
+      if (filterLokasi !== 'ALL') {
+        if (!isLocationMatch(t.lokasi_sekarang, filterLokasi)) return false;
+      }
+
       // Search query
       if (deferredSearch.trim()) {
         const q = deferredSearch.toUpperCase();
@@ -592,7 +628,19 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       return true;
     });
-  }, [tickets, activeTab, filterKategori, deferredSearch, filterArsipStatus, searchSkuArsip]);
+  }, [tickets, activeTab, filterKategori, filterLokasi, deferredSearch, filterArsipStatus, searchSkuArsip]);
+
+  // Total fisik barang (pcs) di daftar terfilter saat ini (misal 48 pcs di rak DF001)
+  const filteredTotalPcs = useMemo(() => {
+    return filteredTickets.reduce((sum, t) => sum + (t.qty || 1), 0);
+  }, [filteredTickets]);
+
+  // Total fisik barang (pcs) pada tiket yang dipilih dengan checkbox
+  const selectedTotalPcs = useMemo(() => {
+    return filteredTickets
+      .filter((t) => selectedTicketNos.has(t.ticket_no))
+      .reduce((sum, t) => sum + (t.qty || 1), 0);
+  }, [filteredTickets, selectedTicketNos]);
 
   // Handle Tarik Stok Fisik Area Perbaikan (CC, PMK, DF)
   const handleSyncPhysicalStock = () => {
@@ -2627,28 +2675,46 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       {/* 5. Filter & Search Toolbar (Untuk Tab List) */}
       {activeTab !== 'input' && (
-        <div className="p-3 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative w-full sm:w-80">
+        <div className="p-3 bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="relative w-full lg:w-80">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari No Tiket / SKU / Nama / Kerusakan..."
+              placeholder="Cari No Tiket / SKU / Nama / Kerusakan / Rak..."
               className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Filter Lokasi Rak */}
+            <div className="flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+              <select
+                value={filterLokasi}
+                onChange={(e) => setFilterLokasi(e.target.value)}
+                className="px-2.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-purple-300/80 dark:border-purple-800/80 rounded-xl text-xs font-bold font-mono text-purple-700 dark:text-purple-300 outline-none cursor-pointer"
+                title="Filter berdasarkan lokasi rak (misal DF-01, CC-01, PMK-01)"
+              >
+                <option value="ALL">Semua Lokasi Rak</option>
+                {uniqueLocations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    Rak {loc}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <select
               value={filterKategori}
               onChange={(e) => setFilterKategori(e.target.value)}
@@ -2662,6 +2728,22 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
               <option value="Cacat Kain / Warna">Cacat Kain / Warna</option>
               <option value="Lainnya">Lainnya</option>
             </select>
+
+            {/* Tombol Cetak Barcode Massal */}
+            <button
+              type="button"
+              onClick={() => setIsBulkPrintModalOpen(true)}
+              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap active:scale-95"
+              title="Cetak stiker barcode massal per lokasi atau tiket yang dipilih (sejumlah fisik barang)"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Cetak Barcode Massal</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-mono">
+                {selectedTicketNos.size > 0
+                  ? `${selectedTotalPcs} Pcs`
+                  : `${filteredTotalPcs} Pcs`}
+              </span>
+            </button>
           </div>
         </div>
       )}
@@ -2769,17 +2851,66 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       {/* 6. Content List Per Tab */}
       {activeTab !== 'input' && (
         <div className="space-y-3">
+          {/* Floating/Banner Multi-Selection Action Bar */}
+          {selectedTicketNos.size > 0 && (
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-2xl flex items-center justify-between gap-2 flex-wrap animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse" />
+                <span className="text-xs font-bold text-purple-900 dark:text-purple-200">
+                  <b>{selectedTicketNos.size}</b> tiket dipilih (Total <b>{selectedTotalPcs} pcs</b> barang)
+                  {filterLokasi !== 'ALL' && <span> di Rak <b>{filterLokasi}</b></span>}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkPrintModalOpen(true)}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Barcode ({selectedTotalPcs} Lembar Stiker)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectAllFiltered}
+                  className="px-2.5 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-lg cursor-pointer"
+                >
+                  Pilih Semua ({filteredTickets.length} Tiket • {filteredTotalPcs} Pcs)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeselectAll}
+                  className="px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          )}
+
           {filteredTickets.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {filteredTickets.slice(0, ticketDisplayLimit).map((item, itemIdx) => (
                 <div
                   key={item.id ? `ticket-id-${item.id}` : (item.ticket_no ? `ticket-no-${item.ticket_no}` : `ticket-idx-${itemIdx}`)}
-                  className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow relative overflow-hidden"
+                  className={`bg-white dark:bg-[#131d31] rounded-2xl border shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow relative overflow-hidden ${
+                    selectedTicketNos.has(item.ticket_no)
+                      ? 'border-purple-400 dark:border-purple-600 ring-1 ring-purple-400'
+                      : 'border-slate-200 dark:border-slate-800'
+                  }`}
                 >
                   {/* Badge Tahap Warna & Lokasi */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedTicketNos.has(item.ticket_no)}
+                        onChange={() => handleToggleSelectTicket(item.ticket_no)}
+                        className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                        title="Pilih tiket ini untuk cetak barcode massal"
+                      />
                       {item.tahap === 'CUCI' || item.tahap === 'PERMAK' ? (
                         <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
                           📍 Lokasi: <b className="text-amber-600 dark:text-amber-400">{item.lokasi_sekarang || (item.tahap === 'CUCI' ? 'CC-01' : 'PMK-01')}</b>
@@ -2926,16 +3057,14 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
                   {/* Tombol Aksi Berdasarkan Tahap */}
                   <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                    {(item.tahap === 'DEFECT' || item.tahap?.startsWith('SELESAI')) && (
-                      <button
-                        type="button"
-                        onClick={() => setPrintModalTicket(item)}
-                        className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-xl transition-colors cursor-pointer"
-                        title="Cetak Stiker Barcode 50x20 mm"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setPrintModalTicket(item)}
+                      className="p-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-xl transition-colors cursor-pointer"
+                      title="Cetak Stiker Barcode 50x20 mm (Default 1 Lembar)"
+                    >
+                      <Printer className="w-4 h-4" />
+                    </button>
 
                     <button
                       type="button"
@@ -3844,9 +3973,27 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       {/* 11. Modal Cetak Barcode Label Stiker 50x20 mm Thermal Printer */}
       <ThermalStickerModal
-        isOpen={!!printModalTicket}
-        onClose={() => setPrintModalTicket(null)}
+        isOpen={!!printModalTicket || isBulkPrintModalOpen}
+        onClose={() => {
+          setPrintModalTicket(null);
+          setIsBulkPrintModalOpen(false);
+        }}
         ticket={printModalTicket}
+        tickets={
+          isBulkPrintModalOpen
+            ? selectedTicketNos.size > 0
+              ? filteredTickets.filter((t) => selectedTicketNos.has(t.ticket_no))
+              : filteredTickets
+            : null
+        }
+        initialLocationFilter={
+          filterLokasi !== 'ALL'
+            ? filterLokasi
+            : activeTab === 'defect'
+            ? 'DF-01'
+            : 'ALL'
+        }
+        allTickets={tickets}
       />
 
       {/* 12. Modal Konfirmasi Hapus Tiket Defect & Perbaikan */}
