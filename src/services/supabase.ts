@@ -38,8 +38,8 @@ import { registerUserNames, getUserPersonName } from '../utils/userResolver';
 import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permissions';
 
 
-export const DEFAULT_SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
-export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_XFvjJipUzyi0EuM_tDTTsg_ll7TJ7rA';
+export const DEFAULT_SUPABASE_URL = 'https://atdedxyiielpmzjlnriv.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_ZoVorqMTbLr9Fj3jif5M3Q_lnuzi0bb';
 
 // Empty baseline seed - no dummy items
 export const DEFAULT_SEED_PRODUCTS: ProductItem[] = [];
@@ -118,10 +118,10 @@ export function getStoredSupabaseConfig() {
   if (isCustom) {
     const customUrl = localStorage.getItem('wms_supabase_url');
     const customKey = localStorage.getItem('wms_supabase_key');
-    // If custom URL is valid AND not pointing to dead legacy project filgijcfhgqlirzhvwho
-    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho')) {
-      // If custom points to the main project vxongwtxmhjixhzeoidp, ensure it uses the working publishable key
-      if (customUrl.includes('vxongwtxmhjixhzeoidp')) {
+    // If custom URL is valid AND not pointing to dead legacy projects
+    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho') && !customUrl.includes('vxongwtxmhjixhzeoidp')) {
+      // If custom points to the main project atdedxyiielpmzjlnriv, ensure it uses the working publishable key
+      if (customUrl.includes('atdedxyiielpmzjlnriv')) {
         return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_ANON_KEY };
       }
       try {
@@ -151,16 +151,15 @@ export function getStoredSupabaseConfig() {
   }
   let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
-  // Auto-migrate legacy project ref to the new default in browser localStorage
-  // Also enforce that default project vxongwtxmhjixhzeoidp always uses the valid publishable key
-  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || (url.includes('vxongwtxmhjixhzeoidp') && key !== DEFAULT_SUPABASE_ANON_KEY) || (isBrowser && !localStorage.getItem('wms_supabase_v2_migrated'))) {
+  // Auto-migrate legacy project ref (filgijcfhgqlirzhvwho or vxongwtxmhjixhzeoidp) to the new default atdedxyiielpmzjlnriv
+  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp') || (url.includes('atdedxyiielpmzjlnriv') && key !== DEFAULT_SUPABASE_ANON_KEY) || (isBrowser && !localStorage.getItem('wms_supabase_v3_migrated'))) {
     url = DEFAULT_SUPABASE_URL;
     key = DEFAULT_SUPABASE_ANON_KEY;
     if (isBrowser) {
       try {
         localStorage.setItem('wms_supabase_url', DEFAULT_SUPABASE_URL);
         localStorage.setItem('wms_supabase_key', DEFAULT_SUPABASE_ANON_KEY);
-        localStorage.setItem('wms_supabase_v2_migrated', 'true');
+        localStorage.setItem('wms_supabase_v3_migrated', 'true');
       } catch {}
     }
   }
