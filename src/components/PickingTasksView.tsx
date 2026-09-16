@@ -1942,7 +1942,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         </div>
 
         {/* STICKY BARCODE SCANNER BAR (FREEZE / STICKY AT TOP UNDER NAVBAR) */}
-        <div className="sticky top-[52px] sm:top-[58px] z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pt-1 pb-2">
+        <div className="sticky top-0.5 z-20 bg-[#f4f6f8]/95 dark:bg-[#0f172a]/95 backdrop-blur-md pt-1 pb-2">
           <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
             {/* METODE PEMINDAIAN SELECTOR */}
             <div
@@ -2204,42 +2204,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               />
             )}
 
-            {/* Quick Shelf Selection Pills (Compact horizontal bar inside sticky box) */}
-            {uniqueLocations.length > 0 && (
-              <div className="px-2 py-2 bg-slate-50 dark:bg-[#0F0F12] flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t border-slate-100 dark:border-slate-800/80">
-                <span className="text-[10px] font-black uppercase text-slate-400 shrink-0">
-                  Rak SJ:
-                </span>
-                {uniqueLocations.map((uLoc) => {
-                  const isCurrent = activeLocation === uLoc.lokasi;
-                  return (
-                    <button
-                      key={uLoc.lokasi}
-                      type="button"
-                      onClick={() => handleBarcodeScanned(`#LOK ${uLoc.lokasi}`)}
-                      className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer active:scale-95 ${
-                        isCurrent
-                          ? 'bg-emerald-500 text-black shadow-xs ring-2 ring-emerald-400/50'
-                          : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
-                      }`}
-                    >
-                      <span>📍 {uLoc.lokasi}</span>
-                      <span
-                        className={`text-[9px] px-1 py-0.2 rounded font-sans ${
-                          isCurrent
-                            ? 'bg-black/20 text-black font-bold'
-                            : uLoc.pending === 0
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50'
-                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300'
-                        }`}
-                      >
-                        {uLoc.pending === 0 ? '✓' : `${uLoc.pending}`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
 
@@ -2399,15 +2363,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             }
 
             const catMatch = productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === itemSku);
-            const displaySize = (item.size && item.size !== '-') 
+            let displaySize = (item.size && item.size !== '-') 
               ? item.size 
               : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(itemSku));
+            
             let displayName = item.nama_produk || itemSku;
-            if (item.size && displayName.toUpperCase().includes(item.size.toUpperCase())) {
-              displayName = displayName.replace(new RegExp(`\\s*\\(?\\[?\\s*${item.size}\\s*\\]?\\)?\\s*$`, 'i'), '');
+            
+            // Auto clean name and extract size if missing
+            const sizesList = ['XXXL','XXL','XL','L','M','S','XS','ALL','FS'];
+            const sizeRegex = new RegExp(`[\\s\\-\\[\\(]+(${sizesList.join('|')})[\\]\\)]?\\s*$`, 'i');
+            const nameMatch = displayName.match(sizeRegex);
+            if (nameMatch) {
+              if (displaySize === '-') displaySize = nameMatch[1].toUpperCase();
+              displayName = displayName.substring(0, nameMatch.index).trim();
             }
-
+            if (displayName.endsWith('-')) displayName = displayName.replace(/-$/, '').trim();
             return (
+
               <div
                 key={item.id || index}
                 className={`p-2 sm:p-3 rounded-2xl bg-white dark:bg-[#131d31] border-2 ${cardBorder} shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-2 transition-all ${
@@ -2447,19 +2419,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                 {locInfo.qty} pcs
                               </span>
                             )}
-                            {isLocWarehouse ? (
-                              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                                isThisCurrentShelf
-                                  ? 'bg-black/20 text-white'
-                                  : 'bg-black/10 dark:bg-white/10 text-emerald-900 dark:text-emerald-200'
-                              } uppercase tracking-wider font-sans shrink-0`}>
-                                Warehouse
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 uppercase tracking-wider font-sans shrink-0">
-                                Non-WH
-                              </span>
-                            )}
+                            
                           </button>
                         );
                       })
@@ -2495,9 +2455,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </span>
                     )}
 
-                    <span className="text-xs sm:text-sm font-mono font-black text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl">
-                      {item.sku}
-                    </span>
+                    
 
                     {statusBadge}
                   </div>
@@ -2506,6 +2464,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white leading-tight">
                     {displayName}
                   </h3>
+                  <div className="mt-1">
+                    <span className="text-xs sm:text-sm font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      SKU: <span className="text-slate-700 dark:text-slate-300">{item.sku}</span>
+                    </span>
+                  </div>
 
 
                   {item.lokasi_picked && item.lokasi_picked !== item.lokasi && (

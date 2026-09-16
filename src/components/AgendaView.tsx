@@ -1573,7 +1573,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       )}
 
       {/* Floating Action Button (FAB) for Mobile Quick Add */}
-      <div className="fixed bottom-6 right-6 z-40 sm:hidden">
+      <div className="fixed bottom-20 right-6 z-40 sm:hidden">
         <button
           onClick={() => {
             if (activeTab === 'calendar') handleOpenAddEvent();
