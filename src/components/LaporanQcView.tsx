@@ -268,6 +268,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     lokasi_sekarang?: string;
     tanggal?: string;
   } | null>(null);
+  const [thermalModalTickets, setThermalModalTickets] = useState<PerbaikanTicket[] | null>(null);
 
   // Quick Sortir Modal State (Dari Riwayat Laporan)
   const [quickSortirReport, setQuickSortirReport] = useState<QcReport | null>(null);
@@ -1157,80 +1158,78 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       const finalLokasi = quickSortirLokasi.trim().toUpperCase() || (quickSortirTarget === 'CUCI' ? 'CC-01' : quickSortirTarget === 'PERMAK' ? 'PMK-01' : 'DF-01');
 
       let newTicketNo: string | undefined = undefined;
-      let ticketToPrint: any = null;
+      let createdTicketsToPrint: PerbaikanTicket[] = [];
+      const qtyReject = Math.max(1, quickSortirReport.qty_reject || 1);
 
       if (quickSortirTarget === 'DEFECT') {
-        // HANYA DEFECT YANG MENDAPATKAN NOMOR TIKET RESMI ACC (DFT-...)
-        const rand = Math.floor(100 + Math.random() * 900);
-        newTicketNo = `DFT-${dateStr}-${rand}`;
+        // ATURAN WMS: 1 Produk = 1 Tiket Defect (Otomatis pecah per lembar stiker)
+        const baseRand = Math.floor(100 + Math.random() * 900);
+        newTicketNo = `DFT-${dateStr}-${baseRand}`;
 
-        const newTicket: PerbaikanTicket = {
-          ticket_no: newTicketNo,
-          tanggal: now.toISOString(),
-          sku: quickSortirReport.sku,
-          nama_produk: quickSortirReport.nama_produk,
-          size: quickSortirReport.size || '-',
-          qty: quickSortirReport.qty_reject > 0 ? quickSortirReport.qty_reject : 1,
-          lokasi_asal: quickSortirReport.lokasi_barang || 'KNR-01',
-          lokasi_sekarang: finalLokasi,
-          is_already_in_repair: false,
-          sumber_barang: 'Gudang Fisik',
-          kategori_rusak: (quickSortirReport.kategori_rusak as any) || 'Defect Berat / BS',
-          detail_kerusakan: quickSortirCatatan.trim() || `[QC #${quickSortirReport.id}] Vonis Defect`,
-          foto_urls: quickSortirReport.foto_urls || [],
-          tahap: 'DEFECT',
-          status_pengerjaan: 'PENDING',
-          qc_pic: picName,
-          qc_tanggal: now.toISOString(),
-          qc_catatan: `Sortir Defect dari Kontainer ${quickSortirReport.lokasi_barang || 'KNR-01'} ke lokasi ${finalLokasi}`,
-          operator_input: picName,
-          qc_report_no: String(quickSortirReport.id),
-          created_at: now.toISOString(),
-        };
+        for (let i = 0; i < qtyReject; i++) {
+          const tNo = qtyReject > 1 ? `DFT-${dateStr}-${baseRand}-${i + 1}` : `DFT-${dateStr}-${baseRand}`;
+          const newTicket: PerbaikanTicket = {
+            ticket_no: tNo,
+            tanggal: now.toISOString(),
+            sku: quickSortirReport.sku,
+            nama_produk: quickSortirReport.nama_produk,
+            size: quickSortirReport.size || '-',
+            qty: 1, // 1 produk = 1 tiket!
+            lokasi_asal: quickSortirReport.lokasi_barang || 'KNR-01',
+            lokasi_sekarang: finalLokasi,
+            is_already_in_repair: false,
+            sumber_barang: 'Gudang Fisik',
+            kategori_rusak: (quickSortirReport.kategori_rusak as any) || 'Defect Berat / BS',
+            detail_kerusakan: quickSortirCatatan.trim() || `[QC #${quickSortirReport.id}] Vonis Defect`,
+            foto_urls: quickSortirReport.foto_urls || [],
+            tahap: 'DEFECT',
+            status_pengerjaan: 'PENDING',
+            qc_pic: picName,
+            qc_tanggal: now.toISOString(),
+            qc_catatan: `Sortir Defect dari Kontainer ${quickSortirReport.lokasi_barang || 'KNR-01'} ke lokasi ${finalLokasi}`,
+            operator_input: picName,
+            qc_report_no: String(quickSortirReport.id),
+            created_at: now.toISOString(),
+          };
 
-        await savePerbaikanTicketToSupabase(newTicket);
-        if (onRejectCreated) onRejectCreated(newTicket);
-
-        ticketToPrint = {
-          ticket_no: newTicketNo,
-          sku: quickSortirReport.sku,
-          nama_produk: quickSortirReport.nama_produk,
-          size: quickSortirReport.size || '-',
-          qty: quickSortirReport.qty_reject > 0 ? quickSortirReport.qty_reject : 1,
-          kategori_rusak: (quickSortirReport.kategori_rusak as any) || 'Defect Berat / BS',
-          detail_kerusakan: quickSortirCatatan.trim() || 'Vonis Defect',
-          lokasi_sekarang: finalLokasi,
-          tanggal: now.toLocaleString('id-ID'),
-        };
+          createdTicketsToPrint.push(newTicket);
+          await savePerbaikanTicketToSupabase(newTicket);
+          if (onRejectCreated) onRejectCreated(newTicket);
+        }
       } else {
-        // CUCI & PERMAK: CUKUP DATA LOKASI FISIK, TIDAK PERLU NOMOR TIKET
-        const internalQueueId = `${quickSortirTarget === 'CUCI' ? 'CC' : 'PMK'}-${dateStr}-${Date.now().toString().slice(-4)}`;
-        const newTicket: PerbaikanTicket = {
-          ticket_no: internalQueueId,
-          tanggal: now.toISOString(),
-          sku: quickSortirReport.sku,
-          nama_produk: quickSortirReport.nama_produk,
-          size: quickSortirReport.size || '-',
-          qty: quickSortirReport.qty_reject > 0 ? quickSortirReport.qty_reject : 1,
-          lokasi_asal: quickSortirReport.lokasi_barang || 'KNR-01',
-          lokasi_sekarang: finalLokasi,
-          is_already_in_repair: false,
-          sumber_barang: 'Gudang Fisik',
-          kategori_rusak: (quickSortirReport.kategori_rusak as any) || (quickSortirTarget === 'CUCI' ? 'Noda / Kotor' : 'Jahitan Rusak'),
-          detail_kerusakan: quickSortirCatatan.trim() || `[QC #${quickSortirReport.id}] Alur ${quickSortirTarget}`,
-          foto_urls: quickSortirReport.foto_urls || [],
-          tahap: quickSortirTarget,
-          status_pengerjaan: 'PENDING',
-          qc_pic: picName,
-          qc_tanggal: now.toISOString(),
-          qc_catatan: `Sortir ke ${quickSortirTarget} di lokasi ${finalLokasi}`,
-          operator_input: picName,
-          qc_report_no: String(quickSortirReport.id),
-          created_at: now.toISOString(),
-        };
+        // CUCI & PERMAK: 1 Produk = 1 Tiket
+        const baseRand = Math.floor(100 + Math.random() * 900);
+        const prefix = quickSortirTarget === 'CUCI' ? 'CC' : 'PMK';
 
-        await savePerbaikanTicketToSupabase(newTicket);
-        if (onRejectCreated) onRejectCreated(newTicket);
+        for (let i = 0; i < qtyReject; i++) {
+          const tNo = qtyReject > 1 ? `${prefix}-${dateStr}-${baseRand}-${i + 1}` : `${prefix}-${dateStr}-${baseRand}`;
+          const newTicket: PerbaikanTicket = {
+            ticket_no: tNo,
+            tanggal: now.toISOString(),
+            sku: quickSortirReport.sku,
+            nama_produk: quickSortirReport.nama_produk,
+            size: quickSortirReport.size || '-',
+            qty: 1, // 1 produk = 1 tiket!
+            lokasi_asal: quickSortirReport.lokasi_barang || 'KNR-01',
+            lokasi_sekarang: finalLokasi,
+            is_already_in_repair: false,
+            sumber_barang: 'Gudang Fisik',
+            kategori_rusak: (quickSortirReport.kategori_rusak as any) || (quickSortirTarget === 'CUCI' ? 'Noda / Kotor' : 'Jahitan Rusak'),
+            detail_kerusakan: quickSortirCatatan.trim() || `[QC #${quickSortirReport.id}] Alur ${quickSortirTarget}`,
+            foto_urls: quickSortirReport.foto_urls || [],
+            tahap: quickSortirTarget,
+            status_pengerjaan: 'PENDING',
+            qc_pic: picName,
+            qc_tanggal: now.toISOString(),
+            qc_catatan: `Sortir ke ${quickSortirTarget} di lokasi ${finalLokasi}`,
+            operator_input: picName,
+            qc_report_no: String(quickSortirReport.id),
+            created_at: now.toISOString(),
+          };
+
+          await savePerbaikanTicketToSupabase(newTicket);
+          if (onRejectCreated) onRejectCreated(newTicket);
+        }
       }
 
       // Update QC Report data
@@ -1255,18 +1254,26 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
       if (quickSortirTarget === 'DEFECT') {
         onShowToast(
-          `Berhasil! Tiket Defect #${newTicketNo} diterbitkan ke lokasi ${finalLokasi}. Siap dicetak stiker 50x20mm.`,
+          qtyReject > 1
+            ? `Berhasil! ${qtyReject} tiket individual Defect diterbitkan ke ${finalLokasi} (1 Produk = 1 Tiket). Siap dicetak stiker 50x20mm.`
+            : `Berhasil! Tiket Defect #${newTicketNo} diterbitkan ke lokasi ${finalLokasi}. Siap dicetak stiker 50x20mm.`,
           'success'
         );
         setQuickSortirReport(null);
         setQuickSortirLokasi('');
         setQuickSortirCatatan('');
-        if (ticketToPrint) {
-          setThermalModalTicket(ticketToPrint);
+        if (createdTicketsToPrint.length > 1) {
+          setThermalModalTickets(createdTicketsToPrint);
+          setThermalModalTicket(null);
+        } else if (createdTicketsToPrint.length === 1) {
+          setThermalModalTicket(createdTicketsToPrint[0]);
+          setThermalModalTickets(null);
         }
       } else {
         onShowToast(
-          `Berhasil menyortir barang ke Antrean ${quickSortirTarget} (Lokasi: ${finalLokasi}).`,
+          qtyReject > 1
+            ? `Berhasil menyortir ${qtyReject} pcs ke Antrean ${quickSortirTarget} (1 Produk = 1 Tiket di ${finalLokasi}).`
+            : `Berhasil menyortir barang ke Antrean ${quickSortirTarget} (Lokasi: ${finalLokasi}).`,
           'success'
         );
         setQuickSortirReport(null);
@@ -3811,11 +3818,15 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       )}
 
       {/* 6. Thermal 50x20 mm Sticker Print Modal */}
-      {thermalModalTicket && (
+      {(thermalModalTicket || thermalModalTickets) && (
         <ThermalStickerModal
-          isOpen={!!thermalModalTicket}
-          onClose={() => setThermalModalTicket(null)}
+          isOpen={!!thermalModalTicket || !!thermalModalTickets}
+          onClose={() => {
+            setThermalModalTicket(null);
+            setThermalModalTickets(null);
+          }}
           ticket={thermalModalTicket}
+          tickets={thermalModalTickets}
         />
       )}
     </div>

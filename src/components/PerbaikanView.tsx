@@ -247,7 +247,31 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       try {
         const data = await fetchPerbaikanTicketsFromSupabase();
         if (isMounted && data) {
-          setTickets(data);
+          // Aturan WMS: 1 Produk = 1 Tiket. Jika ada data lama dengan qty > 1, pecah otomatis menjadi 1 tiket per pcs
+          const normalized: PerbaikanTicket[] = [];
+          data.forEach((t) => {
+            if (t.qty && t.qty > 1) {
+              const prefix =
+                t.tahap === 'DEFECT'
+                  ? 'DFT'
+                  : t.tahap === 'CUCI'
+                  ? 'CC'
+                  : t.tahap === 'PERMAK'
+                  ? 'PMK'
+                  : 'RJC';
+              for (let i = 0; i < t.qty; i++) {
+                normalized.push({
+                  ...t,
+                  id: t.id ? Number(t.id) * 1000 + i : Date.now() + i,
+                  ticket_no: i === 0 ? t.ticket_no : `${t.ticket_no}-${i + 1}`,
+                  qty: 1,
+                });
+              }
+            } else {
+              normalized.push({ ...t, qty: 1 });
+            }
+          });
+          setTickets(normalized);
         }
       } catch (e) {
         console.warn('Initial load perbaikan tickets error:', e);
@@ -717,13 +741,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           savePerbaikanTicketToSupabase(newSyncedTicket).catch(console.warn);
         };
 
-        if (item.tahap === 'DEFECT' && item.qty > 1) {
-          // Aturan WMS: Untuk DEFECT, 1 Pcs = 1 Tiket
+        if (item.qty > 1) {
+          // Aturan WMS: 1 Produk = 1 Tiket (Otomatis pecah tiket sejumlah fisik pcs)
           for (let i = 0; i < item.qty; i++) {
             createTicket(1, i + 1);
           }
         } else {
-          createTicket(item.qty, 1);
+          createTicket(1, 1);
         }
       }
     });
@@ -980,17 +1004,25 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     }
   };
 
-  // Handler: Pecah Tiket Defect 1 Pcs = 1 Tiket Defect (Aturan SOP Defect)
-  const handleSplitDefectTicket = async (item: PerbaikanTicket) => {
+  // Handler: Pecah Tiket 1 Pcs = 1 Tiket (Aturan WMS 1 Produk 1 Tiket)
+  const handleSplitTicket = async (item: PerbaikanTicket) => {
     if (item.qty <= 1) return;
     const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix =
+      item.tahap === 'DEFECT'
+        ? 'DFT'
+        : item.tahap === 'CUCI'
+        ? 'CC'
+        : item.tahap === 'PERMAK'
+        ? 'PMK'
+        : 'RJC';
+    const baseRand = Math.floor(100 + Math.random() * 900);
     const newSubTickets: PerbaikanTicket[] = [];
     for (let i = 0; i < item.qty; i++) {
-      const rand = Math.floor(100 + Math.random() * 900);
       const subTicket: PerbaikanTicket = {
         ...item,
         id: Date.now() + i * 50,
-        ticket_no: `DFT-${todayStr}-${rand}-${i + 1}`,
+        ticket_no: `${prefix}-${todayStr}-${baseRand}-${i + 1}`,
         qty: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1004,7 +1036,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       ...prev.filter((t) => t.id !== item.id && t.ticket_no !== item.ticket_no),
     ]);
     playSuccessBeep();
-    onShowToast(`Tiket #${item.ticket_no} (${item.qty} pcs) berhasil dipecah menjadi ${item.qty} tiket individual (1 Pcs = 1 Tiket Defect)!`, 'success');
+    onShowToast(`Tiket #${item.ticket_no} (${item.qty} pcs) berhasil dipecah menjadi ${item.qty} tiket individual (1 Produk = 1 Tiket)!`, 'success');
   };
 
   // Handle Photo Selection & Canvas WebP Compression pada Form Input
@@ -1058,7 +1090,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
     const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.floor(100 + Math.random() * 900);
-    const prefix =
+    const formPrefix =
       formTindakanSortir === 'CUCI'
         ? 'CC'
         : formTindakanSortir === 'PERMAK'
@@ -1066,7 +1098,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         : formTindakanSortir === 'DEFECT'
         ? 'DF'
         : 'RJC';
-    const newTicketNo = `${prefix}-${todayStr}-${randomSuffix}`;
+    const newTicketNo = `${formPrefix}-${todayStr}-${randomSuffix}`;
 
     // Upload foto ke Google Drive via GAS untuk menghemat 99% Egress Supabase
     let uploadedPhotoUrls: string[] = [];
@@ -1145,28 +1177,41 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       created_at: new Date().toISOString(),
     };
 
-    // SOP DEFECT: 1 Pcs = 1 Tiket Defect (Dibuat otomatis oleh sistem untuk dicetak)
-    if (targetTahap === 'DEFECT' && Number(formQty) > 1) {
-      const qtyNum = Number(formQty);
+    // ATURAN WMS: 1 Produk = 1 Tiket (Otomatis pecah tiket jika Qty > 1)
+    const qtyNum = Math.max(1, Number(formQty) || 1);
+    const prefix =
+      targetTahap === 'DEFECT'
+        ? 'DFT'
+        : targetTahap === 'CUCI'
+        ? 'CC'
+        : targetTahap === 'PERMAK'
+        ? 'PMK'
+        : 'RJC';
+
+    if (qtyNum > 1) {
       const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const splittedTickets: PerbaikanTicket[] = [];
+      const baseRand = Math.floor(100 + Math.random() * 900);
       for (let i = 0; i < qtyNum; i++) {
-        const rand = Math.floor(100 + Math.random() * 900);
-        const subTicketNo = `DFT-${todayStr}-${rand}-${i + 1}`;
+        const subTicketNo = `${prefix}-${todayStr}-${baseRand}-${i + 1}`;
         const subTicket: PerbaikanTicket = {
           ...newTicket,
           id: Date.now() + i * 50,
           ticket_no: subTicketNo,
-          qty: 1,
+          qty: 1, // 1 produk 1 tiket
         };
         splittedTickets.push(subTicket);
         savePerbaikanTicketToSupabase(subTicket).catch((err) =>
-          console.warn('Gagal menyimpan tiket defect ke Supabase:', err)
+          console.warn('Gagal menyimpan tiket perbaikan ke Supabase:', err)
         );
       }
       setTickets((prev) => [...splittedTickets, ...prev]);
       playSuccessBeep();
       vibrateDevice([80, 50, 80]);
+      onShowToast(
+        `Otomatis memecah ${qtyNum} tiket untuk produk ${newTicket.sku} (1 Produk = 1 Tiket, masing-masing 1 pcs)!`,
+        'success'
+      );
     } else {
       setTickets((prev) => [newTicket, ...prev]);
       playSuccessBeep();
@@ -1176,6 +1221,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       savePerbaikanTicketToSupabase(newTicket).catch((err) =>
         console.warn('Gagal menyimpan tiket baru ke Supabase:', err)
       );
+      onShowToast(`Tiket #${newTicketNo} (${newTicket.sku}) berhasil dibuat!`, 'success');
     }
 
     // 2. Jika bukan barang yang memang sudah di perbaikan fisik (baru ditarik dari rak reguler), catat mutasi IN/OUT
@@ -1274,17 +1320,25 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       updated_at: new Date().toISOString(),
     };
 
-    // SOP DEFECT: 1 Pcs = 1 Tiket Defect
-    if (sortirTargetTahap === 'DEFECT' && sortirModalTicket.qty > 1) {
+    // SOP WMS: 1 Produk = 1 Tiket (Otomatis pecah tiket jika qty > 1)
+    if (sortirModalTicket.qty > 1) {
       const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const prefix =
+        sortirTargetTahap === 'DEFECT'
+          ? 'DFT'
+          : sortirTargetTahap === 'CUCI'
+          ? 'CC'
+          : sortirTargetTahap === 'PERMAK'
+          ? 'PMK'
+          : 'RJC';
+      const baseRand = Math.floor(100 + Math.random() * 900);
       const splitted: PerbaikanTicket[] = [];
       for (let i = 0; i < sortirModalTicket.qty; i++) {
-        const rand = Math.floor(100 + Math.random() * 900);
         const subTicket: PerbaikanTicket = {
           ...updated,
           id: Date.now() + i * 50,
-          ticket_no: `DFT-${todayStr}-${rand}-${i + 1}`,
-          qty: 1,
+          ticket_no: `${prefix}-${todayStr}-${baseRand}-${i + 1}`,
+          qty: 1, // 1 produk 1 tiket
         };
         splitted.push(subTicket);
         savePerbaikanTicketToSupabase(subTicket).catch(console.warn);
@@ -2311,6 +2365,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-black text-center text-slate-900 dark:text-white outline-none"
                   />
+                  {Number(formQty) > 1 && (
+                    <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 mt-1 block text-center animate-in fade-in">
+                      ⚡ Otomatis pecah {formQty} tiket (1 produk 1 tiket)
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -3042,16 +3101,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     </div>
                   )}
 
-                  {/* SOP DEFECT: 1 Pcs = 1 Tiket Defect */}
-                  {item.tahap === 'DEFECT' && item.qty > 1 && (
+                  {/* SOP WMS: 1 Produk = 1 Tiket */}
+                  {item.qty > 1 && (
                     <button
                       type="button"
-                      onClick={() => handleSplitDefectTicket(item)}
+                      onClick={() => handleSplitTicket(item)}
                       className="w-full py-1.5 px-3 bg-purple-100 hover:bg-purple-200 dark:bg-purple-950/70 dark:hover:bg-purple-900/70 text-purple-800 dark:text-purple-200 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border border-purple-300 dark:border-purple-700 transition-all cursor-pointer shadow-xs"
-                      title="Sesuai SOP: 1 Pcs = 1 Tiket Defect untuk dicetak label QR individual"
+                      title="Sesuai Aturan WMS: 1 Produk = 1 Tiket untuk dicetak label stiker barcode individual"
                     >
                       <Scissors className="w-3.5 h-3.5" />
-                      <span>Pecah Jadi {item.qty} Tiket (1 Pcs = 1 Tiket)</span>
+                      <span>Pecah Jadi {item.qty} Tiket (1 Produk = 1 Tiket)</span>
                     </button>
                   )}
 
