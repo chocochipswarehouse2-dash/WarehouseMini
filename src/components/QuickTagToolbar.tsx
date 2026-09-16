@@ -3,6 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, CheckSquare, MapPin, Tag, X } from 'lucide
 import { CategoryType } from '../types';
 
 interface QuickTagToolbarProps {
+  isVisible?: boolean;
   currentCategory: CategoryType;
   currentLocation: string;
   onSelectCategory: (cat: CategoryType) => void;
@@ -12,6 +13,7 @@ interface QuickTagToolbarProps {
 const COMMON_LOCATIONS = ['SHOPEE', 'TIKTOK', 'STUDIO'];
 
 export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
+  isVisible = true,
   currentCategory,
   currentLocation,
   onSelectCategory,
@@ -20,6 +22,7 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
   return (
     <div
       id="quickTagToolbar"
+      style={{ display: isVisible ? 'block' : 'none' }}
       className="bg-white dark:bg-[#0F0F12] rounded-b-2xl px-3 py-2 transition-colors"
     >
       <div className="w-full flex flex-col gap-2">
