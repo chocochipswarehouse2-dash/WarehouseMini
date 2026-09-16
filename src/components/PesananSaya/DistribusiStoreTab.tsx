@@ -76,7 +76,7 @@ interface ParsedSJGroup {
  * Membaca file CSV Surat Jalan.
  * Mendeteksi jika 1 CSV terisi lebih dari 1 No SJ, otomatis memisahkan menjadi draft-draft mandiri!
  */
-function parseCsvContent(content: string, fileName: string): ParsedSJGroup[] {
+function parseCsvContent(content: string, fileName: string, productCatalog?: ProductItem[]): ParsedSJGroup[] {
   const lines = content.trim().split(/\r?\n/);
   if (lines.length < 2) throw new Error(`File ${fileName} kosong atau format tidak valid`);
 
@@ -93,9 +93,16 @@ function parseCsvContent(content: string, fileName: string): ParsedSJGroup[] {
       h === 'delivery note'
     ),
     category: headers.findIndex(h => h === 'category' || h === 'kategori'),
-    product:  headers.findIndex(h => h === 'product' || h === 'produk' || h === 'nama produk' || h === 'nama_produk' || h === 'item name'),
-    variant:  headers.findIndex(h => h === 'variant' || h === 'variasi' || h === 'varian' || h === 'size' || h === 'warna'),
-    code:     headers.findIndex(h => h === 'code' || h === 'sku' || h === 'item code' || h === 'kode produk' || h === 'barcode'),
+    product:  headers.findIndex(h =>
+      h === 'product' || h === 'produk' || h === 'nama produk' || h === 'nama_produk' ||
+      h === 'product name' || h === 'item name' || h === 'nama barang' || h === 'nama_barang' ||
+      h === 'nama item' || h === 'nama_item' || h === 'description' || h === 'deskripsi' ||
+      h === 'item' || h === 'name' || h === 'title'
+    ),
+    variant:  headers.findIndex(h =>
+      h === 'variant' || h === 'variasi' || h === 'varian' || h === 'size' || h === 'warna' || h === 'ukuran'
+    ),
+    code:     headers.findIndex(h => h === 'code' || h === 'sku' || h === 'item code' || h === 'kode produk' || h === 'barcode' || h === 'kode barang'),
     qty:      headers.findIndex(h => h === 'qty' || h === 'quantity' || h === 'jumlah' || h === 'qty sj'),
     source:   headers.findIndex(h => h === 'source' || h === 'asal' || h === 'dari' || h === 'pengirim' || h === 'outlet asal'),
     dest:     headers.findIndex(h => h === 'destination' || h === 'tujuan' || h === 'ke' || h === 'penerima' || h === 'outlet tujuan'),
@@ -103,6 +110,15 @@ function parseCsvContent(content: string, fileName: string): ParsedSJGroup[] {
 
   if (col.code < 0) {
     throw new Error(`File ${fileName}: Kolom kode SKU/Code tidak ditemukan.`);
+  }
+
+  // Catalog Map untuk pencarian nama produk cepat
+  const catalogMap = new Map<string, ProductItem>();
+  if (Array.isArray(productCatalog)) {
+    productCatalog.forEach(p => {
+      if (p.k) catalogMap.set(p.k.toUpperCase().trim(), p);
+      if ((p as any).sku) catalogMap.set(String((p as any).sku).toUpperCase().trim(), p);
+    });
   }
 
   // Grouping map: Key = `${no_sj}___${source}___${destination}`
@@ -129,7 +145,22 @@ function parseCsvContent(content: string, fileName: string): ParsedSJGroup[] {
     const rowDest = get(col.dest) || 'Tujuan';
     const rowDate = normalizeDateToIso(get(col.date));
     const qty = parseInt(get(col.qty) || '0', 10) || 0;
-    const nama = get(col.variant) || get(col.product) || sku;
+    
+    // Utamakan nama produk dari kolom produk, baru fallback ke varian
+    const rawProd = get(col.product);
+    const rawVar = get(col.variant);
+    let nama = rawProd || rawVar || '';
+
+    // Jika nama masih kosong atau sama persis dengan SKU, cari dari katalog produk
+    const cleanSku = sku.toUpperCase().trim();
+    if (!nama || nama.toUpperCase() === cleanSku || nama.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '')) {
+      const catProd = catalogMap.get(cleanSku);
+      if (catProd && (catProd.p || (catProd as any).nama_produk || catProd.n)) {
+        nama = String(catProd.p || (catProd as any).nama_produk || catProd.n || '').trim();
+      }
+    }
+    if (!nama) nama = sku;
+
     const category = get(col.category);
 
     const groupKey = `${rowNoSj.toUpperCase()}___${rowSource.toUpperCase()}___${rowDest.toUpperCase()}`;
@@ -242,6 +273,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
 
+  // Custom confirmation modal (replaces window.confirm which is blocked in mobile/iframe)
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    isDanger?: boolean;
+    onConfirm: () => void | Promise<void>;
+  } | null>(null);
+
   // Inline Edit Mode untuk Admin
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<PengecekanSJRecord | null>(null);
@@ -352,7 +392,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       const file = files[i];
       try {
         const content = await file.text();
-        const groups = parseCsvContent(content, file.name);
+        const groups = parseCsvContent(content, file.name, productCatalog);
 
         for (const g of groups) {
           const draftId = `${g.no_sj.trim().toUpperCase()}___${(g.source || '').trim().toUpperCase()}___${(g.destination || '').trim().toUpperCase()}`;
@@ -398,7 +438,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     }
 
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [drafts, onShowToast, importType]);
+  }, [drafts, onShowToast, importType, productCatalog]);
 
   // ==========================================
   // SCAN HANDLER & CATALOG LOOKUP
@@ -680,17 +720,24 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   };
 
   const handleDeleteRecord = async (rec: PengecekanSJRecord) => {
-    if (!window.confirm(`Yakin hapus riwayat Surat Jalan "${rec.no_sj}"? Tindakan ini tidak dapat dibatalkan.`)) return;
-    setDeletingId(rec.id);
-    try {
-      await deleteTarikanMD(rec.id, rec.no_sj);
-      setRecords(prev => prev.filter(r => r.id !== rec.id && r.no_sj !== rec.no_sj));
-      onShowToast(`Riwayat SJ "${rec.no_sj}" berhasil dihapus!`, 'success');
-    } catch {
-      onShowToast('Gagal menghapus riwayat.', 'error');
-    } finally {
-      setDeletingId(null);
-    }
+    setConfirmModal({
+      title: 'Hapus Riwayat Surat Jalan',
+      message: `Yakin ingin menghapus riwayat Surat Jalan "${rec.no_sj}"? Tindakan ini tidak dapat dibatalkan.`,
+      confirmLabel: 'Hapus Riwayat',
+      isDanger: true,
+      onConfirm: async () => {
+        setDeletingId(rec.id);
+        try {
+          await deleteTarikanMD(rec.id, rec.no_sj);
+          setRecords(prev => prev.filter(r => r.id !== rec.id && r.no_sj !== rec.no_sj));
+          onShowToast(`Riwayat SJ "${rec.no_sj}" berhasil dihapus!`, 'success');
+        } catch {
+          onShowToast('Gagal menghapus riwayat.', 'error');
+        } finally {
+          setDeletingId(null);
+        }
+      }
+    });
   };
 
   /**
@@ -804,53 +851,57 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       return;
     }
 
-    if (!window.confirm(`Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan yang dipilih menjadi ${newStatus.toUpperCase()}?`)) {
-      return;
-    }
-
-    setIsBulkUpdating(true);
-    setBulkStatusAction(newStatus);
-    let successCount = 0;
-    
-    try {
-      const updatedRecordsList: PengecekanSJRecord[] = [];
-      
-      // Perform updates sequentially to avoid overwhelming the GAS endpoint
-      for (const rec of recordsToUpdate) {
-        const updatedRecord: PengecekanSJRecord = {
-          ...rec,
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        };
+    setConfirmModal({
+      title: 'Ubah Status Massal',
+      message: `Yakin ingin mengubah status ${recordsToUpdate.length} Surat Jalan yang dipilih menjadi ${newStatus.toUpperCase()}?`,
+      confirmLabel: `Ubah ke ${newStatus.toUpperCase()}`,
+      isDanger: false,
+      onConfirm: async () => {
+        setIsBulkUpdating(true);
+        setBulkStatusAction(newStatus);
+        let successCount = 0;
         
-        const success = await editPengecekanSJ(updatedRecord);
-        if (success) {
-          updatedRecordsList.push(updatedRecord);
-          successCount++;
+        try {
+          const updatedRecordsList: PengecekanSJRecord[] = [];
+          
+          // Perform updates sequentially to avoid overwhelming the GAS endpoint
+          for (const rec of recordsToUpdate) {
+            const updatedRecord: PengecekanSJRecord = {
+              ...rec,
+              status: newStatus,
+              updated_at: new Date().toISOString()
+            };
+            
+            const success = await editPengecekanSJ(updatedRecord);
+            if (success) {
+              updatedRecordsList.push(updatedRecord);
+              successCount++;
+            }
+          }
+
+          if (successCount > 0) {
+            setRecords(prev => {
+              const newRecords = [...prev];
+              updatedRecordsList.forEach(updated => {
+                const index = newRecords.findIndex(r => r.id === updated.id);
+                if (index !== -1) newRecords[index] = updated;
+              });
+              return newRecords;
+            });
+            onShowToast(`Berhasil memperbarui ${successCount} data menjadi ${newStatus.toUpperCase()}`, 'success');
+          } else {
+            onShowToast('Gagal memperbarui status. Silakan coba lagi.', 'error');
+          }
+        } catch (e) {
+          console.error('Bulk update error:', e);
+          onShowToast('Terjadi kesalahan saat memperbarui data secara massal.', 'error');
+        } finally {
+          setIsBulkUpdating(false);
+          setBulkStatusAction(null);
+          setSelectedRecords(new Set());
         }
       }
-
-      if (successCount > 0) {
-        setRecords(prev => {
-          const newRecords = [...prev];
-          updatedRecordsList.forEach(updated => {
-            const index = newRecords.findIndex(r => r.id === updated.id);
-            if (index !== -1) newRecords[index] = updated;
-          });
-          return newRecords;
-        });
-        onShowToast(`Berhasil memperbarui ${successCount} data menjadi ${newStatus.toUpperCase()}`, 'success');
-      } else {
-        onShowToast('Gagal memperbarui status. Silakan coba lagi.', 'error');
-      }
-    } catch (e) {
-      console.error('Bulk update error:', e);
-      onShowToast('Terjadi kesalahan saat memperbarui data secara massal.', 'error');
-    } finally {
-      setIsBulkUpdating(false);
-      setBulkStatusAction(null);
-      setSelectedRecords(new Set());
-    }
+    });
   };
 
   // FILTERED RIWAYAT RECORDS
@@ -1192,19 +1243,26 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (window.confirm(`Hapus draft SJ "${draft.no_sj}" dari antrean?`)) {
-                                  deleteSJDraft(draft.id);
-                                  setDrafts(prev => prev.filter(d => d.id !== draft.id));
-                                  if (activeDraftId === draft.id) {
-                                    setActiveDraftId(null);
+                                setConfirmModal({
+                                  title: 'Hapus Draft Surat Jalan',
+                                  message: `Hapus draft SJ "${draft.no_sj}" dari antrean pengecekan? Data scan yang belum disimpan akan terhapus.`,
+                                  confirmLabel: 'Hapus Draft',
+                                  isDanger: true,
+                                  onConfirm: () => {
+                                    deleteSJDraft(draft.id);
+                                    setDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                    if (activeDraftId === draft.id) {
+                                      setActiveDraftId(null);
+                                    }
+                                    onShowToast(`Draft SJ "${draft.no_sj}" dihapus.`, 'info');
                                   }
-                                  onShowToast(`Draft SJ "${draft.no_sj}" dihapus.`, 'info');
-                                }
+                                });
                               }}
-                              className="p-1 text-slate-400 hover:text-rose-500 rounded-md transition-colors cursor-pointer"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center active:scale-95"
                               title="Hapus draft dari antrean"
+                              aria-label="Hapus draft dari antrean"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-4 h-4 text-rose-500/80 hover:text-rose-600" />
                             </button>
 
                             <button
@@ -1276,15 +1334,44 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(`Reset seluruh hasil scan untuk SJ "${activeDraft.no_sj}"?`)) {
-                            setDrafts(prev => prev.map(d => d.id === activeDraft.id ? { ...d, scanQty: {}, unexpected: {} } : d));
-                            onShowToast('Hasil scan direset.', 'info');
-                          }
+                          setConfirmModal({
+                            title: 'Reset Hasil Scan',
+                            message: `Reset seluruh hasil scan untuk SJ "${activeDraft.no_sj}"? Semua item yang telah di-scan akan kembali ke 0.`,
+                            confirmLabel: 'Reset Scan',
+                            isDanger: true,
+                            onConfirm: () => {
+                              setDrafts(prev => prev.map(d => d.id === activeDraft.id ? { ...d, scanQty: {}, unexpected: {} } : d));
+                              onShowToast('Hasil scan direset.', 'info');
+                            }
+                          });
                         }}
                         className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         Reset Scan
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmModal({
+                            title: 'Hapus Draft Surat Jalan',
+                            message: `Hapus draft Surat Jalan "${activeDraft.no_sj}" dari antrean pengecekan? Data scan yang belum disimpan akan terhapus.`,
+                            confirmLabel: 'Hapus Draft',
+                            isDanger: true,
+                            onConfirm: () => {
+                              deleteSJDraft(activeDraft.id);
+                              setDrafts(prev => prev.filter(d => d.id !== activeDraft.id));
+                              setActiveDraftId(null);
+                              onShowToast(`Draft SJ "${activeDraft.no_sj}" dihapus.`, 'info');
+                            }
+                          });
+                        }}
+                        className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-800/60 flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Hapus draft dari antrean"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Draft</span>
                       </button>
                     </div>
                   </div>
@@ -2088,6 +2175,56 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
             setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, catatan: `${d.catatan || ''} [Tugas Picking App Terkirim]`.trim() } : d));
           }}
         />
+
+        {/* CUSTOM CONFIRMATION MODAL (No window.confirm blocks in iframe/mobile) */}
+        {confirmModal && (
+          <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-start gap-3">
+                <div className={`p-2.5 rounded-xl shrink-0 ${
+                  confirmModal.isDanger
+                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                    : 'bg-primary-500/15 text-primary-600 dark:text-primary-400'
+                }`}>
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                    {confirmModal.title}
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                    {confirmModal.message}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setConfirmModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const action = confirmModal.onConfirm;
+                    setConfirmModal(null);
+                    await action();
+                  }}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer ${
+                    confirmModal.isDanger
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                      : 'bg-primary-600 hover:bg-primary-500 text-white'
+                  }`}
+                >
+                  {confirmModal.confirmLabel || 'Ya, Lanjutkan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

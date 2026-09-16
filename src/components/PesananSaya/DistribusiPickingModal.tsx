@@ -213,11 +213,14 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     const catalogMap = new Map<string, ProductItem>();
     productCatalog.forEach((p) => {
       if (p.k) catalogMap.set(p.k.toUpperCase().trim(), p);
+      if ((p as any).sku) catalogMap.set(String((p as any).sku).toUpperCase().trim(), p);
     });
 
     const items = draft.items.map((it, idx) => {
       const cleanSku = it.sku.toUpperCase().trim();
-      const prod = catalogMap.get(cleanSku);
+      const prod = catalogMap.get(cleanSku)
+        || productCatalog.find(p => (p.k && p.k.toUpperCase().trim() === cleanSku) || ((p as any).sku && String((p as any).sku).toUpperCase().trim() === cleanSku))
+        || productCatalog.find(p => p.k && p.k.replace(/\s+/g, '').toUpperCase() === cleanSku.replace(/\s+/g, ''));
 
       let size = prod?.s;
       if (!size || size === '-') {
@@ -252,7 +255,11 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                 ? (it as any).lokasi
                 : (prod?.lokasi && isWarehouseLocation(prod.lokasi) ? prod.lokasi : 'Warehouse')));
 
-      const nama = it.nama_produk || prod?.n || prod?.p || cleanSku;
+      // Pastikan nama_produk mengambil nama asli dari katalog jika di draft isinya hanya SKU
+      const catalogProdName = (prod?.p || prod?.nama_produk || prod?.n || (prod as any)?.name || (prod as any)?.nama || '').trim();
+      const rawDraftName = (it.nama_produk || '').trim();
+      const isDraftNameSku = !rawDraftName || rawDraftName.toUpperCase() === cleanSku || rawDraftName.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
+      const nama = (!isDraftNameSku && rawDraftName) ? rawDraftName : (catalogProdName || rawDraftName || cleanSku);
 
       return {
         no: idx + 1,

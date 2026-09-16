@@ -3779,12 +3779,21 @@ export async function createPickingSuratJalanSupabase(
   const cleanTujuan = tujuan.trim() || 'Marketplace';
 
   const newItems: PickingListItem[] = items.map((it, idx) => {
+    const cleanSku = it.sku.trim().toUpperCase();
     const rawSize = (it.size || '').trim();
     const cleanSize = (rawSize && rawSize !== '-') 
       ? rawSize 
-      : (extractSizeFromSku(it.sku) !== '-' ? extractSizeFromSku(it.sku) : '-');
-    const rawNama = it.nama_produk.trim() || it.sku.trim().toUpperCase();
-    const formattedNama = rawNama;
+      : (extractSizeFromSku(cleanSku) !== '-' ? extractSizeFromSku(cleanSku) : '-');
+
+    let rawNama = (it.nama_produk || '').trim();
+    const isNameSku = !rawNama || rawNama.toUpperCase() === cleanSku || rawNama.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
+    if (isNameSku) {
+      const cached = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
+      if (cached && (cached.p || (cached as any).nama_produk || cached.n)) {
+        rawNama = String(cached.p || (cached as any).nama_produk || cached.n || cleanSku).trim();
+      }
+    }
+    const formattedNama = rawNama || cleanSku;
     return {
       id: `pick_${cleanNoSj}_${it.sku.trim().toUpperCase()}_${Date.now()}_${idx}`,
       no_sj: cleanNoSj,

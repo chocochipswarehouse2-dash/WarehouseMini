@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useRef, useDeferredValue, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Package,
@@ -129,6 +129,47 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       location: string;
     }>
   >([]);
+
+  // Memoized Catalog Map for ultra-fast product name & size resolution
+  const catalogMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    if (Array.isArray(productCatalog)) {
+      productCatalog.forEach(p => {
+        if (p.k) map.set(p.k.trim().toUpperCase(), p);
+        if ((p as any).sku) map.set(String((p as any).sku).trim().toUpperCase(), p);
+      });
+    }
+    return map;
+  }, [productCatalog]);
+
+  const resolveProductName = useCallback((sku: string, rawName?: string) => {
+    const cleanSku = (sku || '').trim().toUpperCase();
+    const cleanRaw = (rawName || '').trim();
+    const isSku = !cleanRaw || cleanRaw.toUpperCase() === cleanSku || cleanRaw.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
+    if (!isSku && cleanRaw) return cleanRaw;
+
+    const cat = catalogMap.get(cleanSku)
+      || productCatalog?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku))
+      || productCatalog?.find(p => p.k && p.k.replace(/\s+/g, '').toUpperCase() === cleanSku.replace(/\s+/g, ''));
+
+    const catName = (cat?.p || cat?.nama_produk || cat?.n || (cat as any)?.nama || (cat as any)?.name || '').trim();
+    if (catName) return catName;
+
+    try {
+      const cacheRaw = localStorage.getItem('wms_product_cache');
+      if (cacheRaw) {
+        const cacheList = JSON.parse(cacheRaw);
+        if (Array.isArray(cacheList)) {
+          const found = cacheList.find((p: any) => (p.k && p.k.trim().toUpperCase() === cleanSku) || (p.sku && String(p.sku).trim().toUpperCase() === cleanSku));
+          if (found && (found.p || found.nama_produk || found.n)) {
+            return (found.p || found.nama_produk || found.n || '').trim();
+          }
+        }
+      }
+    } catch {}
+
+    return cleanRaw || cleanSku;
+  }, [catalogMap, productCatalog]);
 
   // Scanner & Input Modes: 'fisik' | 'manual' | 'kamera'
   const [inputMode, setInputMode] = useState<'fisik' | 'manual' | 'kamera'>('fisik');
@@ -667,7 +708,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         (it, idx) => `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.nama_produk}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${resolveProductName(it.sku, it.nama_produk)}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size || '-'}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty_req}</td>
@@ -774,7 +815,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const pickedItems = group.items.filter((it) => it.qty_picked > 0);
     const itemsRows = pickedItems
       .map((it, idx) => {
-        let nama = it.nama_produk || '';
+        let nama = resolveProductName(it.sku, it.nama_produk);
         let size = it.size;
         if (!size) {
           let match = nama.match(/\(([^)]+)\)\s*$/);
@@ -804,7 +845,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const pickedUnexpectedItems = (group.unexpected_items || []).filter((it) => it.qty_picked > 0);
     const unexpectedRows = pickedUnexpectedItems
       .map((it, idx) => {
-        let nama = it.nama_produk || '';
+        let nama = resolveProductName(it.sku, it.nama_produk);
         let size = it.size;
         if (!size) {
           let match = nama.match(/\(([^)]+)\)\s*$/);
@@ -2362,12 +2403,28 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               );
             }
 
-            const catMatch = productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === itemSku);
+            let catMatch = catalogMap.get(itemSku)
+              || productCatalog?.find((p) => p.k && p.k.trim().toUpperCase() === itemSku)
+              || productCatalog?.find((p) => (p as any).sku && String((p as any).sku).trim().toUpperCase() === itemSku)
+              || productCatalog?.find((p) => p.k && p.k.replace(/\s+/g, '').toUpperCase() === itemSku.replace(/\s+/g, ''));
+
+            if (!catMatch) {
+              try {
+                const cacheRaw = localStorage.getItem('wms_product_cache');
+                if (cacheRaw) {
+                  const cacheList = JSON.parse(cacheRaw);
+                  if (Array.isArray(cacheList)) {
+                    catMatch = cacheList.find((p: any) => (p.k && p.k.trim().toUpperCase() === itemSku) || (p.sku && String(p.sku).trim().toUpperCase() === itemSku));
+                  }
+                }
+              } catch {}
+            }
+
             let displaySize = (item.size && item.size !== '-') 
               ? item.size 
               : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(itemSku));
-            
-            let displayName = item.nama_produk || itemSku;
+
+            let displayName = resolveProductName(item.sku, item.nama_produk);
             
             // Auto clean name and extract size if missing
             const sizesList = ['XXXL','XXL','XL','L','M','S','XS','ALL','FS'];
@@ -2425,14 +2482,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       })
                     ) : isRealtimeLoaded ? (
                       /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
-                      <div className="px-3 py-1.5 rounded-xl font-mono font-bold text-xs sm:text-sm flex flex-wrap items-center gap-1.5 bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 border-2 border-primary-500/30 shadow-xs">
-                        <AlertTriangle className="w-4 h-4 text-primary-600 dark:text-primary-400 shrink-0" />
-                        <span className="font-black">STOK GUDANG KOSONG (0 pcs)</span>
-                        {emptyRecordedRacks.length > 0 && (
-                          <span className="text-[11px] font-medium text-primary-600/90 dark:text-primary-400/80">
-                            • Rak tercatat: {Array.from(new Set(emptyRecordedRacks)).join(', ')}
-                          </span>
-                        )}
+                      <div
+                        className="px-2.5 py-1 rounded-xl font-mono font-black text-xs sm:text-sm flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-500/30 shadow-xs"
+                        title={emptyRecordedRacks.length > 0 ? `Stok gudang 0 pcs. Rak tercatat: ${Array.from(new Set(emptyRecordedRacks)).join(', ')}` : 'Stok gudang kosong (0 pcs)'}
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <span>KOSONG</span>
                       </div>
                     ) : (
                       /* MEMUAT STOK / CEK LOKASI */
@@ -2673,7 +2728,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       return (
                         <div key={idx} className="p-3 flex justify-between items-center text-xs">
                           <div>
-                            <div className="font-bold text-slate-800 dark:text-slate-200">{it.nama_produk}</div>
+                            <div className="font-bold text-slate-800 dark:text-slate-200">{resolveProductName(it.sku, it.nama_produk)}</div>
                             <div className="text-[11px] font-mono text-slate-400">
                               {it.sku} {it.size ? `• Size: ${it.size}` : ''} • 📍 {it.lokasi}
                             </div>
@@ -3119,7 +3174,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     return (
                       <div key={idx} className="p-3 flex justify-between items-center text-xs">
                         <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200">{it.nama_produk}</div>
+                          <div className="font-bold text-slate-800 dark:text-slate-200">{resolveProductName(it.sku, it.nama_produk)}</div>
                           <div className="text-[11px] font-mono text-slate-400">
                             {it.sku} • 📍 {it.lokasi}
                           </div>
