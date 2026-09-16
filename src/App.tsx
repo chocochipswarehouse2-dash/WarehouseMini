@@ -1455,9 +1455,9 @@ export default function App() {
                   scannerComponent={
                     <div className="w-full max-w-2xl mx-auto space-y-4">
                       {/* STICKY / FREEZE SCANNER METHOD & INPUT CARD */}
-                      <div className="sticky top-0 z-20 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pt-0 pb-1.5 backdrop-blur-md">
-                        <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden">
-                          <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800">
+                      <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0a0f1c]/95 pt-0 pb-1.5 backdrop-blur-md">
+                        <div className="bg-white dark:bg-[#09090B] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
+                          <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-[#0F0F12] border-b border-slate-200 dark:border-slate-800 rounded-t-2xl">
                             <div className="flex-1 min-w-0">
                               <ScanMethodSelector currentMode={scanMode} onSelectMode={setScanMode} />
                             </div>
