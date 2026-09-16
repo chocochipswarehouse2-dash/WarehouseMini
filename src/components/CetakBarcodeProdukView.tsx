@@ -68,29 +68,176 @@ export const getProductMasterPrice = (product?: ProductItem | null): number => {
   return 0;
 };
 
-export const getLabelTitle = (nama?: string | null, size?: unknown, showName = true, showSz = true): string => {
-  const cleanNama = nama ? String(nama).trim() : '';
-  const cleanSz = isRealSize(size) ? String(size).trim() : '';
+export interface ParsedBarcodeProductInfo {
+  titleLine: string;
+  variantLine: string;
+  color: string;
+  size: string;
+}
 
-  if (!showName && showSz && cleanSz) return cleanSz;
-  if (!showName) return '';
-  if (!showSz || !cleanSz) return cleanNama;
-  if (!cleanNama) return cleanSz;
+// Daftar kategori pakaian umum untuk auto-split Nama Produk & Varian
+const APPAREL_CATEGORIES = [
+  // Multi-word first
+  'crop top', 'tank top', 'maxi dress', 'midi dress', 'mini dress',
+  'one set', 'knit wear', 'knitwear', 't-shirt', 't shirt', 'oversized tee',
+  // Tops / Atasan
+  'top', 'tops', 'blouse', 'shirt', 'kemeja', 'tee', 'tshirt', 'kaos',
+  'tank', 'crop', 'camisole', 'cami', 'tunic', 'tunik', 'sweater',
+  'cardigan', 'cardi', 'knit', 'vest', 'hoodie', 'jacket',
+  'jaket', 'blazer', 'outer', 'outerwear', 'coat',
+  // Bottoms / Bawahan
+  'pants', 'pant', 'celana', 'jeans', 'denim', 'trouser', 'trousers',
+  'culotte', 'culottes', 'kulot', 'skirt', 'rok', 'shorts', 'short',
+  'legging', 'leggings', 'cargo',
+  // One-Piece / Dresses
+  'dress', 'gaun', 'jumpsuit', 'playsuit', 'romper', 'overall', 'overalls',
+  'bodysuit',
+  // Sets & Others
+  'set', 'suit', 'pajamas', 'piyama', 'bag', 'tas', 'scarf'
+];
 
-  // Cek apakah nama produk sudah mengandung atau berakhiran dengan size tersebut agar tidak duplikat
-  const lowerNama = cleanNama.toLowerCase();
-  const lowerSz = cleanSz.toLowerCase();
-  if (
-    lowerNama.endsWith(` ${lowerSz}`) ||
-    lowerNama.endsWith(`-${lowerSz}`) ||
-    lowerNama.endsWith(`/${lowerSz}`) ||
-    lowerNama.endsWith(`|${lowerSz}`) ||
-    lowerNama.endsWith(`(${lowerSz})`)
-  ) {
-    return cleanNama;
+// Daftar varian warna umum dalam fashion untuk deteksi pintar
+const FASHION_COLORS = [
+  'soft yellow', 'soft blue', 'baby blue', 'baby pink', 'dusty pink',
+  'broken white', 'grey black denim', 'dark grey', 'light grey', 'dark blue',
+  'sage green', 'army green', 'olive green', 'mint green', 'forest green',
+  'navy blue', 'royal blue', 'light blue', 'deep blue', 'warm beige',
+  'blue', 'yellow', 'black', 'white', 'red', 'green', 'pink', 'cream',
+  'beige', 'brown', 'grey', 'gray', 'denim', 'navy', 'olive', 'sage',
+  'lilac', 'lavender', 'maroon', 'mustard', 'choco', 'charcoal', 'mocca',
+  'moka', 'terracotta', 'fuchsia', 'bw', 'khaki', 'nude', 'army',
+  'emerald', 'taupe', 'burgundy', 'silver', 'gold', 'tan', 'peach',
+  'orange', 'coral', 'ivory', 'brick', 'plum', 'magenta', 'tosca',
+  'rose', 'caramel', 'coffee', 'espresso', 'cappuccino', 'sand'
+];
+
+export const toTitleCase = (str: string): string => {
+  if (!str) return '';
+  return str
+    .split(/(\s+)/)
+    .map((part) => {
+      if (/^\s+$/.test(part)) return part;
+      const upper = part.toUpperCase();
+      if (['XL', 'XXL', 'XXXL', '2XL', '3XL', 'XS', 'S', 'M', 'L', 'SM', 'ML', 'BW', 'SKU'].includes(upper)) {
+        return upper;
+      }
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join('');
+};
+
+export const parseBarcodeProductInfo = (
+  nama?: string | null,
+  size?: unknown,
+  showName = true,
+  showSz = true
+): ParsedBarcodeProductInfo => {
+  let cleanNama = nama ? String(nama).trim() : '';
+  let cleanSz = isRealSize(size) ? String(size).trim().toUpperCase() : '';
+
+  // 1. Ekstrak size dari bagian ujung nama jika ada (contoh: "cassandra top Blue L" atau "Miranda Pants Soft Yellow XL")
+  const sizeEndRegex = /(?:[\s\-_/|(),]+)(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|all\s*size|onesize|free\s*size|sm|ml|\d{2})(?:[\s\-_/|()]*)$/i;
+  const matchSizeEnd = cleanNama.match(sizeEndRegex);
+  if (matchSizeEnd) {
+    if (!cleanSz) {
+      cleanSz = matchSizeEnd[1].trim().toUpperCase();
+    }
+    cleanNama = cleanNama.substring(0, matchSizeEnd.index).trim();
   }
 
-  return `${cleanNama} | ${cleanSz}`;
+  let title = '';
+  let color = '';
+
+  // 2. Deteksi Kategori Produk (Top, Pants, Dress, Skirt, Blouse, dsb.)
+  let matchedCat: string | null = null;
+  let matchIndex = -1;
+  let matchLen = 0;
+
+  for (const cat of APPAREL_CATEGORIES) {
+    const rx = new RegExp(`\\b(${cat})\\b`, 'i');
+    const m = cleanNama.match(rx);
+    if (m && m.index !== undefined) {
+      matchedCat = m[0];
+      matchIndex = m.index;
+      matchLen = m[0].length;
+      break;
+    }
+  }
+
+  if (matchedCat && matchIndex >= 0) {
+    const splitPoint = matchIndex + matchLen;
+    title = cleanNama.substring(0, splitPoint).trim();
+    let rest = cleanNama.substring(splitPoint).trim();
+    rest = rest.replace(/^[\s\-_/|,]+/, '').trim();
+    color = rest;
+  } else {
+    // 3. Jika tidak ada kata kategori pakaian yang cocok, coba cocokkan varian warna
+    let matchedColor: string | null = null;
+    let colorIndex = -1;
+
+    for (const col of FASHION_COLORS) {
+      const rx = new RegExp(`\\b(${col})\\b`, 'i');
+      const m = cleanNama.match(rx);
+      if (m && m.index !== undefined && m.index > 0) {
+        matchedColor = m[0];
+        colorIndex = m.index;
+        break;
+      }
+    }
+
+    if (matchedColor && colorIndex > 0) {
+      title = cleanNama.substring(0, colorIndex).trim().replace(/[\s\-_/|,]+$/, '');
+      color = cleanNama.substring(colorIndex).trim().replace(/^[\s\-_/|,]+/, '');
+    } else {
+      const delimiterMatch = cleanNama.match(/\s*[-/|]\s*/);
+      if (delimiterMatch && delimiterMatch.index && delimiterMatch.index > 0) {
+        title = cleanNama.substring(0, delimiterMatch.index).trim();
+        color = cleanNama.substring(delimiterMatch.index + delimiterMatch[0].length).trim();
+      } else {
+        title = cleanNama;
+        color = '';
+      }
+    }
+  }
+
+  const formattedTitle = toTitleCase(title);
+  const formattedColor = toTitleCase(color);
+
+  // Buat Variant Line (Warna | Size)
+  const variantParts: string[] = [];
+  if (formattedColor) {
+    variantParts.push(formattedColor);
+  }
+  if (showSz && cleanSz) {
+    const lowerCol = formattedColor.toLowerCase();
+    const lowerSz = cleanSz.toLowerCase();
+    if (
+      !lowerCol.endsWith(` ${lowerSz}`) &&
+      !lowerCol.endsWith(`-${lowerSz}`) &&
+      !lowerCol.endsWith(`/${lowerSz}`) &&
+      !lowerCol.endsWith(`|${lowerSz}`)
+    ) {
+      variantParts.push(cleanSz);
+    }
+  }
+
+  const finalTitle = showName ? formattedTitle : '';
+  const finalVariant = variantParts.join(' | ');
+
+  return {
+    titleLine: finalTitle,
+    variantLine: finalVariant,
+    color: formattedColor,
+    size: cleanSz,
+  };
+};
+
+export const getLabelTitle = (nama?: string | null, size?: unknown, showName = true, showSz = true): string => {
+  const parsed = parseBarcodeProductInfo(nama, size, showName, showSz);
+  if (parsed.titleLine && parsed.variantLine) {
+    return `${parsed.titleLine} - ${parsed.variantLine}`;
+  }
+  return parsed.titleLine || parsed.variantLine || '';
 };
 
 export interface NameTypographyConfig {
@@ -99,29 +246,42 @@ export interface NameTypographyConfig {
   lineHeight: string;
 }
 
-export const getNameTypography = (text: string, isPortrait: boolean): NameTypographyConfig => {
+export const getTitleTypography = (text: string, isPortrait: boolean): NameTypographyConfig => {
   const len = text.length;
   if (isPortrait) {
-    if (len <= 20) return { fontSize: '7.2pt', lineClamp: 2, lineHeight: '1.18' };
-    if (len <= 35) return { fontSize: '6.4pt', lineClamp: 2, lineHeight: '1.14' };
-    return { fontSize: '5.8pt', lineClamp: 3, lineHeight: '1.08' };
+    if (len <= 16) return { fontSize: '7.6pt', lineClamp: 1, lineHeight: '1.15' };
+    if (len <= 26) return { fontSize: '6.8pt', lineClamp: 2, lineHeight: '1.12' };
+    return { fontSize: '6.0pt', lineClamp: 2, lineHeight: '1.08' };
   }
-  // Landscape (50mm x 20mm) dengan font Quicksand Rounded (Ramping & Rapi, Non-Bold):
-  // Untuk teks pendek (cth: "Taylor Pants - M")
-  if (len <= 22) {
-    return { fontSize: '8.2pt', lineClamp: 2, lineHeight: '1.18' };
+  // Landscape (50mm x 20mm):
+  // Format lebih besar & mudah dibaca sesuai permintaan user
+  if (len <= 16) {
+    return { fontSize: '9.2pt', lineClamp: 1, lineHeight: '1.15' }; // e.g. "Cassandra Top", "Miranda Pants"
   }
-  // Untuk teks standar seperti "Cassandra Top Grey Black Denim" (30-36 karakter)
-  // Font 7.4pt Quicksand non-bold muat 100% utuh dalam 2 baris tanpa terpotong
-  if (len <= 36) {
-    return { fontSize: '7.4pt', lineClamp: 2, lineHeight: '1.14' };
+  if (len <= 26) {
+    return { fontSize: '8.4pt', lineClamp: 1, lineHeight: '1.12' };
   }
-  // Untuk nama produk yang lebih panjang (37 - 50 karakter)
-  if (len <= 50) {
-    return { fontSize: '6.6pt', lineClamp: 2, lineHeight: '1.10' };
+  return { fontSize: '7.6pt', lineClamp: 2, lineHeight: '1.08' };
+};
+
+export const getVariantTypography = (text: string, isPortrait: boolean): NameTypographyConfig => {
+  const len = text.length;
+  if (isPortrait) {
+    if (len <= 16) return { fontSize: '7.0pt', lineClamp: 1, lineHeight: '1.15' };
+    return { fontSize: '6.2pt', lineClamp: 2, lineHeight: '1.10' };
   }
-  // Untuk nama produk sangat panjang (> 50 karakter)
-  return { fontSize: '5.8pt', lineClamp: 3, lineHeight: '1.06' };
+  // Landscape (50mm x 20mm)
+  if (len <= 16) {
+    return { fontSize: '8.4pt', lineClamp: 1, lineHeight: '1.15' }; // e.g. "Blue | L", "M", "Soft Yellow | XL"
+  }
+  if (len <= 26) {
+    return { fontSize: '7.8pt', lineClamp: 1, lineHeight: '1.12' };
+  }
+  return { fontSize: '7.2pt', lineClamp: 2, lineHeight: '1.08' };
+};
+
+export const getNameTypography = (text: string, isPortrait: boolean): NameTypographyConfig => {
+  return getTitleTypography(text, isPortrait);
 };
 
 export const parseRawPrice = (val: unknown): number => {
@@ -912,19 +1072,29 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           ? `<img src="${qrUrl}" alt="QR" style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block;" />`
           : `<div style="font-size: 8px; font-weight: bold; text-align: center;">${item.sku}</div>`;
 
-        // Row 1: Nama Produk | Size (Wrap text adaptif tanpa terpotong, font Quicksand Rounded Non-Bold)
-        const rawTitle = getLabelTitle(item.nama, item.size, showProductName, showSize);
-        const line1Text = escapeHtml(rawTitle);
-        const typo = getNameTypography(rawTitle, isPortrait);
-        const nameStyle = `font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; font-size: ${typo.fontSize} !important; font-weight: 500 !important; line-height: ${typo.lineHeight} !important; -webkit-line-clamp: ${typo.lineClamp} !important; max-height: calc(${typo.lineClamp} * ${typo.lineHeight} * 1.15em) !important; letter-spacing: -0.05px !important;`;
+        // Parse nama produk & deteksi kategori + varian
+        const parsed = parseBarcodeProductInfo(item.nama, item.size, showProductName, showSize);
+        const titleTypo = getTitleTypography(parsed.titleLine, isPortrait);
+        const variantTypo = getVariantTypography(parsed.variantLine, isPortrait);
 
-        // Row 2: SKU (Lebih kecil dari Nama & Harga)
+        const titleStyle = `font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; font-size: ${titleTypo.fontSize} !important; font-weight: 600 !important; line-height: ${titleTypo.lineHeight} !important; letter-spacing: -0.05px !important;`;
+        const variantStyle = `font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; font-size: ${variantTypo.fontSize} !important; font-weight: 600 !important; line-height: ${variantTypo.lineHeight} !important; letter-spacing: -0.05px !important;`;
+
+        const titleHtml = parsed.titleLine
+          ? `<div class="thermal-line-title" style="${titleStyle}" title="${escapeHtml(parsed.titleLine)}">${escapeHtml(parsed.titleLine)}</div>`
+          : '';
+
+        const variantHtml = parsed.variantLine
+          ? `<div class="thermal-line-variant" style="${variantStyle}" title="${escapeHtml(parsed.variantLine)}">${escapeHtml(parsed.variantLine)}</div>`
+          : '';
+
+        // Row 3: SKU (Lebih kecil dari Nama & Harga)
         const skuText = escapeHtml(item.sku);
         const locHtml = showLocation && item.lokasi
           ? `<span class="thermal-loc-badge">[${escapeHtml(item.lokasi)}]</span>`
           : '';
 
-        // Row 3: HARGA PRODUK (Otomatis dari item/master, font Quicksand Rounded 700)
+        // Row 4: HARGA PRODUK (Otomatis dari item/master, font Quicksand Rounded 700)
         const resolvedPrice = item.price || getProductMasterPrice(catalogMap.get(item.sku.toLowerCase()));
         const priceFormatted = formatProductPrice(resolvedPrice, showCurrencyPrefix);
         const priceHtml = showPrice && priceFormatted
@@ -939,7 +1109,8 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                   ${qrImgTag}
                 </div>
                 <div class="thermal-info-container">
-                  <div class="thermal-line-name-size" style="${nameStyle}" title="${line1Text}">${line1Text}</div>
+                  ${titleHtml}
+                  ${variantHtml}
                   <div class="thermal-line-sku">${skuText} ${locHtml}</div>
                   ${priceHtml}
                 </div>
@@ -949,10 +1120,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         }
       }
 
-      // QR size dynamic calculation (dioptimalkan 13.8mm di lanskap agar teks nama produk leluasa 2 baris penuh tanpa terpotong)
+      // QR size dynamic calculation (dioptimalkan 13.5mm di lanskap agar teks nama produk leluasa dan ada margin 1mm dari tepi kertas)
       const qrDim = isPortrait
         ? qrSizePreset === 'large' ? '14.0mm' : qrSizePreset === 'small' ? '11.5mm' : '13.0mm'
-        : qrSizePreset === 'large' ? '15.2mm' : qrSizePreset === 'small' ? '12.5mm' : '13.8mm';
+        : qrSizePreset === 'large' ? '14.8mm' : qrSizePreset === 'small' ? '12.2mm' : '13.5mm';
 
       const fullHtml = `
         <!DOCTYPE html>
@@ -1010,7 +1181,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 max-width: ${pageW} !important;
                 max-height: ${pageH} !important;
                 box-sizing: border-box !important;
-                padding: 0.8mm 1.2mm !important;
+                padding: ${isPortrait ? '1.5mm 1.0mm' : '1.0mm 1.5mm'} !important;
                 display: flex !important;
                 flex-direction: ${isPortrait ? 'column' : 'row'} !important;
                 align-items: center !important;
@@ -1022,7 +1193,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               .thermal-qr-container {
                 width: ${qrDim} !important;
                 height: ${qrDim} !important;
-                margin-right: ${isPortrait ? '0' : '1.2mm'} !important;
+                margin-right: ${isPortrait ? '0' : '1.5mm'} !important;
                 margin-bottom: ${isPortrait ? '0.8mm' : '0'} !important;
                 flex-shrink: 0 !important;
                 display: flex !important;
@@ -1037,24 +1208,34 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 flex-direction: column !important;
                 justify-content: center !important;
                 overflow: hidden !important;
+                padding-right: 0.5mm !important;
                 ${isPortrait ? 'text-align: center; width: 100%;' : 'text-align: left;'}
               }
-              .thermal-line-name-size {
+              .thermal-line-title {
                 font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-                font-size: ${isPortrait ? '6.4pt' : '7.4pt'} !important;
-                font-weight: 500 !important; /* Quicksand Medium, ramping & rapi, tidak bold */
-                line-height: 1.14 !important;
-                word-break: break-word !important;
-                overflow-wrap: break-word !important;
-                display: -webkit-box !important;
-                -webkit-line-clamp: 2 !important;
-                -webkit-box-orient: vertical !important;
+                font-size: ${isPortrait ? '7.6pt' : '9.2pt'} !important;
+                font-weight: 600 !important;
+                line-height: 1.15 !important;
+                white-space: nowrap !important;
                 overflow: hidden !important;
+                text-overflow: ellipsis !important;
                 color: #000000 !important;
                 letter-spacing: -0.05px !important;
               }
+              .thermal-line-variant {
+                font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+                font-size: ${isPortrait ? '7.0pt' : '8.4pt'} !important;
+                font-weight: 600 !important;
+                line-height: 1.15 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                color: #111111 !important;
+                letter-spacing: -0.05px !important;
+                margin-bottom: 0.15mm !important;
+              }
               .thermal-line-sku {
-                font-size: ${isPortrait ? '5.8pt' : '6.8pt'} !important;
+                font-size: ${isPortrait ? '6.0pt' : '7.0pt'} !important;
                 font-weight: 600 !important;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif !important;
                 white-space: nowrap !important;
@@ -1062,17 +1243,17 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 text-overflow: ellipsis !important;
                 color: #222222 !important;
                 line-height: 1.1 !important;
-                margin: 0.25mm 0 !important;
+                margin: 0.2mm 0 !important;
                 letter-spacing: 0px !important;
               }
               .thermal-line-price {
                 font-family: 'Quicksand', sans-serif !important;
-                font-size: ${isPortrait ? '9.0pt' : '11.5pt'} !important;
+                font-size: ${isPortrait ? '10.0pt' : '12.0pt'} !important;
                 font-weight: 700 !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
                 color: #000000 !important;
-                line-height: 1.1 !important;
+                line-height: 1.05 !important;
                 letter-spacing: -0.1px !important;
               }
               .thermal-loc-badge {
@@ -1718,17 +1899,17 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
             <div className="flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-950 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
               {currentPreviewItem ? (
                 <div
-                  className={`bg-white text-black p-2 rounded shadow-md border border-slate-300 select-none font-sans relative overflow-hidden transition-all ${
+                  className={`bg-white text-black p-2.5 rounded shadow-md border border-slate-300 select-none font-sans relative overflow-hidden transition-all ${
                     printOrientation === 'portrait'
                       ? 'w-[140px] h-[260px] flex flex-col items-center justify-center text-center'
-                      : 'w-[280px] h-[112px] flex flex-row items-center justify-between'
+                      : 'w-[285px] h-[114px] flex flex-row items-center justify-between'
                   } ${isRotated180 ? 'rotate-180' : ''}`}
                 >
                   <div
                     className={`${
                       printOrientation === 'portrait'
                         ? 'w-[90px] h-[90px] mb-1'
-                        : 'w-[85px] h-[85px] mr-1.5'
+                        : 'w-[84px] h-[84px] mr-2'
                     } shrink-0 flex items-center justify-center`}
                   >
                     {qrCache[currentPreviewItem.sku] ? (
@@ -1744,64 +1925,73 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                     )}
                   </div>
 
-                  {/* Samping QR Code: Komposisi Data 3 Baris */}
-                  {/* Row 1: Nama Produk | Size (LEBIH BESAR DARI SKU) */}
-                  {/* Row 2: SKU (LEBIH KECIL DARI NAMA & HARGA) */}
-                  {/* Row 3: HARGA PRODUK (LEBIH BESAR DARI SKU) */}
-                  <div
-                    className={`flex flex-col justify-center overflow-hidden flex-1 py-0.5 pl-1 ${
-                      printOrientation === 'portrait' ? 'w-full text-center pl-0 pt-1' : 'text-left'
-                    }`}
-                  >
-                    {/* Row 1: Nama Produk | Size (Wrap text adaptif, font Quicksand Rounded Non-Bold) */}
-                    {(() => {
-                      const fullTitle = getLabelTitle(currentPreviewItem.nama, currentPreviewItem.size, showProductName, showSize);
-                      const typo = getNameTypography(fullTitle, printOrientation === 'portrait');
-                      const previewPx = typo.fontSize === '8.2pt' ? 12.8 : typo.fontSize === '7.4pt' ? 11.6 : typo.fontSize === '6.6pt' ? 10.4 : 9.2;
-                      return (
-                        <div
-                          className="text-slate-900 break-words"
-                          style={{
-                            fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif",
-                            fontSize: `${previewPx}px`,
-                            fontWeight: 500, // Quicksand Medium - Rapi & Ramping, tidak bold
-                            lineHeight: typo.lineHeight,
-                            display: '-webkit-box',
-                            WebkitLineClamp: typo.lineClamp,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            letterSpacing: '-0.05px',
-                          }}
-                          title={fullTitle}
-                        >
-                          {fullTitle}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Row 2: SKU (Lebih kecil dari Nama & Harga) */}
-                    <div className="text-[9.5px] font-semibold text-slate-600 font-mono truncate leading-tight my-0.5 tracking-tight flex items-center gap-1">
-                      <span>{currentPreviewItem.sku}</span>
-                      {showLocation && currentPreviewItem.lokasi && (
-                        <span className="text-[8.5px] font-bold text-slate-400">
-                          [{currentPreviewItem.lokasi}]
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Row 3: HARGA PRODUK (Font Quicksand Rounded Tebal & Jelas) */}
-                    {showPrice && (
+                  {/* Samping QR Code: Komposisi Data 4 Baris (Kategori, Varian, SKU, Harga) */}
+                  {(() => {
+                    const parsed = parseBarcodeProductInfo(
+                      currentPreviewItem.nama,
+                      currentPreviewItem.size,
+                      showProductName,
+                      showSize
+                    );
+                    return (
                       <div
-                        className="text-[14.5px] font-bold text-slate-950 truncate leading-tight tracking-tight mt-0.5"
-                        style={{ fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif" }}
+                        className={`flex flex-col justify-center overflow-hidden flex-1 py-0.5 pl-0.5 ${
+                          printOrientation === 'portrait' ? 'w-full text-center pl-0 pt-1' : 'text-left'
+                        }`}
                       >
-                        {formatProductPrice(
-                          currentPreviewItem.price || getProductMasterPrice(catalogMap.get(currentPreviewItem.sku.toLowerCase())),
-                          showCurrencyPrefix
-                        ) || '0'}
+                        {/* Row 1: Nama Produk & Kategori (cth: Cassandra Top / Miranda Pants) */}
+                        {parsed.titleLine && (
+                          <div
+                            className="text-slate-950 font-semibold truncate leading-tight tracking-tight"
+                            style={{
+                              fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif",
+                              fontSize: '13.5px',
+                            }}
+                            title={parsed.titleLine}
+                          >
+                            {parsed.titleLine}
+                          </div>
+                        )}
+
+                        {/* Row 2: Varian Warna & Size (cth: Blue | L atau Soft Yellow | XL) */}
+                        {parsed.variantLine && (
+                          <div
+                            className="text-slate-900 font-semibold truncate leading-tight tracking-tight mt-0.5"
+                            style={{
+                              fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif",
+                              fontSize: '12px',
+                            }}
+                            title={parsed.variantLine}
+                          >
+                            {parsed.variantLine}
+                          </div>
+                        )}
+
+                        {/* Row 3: SKU (Lebih kecil dari Nama & Harga) */}
+                        <div className="text-[10px] font-semibold text-slate-600 font-mono truncate leading-tight my-0.5 tracking-tight flex items-center gap-1">
+                          <span>{currentPreviewItem.sku}</span>
+                          {showLocation && currentPreviewItem.lokasi && (
+                            <span className="text-[8.5px] font-bold text-slate-400">
+                              [{currentPreviewItem.lokasi}]
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Row 4: HARGA PRODUK (Font Quicksand Rounded Tebal & Jelas) */}
+                        {showPrice && (
+                          <div
+                            className="text-[16px] font-bold text-slate-950 truncate leading-tight tracking-tight mt-0.5"
+                            style={{ fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif" }}
+                          >
+                            {formatProductPrice(
+                              currentPreviewItem.price || getProductMasterPrice(catalogMap.get(currentPreviewItem.sku.toLowerCase())),
+                              showCurrencyPrefix
+                            ) || '0'}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
               ) : null}
 
