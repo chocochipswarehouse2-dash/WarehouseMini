@@ -4754,17 +4754,29 @@ export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTick
   } catch {}
 
   try {
-    const query = 'order=created_at.desc&limit=500';
-    const newData = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, query);
+    // Fetch all tickets with chunked pagination to prevent truncation (was previously limited to 500)
+    const allRemoteTickets: PerbaikanTicket[] = [];
+    const pageSize = 1000;
+    let offset = 0;
+    const maxRows = 20000;
 
-    if (newData && Array.isArray(newData)) {
+    while (offset < maxRows) {
+      const query = `order=created_at.desc&limit=${pageSize}&offset=${offset}`;
+      const chunk = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, query);
+      if (!chunk || !Array.isArray(chunk) || chunk.length === 0) break;
+      allRemoteTickets.push(...chunk);
+      if (chunk.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    if (allRemoteTickets.length > 0) {
       // Supabase is authoritative. Keep localData in sync with authoritative Supabase list
-      const remoteTicketNos = new Set(newData.map(t => t.ticket_no).filter(Boolean));
+      const remoteTicketNos = new Set(allRemoteTickets.map(t => t.ticket_no).filter(Boolean));
       const offlinePending = localData.filter(t => 
         typeof t.id === 'number' && t.id > 1000000000 && !remoteTicketNos.has(t.ticket_no)
       );
 
-      const merged = [...newData, ...offlinePending].sort((a, b) => 
+      const merged = [...allRemoteTickets, ...offlinePending].sort((a, b) => 
         new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
       );
 

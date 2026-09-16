@@ -105,13 +105,13 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
   const [qrMap, setQrMap] = useState<Record<string, string>>({});
   const [isGeneratingQr, setIsGeneratingQr] = useState<boolean>(false);
 
-  // Combined pool of available tickets for bulk selection
+  // Combined pool of available tickets for bulk selection (allow searching/filtering full pool)
   const rawTicketPool = useMemo(() => {
-    if (tickets && tickets.length > 0) return tickets;
     if (allTickets && allTickets.length > 0) return allTickets;
+    if (tickets && tickets.length > 0) return tickets;
     if (ticket) return [ticket];
     return [];
-  }, [tickets, allTickets, ticket]);
+  }, [allTickets, tickets, ticket]);
 
   // Unique list of locations available in the pool
   const availableLocations = useMemo(() => {
@@ -315,6 +315,194 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
       alert('Tidak ada stiker tiket yang dipilih untuk dicetak!');
       return;
     }
+
+    // Direct Thermal Iframe Printing (Guarantees true 50x20mm page cuts without browser style bleed)
+    try {
+      const iframeId = 'thermal-direct-print-iframe';
+      let printFrame = document.getElementById(iframeId) as HTMLIFrameElement | null;
+      if (printFrame) {
+        document.body.removeChild(printFrame);
+      }
+      printFrame = document.createElement('iframe');
+      printFrame.id = iframeId;
+      printFrame.style.position = 'fixed';
+      printFrame.style.top = '-9999px';
+      printFrame.style.left = '-9999px';
+      printFrame.style.width = '50mm';
+      printFrame.style.height = '20mm';
+      printFrame.style.border = 'none';
+      document.body.appendChild(printFrame);
+
+      const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
+      if (doc) {
+        let stickersHtml = '';
+        printableStickers.forEach((item, idx) => {
+          const t = item.ticket;
+          const qrSrc = qrMap[t.ticket_no] || '';
+          const isLast = idx === printableStickers.length - 1;
+          const copyBadge = item.totalCopies > 1 ? ` (${item.copyIndex}/${item.totalCopies})` : '';
+
+          stickersHtml += `
+            <div class="thermal-page-wrapper" style="page-break-after: ${isLast ? 'auto' : 'always'}; break-after: ${isLast ? 'auto' : 'page'};">
+              <div class="thermal-page-inner">
+                <div class="thermal-qr-container">
+                  ${qrSrc ? `<img src="${qrSrc}" alt="QR" />` : '<div style="font-size:7pt;text-align:center;">QR</div>'}
+                </div>
+                <div class="thermal-text-container">
+                  <div class="thermal-sku-title">${t.sku}</div>
+                  <div class="thermal-name-title">${t.nama_produk || ''}</div>
+                  <div class="thermal-meta-row">
+                    <span class="thermal-meta-size">${t.size ? 'SZ: ' + t.size : ''}${t.lokasi_sekarang ? ' [' + t.lokasi_sekarang + ']' : ''}</span>
+                    <span class="thermal-meta-ticket">#${t.ticket_no}${copyBadge}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+
+        const fullHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Cetak Label Barcode 50x20mm</title>
+            <style>
+              @page {
+                size: 50mm 20mm;
+                margin: 0mm !important;
+              }
+              *, *::before, *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+              }
+              html, body {
+                width: 50mm !important;
+                height: 20mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+              }
+              .thermal-page-wrapper {
+                display: block !important;
+                position: relative !important;
+                width: 50mm !important;
+                height: 20mm !important;
+                max-width: 50mm !important;
+                max-height: 20mm !important;
+                page-break-before: auto !important;
+                page-break-inside: avoid !important;
+                break-before: auto !important;
+                break-inside: avoid !important;
+                overflow: hidden !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
+              }
+              .thermal-page-inner {
+                width: 50mm !important;
+                height: 20mm !important;
+                max-width: 50mm !important;
+                max-height: 20mm !important;
+                box-sizing: border-box !important;
+                padding: 1.2mm 1.8mm !important;
+                display: flex !important;
+                flex-direction: row !important;
+                align-items: center !important;
+                overflow: hidden !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+              }
+              .thermal-qr-container {
+                width: 15.5mm !important;
+                height: 15.5mm !important;
+                margin-right: 1.5mm !important;
+                flex-shrink: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+              }
+              .thermal-qr-container img {
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: contain !important;
+                image-rendering: pixelated !important;
+              }
+              .thermal-text-container {
+                flex: 1 !important;
+                min-width: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: center !important;
+                overflow: hidden !important;
+                line-height: 1.15 !important;
+              }
+              .thermal-sku-title {
+                font-size: 7.5pt !important;
+                font-weight: 900 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                letter-spacing: -0.2px !important;
+              }
+              .thermal-name-title {
+                font-size: 6.2pt !important;
+                font-weight: 700 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                color: #111 !important;
+              }
+              .thermal-meta-row {
+                font-size: 6.5pt !important;
+                font-weight: 800 !important;
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: baseline !important;
+                margin-top: 0.8mm !important;
+              }
+              .thermal-meta-size {
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+              }
+              .thermal-meta-ticket {
+                font-size: 5.8pt !important;
+                font-family: monospace !important;
+                white-space: nowrap !important;
+              }
+            </style>
+          </head>
+          <body>
+            ${stickersHtml}
+          </body>
+          </html>
+        `;
+
+        doc.open();
+        doc.write(fullHtml);
+        doc.close();
+
+        setTimeout(() => {
+          try {
+            printFrame?.contentWindow?.focus();
+            printFrame?.contentWindow?.print();
+          } catch {
+            window.print();
+          }
+        }, 300);
+        return;
+      }
+    } catch (e) {
+      console.warn('Iframe print failed, falling back to window.print():', e);
+    }
+
+    // Fallback: window.print()
     setTimeout(() => {
       try {
         window.print();
@@ -370,7 +558,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             @media print {
               @page {
                 size: 50mm 20mm;
-                margin: 0;
+                margin: 0mm !important;
               }
               body {
                 margin: 0 !important;
@@ -394,15 +582,29 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 margin: 0 !important;
                 padding: 0 !important;
               }
-              .thermal-page-50x20 {
+              .thermal-page-wrapper {
+                display: block !important;
+                position: relative !important;
+                width: 50mm !important;
+                height: 20mm !important;
+                max-width: 50mm !important;
+                max-height: 20mm !important;
+                page-break-before: auto !important;
+                page-break-inside: avoid !important;
+                break-before: auto !important;
+                break-inside: avoid !important;
+                overflow: hidden !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
+              }
+              .thermal-page-inner {
                 width: 50mm !important;
                 height: 20mm !important;
                 max-width: 50mm !important;
                 max-height: 20mm !important;
                 box-sizing: border-box !important;
-                padding: 1.5mm 2mm !important;
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
+                padding: 1.2mm 1.8mm !important;
                 display: flex !important;
                 flex-direction: row !important;
                 align-items: center !important;
@@ -412,9 +614,9 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 overflow: hidden !important;
               }
               .thermal-qr-container {
-                width: 15mm !important;
-                height: 15mm !important;
-                margin-right: 2mm !important;
+                width: 15.5mm !important;
+                height: 15.5mm !important;
+                margin-right: 1.5mm !important;
                 flex-shrink: 0 !important;
                 display: flex !important;
                 align-items: center !important;
@@ -424,6 +626,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 width: 100% !important;
                 height: 100% !important;
                 object-fit: contain !important;
+                image-rendering: pixelated !important;
               }
               .thermal-text-container {
                 display: flex !important;
@@ -431,7 +634,40 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 justify-content: center !important;
                 overflow: hidden !important;
                 width: 100% !important;
-                line-height: 1.1 !important;
+                line-height: 1.15 !important;
+              }
+              .thermal-sku-title {
+                font-size: 7.5pt !important;
+                font-weight: 900 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                letter-spacing: -0.2px !important;
+              }
+              .thermal-name-title {
+                font-size: 6.2pt !important;
+                font-weight: 700 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+              }
+              .thermal-meta-row {
+                font-size: 6.5pt !important;
+                font-weight: 800 !important;
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: baseline !important;
+                margin-top: 0.8mm !important;
+              }
+              .thermal-meta-size {
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+              }
+              .thermal-meta-ticket {
+                font-size: 5.8pt !important;
+                font-family: monospace !important;
+                white-space: nowrap !important;
               }
             }
           `,
@@ -442,65 +678,44 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           const t = item.ticket;
           const qrSrc = qrMap[t.ticket_no];
           const isLast = idx === printableStickers.length - 1;
+          const copyBadge = item.totalCopies > 1 ? ` (${item.copyIndex}/${item.totalCopies})` : '';
 
           return (
             <div
               key={`print-stk-${t.ticket_no}-${item.copyIndex}-${idx}`}
-              className="thermal-page-50x20"
+              className="thermal-page-wrapper"
               style={{
                 pageBreakAfter: isLast ? 'auto' : 'always',
                 breakAfter: isLast ? 'auto' : 'page',
               }}
             >
-              <div className="thermal-qr-container">
-                {qrSrc ? (
-                  <img src={qrSrc} alt="QR" />
-                ) : (
-                  <div style={{ fontSize: '7pt', textAlign: 'center' }}>QR</div>
-                )}
-              </div>
-
-              <div className="thermal-text-container">
-                <div
-                  style={{
-                    fontSize: '8pt',
-                    fontWeight: 900,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {t.sku}
+              <div className="thermal-page-inner">
+                <div className="thermal-qr-container">
+                  {qrSrc ? (
+                    <img src={qrSrc} alt="QR" />
+                  ) : (
+                    <div style={{ fontSize: '7pt', textAlign: 'center' }}>QR</div>
+                  )}
                 </div>
 
-                <div
-                  style={{
-                    fontSize: '6.5pt',
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {t.nama_produk}
-                </div>
+                <div className="thermal-text-container">
+                  <div className="thermal-sku-title">
+                    {t.sku}
+                  </div>
 
-                <div
-                  style={{
-                    fontSize: '7pt',
-                    fontWeight: 800,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    marginTop: '0.8mm',
-                  }}
-                >
-                  <span>
-                    {t.size ? `SZ: ${t.size}` : ''}
-                    {t.lokasi_sekarang ? ` [${t.lokasi_sekarang}]` : ''}
-                  </span>
-                  <span style={{ fontSize: '6pt', fontFamily: 'monospace' }}>
-                    #{t.ticket_no}
-                  </span>
+                  <div className="thermal-name-title">
+                    {t.nama_produk}
+                  </div>
+
+                  <div className="thermal-meta-row">
+                    <span className="thermal-meta-size">
+                      {t.size ? `SZ: ${t.size}` : ''}
+                      {t.lokasi_sekarang ? ` [${t.lokasi_sekarang}]` : ''}
+                    </span>
+                    <span className="thermal-meta-ticket">
+                      #{t.ticket_no}{copyBadge}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -982,6 +1197,14 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Tips Setting Thermal Printer */}
+        <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-2 shrink-0">
+          <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="leading-snug">
+            <span className="font-extrabold text-amber-900 dark:text-amber-100">Tips Cetak Thermal 50×20 mm:</span> Di layar cetak browser, pastikan <b>Tujuan: Printer Thermal Anda</b>, <b>Ukuran Kertas: 50×20 mm</b> (atau Custom Roll), <b>Margin: None (Tanpa Margin)</b>, dan <b>Skala: 100%</b> agar pas 1 stiker per potongan kertas.
+          </div>
         </div>
 
         {/* Action Buttons */}
