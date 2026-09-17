@@ -13,6 +13,94 @@ export interface LogoDesignOption {
 
 export const LOGO_DESIGNS: LogoDesignOption[] = [
   {
+    id: 'chocochips-signature',
+    name: 'Chocochips Signature',
+    tagline: 'Klasik, Tegas, & Profesional',
+    category: 'Minimalist Signature',
+    palette: [
+      { name: 'Warm Charcoal', hex: '#27272A' },
+      { name: 'Chocochips Brown', hex: '#78350F' },
+      { name: 'Gold Accent', hex: '#F59E0B' },
+    ],
+    description: 'Desain minimalis modern yang menonjolkan huruf inisial dengan bentuk geometris tegas dan rapi, merepresentasikan sistem manajemen inventaris yang akurat.',
+    philosophy: 'Kejelasan, profesionalisme, dan struktur. Menghindari elemen visual yang terlalu rumit demi keterbacaan yang maksimal.',
+    renderSvg: (size = 120, className = '') => (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 120 120"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={className}
+      >
+        <defs>
+          <linearGradient id="ch-sig-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#18181B" />
+            <stop offset="100%" stopColor="#09090B" />
+          </linearGradient>
+        </defs>
+        <rect width="120" height="120" rx="28" fill="url(#ch-sig-bg)" />
+        <rect width="118" height="118" x="1" y="1" rx="27" stroke="#3F3F46" strokeWidth="1.5" fill="none" opacity="0.6" />
+        <path
+          d="M55 45 C48 45 40 50 40 60 C40 70 48 75 55 75"
+          stroke="#F59E0B"
+          strokeWidth="8"
+          strokeLinecap="round"
+          fill="none"
+        />
+        <path
+          d="M65 45 L70 75 L75 55 L80 75 L85 45"
+          stroke="#D4D4D8"
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: 'garment-box-flat',
+    name: 'Garment Box Flat',
+    tagline: 'Ikon Datar Bersih',
+    category: 'Flat UI Design',
+    palette: [
+      { name: 'Pure White', hex: '#FFFFFF' },
+      { name: 'Subtle Slate', hex: '#F1F5F9' },
+      { name: 'Dark Ink', hex: '#0F172A' },
+    ],
+    description: 'Desain datar (flat design) 2 dimensi dengan warna solid yang cerah dan ikon yang sangat mudah dikenali sekilas.',
+    philosophy: 'Fungsionalitas di atas segalanya. Cocok untuk lingkungan kerja cepat di mana kejernihan visual adalah prioritas utama.',
+    renderSvg: (size = 120, className = '') => (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 120 120"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={className}
+      >
+        <rect width="120" height="120" rx="28" fill="#F8FAFC" />
+        <rect width="118" height="118" x="1" y="1" rx="27" stroke="#E2E8F0" strokeWidth="1.5" fill="none" />
+        <path
+          d="M30 45 L60 30 L90 45 L90 75 L60 90 L30 75 Z"
+          fill="#0F172A"
+        />
+        <path
+          d="M30 45 L60 60 M90 45 L60 60 M60 60 L60 90"
+          stroke="#F8FAFC"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M50 50 C55 45 65 45 70 50 L60 55 Z"
+          fill="#F59E0B"
+        />
+      </svg>
+    ),
+  },
+  {
     id: 'chic-hanger-box',
     name: 'Chic Hanger & Smart Box',
     tagline: 'Perpaduan Butik Fashion & Gudang Modern',
