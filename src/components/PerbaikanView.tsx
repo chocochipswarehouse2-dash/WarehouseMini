@@ -39,7 +39,6 @@ import {
   PerbaikanStatusPengerjaan,
   ProductItem,
   UserSession,
-  QcReport,
   StockRealtimeItem,
 } from '../types';
 import { compressImage, formatBytes } from '../utils/imageCompressor';
@@ -53,8 +52,6 @@ import {
   deletePerbaikanTicketFromSupabase,
   recordPerbaikanStockMutation,
   getSupabaseClient,
-  fetchQcReportsFromSupabase,
-  updateQcReportInSupabase,
   fetchSupabaseStokFisikDirect,
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
@@ -239,7 +236,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     return INITIAL_DEMO_TICKETS;
   });
   const [isLoadingDb, setIsLoadingDb] = useState(false);
-  const [qcReports, setQcReports] = useState<QcReport[]>([]);
   const [stokFisikList, setStokFisikList] = useState<StockRealtimeItem[]>([]);
 
   // Sync from Supabase on mount + listen to Supabase Realtime changes + window events
@@ -292,24 +288,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     };
     loadFromSupabase();
 
-    // Load QC Reports for drop-list reference connection
-    const loadQcReports = async () => {
-      try {
-        const reports = await fetchQcReportsFromSupabase();
-        if (isMounted && reports && reports.length > 0) {
-          setQcReports(reports);
-        } else {
-          const cached = localStorage.getItem('wms_local_qc_reports');
-          if (isMounted && cached) setQcReports(JSON.parse(cached));
-        }
-      } catch {
-        const cached = localStorage.getItem('wms_local_qc_reports');
-        if (isMounted && cached) setQcReports(JSON.parse(cached));
-      }
-    };
-    loadQcReports();
-
-    // Listen to window events from LaporanQcView or Supabase services
+    // Listen to window events from Supabase services
     const handleTicketEvent = (e: any) => {
       const deletedTicketNo = e?.detail?.deletedTicketNo;
       if (deletedTicketNo) {
@@ -321,12 +300,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       }
     };
 
-    const handleQcEvent = () => {
-      loadQcReports();
-    };
-
     window.addEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
-    window.addEventListener('wms_qc_reports_updated', handleQcEvent);
 
     let debounceTimer: any = null;
     const triggerDebouncedSync = async () => {
@@ -344,7 +318,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     return () => {
       isMounted = false;
       window.removeEventListener('wms_perbaikan_tickets_updated', handleTicketEvent);
-      window.removeEventListener('wms_qc_reports_updated', handleTicketEvent);
       if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
     };
@@ -470,7 +443,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [editBiayaReparasi, setEditBiayaReparasi] = useState<number>(0);
   const [editPhotos, setEditPhotos] = useState<Array<{ dataUrl: string; sizeText: string; savedPercent: number }>>([]);
   const [editIsCompressing, setEditIsCompressing] = useState(false);
-  const [editQcReportNo, setEditQcReportNo] = useState('');
 
   // Filter khusus Arsip & Histori Pengecekan
   const [filterArsipStatus, setFilterArsipStatus] = useState<'ALL' | 'SELESAI_GRADE_A' | 'SELESAI_DEFECT_SALE' | 'SELESAI_SCRAP'>('ALL');
@@ -842,7 +814,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     setEditPetugasReparasi(t.petugas_reparasi || '');
     setEditReparasiCatatan(t.reparasi_catatan || '');
     setEditBiayaReparasi(t.biaya_reparasi || 0);
-    setEditQcReportNo(t.qc_report_no || '');
     setEditPhotos(
       (t.foto_urls || []).map((url) => ({
         dataUrl: url,
@@ -921,7 +892,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       petugas_reparasi: editPetugasReparasi.trim() || undefined,
       reparasi_catatan: editReparasiCatatan.trim() || undefined,
       biaya_reparasi: Number(editBiayaReparasi) || 0,
-      qc_report_no: editQcReportNo.trim() || undefined,
+      qc_report_no: editModalTicket.qc_report_no,
       foto_urls: uploadedUrls,
       updated_at: new Date().toISOString(),
     };
@@ -932,25 +903,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
     // Sync Update to Supabase
     updatePerbaikanTicketInSupabase(editModalTicket.id || editModalTicket.ticket_no, updated).catch(console.warn);
-
-    // Update lokasi pada Laporan QC terkait agar riwayat laporan mencatat lokasi fisik saat ini
-    const cleanEditQcNo = editQcReportNo.trim();
-    if (cleanEditQcNo) {
-      const matchedQc = qcReports.find((q) => q.report_no === cleanEditQcNo);
-      if (matchedQc) {
-        const updatedQc: QcReport = {
-          ...matchedQc,
-          lokasi_barang: newTargetLokasi,
-          perbaikan_ticket_no: editModalTicket.ticket_no,
-          updated_at: new Date().toISOString(),
-        };
-        updateQcReportInSupabase(updatedQc).catch(console.warn);
-        setQcReports((prev) => prev.map((q) => (q.report_no === cleanEditQcNo ? updatedQc : q)));
-        window.dispatchEvent(
-          new CustomEvent('wms_qc_reports_updated', { detail: { updatedReport: updatedQc } })
-        );
-      }
-    }
 
     // Jika lokasi fisik rak diedit berpindah, catat mutasi di log_produk
     if (editModalTicket.lokasi_sekarang.toUpperCase() !== newTargetLokasi) {
@@ -1012,107 +964,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       onShowToast('Gagal menghapus tiket: ' + (err?.message || 'Terjadi kesalahan'), 'error');
     } finally {
       setIsDeletingTicket(false);
-    }
-  };
-
-  // Helper: Dapatkan list riwayat laporan QC.
-  // User meminta agar SEMUA referensi laporan QC ditampilkan agar bisa dipilih lintas-produk, 
-  // namun kita akan mengurutkan laporan yang cocok (matching) di urutan teratas.
-  const getMatchingQcOptions = (sku?: string, namaProduk?: string, currentQcNo?: string): QcReport[] => {
-    const cleanSku = (sku || '').trim().toUpperCase();
-    const cleanNama = (namaProduk || '').trim().toUpperCase();
-
-    const normalize = (str: string) =>
-      str
-        .toUpperCase()
-        .replace(/\b(XS|S|M|L|XL|XXL|XXXL|2XL|3XL|ALL\s*SIZE|ONESIZE)\b/gi, '')
-        .replace(/[^A-Z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const normSku = normalize(cleanSku);
-    const normNama = normalize(cleanNama);
-
-    const isMatch = (q: QcReport) => {
-      if (currentQcNo && (q.report_no === currentQcNo || String(q.id) === currentQcNo)) return true;
-      if (!cleanSku && !cleanNama) return false;
-      const qSku = (q.sku || '').trim().toUpperCase();
-      const qNama = (q.nama_produk || '').trim().toUpperCase();
-      const qKode = (q.kode_produksi || '').trim().toUpperCase();
-      if (cleanSku && qSku && cleanSku === qSku) return true;
-      if (qKode && qKode.length >= 3) {
-        if (cleanSku && (cleanSku === qKode || cleanSku.startsWith(qKode) || cleanSku.includes(qKode))) return true;
-        if (cleanNama && (cleanNama === qKode || cleanNama.includes(qKode))) return true;
-      }
-      const qNormSku = normalize(qSku);
-      if (normSku && qNormSku && normSku.length >= 3 && qNormSku.length >= 3) {
-        if (normSku === qNormSku || normSku.startsWith(qNormSku) || qNormSku.startsWith(normSku)) return true;
-      }
-      const qNormNama = normalize(qNama);
-      if (normNama && qNormNama && normNama.length >= 3 && qNormNama.length >= 3) {
-        if (normNama === qNormNama || normNama.includes(qNormNama) || qNormNama.includes(normNama)) return true;
-      }
-      if (normNama && qNormSku && normNama.length >= 4 && qNormSku.length >= 4) {
-        if (normNama === qNormSku || normNama.includes(qNormSku) || qNormSku.includes(normNama)) return true;
-      }
-      if (normSku && qNormNama && normSku.length >= 4 && qNormNama.length >= 4) {
-        if (normSku === qNormNama || normSku.includes(qNormNama) || qNormNama.includes(normSku)) return true;
-      }
-      return false;
-    };
-
-    const uniqueMap = new Map<string, QcReport & { _isMatch?: boolean }>();
-    qcReports.forEach((q) => {
-      if (q.report_no && !uniqueMap.has(q.report_no)) {
-        uniqueMap.set(q.report_no, { ...q, _isMatch: isMatch(q) });
-      }
-    });
-
-    const uniqueReports = Array.from(uniqueMap.values());
-    return uniqueReports.sort((a, b) => {
-      if (a._isMatch && !b._isMatch) return -1;
-      if (!a._isMatch && b._isMatch) return 1;
-      const dateA = new Date(a.tanggal || 0).getTime();
-      const dateB = new Date(b.tanggal || 0).getTime();
-      return dateB - dateA;
-    });
-  };
-  const handleQuickLinkQcReport = async (item: PerbaikanTicket, selectedQcNo: string) => {
-    const targetQcNo = selectedQcNo.trim();
-    const updated: PerbaikanTicket = {
-      ...item,
-      qc_report_no: targetQcNo || undefined,
-      updated_at: new Date().toISOString(),
-    };
-
-    setTickets((prev) =>
-      prev.map((t) => (t.id === item.id || t.ticket_no === item.ticket_no ? updated : t))
-    );
-    updatePerbaikanTicketInSupabase(item.id || item.ticket_no, updated).catch(console.warn);
-
-    if (targetQcNo) {
-      const matched = qcReports.find((q) => q.report_no === targetQcNo);
-      if (matched) {
-        const updatedQc: QcReport = {
-          ...matched,
-          lokasi_barang: item.lokasi_sekarang || (item.tahap === 'CUCI' ? 'CC-01' : 'PMK-01'),
-          perbaikan_ticket_no: item.ticket_no,
-          updated_at: new Date().toISOString(),
-        };
-        await updateQcReportInSupabase(updatedQc).catch(console.warn);
-        setQcReports((prev) => prev.map((q) => (q.report_no === targetQcNo ? updatedQc : q)));
-        window.dispatchEvent(
-          new CustomEvent('wms_qc_reports_updated', { detail: { updatedReport: updatedQc } })
-        );
-      }
-      playSuccessBeep();
-      onShowToast(
-        `Berhasil menghubungkan barang ke Laporan QC #${targetQcNo}! Lokasi fisik diperbarui ke ${item.lokasi_sekarang || 'rak perbaikan'}.`,
-        'success'
-      );
-    } else {
-      playSuccessBeep();
-      onShowToast(`Koneksi referensi Laporan QC untuk ${item.sku} dilepas.`, 'info');
     }
   };
 
@@ -3182,48 +3033,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     </div>
                   )}
 
-                  {/* Koneksi Riwayat Laporan QC untuk Cuci / Permak */}
-                  {(item.tahap === 'CUCI' || item.tahap === 'PERMAK') && (() => {
-                    const qcOptions = getMatchingQcOptions(item.sku, item.nama_produk, item.qc_report_no);
-                    const hasOptions = qcOptions.length > 0;
-                    return (
-                      <div className="p-2.5 bg-blue-50/70 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-900/60 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-bold text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
-                            <History className="w-3.5 h-3.5 text-blue-600" />
-                            <span>No. Ref Laporan QC</span>
-                          </span>
-                          {item.qc_report_no ? (
-                            <span className="font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                              Terkoneksi #{item.qc_report_no}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-[10px]">
-                              {hasOptions ? `${qcOptions.length} Laporan Tersedia` : 'Belum Ada Laporan'}
-                            </span>
-                          )}
-                        </div>
-                        <select
-                          value={item.qc_report_no || ''}
-                          onChange={(e) => handleQuickLinkQcReport(item, e.target.value)}
-                          disabled={!hasOptions && !item.qc_report_no}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-800 rounded-lg text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          <option value="">
-                            {hasOptions
-                              ? `-- Hubungkan Laporan QC (${qcOptions.length} untuk produk ini) --`
-                              : `-- Tidak ada riwayat QC untuk produk ini --`}
-                          </option>
-                          {qcOptions.map((q) => (
-                            <option key={q.report_no} value={q.report_no}>
-                              #{q.report_no} • {q.tanggal?.slice(0, 10)} • {q.status} {q.qty_reject ? `[Reject ${q.qty_reject}]` : ''} {q.kategori_rusak ? `(${q.kategori_rusak})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  })()}
-
                   {/* SOP WMS: 1 Produk = 1 Tiket */}
                   {item.qty > 1 && (
                     <button
@@ -3955,55 +3764,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     Belum ada foto kerusakan. Klik tombol "+ Tambah Foto" untuk mengunggah.
                   </div>
                 )}
-              </div>
-
-              {/* Koneksi ke Riwayat Laporan QC */}
-              <div className="space-y-1.5 p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-900/60">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-xs text-blue-950 dark:text-blue-200 flex items-center gap-1.5">
-                    <History className="w-3.5 h-3.5 text-blue-600" />
-                    <span>No. Referensi Laporan QC (Opsional)</span>
-                  </label>
-                  {editQcReportNo && (
-                    <button
-                      type="button"
-                      onClick={() => setEditQcReportNo('')}
-                      className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
-                    >
-                      Lepas Koneksi
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80 leading-snug">
-                  Laporan QC yang produknya cocok dengan tiket ini akan ditampilkan di urutan teratas.
-                </p>
-                {(() => {
-                  const qcOptions = getMatchingQcOptions(
-                    editModalTicket?.sku,
-                    editModalTicket?.nama_produk,
-                    editQcReportNo
-                  );
-                  const hasOptions = qcOptions.length > 0;
-                  return (
-                    <select
-                      value={editQcReportNo}
-                      onChange={(e) => setEditQcReportNo(e.target.value)}
-                      disabled={!hasOptions && !editQcReportNo}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      <option value="">
-                        {hasOptions
-                          ? `-- Tanpa Referensi Laporan QC (${qcOptions.length} laporan tersedia) --`
-                          : `-- Tidak ada riwayat QC --`}
-                      </option>
-                      {qcOptions.map((q) => (
-                        <option key={q.report_no} value={q.report_no}>
-                          #{q.report_no} • {q.tanggal?.slice(0, 10)} • {q.status} {q.qty_reject ? `[Reject ${q.qty_reject}]` : ''} {q.kategori_rusak ? `(${q.kategori_rusak})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  );
-                })()}
               </div>
 
               {/* Kategori & Lokasi Rak */}
