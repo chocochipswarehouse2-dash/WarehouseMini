@@ -25,6 +25,15 @@ import {
   Sparkles,
   Plus,
   Trash2,
+  ClipboardList,
+  KeyRound,
+  Globe,
+  Github,
+  Wifi,
+  SquareCheck,
+  Terminal,
+  TriangleAlert,
+  BookOpen,
 } from 'lucide-react';
 import {
   getStoredSupabaseConfig,
@@ -452,13 +461,14 @@ export const SupabaseMigrationView: React.FC = () => {
       </div>
 
       {/* Stepper Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {[
           { num: 1, title: '1. Buat Akun Baru', desc: 'Proyek Baru' },
           { num: 2, title: '2. Eksekusi SQL', desc: 'DDL Skema Lengkap' },
           { num: 3, title: '3. Hubungkan DB', desc: 'Tes Koneksi' },
           { num: 4, title: '4. Kloning Data', desc: 'Transfer Batch' },
           { num: 5, title: '5. Beralih Akun', desc: 'Aktifkan & Selesai' },
+          { num: 6, title: '6. Panduan Setup', desc: 'GAS · Vercel · Fonnte' },
         ].map((step) => {
           const isActive = activeStep === step.num;
           return (
@@ -1107,6 +1117,362 @@ export const SupabaseMigrationView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════
+           STEP 6: PANDUAN SETUP LENGKAP POST-MIGRASI
+          ═══════════════════════════════════════════════════════════════ */}
+      {activeStep === 6 && (
+        <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5 shadow-sm">
+          {/* Header */}
+          <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+            <span className="w-7 h-7 rounded-lg bg-violet-500/10 text-violet-500 flex items-center justify-center font-bold text-xs">
+              6
+            </span>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase">
+                Panduan Setup Lengkap — GAS, Vercel, GitHub & Fonnte
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Setelah kloning data selesai, selesaikan semua langkah ini agar sistem berjalan 100% normal.
+              </p>
+            </div>
+          </div>
+
+          {/* Progress Checklist */}
+          <SetupChecklist targetUrl={targetUrl} targetKey={targetKey} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Subcomponent: Panduan Setup Checklist ────────────────────────────────────
+interface SetupChecklistProps { targetUrl: string; targetKey: string; }
+
+const SetupChecklist: React.FC<SetupChecklistProps> = ({ targetUrl, targetKey }) => {
+  const [checked, setChecked] = React.useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = React.useState<string>('');
+
+  const toggle = (id: string) => setChecked(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const copyText = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(''), 2000);
+  };
+
+  const newUrl  = targetUrl  || 'https://xxx.supabase.co';
+  const newKey  = targetKey  || 'sb_publishable_...';
+
+  const totalTasks = 9;
+  const doneCount  = Object.values(checked).filter(Boolean).length;
+  const pct        = Math.round((doneCount / totalTasks) * 100);
+
+  const CopyBtn = ({ text, id, label }: { text: string; id: string; label?: string }) => (
+    <button
+      type="button"
+      onClick={() => copyText(text, id)}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+    >
+      {copiedKey === id ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+      {label || (copiedKey === id ? 'Disalin!' : 'Salin')}
+    </button>
+  );
+
+  const SectionTitle = ({ icon, title, color }: { icon: React.ReactNode; title: string; color: string }) => (
+    <div className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wider ${color} border-b border-slate-100 dark:border-slate-800 pb-2 mb-3`}>
+      {icon}
+      <span>{title}</span>
+    </div>
+  );
+
+  const TaskRow = ({ id, children }: { id: string; children: React.ReactNode }) => (
+    <label className="flex items-start gap-2.5 cursor-pointer group">
+      <div className={`mt-0.5 w-4 h-4 rounded flex-shrink-0 flex items-center justify-center border transition-colors ${
+        checked[id] ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 dark:border-slate-600 group-hover:border-emerald-400'
+      }`} onClick={() => toggle(id)}>
+        {checked[id] && <Check className="w-2.5 h-2.5 text-white" />}
+      </div>
+      <div className={`text-xs leading-relaxed transition-opacity ${checked[id] ? 'opacity-40 line-through' : ''}`}>
+        {children}
+      </div>
+    </label>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Progress Bar */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-bold text-slate-700 dark:text-slate-300">Progress Setup Post-Migrasi</span>
+          <span className={`font-extrabold ${pct === 100 ? 'text-emerald-500' : 'text-amber-500'}`}>{doneCount}/{totalTasks} ({pct}%)</span>
+        </div>
+        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2">
+          <div
+            className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        {pct === 100 && (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-bold">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Semua setup selesai! Sistem siap beroperasi normal.
+          </div>
+        )}
+      </div>
+
+      {/* ── BAGIAN A: GAS ───────────────────────────────────────────── */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+        <SectionTitle
+          icon={<Code2 className="w-3.5 h-3.5" />}
+          title="A — Google Apps Script (GAS)"
+          color="text-orange-500"
+        />
+
+        <TaskRow id="gas_bridge">
+          <div className="space-y-1.5">
+            <p><strong>Update SupabaseBridge_cloud.js</strong> — Pastikan URL dan Key di file GAS sudah diupdate.</p>
+            <p className="text-slate-500 dark:text-slate-400">Cara otomatis: jalankan <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">node tools/gas_deploy.cjs</code> di terminal proyek.</p>
+            <p className="text-slate-500 dark:text-slate-400">Cara manual: buka GAS Editor → file SupabaseBridge → ubah baris SUPABASE_URL dan SUPABASE_ANON_KEY:</p>
+            <div className="bg-slate-950 text-emerald-400 p-2 rounded-lg font-mono text-[10px] space-y-0.5">
+              <div>const SUPABASE_URL = <span className="text-amber-400">"{newUrl}"</span>;</div>
+              <div>const SUPABASE_ANON_KEY = <span className="text-amber-400">"{newKey.substring(0, 30)}..."</span>;</div>
+            </div>
+          </div>
+        </TaskRow>
+
+        <TaskRow id="gas_script_props">
+          <div className="space-y-1.5">
+            <p>
+              <strong className="text-rose-500">⚠️ WAJIB — Update Script Properties</strong> di GAS Editor.
+              Ini menyimpan <strong>Service Role Key</strong> yang digunakan untuk bypass RLS.
+              Jika lupa, semua webhook scan WA akan gagal!
+            </p>
+            <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-500 dark:text-slate-400">
+              <li>Buka <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-orange-500 underline font-bold">script.google.com</a></li>
+              <li>Pilih project WMS ("WMS Inventory" / "Webhook")</li>
+              <li>Klik ⚙️ <strong>Project Settings</strong> (ikon roda gigi)</li>
+              <li>Scroll ke <strong>Script properties</strong></li>
+              <li>Edit properti <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono">SUPABASE_SERVICE_KEY</code></li>
+              <li>Isi dengan <strong>Service Role Key</strong> dari project Supabase baru</li>
+              <li>Klik <strong>Save script properties</strong></li>
+            </ol>
+            <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-[10px] text-rose-500">
+              Service Role Key: <strong>Project Settings → API → service_role</strong> (bukan anon key!)
+            </div>
+          </div>
+        </TaskRow>
+
+        <TaskRow id="gas_sequence_fix">
+          <div className="space-y-1.5">
+            <p><strong>Fix Sequence Auto-Increment</strong> — Jalankan SQL ini di <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-orange-500 underline font-bold">SQL Editor</a> project baru untuk mencegah <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">duplicate key</code> error:</p>
+            <div className="relative">
+              <div className="bg-slate-950 text-emerald-400 p-3 rounded-lg font-mono text-[10px] space-y-0.5 overflow-auto">
+                {[
+                  "peminjaman", "perbaikan_tickets", "qc_reports",
+                  "master_shift", "roster_shift", "presensi", "lembur"
+                ].map(t => (
+                  <div key={t}>SELECT setval(pg_get_serial_sequence('{t}', 'id'), COALESCE(MAX(id), 1)) FROM {t};</div>
+                ))}
+              </div>
+              <div className="absolute top-2 right-2">
+                <CopyBtn
+                  id="seq_fix"
+                  text={[
+                    "peminjaman", "perbaikan_tickets", "qc_reports",
+                    "master_shift", "roster_shift", "presensi", "lembur"
+                  ].map(t => `SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE(MAX(id), 1)) FROM ${t};`).join('\n')}
+                  label="Salin SQL"
+                />
+              </div>
+            </div>
+          </div>
+        </TaskRow>
+      </div>
+
+      {/* ── BAGIAN B: VERCEL ─────────────────────────────────────────── */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+        <SectionTitle
+          icon={<Globe className="w-3.5 h-3.5" />}
+          title="B — Vercel (Deployment Produksi)"
+          color="text-blue-500"
+        />
+
+        <TaskRow id="vercel_env">
+          <div className="space-y-1.5">
+            <p><strong>Update Environment Variables di Vercel</strong> agar seluruh tim otomatis menggunakan DB baru:</p>
+            <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-500 dark:text-slate-400">
+              <li>Buka <a href="https://vercel.com" target="_blank" rel="noreferrer" className="text-blue-500 underline font-bold">vercel.com</a> → pilih project WMS Inventory</li>
+              <li>Tab <strong>Settings → Environment Variables</strong></li>
+              <li>Update nilai kedua variabel berikut:</li>
+            </ol>
+            <div className="relative">
+              <div className="bg-slate-950 text-emerald-400 p-3 rounded-lg font-mono text-[10px] space-y-0.5">
+                <div>VITE_SUPABASE_URL={newUrl}</div>
+                <div>VITE_SUPABASE_ANON_KEY={newKey}</div>
+              </div>
+              <div className="absolute top-2 right-2">
+                <CopyBtn
+                  id="vercel_env_copy"
+                  text={`VITE_SUPABASE_URL=${newUrl}\nVITE_SUPABASE_ANON_KEY=${newKey}`}
+                  label="Salin"
+                />
+              </div>
+            </div>
+            <p className="text-slate-500 dark:text-slate-400">Kemudian klik tab <strong>Deployments</strong> → klik kanan deployment terakhir → <strong>Redeploy</strong>.</p>
+          </div>
+        </TaskRow>
+      </div>
+
+      {/* ── BAGIAN C: GITHUB SECRETS ─────────────────────────────────── */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+        <SectionTitle
+          icon={<Github className="w-3.5 h-3.5" />}
+          title="C — GitHub Secrets (CI/CD Build)"
+          color="text-slate-700 dark:text-slate-300"
+        />
+
+        <TaskRow id="github_secrets">
+          <div className="space-y-1.5">
+            <p><strong>Update GitHub Repository Secrets</strong> agar build GitHub Actions menggunakan URL baru:</p>
+            <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-500 dark:text-slate-400">
+              <li>Buka repo GitHub WMS → tab <strong>Settings</strong></li>
+              <li>Menu kiri: <strong>Secrets and variables → Actions</strong></li>
+              <li>Update / tambahkan dua secrets:</li>
+            </ol>
+            <div className="bg-slate-950 text-emerald-400 p-3 rounded-lg font-mono text-[10px] space-y-0.5">
+              <div><span className="text-slate-500">Secret Name:</span> VITE_SUPABASE_URL</div>
+              <div><span className="text-slate-500">Secret Value:</span> {newUrl}</div>
+              <div className="pt-1"><span className="text-slate-500">Secret Name:</span> VITE_SUPABASE_ANON_KEY</div>
+              <div><span className="text-slate-500">Secret Value:</span> {newKey.substring(0, 40)}...</div>
+            </div>
+            <p className="text-slate-500 dark:text-slate-400">Trigger build baru: lakukan <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">git push</code> atau klik <strong>Actions → Re-run workflow</strong>.</p>
+          </div>
+        </TaskRow>
+      </div>
+
+      {/* ── BAGIAN D: FONNTE ──────────────────────────────────────────── */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+        <SectionTitle
+          icon={<Wifi className="w-3.5 h-3.5" />}
+          title="D — Fonnte Webhook (WhatsApp)"
+          color="text-green-600 dark:text-green-400"
+        />
+
+        <TaskRow id="fonnte_webhook">
+          <div className="space-y-1.5">
+            <p><strong>Verifikasi Webhook Fonnte</strong> masih mengarah ke GAS Web App URL yang aktif.</p>
+            <p className="text-slate-500 dark:text-slate-400">Fonnte tidak perlu diubah jika GAS Web App URL tidak berubah. Cukup verifikasi:</p>
+            <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-500 dark:text-slate-400">
+              <li>Buka <a href="https://fonnte.com/dashboard" target="_blank" rel="noreferrer" className="text-green-600 dark:text-green-400 underline font-bold">Dashboard Fonnte</a> → pilih <strong>Device</strong></li>
+              <li>Cek <strong>Webhook URL</strong> — harus berisi GAS Web App URL aktif</li>
+              <li>Format: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">https://script.google.com/macros/s/XXXX/exec</code></li>
+              <li>Klik <strong>Test Webhook</strong> untuk pastikan response OK</li>
+            </ol>
+            <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] text-amber-600 dark:text-amber-400">
+              <strong>Cara cek GAS Web App URL aktif:</strong> GAS Editor → Deploy → Manage Deployments → salin URL dari deployment aktif
+            </div>
+          </div>
+        </TaskRow>
+
+        <TaskRow id="fonnte_test">
+          <div>
+            <p><strong>Test scan WA</strong> — Minta satu operator kirim pesan scan dari WhatsApp (misal: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">#IN [barcode]</code>).</p>
+            <p className="text-slate-500 dark:text-slate-400 mt-1">Cek di Supabase Dashboard → Table Editor → <strong>log_produk</strong> apakah baris baru muncul di project baru.</p>
+          </div>
+        </TaskRow>
+      </div>
+
+      {/* ── BAGIAN E: KODE SUMBER & PENGGUNA ─────────────────────────── */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+        <SectionTitle
+          icon={<Terminal className="w-3.5 h-3.5" />}
+          title="E — Kode Sumber & Instruksi Pengguna"
+          color="text-violet-500"
+        />
+
+        <TaskRow id="source_code">
+          <div className="space-y-1.5">
+            <p><strong>Update DEFAULT_SUPABASE_URL di supabase.ts</strong> — Jika belum dilakukan sebelumnya:</p>
+            <div className="bg-slate-950 text-emerald-400 p-2 rounded-lg font-mono text-[10px] space-y-0.5">
+              <div><span className="text-slate-500">// src/services/supabase.ts</span></div>
+              <div>export const DEFAULT_SUPABASE_URL = <span className="text-amber-400">"{newUrl}"</span>;</div>
+              <div>export const DEFAULT_SUPABASE_ANON_KEY = <span className="text-amber-400">"{newKey.substring(0, 30)}..."</span>;</div>
+            </div>
+            <p className="text-slate-500 dark:text-slate-400">Lakukan <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">git push</code> setelah perubahan untuk trigger deploy otomatis.</p>
+          </div>
+        </TaskRow>
+
+        <TaskRow id="clear_cache">
+          <div>
+            <p><strong>Instruksikan semua pengguna untuk Clear Cache / Local Storage</strong> di browser mereka:</p>
+            <div className="mt-1.5 p-2.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] italic text-slate-600 dark:text-slate-300">
+              "Mohon tutup dan buka kembali aplikasi WMS. Jika masih ada masalah login atau data tidak muncul, buka F12 → Console → ketik <strong>localStorage.clear()</strong> → Enter → Reload halaman."
+            </div>
+          </div>
+        </TaskRow>
+      </div>
+
+      {/* ── TROUBLESHOOTING ─────────────────────────────────────────── */}
+      <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+        <SectionTitle
+          icon={<HelpCircle className="w-3.5 h-3.5" />}
+          title="FAQ & Troubleshooting"
+          color="text-slate-600 dark:text-slate-400"
+        />
+
+        <div className="space-y-2">
+          {([
+            {
+              q: 'App terbuka tapi data kosong / loading terus',
+              a: 'Browser masih pakai URL lama dari localStorage. Instruksikan user buka F12 → Console → ketik: localStorage.clear() → Enter → reload.',
+            },
+            {
+              q: 'Scan WA masuk ke Fonnte tapi tidak masuk ke Supabase baru',
+              a: 'GAS Script Properties SUPABASE_SERVICE_KEY belum diperbarui. Lakukan langkah A.2 di atas.',
+            },
+            {
+              q: 'Error "duplicate key value" saat scan IN pertama kali',
+              a: 'Sequence BIGINT belum di-reset. Jalankan SQL Fix Sequence di langkah A.3.',
+            },
+            {
+              q: 'GAS deploy gagal / error "Token expired"',
+              a: 'Token clasp kadaluarsa. Jalankan di terminal: npx @google/clasp login',
+            },
+            {
+              q: 'Realtime tidak berfungsi (data tidak update otomatis)',
+              a: 'Tabel belum ditambahkan ke Realtime publication. Jalankan: ALTER PUBLICATION supabase_realtime ADD TABLE public.log_produk; (dan tabel lainnya)',
+            },
+          ]).map((item, i) => (
+            <div key={i} className="p-3 bg-white dark:bg-black border border-slate-200 dark:border-slate-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <TriangleAlert className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.q}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{item.a}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── FOOTER ──────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+        <div className="flex items-center gap-2 text-xs">
+          <BookOpen className="w-4 h-4 text-emerald-500 shrink-0" />
+          <span className="text-slate-700 dark:text-slate-300">
+            Panduan lengkap tersedia di: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">docs/PANDUAN_MIGRASI_SUPABASE.md</code>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setChecked({})}
+          className="text-xs text-slate-500 hover:text-rose-500 hover:underline transition-colors"
+        >
+          Reset Checklist
+        </button>
+      </div>
     </div>
   );
 };
