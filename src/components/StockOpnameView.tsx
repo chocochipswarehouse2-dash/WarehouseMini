@@ -29,7 +29,7 @@ import {
   getSupabaseClient,
 } from '../services/supabase';
 import { hasPermission, isSuperadmin } from '../services/permissions';
-import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
+import { partialSearchMatch, cleanProductName, resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
 
@@ -60,6 +60,16 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const [diffFilter, setDiffFilter] = useState<'ALL' | 'DIFF' | 'PLUS' | 'MINUS' | 'ZERO'>('ALL');
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([]);
   const [displayLimit, setDisplayLimit] = useState(30);
+
+  const catalogMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    for (const p of productCatalog || []) {
+      if (p && p.k) {
+        map.set(p.k.toUpperCase().trim(), p);
+      }
+    }
+    return map;
+  }, [productCatalog]);
 
   // In-app confirmation modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -753,17 +763,26 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
 
                         {/* SKU & Product */}
                         <td className="py-3 px-2 max-w-xs">
-                          <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
-                            {item.sku}
-                            {item.size && item.size !== '-' && (
-                              <span className="text-[10px] px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300 font-sans">
-                                {item.size}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                            {cleanProductName(productCatalog?.find(p => p.k.toUpperCase() === item.sku.toUpperCase())?.p || item.nama_produk || '-')}
-                          </div>
+                          {(() => {
+                            const itemCat = catalogMap.get((item.sku || '').toUpperCase().trim());
+                            const displayName = resolveProductName(item.sku, item.nama_produk, itemCat);
+                            const displaySize = resolveProductDisplaySize(item.sku, item.size, itemCat?.s);
+                            return (
+                              <>
+                                <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
+                                  {item.sku}
+                                  {displaySize && (
+                                    <span className="text-[10px] px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300 font-sans">
+                                      {displaySize}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate" title={displayName}>
+                                  {displayName}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </td>
 
                         {/* Location */}

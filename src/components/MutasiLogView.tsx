@@ -46,7 +46,7 @@ import {
 import { globalRealtimeStore } from '../services/store';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { hasPermission, isSuperadmin } from '../services/permissions';
-import { partialSearchMatch , cleanProductName } from '../utils/sortUtils';
+import { partialSearchMatch, cleanProductName, resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
 import { formatOperatorWithPersonName } from '../utils/userResolver';
 
 interface MutasiLogViewProps {
@@ -245,11 +245,16 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
       // Search Query (Multi-keyword partial matching across all fields)
       if (deferredSearch.trim()) {
+        const itemCat = catalogMap.get((log.sku || '').toUpperCase().trim());
+        const resolvedName = resolveProductName(log.sku, log.nama_produk, itemCat);
+        const resolvedSize = resolveProductDisplaySize(log.sku, log.size, itemCat?.s) || '';
         return partialSearchMatch(
           deferredSearch,
           log.sku,
           log.nama_produk,
+          resolvedName,
           log.size,
+          resolvedSize,
           log.invoice,
           log.lokasi,
           log.operator,
@@ -957,21 +962,29 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                         </div>
 
                         {/* 3. SKU & Product Name */}
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <span className="font-mono font-black text-sm text-slate-900 dark:text-slate-100 tracking-tight select-all">
-                              {item.sku}
-                            </span>
-                            {item.size && item.size !== '-' && item.size !== 'Default' && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                Size: {item.size}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 leading-snug line-clamp-2">
-                            {cleanProductName(productCatalog?.find(p => p.k.toUpperCase() === item.sku.toUpperCase())?.p || item.nama_produk || '-')}
-                          </p>
-                        </div>
+                        {/* 3. SKU & Product Name */}
+                        {(() => {
+                          const itemCat = catalogMap.get((item.sku || '').toUpperCase().trim());
+                          const displayName = resolveProductName(item.sku, item.nama_produk, itemCat);
+                          const displaySize = resolveProductDisplaySize(item.sku, item.size, itemCat?.s);
+                          return (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="font-mono font-black text-sm text-slate-900 dark:text-slate-100 tracking-tight select-all">
+                                  {item.sku}
+                                </span>
+                                {displaySize && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    Size: {displaySize}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 leading-snug line-clamp-2" title={displayName}>
+                                {displayName}
+                              </p>
+                            </div>
+                          );
+                        })()}
 
                         {/* 4. Two-Column Metric Grid: Location & Qty */}
                         <div className="grid grid-cols-2 gap-2 pt-0.5">
@@ -1108,17 +1121,26 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
                           {/* SKU & Product */}
                           <td className="py-3 px-2 max-w-xs">
-                            <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
-                              {item.sku}
-                              {item.size && item.size !== '-' && item.size !== 'Default' && (
-                                <span className="text-[10px] px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300 font-sans">
-                                  {item.size}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                              {cleanProductName(productCatalog?.find(p => p.k.toUpperCase() === item.sku.toUpperCase())?.p || item.nama_produk || '-')}
-                            </div>
+                            {(() => {
+                              const itemCat = catalogMap.get((item.sku || '').toUpperCase().trim());
+                              const displayName = resolveProductName(item.sku, item.nama_produk, itemCat);
+                              const displaySize = resolveProductDisplaySize(item.sku, item.size, itemCat?.s);
+                              return (
+                                <>
+                                  <div className="font-bold text-slate-900 dark:text-slate-100 font-mono flex items-center gap-1.5">
+                                    {item.sku}
+                                    {displaySize && (
+                                      <span className="text-[10px] px-1.5 py-0.2 bg-slate-200/70 dark:bg-slate-700 rounded text-slate-700 dark:text-slate-300 font-sans">
+                                        {displaySize}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate" title={displayName}>
+                                    {displayName}
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </td>
 
                           {/* Location & Area */}

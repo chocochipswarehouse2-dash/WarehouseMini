@@ -164,3 +164,93 @@ export function cleanProductName(name: string): string {
   }
   return name.trim();
 }
+
+/**
+ * Resolves the most accurate product name by checking the catalog and existing record name,
+ * ensuring placeholder names (which are identical to SKU) never overwrite a real product name.
+ */
+export function resolveProductName(
+  sku?: string,
+  recordName?: string,
+  catalogItem?: { p?: string; nama_produk?: string; n?: string; [key: string]: any }
+): string {
+  const cleanSku = (sku || '').trim().toUpperCase();
+  const cleanRecordName = cleanProductName((recordName || '').trim());
+  const isRecordNameValid =
+    cleanRecordName &&
+    cleanRecordName.toUpperCase() !== cleanSku &&
+    cleanRecordName.toUpperCase().replace(/\s+/g, '') !== cleanSku.replace(/\s+/g, '');
+
+  const catName = cleanProductName(
+    (catalogItem?.p || catalogItem?.nama_produk || catalogItem?.n || (catalogItem as any)?.nama || '').trim()
+  );
+  const isCatNameValid =
+    catName &&
+    catName.toUpperCase() !== cleanSku &&
+    catName.toUpperCase().replace(/\s+/g, '') !== cleanSku.replace(/\s+/g, '');
+
+  // 1. Prioritize catalog name if valid and not equal to SKU
+  if (isCatNameValid) return catName;
+  // 2. Prioritize record name if valid and not equal to SKU
+  if (isRecordNameValid) return cleanRecordName;
+
+  // 3. Fallback to localStorage product cache if available in browser
+  if (cleanSku && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const cacheRaw = localStorage.getItem('wms_product_cache');
+      if (cacheRaw) {
+        const cacheList = JSON.parse(cacheRaw);
+        if (Array.isArray(cacheList)) {
+          const found = cacheList.find(
+            (p: any) =>
+              (p.k && p.k.trim().toUpperCase() === cleanSku) ||
+              (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
+          );
+          const foundName = cleanProductName(
+            (found?.p || found?.nama_produk || found?.n || (found as any)?.nama || '').trim()
+          );
+          if (foundName && foundName.toUpperCase() !== cleanSku) {
+            return foundName;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return cleanRecordName || cleanSku;
+}
+
+/**
+ * Resolves the display size for an item:
+ * 1. Explicit size from record (if not '-' or 'Default')
+ * 2. Size from catalog
+ * 3. Extracted size from SKU
+ * 4. 'All Size' if explicitly marked as 'Default' or no size variant
+ */
+export function resolveProductDisplaySize(
+  sku?: string,
+  recordSize?: string,
+  catalogSize?: string
+): string | null {
+  const rawSize = (recordSize || '').trim();
+  if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT') {
+    return rawSize;
+  }
+
+  const cleanCatSize = (catalogSize || '').trim();
+  if (cleanCatSize && cleanCatSize !== '-' && cleanCatSize.toUpperCase() !== 'DEFAULT') {
+    return cleanCatSize;
+  }
+
+  const cleanSku = (sku || '').trim().toUpperCase();
+  const fromSku = extractSizeFromSku(cleanSku);
+  if (fromSku && fromSku !== '-') {
+    return fromSku;
+  }
+
+  if (rawSize.toUpperCase() === 'DEFAULT') {
+    return 'All Size';
+  }
+
+  return null;
+}

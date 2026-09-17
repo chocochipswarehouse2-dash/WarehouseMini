@@ -2711,14 +2711,15 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
         let item = productsMap.get(sku);
         if (!item) {
           // If a product has physical stock but is missing in master_produk, create a placeholder
+          const detectedSize = extractSizeFromSku(sku);
           item = {
             k: sku,
             sku: sku,
-            p: sku,
-            nama_produk: sku,
+            p: '',
+            nama_produk: '',
             category: 'Uncategorized',
-            s: '',
-            size: '',
+            s: detectedSize !== '-' ? detectedSize : '',
+            size: detectedSize !== '-' ? detectedSize : '',
             lokasi: '',
             price: 0,
             f: {},
