@@ -7,7 +7,7 @@ import { ProductItem, StockRealtimeItem } from '../types';
 import { isDummyProduct } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -39,6 +39,16 @@ export async function getLocalDb(): Promise<IDBDatabase> {
     request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;
       const oldVersion = event.oldVersion;
+
+      // v3: Clear stale cache from old Supabase DB — delete and recreate products & inventory_stocks
+      if (oldVersion < 3) {
+        if (db.objectStoreNames.contains('products')) {
+          db.deleteObjectStore('products');
+        }
+        if (db.objectStoreNames.contains('inventory_stocks')) {
+          db.deleteObjectStore('inventory_stocks');
+        }
+      }
 
       // 1. Products Store: Keyed by uppercase SKU ('k')
       if (!db.objectStoreNames.contains('products')) {
