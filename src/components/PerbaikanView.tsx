@@ -678,7 +678,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       .reduce((sum, t) => sum + (t.qty || 1), 0);
   }, [filteredTickets, selectedTicketNos]);
 
-  // Handle Tarik Stok Fisik Area Perbaikan (CC, PMK, DF)
+  // Handle Tarik Stok Fisik Area Perbaikan (CC = Cuci, PMK = Permak, DF = Defect)
+  // PRINSIP WMS: JUMLAH TIKET = JUMLAH STOK FISIK (1 tiket per 1 pcs)
   const handleSyncPhysicalStock = async () => {
     setIsLoadingDb(true);
     try {
@@ -697,15 +698,15 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       const physicalSource = (freshPhysical && freshPhysical.length > 0) ? freshPhysical : stokFisikList;
       const ticketsSource = (freshTickets && freshTickets.length > 0) ? freshTickets : tickets;
 
-      // Hitung item area perbaikan secara langsung dari data stok fisik terbaru
-      const currentRepairItems: Array<{
+      // 1. Petakan seluruh stok fisik di rak perbaikan: DF -> DEFECT, CC -> CUCI, PMK -> PERMAK
+      const physicalMap = new Map<string, {
         sku: string;
         nama: string;
         size?: string;
         lokasi: string;
-        qty: number;
+        targetQty: number;
         tahap: 'CUCI' | 'PERMAK' | 'DEFECT';
-      }> = [];
+      }>();
 
       physicalSource.forEach((s) => {
         const loc = String(s.lokasi || '').trim().toUpperCase();
@@ -724,23 +725,28 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
         if (tahap) {
           const skuKey = String(s.sku || '').trim().toUpperCase();
+          const key = `${tahap}||${loc}||${skuKey}`;
           const namaFromCatalog = catalogSkuMap.get(skuKey);
           const rawNama = String(s.nama_produk || '').trim();
           const nama = (rawNama && rawNama.toUpperCase() !== skuKey)
             ? rawNama
             : (namaFromCatalog?.p || (namaFromCatalog?.nama_produk as string) || skuKey);
-          currentRepairItems.push({
-            sku: s.sku,
-            nama,
-            size: s.size,
-            lokasi: s.lokasi,
-            qty: q,
-            tahap,
-          });
+
+          if (!physicalMap.has(key)) {
+            physicalMap.set(key, {
+              sku: s.sku,
+              nama,
+              size: s.size || 'Default',
+              lokasi: s.lokasi,
+              targetQty: 0,
+              tahap,
+            });
+          }
+          physicalMap.get(key)!.targetQty += q;
         }
       });
 
-      if (currentRepairItems.length === 0) {
+      if (physicalMap.size === 0) {
         onShowToast(
           'Tidak ditemukan produk di rak CC, PMK, atau DF pada data stok fisik saat ini.',
           'info'
@@ -748,87 +754,145 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         return;
       }
 
+      // 2. Kelompokkan tiket aktif saat ini
+      const activeTicketsByKey = new Map<string, PerbaikanTicket[]>();
+      const FINISHED_STATUSES = new Set(['SELESAI_GRADE_A', 'SELESAI_DEFECT_SALE', 'SELESAI_SCRAP']);
+
+      ticketsSource.forEach((t) => {
+        if (FINISHED_STATUSES.has(t.status_pengerjaan)) return;
+        const tahap = (t.tahap || '').trim().toUpperCase();
+        if (!['DEFECT', 'CUCI', 'PERMAK'].includes(t.tahap)) return;
+        const loc = (t.lokasi_sekarang || '').trim().toUpperCase();
+        const sku = (t.sku || '').trim().toUpperCase();
+        const key = `${tahap}||${loc}||${sku}`;
+        if (!activeTicketsByKey.has(key)) activeTicketsByKey.set(key, []);
+        activeTicketsByKey.get(key)!.push(t);
+      });
+
       let addedCount = 0;
-      const updatedTickets = [...ticketsSource];
+      let closedExcessCount = 0;
+      const finalTickets: PerbaikanTicket[] = [];
+      const ticketsToCloseIds: Array<number | string> = [];
+      const ticketsToInsert: PerbaikanTicket[] = [];
 
-      currentRepairItems.forEach((item, idx) => {
-        // Hitung tiket yang sudah ada untuk SKU, lokasi, dan tahap ini
-        const existingCount = updatedTickets.filter(
-          (t) =>
-            t.sku.toUpperCase() === item.sku.toUpperCase() &&
-            t.lokasi_sekarang.toUpperCase() === item.lokasi.toUpperCase() &&
-            t.tahap === item.tahap
-        ).length;
+      // 3. Tangani tiket aktif yang ada: simpan sesuai targetQty, tutup jika berlebih atau sudah tidak ada fisik
+      activeTicketsByKey.forEach((tList, key) => {
+        const target = physicalMap.get(key);
+        const targetQty = target ? target.targetQty : 0;
 
-        // Jumlah tiket yang kurang agar persis sama dengan jumlah fisik barang
-        const missingCount = Math.max(0, item.qty - existingCount);
+        if (targetQty === 0) {
+          // Tidak ada stok fisik lagi di rak ini -> tutup tiket
+          tList.forEach((t) => {
+            ticketsToCloseIds.push(t.id);
+            closedExcessCount++;
+          });
+        } else if (tList.length > targetQty) {
+          // Tiket lebih banyak dari stok fisik -> simpan targetQty tiket terbaik, tutup sisanya
+          const sorted = [...tList].sort((a, b) => {
+            const aHasPhoto = (a.foto_urls && a.foto_urls.length > 0) ? 1 : 0;
+            const bHasPhoto = (b.foto_urls && b.foto_urls.length > 0) ? 1 : 0;
+            if (bHasPhoto !== aHasPhoto) return bHasPhoto - aHasPhoto;
+            return (Number(b.id) || 0) - (Number(a.id) || 0);
+          });
+          const kept = sorted.slice(0, targetQty);
+          finalTickets.push(...kept);
+          const excess = sorted.slice(targetQty);
+          excess.forEach((t) => {
+            ticketsToCloseIds.push(t.id);
+            closedExcessCount++;
+          });
+        } else {
+          // Tiket <= targetQty, simpan semua yang ada
+          finalTickets.push(...tList);
+        }
+      });
+
+      // 4. Buat tiket baru jika targetQty > jumlah tiket aktif yang ada
+      const todayIsoDate = new Date().toISOString().slice(0, 10);
+      const todayStr = todayIsoDate.replace(/-/g, '');
+
+      physicalMap.forEach((target, key) => {
+        const existing = activeTicketsByKey.get(key) || [];
+        const existingCount = Math.min(existing.length, target.targetQty);
+        const missingCount = target.targetQty - existingCount;
 
         if (missingCount > 0) {
-          const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-          const prefix = item.tahap === 'CUCI' ? 'CC' : item.tahap === 'PERMAK' ? 'PMK' : 'DF';
-
+          const prefix = target.tahap === 'CUCI' ? 'CC' : target.tahap === 'PERMAK' ? 'PMK' : 'DF';
           for (let i = 0; i < missingCount; i++) {
             addedCount++;
-            const ticketRand = Math.floor(100 + Math.random() * 900);
-            const suffixIndex = existingCount + i + 1;
-            const ticketNo = `${prefix}-${todayStr}-${ticketRand}-${suffixIndex}`;
+            const uniqueRand = `${Date.now().toString().slice(-4)}${Math.floor(100 + Math.random() * 900)}`;
+            const ticketNo = `${prefix}-${todayStr}-${uniqueRand}-${existingCount + i + 1}`;
 
-            const newSyncedTicket: PerbaikanTicket = {
-              id: Date.now() + idx * 1000 + i,
+            const newTicket: PerbaikanTicket = {
+              id: Date.now() + Math.floor(Math.random() * 100000),
               ticket_no: ticketNo,
-              tanggal: new Date().toLocaleString('id-ID', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-              sku: item.sku,
-              nama_produk: item.nama,
-              size: item.size || 'Default',
+              tanggal: new Date().toISOString(),
+              sku: target.sku,
+              nama_produk: target.nama,
+              size: target.size || 'Default',
               qty: 1, // Aturan WMS: 1 Produk = 1 Tiket
-              lokasi_asal: item.lokasi,
-              lokasi_sekarang: item.lokasi,
+              lokasi_asal: target.lokasi,
+              lokasi_sekarang: target.lokasi,
               is_already_in_repair: true,
               sumber_barang: 'Gudang Fisik',
               kategori_rusak:
-                item.tahap === 'CUCI'
+                target.tahap === 'CUCI'
                   ? 'Noda / Kotor'
-                  : item.tahap === 'PERMAK'
+                  : target.tahap === 'PERMAK'
                   ? 'Jahitan Rusak'
                   : 'Cacat Kain / Warna',
-              detail_kerusakan: `Stok fisik terdeteksi di rak ${item.lokasi}. Silakan lengkapi foto dan keterangan via tombol Edit Data & Foto.`,
+              detail_kerusakan: `Stok fisik terdeteksi di rak ${target.lokasi} (1 tiket per 1 pcs).`,
               foto_urls: [],
-              tahap: item.tahap,
-              status_pengerjaan: item.tahap === 'DEFECT' ? 'GAGAL' : 'SEDANG_PROSES',
+              tahap: target.tahap,
+              status_pengerjaan: target.tahap === 'DEFECT' ? 'GAGAL' : 'SEDANG_PROSES',
               qc_pic: 'Stok Fisik Gudang',
-              qc_tanggal: new Date().toLocaleDateString('id-ID'),
-              qc_catatan: `Sinkronisasi otomatis dari data rak ${item.lokasi}`,
+              qc_tanggal: todayIsoDate,
+              qc_catatan: `Sinkronisasi 1:1 stok fisik rak ${target.lokasi}`,
               petugas_reparasi:
-                item.tahap === 'CUCI'
+                target.tahap === 'CUCI'
                   ? 'Laundry / Vendor Cuci'
-                  : item.tahap === 'PERMAK'
+                  : target.tahap === 'PERMAK'
                   ? 'Penjahit Gudang'
                   : undefined,
               operator_input: session?.name || getUserPersonName(session?.username) || 'System',
               created_at: new Date().toISOString(),
             };
 
-            updatedTickets.unshift(newSyncedTicket);
-            savePerbaikanTicketToSupabase(newSyncedTicket).catch(console.warn);
+            finalTickets.unshift(newTicket);
+            ticketsToInsert.push(newTicket);
           }
         }
       });
 
-      if (addedCount > 0) {
-        setTickets(updatedTickets);
+      // Tambahkan tiket non-perbaikan atau tiket arsip yang memang sudah selesai ke state
+      const otherTickets = ticketsSource.filter((t) => 
+        FINISHED_STATUSES.has(t.status_pengerjaan) || !['DEFECT', 'CUCI', 'PERMAK'].includes(t.tahap)
+      );
+      setTickets([...finalTickets, ...otherTickets]);
+
+      // Eksekusi update & insert ke Supabase di background
+      if (ticketsToCloseIds.length > 0) {
+        ticketsToCloseIds.forEach((id) => {
+          updatePerbaikanTicketInSupabase(
+            id,
+            { tahap: 'SELESAI_DEFECT_SALE', qc_catatan: 'Ditutup otomatis: Penyesuaian 1:1 stok fisik real' }
+          ).catch(console.warn);
+        });
+      }
+      if (ticketsToInsert.length > 0) {
+        ticketsToInsert.forEach((t) => {
+          savePerbaikanTicketToSupabase(t).catch(console.warn);
+        });
+      }
+
+      if (addedCount > 0 || closedExcessCount > 0) {
         playSuccessBeep();
         onShowToast(
-          `Berhasil menyinkronkan stok fisik: ${addedCount} tiket baru dibuat (1 tiket per pcs)!`,
+          `Sinkronisasi 1:1 selesai! (+${addedCount} tiket dibuat, -${closedExcessCount} duplikat ditutup). Jumlah tiket = jumlah stok fisik!`,
           'success'
         );
       } else {
-        onShowToast('Semua stok fisik rak CC, PMK, dan DF sudah lengkap tercatat di antrean (1 tiket per pcs).', 'info');
+        onShowToast('Jumlah tiket sudah sesuai 100% dengan stok fisik rak (1 tiket per pcs).', 'info');
       }
     } catch (e) {
       console.warn('Refresh physical stock error:', e);
@@ -3822,7 +3886,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             : null
         }
         initialLocationFilter={filterLokasi !== 'ALL' ? filterLokasi : 'ALL'}
-        allTickets={tickets}
+        allTickets={filteredTickets}
       />
 
       {/* 12. Modal Konfirmasi Hapus Tiket Defect & Perbaikan */}

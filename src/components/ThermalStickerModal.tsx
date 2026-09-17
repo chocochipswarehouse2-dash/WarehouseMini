@@ -169,13 +169,13 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
   const [qrMap, setQrMap] = useState<Record<string, string>>({});
   const [isGeneratingQr, setIsGeneratingQr] = useState<boolean>(false);
 
-  // Combined pool of available tickets for bulk selection (allow searching/filtering full pool)
+  // Combined pool of available tickets for bulk selection (prioritize filtered tickets from active view/rack)
   const rawTicketPool = useMemo(() => {
-    if (allTickets && allTickets.length > 0) return allTickets;
     if (tickets && tickets.length > 0) return tickets;
+    if (allTickets && allTickets.length > 0) return allTickets;
     if (ticket) return [ticket];
     return [];
-  }, [allTickets, tickets, ticket]);
+  }, [tickets, allTickets, ticket]);
 
   // Unique list of locations available in the pool
   const availableLocations = useMemo(() => {
