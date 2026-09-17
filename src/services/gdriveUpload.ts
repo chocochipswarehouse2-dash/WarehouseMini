@@ -124,13 +124,14 @@ export async function uploadImageToGdrive(
 
     const result = await response.json();
 
-    if (result.status === 'success' && result.fileId) {
+    if ((result.status === 'success' || result.success === true) && (result.fileId || result.id)) {
       // Format URL CDN langsung Google (sangat cepat, no-cookie, no egress Supabase)
-      const directCdnUrl = `https://lh3.googleusercontent.com/d/${result.fileId}`;
+      const fileId = result.fileId || result.id;
+      const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
       return {
         success: true,
         url: directCdnUrl,
-        fileId: result.fileId,
+        fileId: fileId,
       };
     } else {
       console.warn('GAS upload warning:', result.message || result);
@@ -212,11 +213,12 @@ export async function testGdriveConnection(
 
     const result = await response.json();
 
-    if (result.status === 'success' && result.fileId) {
+    if ((result.status === 'success' || result.success === true) && (result.fileId || result.id)) {
+      const fileId = result.fileId || result.id;
       return {
         success: true,
-        message: 'Koneksi Google Drive & GAS Berhasil! Siap menyimpan foto reject.',
-        fileId: result.fileId,
+        message: 'Koneksi ke Google Drive (Apps Script) berhasil.',
+        fileId: fileId,
       };
     } else {
       const errMsg = result.message || 'Error tidak diketahui dari GAS.';
