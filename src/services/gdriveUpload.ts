@@ -134,11 +134,12 @@ export async function uploadImageToGdrive(
         fileId: fileId,
       };
     } else {
-      console.warn('GAS upload warning:', result.message || result);
+      const errMsg = result.error || result.message || 'Gagal upload ke Google Drive';
+      console.warn('GAS upload warning:', errMsg);
       return {
         success: false,
         url: '', // STRICT NO-BASE64 FALLBACK
-        error: result.message || 'Gagal upload ke Google Drive',
+        error: errMsg,
       };
     }
   } catch (err: any) {
@@ -222,8 +223,8 @@ export async function testGdriveConnection(
         fileId: fileId,
       };
     } else {
-      const errMsg = result.message || 'Error tidak diketahui dari GAS.';
-      if (errMsg.includes('Access denied: DriveApp')) {
+      const errMsg = result.error || result.message || 'Error tidak diketahui dari GAS.';
+      if (errMsg.includes('Access denied: DriveApp') || errMsg.includes('DriveApp')) {
         return {
           success: false,
           message:

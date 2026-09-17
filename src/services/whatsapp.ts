@@ -5,6 +5,7 @@ export interface FonnteConfig {
   token: string;
   groupTarget: string;
   autoSendEnabled: boolean;
+  waWebhookGasUrl?: string;
 }
 
 export interface SendFonnteResult {
@@ -49,6 +50,7 @@ export function normalizeWhatsAppNumber(phone: string): string {
 export function getFonnteConfig(): FonnteConfig {
   const token = (localStorage.getItem('wms_fonnte_token') || '').trim();
   const groupTarget = (localStorage.getItem('wms_fonnte_group_target') || '').trim();
+  const waWebhookGasUrl = (localStorage.getItem('wms_wa_webhook_gas_url') || '').trim();
   const rawAuto = localStorage.getItem('wms_fonnte_auto_send');
   // Default aktif jika token sudah diisi
   const autoSendEnabled = rawAuto !== null ? rawAuto === 'true' : Boolean(token);
@@ -57,6 +59,7 @@ export function getFonnteConfig(): FonnteConfig {
     token,
     groupTarget,
     autoSendEnabled,
+    waWebhookGasUrl,
   };
 }
 
@@ -72,6 +75,9 @@ export function saveFonnteConfig(config: Partial<FonnteConfig>) {
   }
   if (config.autoSendEnabled !== undefined) {
     localStorage.setItem('wms_fonnte_auto_send', String(config.autoSendEnabled));
+  }
+  if (config.waWebhookGasUrl !== undefined) {
+    localStorage.setItem('wms_wa_webhook_gas_url', config.waWebhookGasUrl.trim());
   }
 }
 

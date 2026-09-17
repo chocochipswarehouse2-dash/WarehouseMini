@@ -631,6 +631,7 @@ export interface WmsSettings {
   fonnte_token?: string;
   fonnte_group_target?: string;
   fonnte_auto_send?: boolean;
+  wa_webhook_gas_url?: string;
   config_json?: string;
   roles?: Record<string, any>;
   agenda_categories?: Record<string, any>;

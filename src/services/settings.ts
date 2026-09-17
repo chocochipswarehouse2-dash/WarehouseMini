@@ -47,6 +47,7 @@ function initCacheFromLocalStorage(): WmsSettings {
     const fonnteToken = localStorage.getItem('wms_fonnte_token') || '';
     const fonnteTarget = localStorage.getItem('wms_fonnte_group_target') || '';
     const fonnteAuto = localStorage.getItem('wms_fonnte_auto_send') !== 'false';
+    const waWebhookGasUrl = localStorage.getItem('wms_wa_webhook_gas_url') || '';
     const rolesConfig = localStorage.getItem('wms_roles_config');
     let parsedRoles = null;
     if (rolesConfig) {
@@ -64,6 +65,7 @@ function initCacheFromLocalStorage(): WmsSettings {
       fonnte_token: fonnteToken,
       fonnte_group_target: fonnteTarget,
       fonnte_auto_send: fonnteAuto,
+      wa_webhook_gas_url: waWebhookGasUrl,
       roles: parsedRoles,
     };
   } catch {
@@ -72,9 +74,20 @@ function initCacheFromLocalStorage(): WmsSettings {
       manual_shipment_gas_url: DEFAULT_MANUAL_SHIPMENT_GAS_URL,
       gdrive_gas_url: DEFAULT_GDRIVE_GAS_URL,
       gdrive_folder_url: DEFAULT_GDRIVE_FOLDER_URL,
+      wa_webhook_gas_url: '',
     };
   }
   return cachedSettings;
+}
+
+/**
+ * Ambil endpoint GAS Webhook WA yang sedang aktif
+ */
+export function getStoredWaWebhookGasUrl(): string {
+  if (cachedSettings?.wa_webhook_gas_url) return cachedSettings.wa_webhook_gas_url;
+  return (
+    localStorage.getItem('wms_wa_webhook_gas_url') || ''
+  );
 }
 
 /**
@@ -186,6 +199,9 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     if (merged.fonnte_auto_send !== undefined) {
       localStorage.setItem('wms_fonnte_auto_send', String(merged.fonnte_auto_send));
     }
+    if (merged.wa_webhook_gas_url !== undefined) {
+      localStorage.setItem('wms_wa_webhook_gas_url', merged.wa_webhook_gas_url);
+    }
   } catch {}
 
   // Dispatch event agar seluruh UI bereaksi seketika
@@ -234,6 +250,7 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           fonnte_token: row1.fonnte_token || '',
           fonnte_group_target: row1.fonnte_group_target || '',
           fonnte_auto_send: row1.fonnte_auto_send !== undefined ? row1.fonnte_auto_send : true,
+          wa_webhook_gas_url: row1.wa_webhook_gas_url || gasConfig.wa_webhook_gas_url || '',
           gas_endpoint: row1.gas_endpoint || gasConfig.gas_endpoint || '',
           manual_shipment_gas_url: row1.manual_shipment_gas_url || gasConfig.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
           gdrive_gas_url: row1.gdrive_gas_url || gasConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
@@ -277,6 +294,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
       manual_shipment_gas_url: updated.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL,
       gdrive_gas_url: updated.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
       gdrive_folder_url: updated.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
+      wa_webhook_gas_url: updated.wa_webhook_gas_url || '',
       roles: updated.roles || null,
       agenda_categories: updated.agenda_categories || null,
     };
@@ -287,6 +305,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
         fonnte_token: updated.fonnte_token || '',
         fonnte_group_target: updated.fonnte_group_target || '',
         fonnte_auto_send: updated.fonnte_auto_send !== undefined ? updated.fonnte_auto_send : true,
+        wa_webhook_gas_url: updated.wa_webhook_gas_url || '',
         gas_endpoint: updated.gas_endpoint || '',
         manual_shipment_gas_url: updated.manual_shipment_gas_url || '',
         gdrive_gas_url: updated.gdrive_gas_url || '',

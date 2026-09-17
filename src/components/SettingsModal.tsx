@@ -9,6 +9,8 @@ import {
   Sliders,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
+  Activity,
   RotateCcw,
   Save, Send,
   Radio,
@@ -159,7 +161,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [fonnteToken, setFonnteToken] = useState<string>('');
   const [fonnteGroupTarget, setFonnteGroupTarget] = useState<string>('');
   const [fonnteAutoSend, setFonnteAutoSend] = useState<boolean>(true);
+  const [waWebhookGasUrl, setWaWebhookGasUrl] = useState<string>('');
   const [isTestingWa, setIsTestingWa] = useState<boolean>(false);
+  const [isTestingWaWebhook, setIsTestingWaWebhook] = useState<boolean>(false);
+  const [waWebhookStatus, setWaWebhookStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [waWebhookStatusMsg, setWaWebhookStatusMsg] = useState<string>('');
 
   // Outlets Management State
   const [outletList, setOutletList] = useState<{ id?: string; nama: string; fulfillment: string }[]>([]);
@@ -284,6 +290,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
       setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
       setFonnteAutoSend(localStorage.getItem('wms_fonnte_auto_send') !== 'false');
+      setWaWebhookGasUrl(localStorage.getItem('wms_wa_webhook_gas_url') || '');
 
       // Load unified WMS settings from Supabase (shared across all users)
       fetchWmsSettings(true).then((settings) => {
@@ -305,6 +312,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           }
           if (settings.fonnte_auto_send !== undefined) {
             setFonnteAutoSend(settings.fonnte_auto_send);
+          }
+          if (settings.wa_webhook_gas_url !== undefined) {
+            setWaWebhookGasUrl(settings.wa_webhook_gas_url);
           }
         }
       }).catch(err => {
@@ -433,23 +443,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem('wms_fonnte_token', fonnteToken.trim());
     localStorage.setItem('wms_fonnte_group_target', fonnteGroupTarget.trim());
     localStorage.setItem('wms_fonnte_auto_send', fonnteAutoSend ? 'true' : 'false');
+    localStorage.setItem('wms_wa_webhook_gas_url', waWebhookGasUrl.trim());
     
     try {
       const { saveWmsSettings } = await import('../services/settings');
       const success = await saveWmsSettings({
         fonnte_token: fonnteToken.trim(),
         fonnte_group_target: fonnteGroupTarget.trim(),
-        fonnte_auto_send: fonnteAutoSend
+        fonnte_auto_send: fonnteAutoSend,
+        wa_webhook_gas_url: waWebhookGasUrl.trim(),
       });
       
       if (success) {
-        onNotify('Konfigurasi WhatsApp Fonnte berhasil disimpan global!', 'success');
+        onNotify('Konfigurasi WhatsApp & Webhook berhasil disimpan global!', 'success');
         playSuccessBeep();
       } else {
         onNotify('Tersimpan di lokal, tapi gagal sinkron ke database.', 'warning');
       }
     } catch (e) {
       onNotify('Tersimpan di lokal. Gagal menyimpan ke cloud.', 'warning');
+    }
+  };
+
+  const handleTestWaWebhook = async () => {
+    if (!waWebhookGasUrl.trim()) {
+      onNotify('URL Webhook WA (GAS) belum diisi!', 'warning');
+      return;
+    }
+
+    setIsTestingWaWebhook(true);
+    setWaWebhookStatus('idle');
+    setWaWebhookStatusMsg('');
+
+    try {
+      // Test simulated payload (ping/test scan)
+      const res = await fetch(waWebhookGasUrl.trim(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify({
+          sender: '6280000000000',
+          pushname: 'Tester System Webhook',
+          message: 'PING TEST WEBHOOK',
+        }),
+      });
+
+      const data = await res.json();
+      if (data && (data.success !== false || res.ok)) {
+        setWaWebhookStatus('success');
+        setWaWebhookStatusMsg('URL Webhook aktif & merespon dengan baik (' + (data.message || 'OK') + ')');
+        playSuccessBeep();
+        onNotify('Webhook WA berhasil terhubung!', 'success');
+      } else {
+        throw new Error(data.error || data.message || 'Webhook mengembalikan status error');
+      }
+    } catch (err: unknown) {
+      console.warn('Webhook test failed:', err);
+      setWaWebhookStatus('error');
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi URL Webhook.';
+      setWaWebhookStatusMsg(msg);
+      playErrorBeep();
+      onNotify(`Koneksi Webhook gagal: ${msg}`, 'error');
+    } finally {
+      setIsTestingWaWebhook(false);
     }
   };
 
@@ -1834,10 +1891,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div>
                       <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                         <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current text-primary-500"><path d="M7.71,9.79l-4,6.93h12.56l4-6.93H7.71z M10.49,11.39h6.98l-2.26,3.93h-6.98L10.49,11.39z M13.71,8.39l-4,6.93L5.71,15.3l4-6.93H13.71z M16.49,10l-2.26,3.93l-4-6.93l2.26-3.93L16.49,10z"/></svg>
-                        Google Drive Storage (Foto Reject QC)
+                        Google Drive Cloud Storage (Penerimaan Produksi & QC)
                       </label>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Foto reject otomatis diunggah ke Google Drive, menghemat ruang Supabase dan lebih tersentralisasi.
+                        Foto barang masuk Penerimaan Produksi & Foto Reject QC otomatis diunggah ke Google Drive (menghemat kuota Supabase).
                       </p>
                     </div>
 
@@ -2438,6 +2495,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <p className="text-[10px] text-slate-500 mt-1">
                     Nomor WhatsApp grup gudang untuk notifikasi Peminjaman/Picking List (Gunakan ID Grup jika mengirim ke grup Fonnte).
                   </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      URL Webhook Pesan Masuk (Google Apps Script)
+                    </label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      Incoming Scan WA
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={waWebhookGasUrl}
+                      onChange={(e) => {
+                        setWaWebhookGasUrl(e.target.value);
+                        setWaWebhookStatus('idle');
+                      }}
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTestWaWebhook}
+                      disabled={isTestingWaWebhook || !waWebhookGasUrl.trim()}
+                      className="px-3 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isTestingWaWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5 text-blue-500" />}
+                      <span>Tes URL</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    URL Google Apps Script untuk menerima scan stok (#IN, #OUT, #LOK) dari Fonnte. Masukkan URL ini juga di menu Webhook dashboard Fonnte.
+                  </p>
+
+                  {waWebhookStatus !== 'idle' && (
+                    <div className={`mt-2 p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                      waWebhookStatus === 'success' 
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                        : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                    }`}>
+                      {waWebhookStatus === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                      <span className="leading-tight">{waWebhookStatusMsg}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-800">

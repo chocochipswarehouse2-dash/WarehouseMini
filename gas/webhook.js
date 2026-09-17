@@ -182,30 +182,60 @@ function handleWebhookDelete(sheet, uuid) {
 }
 
 /**
- * Handle GDrive File Upload (Image)
+ * FUNGSI OTORISASI DRIVE
+ * Pilih fungsi 'testAuth' di dropdown fungsi atas editor Google Apps Script,
+ * lalu klik "Jalankan" (Run) sekali untuk memunculkan popup izin akses akun Google Anda.
+ */
+function testAuth() {
+  var folder = DriveApp.getRootFolder();
+  Logger.log('SUKSES OTORISASI: Akun Google Anda telah mengizinkan DriveApp! Folder: ' + folder.getName());
+}
+
+/**
+ * Handle GDrive File Upload (Image) - Versi Aman
  */
 function handleGDriveUpload(payload) {
   try {
+    payload = payload || {};
     var folderId = payload.folderId || '1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
-    var folder = DriveApp.getFolderById(folderId);
     
-    // Decode base64 
-    var data = payload.base64File;
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+    } catch (fErr) {
+      Logger.log('Folder ID tidak valid/tidak ditemukan, menggunakan root folder: ' + fErr.toString());
+      folder = DriveApp.getRootFolder();
+    }
+    
+    // Decode base64 (kompatibel dengan payload.base64File maupun payload.base64)
+    var data = payload.base64File || payload.base64 || '';
+    if (!data) {
+      return jsonResponse({ success: false, error: 'Tidak ada data file base64 yang dikirim.' });
+    }
+    
     if (data.indexOf(',') > -1) {
       data = data.split(',')[1];
     }
     
+    var fileName = payload.fileName || payload.filename || ('Reject_' + new Date().getTime() + '.jpg');
+    var mimeType = payload.mimeType || 'image/jpeg';
+    
     var decoded = Utilities.base64Decode(data);
-    var blob = Utilities.newBlob(decoded, payload.mimeType || 'image/jpeg', payload.fileName);
+    var blob = Utilities.newBlob(decoded, mimeType, fileName);
     var file = folder.createFile(blob);
     
     // Set file so anyone with the link can view
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      Logger.log('Warning sharing: ' + shareErr.toString());
+    }
     
     return jsonResponse({
       success: true,
       url: file.getUrl(),
       id: file.getId(),
+      fileId: file.getId(),
       name: file.getName()
     });
   } catch (err) {
