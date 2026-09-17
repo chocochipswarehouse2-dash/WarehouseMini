@@ -120,6 +120,11 @@ import {
   isDummyProduct,
   supabaseFetch,
   fetchWmsUsersFromSupabase,
+  invalidatePerbaikanTicketsCache,
+  invalidatePickingListCache,
+  invalidatePenerimaanProduksiCache,
+  invalidateQcReportsCache,
+  invalidateStokFisikCache,
 } from './services/supabase';
 import { WmsUser } from './types';
 import {
@@ -662,6 +667,9 @@ export default function App() {
             const finalList = supabaseProducts.filter((it) => !isDummyProduct(it));
             setProductDatabase(finalList);
             await saveProductsToLocalDb(finalList, 'replace');
+            try {
+              localStorage.setItem('wms_master_products_last_sync', String(Date.now()));
+            } catch {}
             if (forceRefresh) {
               showToast(`Katalog berhasil disinkronkan (${finalList.length} produk dari Supabase)!`, 'success');
             }
@@ -678,10 +686,14 @@ export default function App() {
         // Blocking fetch if no local data or manual refresh requested
         await fetchFromSupabase(forceRefresh);
       } else {
-        // Non-blocking background sync (SWR) to ensure data is correct & fresh
-        fetchFromSupabase(true).catch((err) => {
-          console.warn('Background sync error:', err);
-        });
+        // Non-blocking background sync (SWR): check if last sync was > 30 mins ago to prevent wasteful egress
+        const lastSync = Number(localStorage.getItem('wms_master_products_last_sync') || '0');
+        const THIRTY_MINS = 30 * 60 * 1000;
+        if (Date.now() - lastSync > THIRTY_MINS) {
+          fetchFromSupabase(false).catch((err) => {
+            console.warn('Background sync error:', err);
+          });
+        }
       }
     },
     [showToast]
@@ -749,6 +761,7 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'log_produk' },
           (payload) => {
+            invalidateStokFisikCache();
             if (payload.eventType === 'INSERT' && payload.new) {
               const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number };
               showPushNotification('📦 Log Mutasi Baru', {
@@ -818,22 +831,23 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'stock_opname_queue' },
           (payload) => {
+            invalidateStokFisikCache();
             globalRealtimeStore.notify('stock_opname_queue', payload);
-            // Removed loadProducts() to save egress
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'peminjaman' },
           (payload) => {
+            invalidatePickingListCache();
             globalRealtimeStore.notify('peminjaman', payload);
-            // Removed loadProducts() to save egress
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'penerimaan_produksi' },
           (payload) => {
+            invalidatePenerimaanProduksiCache();
             globalRealtimeStore.notify('penerimaan_produksi', payload);
           }
         )
@@ -841,13 +855,23 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'perbaikan_tickets' },
           (payload) => {
+            invalidatePerbaikanTicketsCache();
             globalRealtimeStore.notify('perbaikan_tickets', payload);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'qc_reports' },
+          (payload) => {
+            invalidateQcReportsCache();
+            globalRealtimeStore.notify('qc_reports', payload);
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'picking_list' },
           (payload) => {
+            invalidatePickingListCache();
             globalRealtimeStore.notify('picking_list', payload);
 
             // Notifikasi Realtime saat ada Tugas Picking / Surat Jalan / Refill baru diinput oleh Admin

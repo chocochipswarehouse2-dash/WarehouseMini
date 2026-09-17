@@ -5,6 +5,7 @@ import {
   getAllProductsFromLocalDb,
   saveProductsToLocalDb,
   saveInventoryStocksToLocalDb,
+  getAllInventoryStocksFromLocalDb,
   clearLocalDb,
 } from './localDb';
 import { fetchWithDeltaSync } from './gasSync';
@@ -958,12 +959,39 @@ ALTER TABLE public.perbaikan_tickets ADD COLUMN IF NOT EXISTS qc_report_no TEXT;
  */
 export async function fetchStockForLocations(locations: string[]): Promise<StockRealtimeItem[]> {
   if (!locations.length) return [];
-  const cleanLocs = new Set(locations.map((l) => l.trim().toUpperCase()).filter(Boolean));
-  if (cleanLocs.size === 0) return [];
+  const cleanLocs = Array.from(new Set(locations.map((l) => l.trim().toUpperCase()).filter(Boolean)));
+  if (cleanLocs.length === 0) return [];
+  const cleanLocSet = new Set(cleanLocs);
 
+  // 1. Check in-memory cache first (0 network egress)
+  if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+    const matched = memoryStokFisikCache.filter(r => cleanLocSet.has((r.lokasi || '').toUpperCase()));
+    if (matched.length > 0) return matched;
+  }
+
+  // 2. Check local IndexedDB cache (0 network egress)
   try {
-    const allStok = await fetchAllStockRealtime(50000, false);
-    return allStok.filter(r => cleanLocs.has((r.lokasi || '').toUpperCase()));
+    const localStocks = await getAllInventoryStocksFromLocalDb();
+    if (localStocks && localStocks.length > 0) {
+      if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
+        memoryStokFisikCache = localStocks;
+        memoryStokFisikLastFetch = Date.now();
+      }
+      const matched = localStocks.filter(r => cleanLocSet.has((r.lokasi || '').toUpperCase()));
+      if (matched.length > 0) return matched;
+    }
+  } catch {}
+
+  // 3. Fallback to Supabase PostgREST for ONLY the requested locations (avoids downloading 50,000 rows!)
+  try {
+    const locParam = cleanLocs.map(l => `"${encodeURIComponent(l)}"`).join(',');
+    const rows = await supabaseFetch<StockRealtimeItem[]>(
+      'stok_real_fisik',
+      'GET',
+      null,
+      `lokasi=in.(${locParam})&sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
+    );
+    if (Array.isArray(rows) && rows.length > 0) return rows;
   } catch (err) {
     console.warn('Error fetching realtime stock from Supabase for locations:', err);
   }
@@ -976,16 +1004,45 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
  */
 export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeItem[]> {
   if (!skus.length) return [];
+  const cleanSkus = Array.from(new Set(skus.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+  if (cleanSkus.length === 0) return [];
+  const cleanSkuSet = new Set(cleanSkus);
+
+  // 1. Check in-memory cache first (0 network egress)
+  if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+    const matched = memoryStokFisikCache.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
+    if (matched.length > 0) return matched;
+  }
+
+  // 2. Check local IndexedDB cache (0 network egress)
   try {
-    const cleanSkus = new Set(skus.map((s) => s.trim().toUpperCase()).filter(Boolean));
-    if (cleanSkus.size === 0) return [];
-    
-    const allStok = await fetchAllStockRealtime(50000, false);
-    return allStok.filter(r => cleanSkus.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
+    const localStocks = await getAllInventoryStocksFromLocalDb();
+    if (localStocks && localStocks.length > 0) {
+      if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
+        memoryStokFisikCache = localStocks;
+        memoryStokFisikLastFetch = Date.now();
+      }
+      const matched = localStocks.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
+      if (matched.length > 0) return matched;
+    }
+  } catch {}
+
+  // 3. Fallback to Supabase PostgREST for ONLY the requested SKUs (avoids downloading 50,000 rows!)
+  try {
+    const skuParam = cleanSkus.map(s => `"${encodeURIComponent(s)}"`).join(',');
+    const rows = await supabaseFetch<StockRealtimeItem[]>(
+      'stok_real_fisik',
+      'GET',
+      null,
+      `sku=in.(${skuParam})&sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
+    );
+    if (Array.isArray(rows)) {
+      return rows.filter(r => isWarehouseLocation(r.lokasi || '', r.area || ''));
+    }
   } catch (err) {
     console.warn('Error fetching realtime stock by SKUs:', err);
-    return [];
   }
+  return [];
 }
 
 /**
@@ -1614,6 +1671,11 @@ export function getMemoryStokFisikCache(): StockRealtimeItem[] | null {
   return memoryStokFisikCache;
 }
 
+export function invalidateStokFisikCache(): void {
+  memoryStokFisikCache = null;
+  memoryStokFisikLastFetch = 0;
+}
+
 export function setMemoryStokFisikCache(data: StockRealtimeItem[]): void {
   if (Array.isArray(data) && data.length > 0) {
     memoryStokFisikCache = data;
@@ -1622,9 +1684,23 @@ export function setMemoryStokFisikCache(data: StockRealtimeItem[]): void {
 }
 
 export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
-  // SWR: return in-memory cache if fresh within 30 seconds and not forcing refresh
-  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 30000) {
+  // SWR: return in-memory cache if fresh within 10 minutes and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 10 * 60 * 1000) {
     return memoryStokFisikCache;
+  }
+
+  // SWR Local Database (IndexedDB) check: 0ms instant load, 0 network egress
+  if (!forceRefresh) {
+    try {
+      const localDbStock = await getAllInventoryStocksFromLocalDb();
+      if (localDbStock && localDbStock.length > 0) {
+        memoryStokFisikCache = localDbStock;
+        memoryStokFisikLastFetch = Date.now();
+        return localDbStock;
+      }
+    } catch (err) {
+      console.warn('Error reading physical stock from local indexedDB:', err);
+    }
   }
 
   try {
@@ -1684,7 +1760,7 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
               tableName,
               'GET',
               null,
-              `sisa_stok=neq.0&select=*&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`
+              `sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`
             ).catch(() => null) // Catch individual failures
           );
           offset += currentLimit;
@@ -2571,8 +2647,8 @@ let memoryProductLastFetch = 0;
  * (master_produk, stok_real_fisik, log_produk, etc.)
  */
 export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, forceRefresh = false): Promise<ProductItem[]> {
-  // 1. SWR In-Memory cache check
-  if (!forceRefresh && memoryProductCache && memoryProductCache.length > 0 && Date.now() - memoryProductLastFetch < 5000) {
+  // 1. SWR In-Memory cache check (fresh within 15 minutes)
+  if (!forceRefresh && memoryProductCache && memoryProductCache.length > 0 && Date.now() - memoryProductLastFetch < 15 * 60 * 1000) {
     return memoryProductCache;
   }
 
@@ -2702,7 +2778,12 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
 
   const fetchStockTable = async () => {
     try {
-      const allStok = await fetchAllStockRealtime(50000, false);
+      let allStok = memoryStokFisikCache;
+      if (!allStok || allStok.length === 0) {
+        try {
+          allStok = await getAllInventoryStocksFromLocalDb();
+        } catch {}
+      }
       if (!allStok || allStok.length === 0) return;
 
       for (const r of allStok) {
@@ -3356,7 +3437,19 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
   };
 }
 
-export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]> {
+let memoryPickingListCache: PickingListItem[] | null = null;
+let memoryPickingListLastFetch = 0;
+
+export function invalidatePickingListCache(): void {
+  memoryPickingListCache = null;
+  memoryPickingListLastFetch = 0;
+}
+
+export async function fetchPickingListFromSupabase(forceRefresh = false): Promise<PickingListItem[]> {
+  if (!forceRefresh && memoryPickingListCache && memoryPickingListCache.length > 0 && Date.now() - memoryPickingListLastFetch < 3 * 60 * 1000) {
+    return memoryPickingListCache;
+  }
+
   const itemsMap = new Map<string, PickingListItem>();
 
   // Retrieve persistent set of completed Surat Jalan so they never bounce back to PENDING
@@ -3458,6 +3551,8 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
   const result = Array.from(itemsMap.values());
   // Sort newest first
   result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  memoryPickingListCache = result;
+  memoryPickingListLastFetch = Date.now();
   try {
     localStorage.setItem('wms_picking_cache', JSON.stringify(result));
   } catch {}
@@ -3465,7 +3560,7 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
 }
 
 export async function savePickingItemToSupabase(item: PickingListItem): Promise<boolean> {
-  // 1. Update local cache immediately
+  // 1. Update local and memory cache immediately
   try {
     const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
     const idx = cached.findIndex((c) => (item.id && c.id === item.id) || (c.no_sj === item.no_sj && c.sku === item.sku));
@@ -3475,6 +3570,7 @@ export async function savePickingItemToSupabase(item: PickingListItem): Promise<
       cached.unshift(item);
     }
     localStorage.setItem('wms_picking_cache', JSON.stringify(cached));
+    memoryPickingListCache = cached;
   } catch {}
 
   // 2. Sync to Supabase
@@ -4595,16 +4691,43 @@ export async function fetchPresensiRange(
 
 export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<StockRealtimeItem[]> {
   if (!skus || skus.length === 0) return [];
-  const cleanSkus = new Set(skus.map(s => String(s || '').trim().toUpperCase()).filter(Boolean));
-  if (cleanSkus.size === 0) return [];
+  const cleanSkus = Array.from(new Set(skus.map(s => String(s || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanSkus.length === 0) return [];
+  const cleanSet = new Set(cleanSkus);
   
+  // 1. Check in-memory cache first (0 network egress)
+  if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+    const matched = memoryStokFisikCache.filter(r => cleanSet.has((r.sku || '').toUpperCase()));
+    if (matched.length > 0) return matched;
+  }
+
+  // 2. Check IndexedDB local cache (0 network egress)
   try {
-    const allStok = await fetchAllStockRealtime(50000, false);
-    return allStok.filter(r => cleanSkus.has((r.sku || '').toUpperCase()));
+    const localStocks = await getAllInventoryStocksFromLocalDb();
+    if (localStocks && localStocks.length > 0) {
+      if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
+        memoryStokFisikCache = localStocks;
+        memoryStokFisikLastFetch = Date.now();
+      }
+      const matched = localStocks.filter(r => cleanSet.has((r.sku || '').toUpperCase()));
+      if (matched.length > 0) return matched;
+    }
+  } catch {}
+
+  // 3. Fallback to Supabase PostgREST for ONLY the requested SKUs (avoids downloading 50,000 rows!)
+  try {
+    const skuParam = cleanSkus.map(s => `"${encodeURIComponent(s)}"`).join(',');
+    const rows = await supabaseFetch<StockRealtimeItem[]>(
+      'stok_real_fisik',
+      'GET',
+      null,
+      `sku=in.(${skuParam})&sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
+    );
+    if (Array.isArray(rows)) return rows;
   } catch (err) {
     console.error('Error in fetchSupabaseStokFisikBySkus:', err);
-    return [];
   }
+  return [];
 }
 
 export async function fetchMasterProductDealposChannelsBySkus(
@@ -4761,9 +4884,25 @@ export async function fetchChannelStocksBySkus(skus: string[]): Promise<import('
  */
 
 /**
- * Fetch semua tiket perbaikan dari Supabase (dengan local cache fallback)
+ * Fast in-memory cache for perbaikan tickets
  */
-export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTicket[]> {
+let memoryPerbaikanTicketsCache: PerbaikanTicket[] | null = null;
+let memoryPerbaikanTicketsLastFetch = 0;
+
+export function invalidatePerbaikanTicketsCache(): void {
+  memoryPerbaikanTicketsCache = null;
+  memoryPerbaikanTicketsLastFetch = 0;
+}
+
+/**
+ * Fetch semua tiket perbaikan dari Supabase (dengan in-memory & local cache fallback)
+ */
+export async function fetchPerbaikanTicketsFromSupabase(forceRefresh = false): Promise<PerbaikanTicket[]> {
+  // 1. In-memory cache check (fresh within 5 minutes)
+  if (!forceRefresh && memoryPerbaikanTicketsCache && memoryPerbaikanTicketsCache.length > 0 && Date.now() - memoryPerbaikanTicketsLastFetch < 5 * 60 * 1000) {
+    return memoryPerbaikanTicketsCache;
+  }
+
   let localData: PerbaikanTicket[] = [];
   try {
     const cached = localStorage.getItem('wms_local_perbaikan_tickets');
@@ -4771,6 +4910,12 @@ export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTick
       localData = JSON.parse(cached);
     }
   } catch {}
+
+  // 2. Local storage cache check if not forcing refresh
+  if (!forceRefresh && localData.length > 0 && Date.now() - memoryPerbaikanTicketsLastFetch < 5 * 60 * 1000) {
+    memoryPerbaikanTicketsCache = localData;
+    return localData;
+  }
 
   try {
     // Fetch all tickets with chunked pagination to prevent truncation (was previously limited to 500)
@@ -4800,6 +4945,8 @@ export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTick
     );
 
     localData = merged;
+    memoryPerbaikanTicketsCache = merged;
+    memoryPerbaikanTicketsLastFetch = Date.now();
     try {
       localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(localData));
     } catch {}
@@ -4808,6 +4955,7 @@ export async function fetchPerbaikanTicketsFromSupabase(): Promise<PerbaikanTick
     console.warn('Gagal memuat perbaikan_tickets dari Supabase, memuat dari local cache:', err);
   }
 
+  memoryPerbaikanTicketsCache = localData;
   return localData;
 }
 
@@ -4896,6 +5044,8 @@ export async function savePerbaikanTicketToSupabase(ticket: PerbaikanTicket): Pr
       list.unshift(savedTicket);
     }
     localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(list));
+    memoryPerbaikanTicketsCache = list;
+    memoryPerbaikanTicketsLastFetch = Date.now();
   } catch {}
 
   return savedTicket;
@@ -4927,6 +5077,8 @@ export async function updatePerbaikanTicketInSupabase(
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
         localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(list));
+        memoryPerbaikanTicketsCache = list;
+        memoryPerbaikanTicketsLastFetch = Date.now();
       }
     }
   } catch {}
@@ -4957,6 +5109,8 @@ export async function deletePerbaikanTicketFromSupabase(ticketNoOrId: string | n
       const list: PerbaikanTicket[] = JSON.parse(cachedStr);
       const filtered = list.filter(t => t.id !== ticketNoOrId && t.ticket_no !== sTicketNo);
       localStorage.setItem('wms_local_perbaikan_tickets', JSON.stringify(filtered));
+      memoryPerbaikanTicketsCache = filtered;
+      memoryPerbaikanTicketsLastFetch = Date.now();
     }
   } catch {}
 
@@ -5122,13 +5276,26 @@ function logProdukToQcReport(log: any): QcReport | null {
   };
 }
 
+let memoryQcReportsCache: QcReport[] | null = null;
+let memoryQcReportsLastFetch = 0;
+
+export function invalidateQcReportsCache(): void {
+  memoryQcReportsCache = null;
+  memoryQcReportsLastFetch = 0;
+}
+
 /**
- * Memuat seluruh riwayat laporan QC dari Supabase.
+ * Memuat seluruh riwayat laporan QC dari Supabase (dengan in-memory & local cache).
  * Menggabungkan tabel 'qc_reports' dan fallback 'log_produk' (type='QC_INSPEKSI')
  * sehingga laporan dapat langsung terlihat oleh semua user/admin di seluruh perangkat.
  */
-export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
-  // 1. Ambil dari cache lokal terlebih dahulu
+export async function fetchQcReportsFromSupabase(forceRefresh = false): Promise<QcReport[]> {
+  // 1. In-memory cache check (fresh within 5 minutes)
+  if (!forceRefresh && memoryQcReportsCache && memoryQcReportsCache.length > 0 && Date.now() - memoryQcReportsLastFetch < 5 * 60 * 1000) {
+    return memoryQcReportsCache;
+  }
+
+  // 2. Ambil dari cache lokal terlebih dahulu
   let localData: QcReport[] = [];
   try {
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
@@ -5136,6 +5303,11 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
       localData = JSON.parse(cachedStr);
     }
   } catch {}
+
+  if (!forceRefresh && localData.length > 0 && Date.now() - memoryQcReportsLastFetch < 5 * 60 * 1000) {
+    memoryQcReportsCache = localData;
+    return localData;
+  }
 
   const mergedMap = new Map<string, QcReport>();
 
@@ -5182,6 +5354,8 @@ export async function fetchQcReportsFromSupabase(): Promise<QcReport[]> {
     (a, b) => new Date(b.created_at || b.tanggal || 0).getTime() - new Date(a.created_at || a.tanggal || 0).getTime()
   );
 
+  memoryQcReportsCache = finalResults;
+  memoryQcReportsLastFetch = Date.now();
   try {
     localStorage.setItem('wms_local_qc_reports', JSON.stringify(finalResults));
   } catch {}
@@ -5559,13 +5733,28 @@ export async function deleteQcReportFromSupabase(
 /**
  * Fetch list data Penerimaan Produksi dari Supabase dengan sinkronisasi local storage
  */
+let memoryPenerimaanProduksiCache: PenerimaanProduksiItem[] | null = null;
+let memoryPenerimaanProduksiLastFetch = 0;
+
+export function invalidatePenerimaanProduksiCache(): void {
+  memoryPenerimaanProduksiCache = null;
+  memoryPenerimaanProduksiLastFetch = 0;
+}
+
 export async function fetchPenerimaanProduksiFromSupabase(filters?: {
   kategori?: string;
   startDate?: string;
   endDate?: string;
   keyword?: string;
   limit?: number;
+  forceRefresh?: boolean;
 }): Promise<PenerimaanProduksiItem[]> {
+  const hasSpecificFilters = !!(filters?.kategori && filters.kategori !== 'Semua') || !!filters?.startDate || !!filters?.endDate || !!filters?.keyword;
+
+  if (!filters?.forceRefresh && !hasSpecificFilters && memoryPenerimaanProduksiCache && memoryPenerimaanProduksiCache.length > 0 && Date.now() - memoryPenerimaanProduksiLastFetch < 5 * 60 * 1000) {
+    return memoryPenerimaanProduksiCache;
+  }
+
   let localData: PenerimaanProduksiItem[] = [];
   try {
     const cached = localStorage.getItem('wms_local_penerimaan_produksi');
@@ -5573,6 +5762,11 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
       localData = JSON.parse(cached);
     }
   } catch {}
+
+  if (!filters?.forceRefresh && !hasSpecificFilters && localData.length > 0 && Date.now() - memoryPenerimaanProduksiLastFetch < 5 * 60 * 1000) {
+    memoryPenerimaanProduksiCache = localData;
+    return localData;
+  }
 
   try {
     const queryParts: string[] = ['order=created_at.desc'];
@@ -5626,6 +5820,10 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
       });
 
       localData = merged;
+      if (!hasSpecificFilters) {
+        memoryPenerimaanProduksiCache = merged;
+        memoryPenerimaanProduksiLastFetch = Date.now();
+      }
       try {
         localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(localData));
       } catch {}
