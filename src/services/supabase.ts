@@ -697,7 +697,14 @@ SELECT
   ) as sisa_stok,
   MAX(lp.created_at) as updated_at
 FROM public.log_produk lp
-GROUP BY lp.sku, lp.lokasi, lp.area;
+GROUP BY lp.sku, lp.lokasi, lp.area
+HAVING SUM(
+  CASE 
+    WHEN lp.type IN ('IN', 'ADJ_IN') THEN lp.qty
+    WHEN lp.type IN ('OUT', 'ADJ_OUT') THEN -lp.qty
+    ELSE 0
+  END
+) != 0;
 
 -- RLS Permissions (Open Anon for WMS Applet)
 ALTER TABLE public.wms_users ENABLE ROW LEVEL SECURITY;
