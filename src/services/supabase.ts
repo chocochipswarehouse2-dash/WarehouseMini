@@ -152,7 +152,7 @@ export function getStoredSupabaseConfig() {
   let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
   // Auto-migrate legacy project ref (filgijcfhgqlirzhvwho or vxongwtxmhjixhzeoidp) to the new default atdedxyiielpmzjlnriv
-  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp') || (url.includes('atdedxyiielpmzjlnriv') && key !== DEFAULT_SUPABASE_ANON_KEY) || (isBrowser && !localStorage.getItem('wms_supabase_v3_migrated'))) {
+  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp')) {
     url = DEFAULT_SUPABASE_URL;
     key = DEFAULT_SUPABASE_ANON_KEY;
     if (isBrowser) {

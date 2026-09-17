@@ -2,13 +2,13 @@ import { supabaseFetch } from './supabase';
 import { WmsSettings } from '../types';
 
 export const DEFAULT_GDRIVE_FOLDER_URL =
-  'https://drive.google.com/drive/folders/14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB';
+  'https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
 
 export const DEFAULT_GDRIVE_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w/exec';
+  'https://script.google.com/macros/s/AKfycbwoJ6WbOPZ32ftZXXoYwEXRXgTUbaUit734OLUIjzB1Nn0paFyzEk95yVVYEN0xKvGOUA/exec';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbwnGgT-ekW7L-HIE2RGxuBZQl5gATB4fUFYO-SxwGS16p8_Kc28q91gnd5N-Y30bA8Q9w/exec';
+  'https://script.google.com/macros/s/AKfycbwoJ6WbOPZ32ftZXXoYwEXRXgTUbaUit734OLUIjzB1Nn0paFyzEk95yVVYEN0xKvGOUA/exec';
 
 // In-memory cache for ultra-fast zero-latency access across components
 let cachedSettings: WmsSettings | null = null;

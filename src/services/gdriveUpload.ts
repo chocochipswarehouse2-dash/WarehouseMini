@@ -18,20 +18,20 @@ export { DEFAULT_GDRIVE_FOLDER_URL, DEFAULT_GDRIVE_GAS_URL };
  * Ekstrak ID Folder dari URL Google Drive atau string ID langsung
  */
 export function extractGdriveFolderId(urlOrId: string): string {
-  if (!urlOrId) return '14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB';
-  const clean = urlOrId.trim();
-  // Format: https://drive.google.com/drive/folders/14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB
-  const match = clean.match(/folders\/([a-zA-Z0-9_-]+)/);
-  if (match && match[1]) return match[1];
+  if (!urlOrId) return '1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
 
-  // Format: https://drive.google.com/open?id=14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB
-  const matchId = clean.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (matchId && matchId[1]) return matchId[1];
+  // Format: https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw
+  const folderMatch = urlOrId.match(/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
 
-  // Jika berupa ID langsung tanpa URL
-  if (/^[a-zA-Z0-9_-]{20,}$/.test(clean)) return clean;
+  // Format: https://drive.google.com/open?id=1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw
+  const idMatch = urlOrId.match(/id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) return idMatch[1];
 
-  return '14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB';
+  // Fallback if just an ID is given (or return default if completely invalid)
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(urlOrId)) return urlOrId;
+
+  return '1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
 }
 
 /**

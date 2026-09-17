@@ -1877,7 +1877,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="text"
                         value={gdriveFolderUrl}
                         onChange={(e) => setGdriveFolderUrl(e.target.value)}
-                        placeholder="https://drive.google.com/drive/folders/14TtBGzNIAVOxjBsxYGBt4G8fKj4nUYrB"
+                        placeholder="https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw"
                         className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                       />
                     </div>
