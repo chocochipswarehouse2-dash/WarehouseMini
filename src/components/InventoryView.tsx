@@ -1805,14 +1805,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           </div>
         </div>
 
-        {/* KPI 4: STOK PERBAIKAN */}
+        {/* KPI 4: STOK PERBAIKAN & DEFECT */}
         <div
           onClick={() => setKpiModal('PERBAIKAN')}
           className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-primary-300 group shadow-xs"
-          title="Klik untuk melihat daftar antrean Permak & Defect"
+          title="Klik untuk melihat daftar antrean Permak, Cuci & Defect"
         >
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>STOK PERBAIKAN</span>
+            <span>PERBAIKAN & DEFECT</span>
             <div className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-950/60 text-primary-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Wrench className="w-4 h-4" />
             </div>

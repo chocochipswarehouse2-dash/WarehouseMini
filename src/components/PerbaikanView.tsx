@@ -699,15 +699,10 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       // Search query
       if (deferredSearch.trim()) {
-        const q = deferredSearch.toUpperCase();
-        const matchNo = t.ticket_no.toUpperCase().includes(q);
-        const matchSku = t.sku.toUpperCase().includes(q);
-        const matchNama = t.nama_produk.toUpperCase().includes(q);
-        const matchLokasi = t.lokasi_sekarang.toUpperCase().includes(q);
-        const matchDetail = t.detail_kerusakan.toUpperCase().includes(q);
-        const matchPetugas = t.petugas_reparasi?.toUpperCase().includes(q);
-        const matchQc = t.qc_pic?.toUpperCase().includes(q);
-        if (!matchNo && !matchSku && !matchNama && !matchLokasi && !matchDetail && !matchPetugas && !matchQc) return false;
+        const keywords = deferredSearch.trim().toUpperCase().split(/\s+/).filter(Boolean);
+        const text = `${t.ticket_no || ''} ${t.sku || ''} ${t.nama_produk || ''} ${t.lokasi_sekarang || ''} ${t.detail_kerusakan || ''} ${t.petugas_reparasi || ''} ${t.qc_pic || ''}`.toUpperCase();
+        const matchesAll = keywords.every(kw => text.includes(kw));
+        if (!matchesAll) return false;
       }
 
       return true;
