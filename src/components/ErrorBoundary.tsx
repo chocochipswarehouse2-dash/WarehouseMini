@@ -29,9 +29,20 @@ export class ErrorBoundary extends Component<Props, State> {
   private handleReset = () => {
     try {
       // Clear huge caches to prevent recurring QuotaExceeded errors immediately upon reload
-      localStorage.removeItem('wms_product_cache');
-      localStorage.removeItem('wms_picking_cache');
-      localStorage.removeItem('wms_raw_picking_list_cache');
+      const keysToClear = [
+        'wms_product_cache',
+        'wms_picking_cache',
+        'wms_raw_picking_list_cache',
+        'wms_cached_pengecekan_sj_records',
+        'wms_cached_tarikan_md',
+        'wms_cached_pengecekan_sj_drafts',
+        'wms_offline_queue_pengecekan_sj',
+        'gas_delta_sync_Stok Real',
+        'gas_delta_sync_Mutasi Log',
+      ];
+      keysToClear.forEach(k => {
+        try { localStorage.removeItem(k); } catch {}
+      });
     } catch {}
 
     this.setState({ hasError: false, error: null });

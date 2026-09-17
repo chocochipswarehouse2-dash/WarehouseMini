@@ -1,6 +1,7 @@
 import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, TarikanMDRecord } from '../types';
 import { supabaseFetch } from './supabase';
 import { fetchWithDeltaSync } from './gasSync';
+import { saveSJDraftsToDb, loadSJDraftsFromDb, deleteSJDraftFromDb } from './localDb';
 
 const CACHE_KEY_RECORDS = 'wms_cached_pengecekan_sj_records';
 const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
@@ -339,7 +340,16 @@ export async function submitPengecekanSJ(payload: PengecekanSJRecord): Promise<{
 }
 
 export function saveSJDrafts(drafts: PengecekanSJDraft[]): void {
-  localStorage.setItem(CACHE_KEY_DRAFTS, JSON.stringify(drafts));
+  // Always persist to IndexedDB (safe from quota limits)
+  saveSJDraftsToDb(drafts).catch(err => {
+    console.warn('saveSJDraftsToDb error:', err);
+  });
+  // Also attempt localStorage for synchronous initial reads, safely handled by storage-override
+  try {
+    localStorage.setItem(CACHE_KEY_DRAFTS, JSON.stringify(drafts));
+  } catch (err) {
+    console.warn('saveSJDrafts localStorage fallback failed (data remains in IndexedDB):', err);
+  }
 }
 
 export function loadSJDrafts(): PengecekanSJDraft[] {
@@ -348,13 +358,27 @@ export function loadSJDrafts(): PengecekanSJDraft[] {
   } catch { return []; }
 }
 
+export async function loadSJDraftsAsync(): Promise<PengecekanSJDraft[]> {
+  try {
+    const fromDb = await loadSJDraftsFromDb();
+    if (fromDb && fromDb.length > 0) {
+      return fromDb;
+    }
+  } catch (err) {
+    console.warn('loadSJDraftsAsync IndexedDB error:', err);
+  }
+  return loadSJDrafts();
+}
+
 export function deleteSJDraft(idOrNoSj: string): void {
   const allDrafts = loadSJDrafts();
   const hasIdMatch = allDrafts.some(d => d.id === idOrNoSj);
   const remaining = hasIdMatch 
     ? allDrafts.filter(d => d.id !== idOrNoSj)
     : allDrafts.filter(d => d.no_sj !== idOrNoSj);
-  localStorage.setItem(CACHE_KEY_DRAFTS, JSON.stringify(remaining));
+  
+  saveSJDrafts(remaining);
+  deleteSJDraftFromDb(idOrNoSj).catch(() => {});
 }
 
 export async function clearAllCaches() {

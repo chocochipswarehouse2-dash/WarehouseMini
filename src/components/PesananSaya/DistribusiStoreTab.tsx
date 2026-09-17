@@ -23,6 +23,7 @@ import {
   deleteTarikanMD,
   editPengecekanSJ,
   loadSJDrafts,
+  loadSJDraftsAsync,
   saveSJDrafts,
   deleteSJDraft,
   exportPengecekanToCsv,
@@ -258,7 +259,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     return loaded.length > 0 ? loaded[0].id : null;
   });
 
-  // Sinkronisasi drafts ke localStorage
+  // Sinkronisasi drafts ke localStorage dan IndexedDB
   useEffect(() => {
     saveSJDrafts(drafts);
     // Jika activeDraftId tidak lagi ada di daftar, reset ke draft pertama
@@ -268,6 +269,26 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       setActiveDraftId(null);
     }
   }, [drafts, activeDraftId]);
+
+  // Hydrate drafts from IndexedDB on mount (ensures large draft imports not lost if localStorage was evicted)
+  useEffect(() => {
+    let isMounted = true;
+    loadSJDraftsAsync().then(dbDrafts => {
+      if (isMounted && dbDrafts && dbDrafts.length > 0) {
+        setDrafts(prev => {
+          if (prev.length === 0) {
+            return dbDrafts;
+          }
+          // Merge preserving existing items
+          const map = new Map<string, PengecekanSJDraft>();
+          dbDrafts.forEach(d => map.set(d.id, d));
+          prev.forEach(d => map.set(d.id, d));
+          return Array.from(map.values());
+        });
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   // Active Draft object
   const activeDraft = useMemo(() => {

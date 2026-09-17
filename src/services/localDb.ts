@@ -3,11 +3,11 @@
  * Provides persistent offline-first storage for products and stocks with zero quota truncation.
  */
 
-import { ProductItem, StockRealtimeItem } from '../types';
+import { ProductItem, StockRealtimeItem, PengecekanSJDraft } from '../types';
 import { isDummyProduct } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -73,6 +73,11 @@ export async function getLocalDb(): Promise<IDBDatabase> {
         const orderStore = db.createObjectStore('shopee_orders', { keyPath: 'noPesanan' });
         orderStore.createIndex('status_sistem', 'status_sistem', { unique: false });
         orderStore.createIndex('tanggal_upload', 'tanggal_upload', { unique: false });
+      }
+
+      // 5. Surat Jalan Pengecekan Drafts Store
+      if (!db.objectStoreNames.contains('sj_drafts')) {
+        db.createObjectStore('sj_drafts', { keyPath: 'id' });
       }
     };
 
@@ -510,3 +515,55 @@ export async function getShopeeOrder(noPesanan: string): Promise<any | null> {
     return null;
   }
 }
+
+// --- SURAT JALAN PENGECEKAN DRAFTS STORE ---
+
+export async function saveSJDraftsToDb(drafts: PengecekanSJDraft[]): Promise<void> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('sj_drafts', 'readwrite');
+      const store = tx.objectStore('sj_drafts');
+      store.clear();
+      for (const d of drafts) {
+        store.put(d);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to save SJ drafts to IndexedDB:', err);
+  }
+}
+
+export async function loadSJDraftsFromDb(): Promise<PengecekanSJDraft[]> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('sj_drafts', 'readonly');
+      const store = tx.objectStore('sj_drafts');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn('Failed to load SJ drafts from IndexedDB:', err);
+    return [];
+  }
+}
+
+export async function deleteSJDraftFromDb(id: string): Promise<void> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('sj_drafts', 'readwrite');
+      const store = tx.objectStore('sj_drafts');
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to delete SJ draft from IndexedDB:', err);
+  }
+}
+
