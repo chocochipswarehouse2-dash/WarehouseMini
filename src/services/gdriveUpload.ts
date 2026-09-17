@@ -97,12 +97,20 @@ export async function uploadImageToGdrive(
 
   try {
     const payload = {
-      base64: base64Data,
-      filename: generatedFilename,
+      base64: base64Data, // backward compatibility
+      base64File: base64Data, // new webhook.js requirement
+      filename: generatedFilename, // backward compatibility
+      fileName: generatedFilename, // new webhook.js requirement
       folderId: folderId,
     };
 
-    const response = await fetch(gasUrl, {
+    // Ensure secret token is attached for the unified webhook.js
+    let fetchUrl = gasUrl;
+    if (fetchUrl && !fetchUrl.includes('secret=')) {
+      fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'secret=wms-webhook-secret-2026';
+    }
+
+    const response = await fetch(fetchUrl, {
       method: 'POST',
       body: JSON.stringify(payload),
       headers: {
@@ -183,11 +191,18 @@ export async function testGdriveConnection(
     'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
 
   try {
-    const response = await fetch(gasUrl, {
+    let fetchUrl = gasUrl;
+    if (fetchUrl && !fetchUrl.includes('secret=')) {
+      fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'secret=wms-webhook-secret-2026';
+    }
+
+    const response = await fetch(fetchUrl, {
       method: 'POST',
       body: JSON.stringify({
         base64: probeBase64,
+        base64File: probeBase64,
         filename: `probe_test_${Date.now()}.jpg`,
+        fileName: `probe_test_${Date.now()}.jpg`,
         folderId: folderId,
       }),
       headers: {

@@ -178,11 +178,18 @@ async function run() {
   
   const totalTransferred = results.reduce((acc, r) => acc + (r.count || 0), 0);
   console.log(`Total data berhasil ditransfer: ${totalTransferred.toLocaleString()} baris.`);
-  console.log('\nLangkah selanjutnya:');
+  console.log('\nLangkah selanjutnya (Pilih salah satu agar semua user memakai DB baru):');
+  console.log(`Opsi A (Vercel):`);
   console.log(`1. Buka Vercel Settings > Environment Variables`);
   console.log(`2. Update VITE_SUPABASE_URL = "${targetUrl}"`);
   console.log(`3. Update VITE_SUPABASE_ANON_KEY = "${targetKey}"`);
-  console.log(`4. Redeploy di Vercel agar aplikasi beralih 100% ke akun baru.`);
+  console.log(`4. Redeploy di Vercel.`);
+  console.log(`5. Minta semua pengguna CLEAR CACHE / Local Storage di browser mereka!`);
+  console.log(`\nOpsi B (Paling Aman - GitHub):`);
+  console.log(`1. Buka file src/services/supabase.ts`);
+  console.log(`2. Ubah DEFAULT_SUPABASE_URL menjadi "${targetUrl}"`);
+  console.log(`3. Ubah DEFAULT_SUPABASE_ANON_KEY menjadi kunci publik baru.`);
+  console.log(`4. Git Commit & Push ke GitHub agar otomatis ter-deploy.`);
 }
 
 run().catch(console.error);

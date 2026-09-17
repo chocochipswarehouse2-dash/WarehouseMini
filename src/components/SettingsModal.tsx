@@ -1830,7 +1830,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Google Drive Storage (Foto Reject QC)
                       </label>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Foto reject otomatis diunggah ke Supabase Storage, menghemat waktu dan lebih terpusat.
+                        Foto reject otomatis diunggah ke Google Drive, menghemat ruang Supabase dan lebih tersentralisasi.
                       </p>
                     </div>
 

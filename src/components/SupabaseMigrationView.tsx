@@ -1060,14 +1060,18 @@ export const SupabaseMigrationView: React.FC = () => {
                 Agar seluruh tim, staf gudang, dan perangkat lain otomatis memakai database baru saat membuka web:
               </p>
 
-              <ol className="list-decimal list-inside space-y-1 text-xs text-slate-600 dark:text-slate-300 pl-1">
-                <li>Buka dashboard <strong>Vercel &gt; Settings &gt; Environment Variables</strong>.</li>
-                <li>Perbarui 2 variabel berikut dengan nilai database baru Anda:</li>
-              </ol>
-
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Buka dashboard Vercel &gt; Settings &gt; Environment Variables. Update dua variabel berikut:
+              </p>
               <div className="p-3 bg-slate-950 text-emerald-400 border border-slate-800 rounded-xl font-mono text-[11px] space-y-1">
                 <div>VITE_SUPABASE_URL={targetUrl || 'https://xxxxxxxx.supabase.co'}</div>
                 <div>VITE_SUPABASE_ANON_KEY={targetKey || 'eyJhbGciOiJIUzI1Ni...'}</div>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Kemudian masuk ke tab <strong>Deployments</strong>, klik kanan deploy terakhir lalu <strong>Redeploy</strong>.
+              </p>
+              <div className="p-2 bg-rose-500/10 border border-rose-500/30 text-rose-500 rounded-lg text-[11px]">
+                <strong>PENTING:</strong> Jika Anda sudah pernah login sebelumnya, URL lama mungkin masih tersimpan di Local Storage browser Anda (yang akan memprioritaskan URL lama). Agar perubahan Vercel berefek, pengguna harus <strong>Clear Cache / Local Storage</strong>, atau Anda bisa mengubah <code className="bg-rose-500/20 px-1 rounded">DEFAULT_SUPABASE_URL</code> secara hardcode di <code className="bg-rose-500/20 px-1 rounded">src/services/supabase.ts</code> lalu Push ke GitHub.
               </div>
 
               <button
