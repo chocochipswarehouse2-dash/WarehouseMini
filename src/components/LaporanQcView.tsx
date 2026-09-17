@@ -11,6 +11,8 @@ import {
   X,
   Camera,
   UploadCloud,
+  Image as ImageIcon,
+  Loader2,
   Layers,
   Calendar,
   User,
@@ -216,13 +218,29 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   // Form Collapsible
   const [showForm, setShowForm] = useState<boolean>(true);
 
-  // Common Header State
-  const [batchSumber, setBatchSumber] = useState<string>('Penerimaan CMT');
+  // Common Header State & Auto-Save Draft Recovery
+  const initialDraft = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('wms_qc_form_draft');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.variants) && parsed.variants.length > 0) {
+        const hasContent = parsed.variants.some(
+          (v: any) => v.sku || v.nama_produk || (v.photos && v.photos.length > 0) || v.detail_kerusakan
+        );
+        if (hasContent) return parsed;
+      }
+    } catch {}
+    return null;
+  }, []);
+
+  const [batchSumber, setBatchSumber] = useState<string>(() => initialDraft?.batchSumber || 'Penerimaan CMT');
   const [batchTanggal, setBatchTanggal] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
+    initialDraft?.batchTanggal || new Date().toISOString().slice(0, 10)
   );
-  const [batchGdriveLink, setBatchGdriveLink] = useState<string>('');
-  const [batchCatatan, setBatchCatatan] = useState<string>('');
+  const [batchGdriveLink, setBatchGdriveLink] = useState<string>(() => initialDraft?.batchGdriveLink || '');
+  const [batchCatatan, setBatchCatatan] = useState<string>(() => initialDraft?.batchCatatan || '');
+  const [hasRestoredDraft, setHasRestoredDraft] = useState<boolean>(() => !!initialDraft);
 
   // PIC Pemeriksa = User Login (strictly locked)
   const currentPicName = useMemo(() => {
@@ -230,7 +248,53 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   }, [session]);
 
   // Multi-Variant List State
-  const [variants, setVariants] = useState<QcVariantItem[]>([createInitialVariant('sku')]);
+  const [variants, setVariants] = useState<QcVariantItem[]>(() =>
+    initialDraft?.variants && initialDraft.variants.length > 0
+      ? initialDraft.variants
+      : [createInitialVariant('sku')]
+  );
+
+  // State loading kompresi foto kamera per varian
+  const [compressingVariantId, setCompressingVariantId] = useState<string | null>(null);
+  const [isCompressingEditPhoto, setIsCompressingEditPhoto] = useState<boolean>(false);
+
+  // Auto-Save Draft Debounced to prevent losing form data during camera app switch
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const hasContent = variants.some(
+          (v) => v.sku.trim() || v.nama_produk.trim() || v.photos.length > 0 || v.detail_kerusakan.trim()
+        );
+        if (hasContent) {
+          const draft = {
+            batchSumber,
+            batchTanggal,
+            batchGdriveLink,
+            batchCatatan,
+            variants,
+            savedAt: Date.now(),
+          };
+          localStorage.setItem('wms_qc_form_draft', JSON.stringify(draft));
+        } else {
+          localStorage.removeItem('wms_qc_form_draft');
+        }
+      } catch (e) {
+        // Safe fallback jika storage penuh
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [batchSumber, batchTanggal, batchGdriveLink, batchCatatan, variants]);
+
+  const handleClearDraft = () => {
+    try {
+      localStorage.removeItem('wms_qc_form_draft');
+    } catch {}
+    setVariants([createInitialVariant('sku')]);
+    setBatchCatatan('');
+    setBatchGdriveLink('');
+    setHasRestoredDraft(false);
+    onShowToast('Draf formulir QC telah dibersihkan.', 'info');
+  };
 
   // Active Autocomplete Dropdown Variant Tracking
   const [activeSuggestionVarId, setActiveSuggestionVarId] = useState<string | null>(null);
@@ -625,31 +689,36 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     if (!files || files.length === 0) return;
 
     const fileList = Array.from(files);
+    setCompressingVariantId(variantId);
     const newPhotos: PhotoItem[] = [];
 
-    for (const file of fileList) {
-      try {
-        const res = await compressImage(file, 1200, 0.75);
+    try {
+      for (const file of fileList) {
+        try {
+          // Kompresi hemat RAM (1024px, quality 0.70)
+          const res = await compressImage(file, 1024, 0.7);
 
-        newPhotos.push({
-          dataUrl: res.dataUrl,
-          originalSize: res.originalSize,
-          compressedSize: res.compressedSize,
-          savedPercent: res.savedPercentage,
-        });
-      } catch (err) {
-        console.warn('Gagal kompres foto:', err);
+          newPhotos.push({
+            dataUrl: res.dataUrl,
+            originalSize: res.originalSize,
+            compressedSize: res.compressedSize,
+            savedPercent: res.savedPercentage,
+          });
+        } catch (err) {
+          console.warn('Gagal kompres foto:', err);
+        }
       }
-    }
 
-    if (newPhotos.length > 0) {
-      setVariants((prev) =>
-        prev.map((v) => (v.id === variantId ? { ...v, photos: [...v.photos, ...newPhotos] } : v))
-      );
-      onShowToast(`${newPhotos.length} foto bukti cacat berhasil dikompres WebP!`, 'success');
+      if (newPhotos.length > 0) {
+        setVariants((prev) =>
+          prev.map((v) => (v.id === variantId ? { ...v, photos: [...v.photos, ...newPhotos] } : v))
+        );
+        onShowToast(`${newPhotos.length} foto bukti cacat berhasil diproses & dikompres WebP!`, 'success');
+      }
+    } finally {
+      setCompressingVariantId(null);
+      e.target.value = '';
     }
-
-    e.target.value = '';
   };
 
   const handleRemovePhotoFromVariant = (variantId: string, photoIdx: number) => {
@@ -825,7 +894,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
         );
       }
 
-      // Reset form to 1 clean variant
+      // Reset form to 1 clean variant & clear saved draft
+      try {
+        localStorage.removeItem('wms_qc_form_draft');
+      } catch {}
+      setHasRestoredDraft(false);
       setVariants([createInitialVariant('sku')]);
       setBatchCatatan('');
       setBatchGdriveLink('');
@@ -922,21 +995,27 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     if (!files || files.length === 0) return;
 
     const fileList = Array.from(files);
-    for (const file of fileList) {
-      try {
-        const res = await compressImage(file, 1200, 0.75);
-        setEditPhotos((prev) => [
-          ...prev,
-          {
-            dataUrl: res.dataUrl,
-            originalSize: res.originalSize,
-            compressedSize: res.compressedSize,
-            savedPercent: res.savedPercentage,
-          },
-        ]);
-      } catch (err) {
-        console.warn('Gagal kompres foto edit:', err);
+    setIsCompressingEditPhoto(true);
+    try {
+      for (const file of fileList) {
+        try {
+          const res = await compressImage(file, 1024, 0.7);
+          setEditPhotos((prev) => [
+            ...prev,
+            {
+              dataUrl: res.dataUrl,
+              originalSize: res.originalSize,
+              compressedSize: res.compressedSize,
+              savedPercent: res.savedPercentage,
+            },
+          ]);
+        } catch (err) {
+          console.warn('Gagal kompres foto edit:', err);
+        }
       }
+    } finally {
+      setIsCompressingEditPhoto(false);
+      e.target.value = '';
     }
   };
 
@@ -1372,6 +1451,25 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       {viewMode !== 'riwayat_only' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-all">
           <form onSubmit={handleSubmitBatch} className="p-3.5 sm:p-5 space-y-2 sm:space-y-5">
+            {/* Notifikasi Draf Terpulihkan (Melindungi dari reload tab kamera HP) */}
+            {hasRestoredDraft && (
+              <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-200 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Draf Otomatis Dipulihkan:</strong> Data formulir & foto yang belum dikirim tetap aman tersimpan meskipun browser sempat reload saat membuka kamera.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearDraft}
+                  className="px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg border border-amber-300 dark:border-amber-700 shrink-0 transition-colors"
+                >
+                  Bersihkan Draf
+                </button>
+              </div>
+            )}
+
             {/* Header Informasi Batch & PIC Login */}
             <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-slate-50 dark:from-slate-800/70 dark:via-slate-800/50 dark:to-slate-900 border border-blue-100 dark:border-slate-700/80 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/60 dark:border-slate-700/60 pb-2.5">
@@ -2021,19 +2119,51 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                           </label>
 
                           <div className="flex flex-wrap items-center gap-2">
-                            {/* Upload Button */}
-                            <label className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-rose-400 dark:border-rose-700 bg-rose-100/50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-semibold cursor-pointer transition-colors">
-                              <UploadCloud className="w-4 h-4" />
-                              <span>+ Lampirkan Foto</span>
+                            {/* Tombol 1: Kamera Langsung (Aman di HP Android/iOS, single shot tanpa crash) */}
+                            <label
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer transition-all shadow-xs ${
+                                compressingVariantId === variant.id ? 'opacity-50 pointer-events-none' : ''
+                              }`}
+                              title="Buka kamera langsung untuk memotret cacat produk"
+                            >
+                              <Camera className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Kamera</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                onChange={(e) => handlePhotoUploadForVariant(variant.id, e)}
+                                className="hidden"
+                                disabled={compressingVariantId === variant.id}
+                              />
+                            </label>
+
+                            {/* Tombol 2: Pilih dari Galeri / File (Bisa multi-pilih tanpa memicu crash kamera) */}
+                            <label
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer transition-all ${
+                                compressingVariantId === variant.id ? 'opacity-50 pointer-events-none' : ''
+                              }`}
+                              title="Pilih satu atau beberapa foto dari galeri HP / file penyimpanan"
+                            >
+                              <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Galeri / File</span>
                               <input
                                 type="file"
                                 accept="image/*"
                                 multiple
-                                capture="environment"
                                 onChange={(e) => handlePhotoUploadForVariant(variant.id, e)}
                                 className="hidden"
+                                disabled={compressingVariantId === variant.id}
                               />
                             </label>
+
+                            {/* Indikator Proses Kompresi */}
+                            {compressingVariantId === variant.id && (
+                              <div className="flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 font-medium px-2 py-1 bg-rose-50 dark:bg-rose-950/30 rounded-lg animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                                <span>Mengompres foto...</span>
+                              </div>
+                            )}
 
                             {/* Photo Thumbnails */}
                             {variant.photos.map((p, pIdx) => (
@@ -3555,17 +3685,49 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                   <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                     Dokumentasi Foto Bukti ({editPhotos.length})
                   </label>
-                  <label className="px-2.5 py-1 text-[11px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/60 flex items-center gap-1">
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Tambah Foto</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={handleEditPhotoUpload}
-                    />
-                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {/* Kamera Langsung */}
+                    <label
+                      className={`px-2 py-1 text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg cursor-pointer hover:bg-rose-100 flex items-center gap-1 ${
+                        isCompressingEditPhoto ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                      title="Ambil foto langsung dengan kamera"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Kamera</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleEditPhotoUpload}
+                        disabled={isCompressingEditPhoto}
+                      />
+                    </label>
+
+                    {/* Galeri / File */}
+                    <label
+                      className={`px-2 py-1 text-[11px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg cursor-pointer hover:bg-blue-100 flex items-center gap-1 ${
+                        isCompressingEditPhoto ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                      title="Pilih foto dari galeri"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>Galeri</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleEditPhotoUpload}
+                        disabled={isCompressingEditPhoto}
+                      />
+                    </label>
+
+                    {isCompressingEditPhoto && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                    )}
+                  </div>
                 </div>
 
                 {editPhotos.length > 0 ? (
