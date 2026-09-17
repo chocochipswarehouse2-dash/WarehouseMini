@@ -1013,18 +1013,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     }
   };
 
-  // Helper: Dapatkan list riwayat laporan QC HANYA untuk produk yang sama (SKU / Nama Produk / Kode Produksi)
-  // Tidak memunculkan nomor referensi produk lain untuk dipilih
+  // Helper: Dapatkan list riwayat laporan QC.
+  // User meminta agar SEMUA referensi laporan QC ditampilkan agar bisa dipilih lintas-produk, 
+  // namun kita akan mengurutkan laporan yang cocok (matching) di urutan teratas.
   const getMatchingQcOptions = (sku?: string, namaProduk?: string, currentQcNo?: string): QcReport[] => {
     const cleanSku = (sku || '').trim().toUpperCase();
     const cleanNama = (namaProduk || '').trim().toUpperCase();
 
-    // Jika SKU dan nama produk kosong, dan tidak ada no QC yang aktif, jangan tampilkan apa-apa
-    if (!cleanSku && !cleanNama && !currentQcNo) {
-      return [];
-    }
-
-    // Normalisasi string untuk pencocokan teks nama / kode produk (menghilangkan variasi size dan karakter khusus)
     const normalize = (str: string) =>
       str
         .toUpperCase()
@@ -1036,77 +1031,50 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     const normSku = normalize(cleanSku);
     const normNama = normalize(cleanNama);
 
-    const matched = qcReports.filter((q) => {
-      // 1. Jika no laporan adalah yang saat ini sudah terkoneksi ke tiket, selalu sertakan agar tidak hilang
-      if (currentQcNo && (q.report_no === currentQcNo || String(q.id) === currentQcNo)) {
-        return true;
-      }
-
+    const isMatch = (q: QcReport) => {
+      if (currentQcNo && (q.report_no === currentQcNo || String(q.id) === currentQcNo)) return true;
+      if (!cleanSku && !cleanNama) return false;
       const qSku = (q.sku || '').trim().toUpperCase();
       const qNama = (q.nama_produk || '').trim().toUpperCase();
       const qKode = (q.kode_produksi || '').trim().toUpperCase();
-
-      // 2. Exact match SKU
-      if (cleanSku && qSku && cleanSku === qSku) {
-        return true;
-      }
-
-      // 3. Match Kode Produksi
+      if (cleanSku && qSku && cleanSku === qSku) return true;
       if (qKode && qKode.length >= 3) {
         if (cleanSku && (cleanSku === qKode || cleanSku.startsWith(qKode) || cleanSku.includes(qKode))) return true;
         if (cleanNama && (cleanNama === qKode || cleanNama.includes(qKode))) return true;
       }
-
-      // 4. Match Normalized SKU / Model Base
       const qNormSku = normalize(qSku);
       if (normSku && qNormSku && normSku.length >= 3 && qNormSku.length >= 3) {
-        if (normSku === qNormSku || normSku.startsWith(qNormSku) || qNormSku.startsWith(normSku)) {
-          return true;
-        }
+        if (normSku === qNormSku || normSku.startsWith(qNormSku) || qNormSku.startsWith(normSku)) return true;
       }
-
-      // 5. Match Nama Produk (Produk yang sama)
       const qNormNama = normalize(qNama);
       if (normNama && qNormNama && normNama.length >= 3 && qNormNama.length >= 3) {
-        if (normNama === qNormNama || normNama.includes(qNormNama) || qNormNama.includes(normNama)) {
-          return true;
-        }
+        if (normNama === qNormNama || normNama.includes(qNormNama) || qNormNama.includes(normNama)) return true;
       }
-
-      // 6. Cross match nama tiket dengan SKU QC jika SKU QC adalah nama produk
       if (normNama && qNormSku && normNama.length >= 4 && qNormSku.length >= 4) {
-        if (normNama === qNormSku || normNama.includes(qNormSku) || qNormSku.includes(normNama)) {
-          return true;
-        }
+        if (normNama === qNormSku || normNama.includes(qNormSku) || qNormSku.includes(normNama)) return true;
       }
-
-      // 7. Cross match SKU tiket dengan Nama QC jika SKU tiket adalah nama produk
       if (normSku && qNormNama && normSku.length >= 4 && qNormNama.length >= 4) {
-        if (normSku === qNormNama || normSku.includes(qNormNama) || qNormNama.includes(normSku)) {
-          return true;
-        }
+        if (normSku === qNormNama || normSku.includes(qNormNama) || qNormNama.includes(normSku)) return true;
       }
-
       return false;
+    };
+
+    const uniqueMap = new Map<string, QcReport & { _isMatch?: boolean }>();
+    qcReports.forEach((q) => {
+      if (q.report_no && !uniqueMap.has(q.report_no)) {
+        uniqueMap.set(q.report_no, { ...q, _isMatch: isMatch(q) });
+      }
     });
 
-    // Hilangkan duplikasi berdasarkan report_no
-    const uniqueMap = new Map<string, QcReport>();
-    for (const q of matched) {
-      if (q.report_no && !uniqueMap.has(q.report_no)) {
-        uniqueMap.set(q.report_no, q);
-      }
-    }
-
-    // Urutkan dari laporan QC terbaru
-    return Array.from(uniqueMap.values()).sort((a, b) => {
+    const uniqueReports = Array.from(uniqueMap.values());
+    return uniqueReports.sort((a, b) => {
+      if (a._isMatch && !b._isMatch) return -1;
+      if (!a._isMatch && b._isMatch) return 1;
       const dateA = new Date(a.tanggal || 0).getTime();
       const dateB = new Date(b.tanggal || 0).getTime();
       return dateB - dateA;
     });
   };
-
-  // Handler: Menghubungkan Tiket Cuci / Permak ke No Referensi Laporan QC
   const handleQuickLinkQcReport = async (item: PerbaikanTicket, selectedQcNo: string) => {
     const targetQcNo = selectedQcNo.trim();
     const updated: PerbaikanTicket = {
@@ -3229,7 +3197,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                             </span>
                           ) : (
                             <span className="text-slate-400 text-[10px]">
-                              {hasOptions ? `${qcOptions.length} Laporan Produk Ini` : 'Belum Ada Laporan'}
+                              {hasOptions ? `${qcOptions.length} Laporan Tersedia` : 'Belum Ada Laporan'}
                             </span>
                           )}
                         </div>
@@ -4005,7 +3973,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   )}
                 </div>
                 <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80 leading-snug">
-                  Hanya menampilkan laporan inspeksi QC khusus untuk produk ini.
+                  Laporan QC yang produknya cocok dengan tiket ini akan ditampilkan di urutan teratas.
                 </p>
                 {(() => {
                   const qcOptions = getMatchingQcOptions(
@@ -4023,8 +3991,8 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     >
                       <option value="">
                         {hasOptions
-                          ? `-- Tanpa Referensi Laporan QC (${qcOptions.length} laporan untuk produk ini) --`
-                          : `-- Tidak ada riwayat QC untuk produk ini --`}
+                          ? `-- Tanpa Referensi Laporan QC (${qcOptions.length} laporan tersedia) --`
+                          : `-- Tidak ada riwayat QC --`}
                       </option>
                       {qcOptions.map((q) => (
                         <option key={q.report_no} value={q.report_no}>

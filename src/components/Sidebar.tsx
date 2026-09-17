@@ -58,6 +58,7 @@ interface SidebarProps {
   onLogout: () => void;
   totalScannedCount: number;
   hasNewPickingAlert?: boolean;
+  onLogoClick?: () => void;
 }
 
 import { AppLogo } from './Logo';
@@ -80,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   totalScannedCount,
   hasNewPickingAlert = false,
+  onLogoClick,
 }) => {
   const userIsAdmin = isSuperadmin(session);
   const userCanAccessSettings = canAccessSettings(session);
@@ -694,7 +696,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Top Brand Header */}
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <AppLogo />
+              <AppLogo onClick={onLogoClick} />
               <div>
                 <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
                   WMS
@@ -779,7 +781,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <AppLogo size={32} />
+            <AppLogo size={32} onClick={onLogoClick} />
             {!isCollapsed && (
               <div className="min-w-0">
                 <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">

@@ -475,7 +475,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 page-break-inside: avoid !important;
                 break-before: auto !important;
                 break-inside: avoid !important;
-                overflow: hidden !important;
+                
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
@@ -492,7 +492,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 flex-direction: ${isPortrait ? 'column' : 'row'} !important;
                 align-items: center !important;
                 justify-content: ${isPortrait ? 'center' : 'flex-start'} !important;
-                overflow: hidden !important;
+                
                 background: #ffffff !important;
                 color: #000000 !important;
               }
@@ -518,7 +518,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: center !important;
-                overflow: hidden !important;
+                
                 line-height: 1.15 !important;
                 ${isPortrait ? 'text-align: center; width: 100%;' : ''}
               }
@@ -526,9 +526,9 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 font-size: ${isPortrait ? '6.8pt' : '7.5pt'} !important;
                 font-weight: 800 !important;
                 line-height: 1.15 !important;
-                white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
+                word-break: break-word !important; white-space: normal !important;
+                
+                
                 letter-spacing: -0.1px !important;
                 color: #000000 !important;
               }
@@ -537,10 +537,10 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 font-weight: 600 !important;
                 line-height: 1.15 !important;
                 color: #111111 !important;
-                display: -webkit-box !important;
-                -webkit-line-clamp: 2 !important;
-                -webkit-box-orient: vertical !important;
-                overflow: hidden !important;
+                display: block !important;
+                
+                
+                
                 word-break: break-word !important;
               }
               .thermal-meta-details {
@@ -555,14 +555,14 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 ${isPortrait ? 'justify-content: center;' : ''}
               }
               .thermal-meta-size {
-                white-space: nowrap !important;
+                word-break: break-word !important; white-space: normal !important;
               }
               .thermal-meta-dot {
                 color: #666666 !important;
                 font-size: 5.5pt !important;
               }
               .thermal-meta-loc {
-                white-space: nowrap !important;
+                word-break: break-word !important; white-space: normal !important;
               }
               .thermal-ticket-row {
                 margin-top: 0.3mm !important;
@@ -574,7 +574,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 font-family: 'JetBrains Mono', monospace !important;
                 font-weight: 700 !important;
                 color: #000000 !important;
-                white-space: nowrap !important;
+                word-break: break-word !important; white-space: normal !important;
                 letter-spacing: -0.1px !important;
               }
             </style>
@@ -694,7 +694,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 page-break-inside: avoid !important;
                 break-before: auto !important;
                 break-inside: avoid !important;
-                overflow: hidden !important;
+                
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
@@ -714,7 +714,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 background: white !important;
                 color: black !important;
                 font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-                overflow: hidden !important;
+                
               }
               .thermal-qr-container {
                 width: ${printOrientation === 'portrait' ? '13.0mm' : '13.5mm'} !important;
@@ -738,7 +738,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: center !important;
-                overflow: hidden !important;
+                
                 line-height: 1.15 !important;
                 ${printOrientation === 'portrait' ? 'text-align: center; width: 100%;' : ''}
               }
@@ -746,9 +746,9 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 font-size: ${printOrientation === 'portrait' ? '6.8pt' : '7.5pt'} !important;
                 font-weight: 800 !important;
                 line-height: 1.15 !important;
-                white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
+                word-break: break-word !important; white-space: normal !important;
+                
+                
                 letter-spacing: -0.1px !important;
                 color: #000000 !important;
               }
@@ -757,10 +757,10 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 font-weight: 600 !important;
                 line-height: 1.15 !important;
                 color: #111111 !important;
-                display: -webkit-box !important;
-                -webkit-line-clamp: 2 !important;
-                -webkit-box-orient: vertical !important;
-                overflow: hidden !important;
+                display: block !important;
+                
+                
+                
                 word-break: break-word !important;
               }
               .thermal-meta-details {
@@ -775,14 +775,14 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 ${printOrientation === 'portrait' ? 'justify-content: center;' : ''}
               }
               .thermal-meta-size {
-                white-space: nowrap !important;
+                word-break: break-word !important; white-space: normal !important;
               }
               .thermal-meta-dot {
                 color: #666666 !important;
                 font-size: 5.5pt !important;
               }
               .thermal-meta-loc {
-                white-space: nowrap !important;
+                word-break: break-word !important; white-space: normal !important;
               }
               .thermal-ticket-row {
                 margin-top: 0.3mm !important;
@@ -794,7 +794,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 font-family: 'JetBrains Mono', monospace !important;
                 font-weight: 700 !important;
                 color: #000000 !important;
-                white-space: nowrap !important;
+                word-break: break-word !important; white-space: normal !important;
                 letter-spacing: -0.1px !important;
               }
             }

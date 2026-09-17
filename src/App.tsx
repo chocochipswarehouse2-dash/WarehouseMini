@@ -32,6 +32,7 @@ import { ApkInstallModal } from './components/ApkInstallModal';
 import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { ThemePickerModal } from './components/ThemePickerModal';
+import { LogoPreviewModal } from './components/LogoPreviewModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -542,6 +543,7 @@ export default function App() {
   // Modals & Drawers & Sidebar
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isThemePickerOpen, setIsThemePickerOpen] = useState<boolean>(false);
+  const [isLogoPreviewOpen, setIsLogoPreviewOpen] = useState<boolean>(false);
   const [isUpdateDatabaseOpen, setIsUpdateDatabaseOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -1405,6 +1407,7 @@ export default function App() {
 
       {/* Modern Collapsible Sidebar (Mobile Drawer + Desktop Sidebar) */}
       <Sidebar
+        onLogoClick={() => setIsLogoPreviewOpen(true)}
         onOpenThemePicker={() => setIsThemePickerOpen(true)}
         session={session}
         activePage={activePage}
@@ -1689,6 +1692,11 @@ export default function App() {
         setThemeFont={setThemeFont}
         themeIconStyle={themeIconStyle}
         setThemeIconStyle={setThemeIconStyle}
+      />
+
+      <LogoPreviewModal
+        isOpen={isLogoPreviewOpen}
+        onClose={() => setIsLogoPreviewOpen(false)}
       />
 
       <SettingsModal
