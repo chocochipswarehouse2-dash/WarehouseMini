@@ -654,10 +654,13 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         if (!isLocationMatch(t.lokasi_sekarang, filterLokasi)) return false;
       }
 
-      // Search query
+      // Search query (mendukung pencarian nomor tiket, SKU, nama produk dari tiket maupun dari katalog master)
       if (deferredSearch.trim()) {
         const keywords = deferredSearch.trim().toUpperCase().split(/\s+/).filter(Boolean);
-        const text = `${t.ticket_no || ''} ${t.sku || ''} ${t.nama_produk || ''} ${t.lokasi_sekarang || ''} ${t.detail_kerusakan || ''} ${t.petugas_reparasi || ''} ${t.qc_pic || ''}`.toUpperCase();
+        const skuUpper = (t.sku || '').trim().toUpperCase();
+        const catalogItem = catalogSkuMap.get(skuUpper);
+        const catalogName = catalogItem ? (catalogItem.p || catalogItem.n || '') : '';
+        const text = `${t.ticket_no || ''} ${t.sku || ''} ${t.nama_produk || ''} ${catalogName} ${t.lokasi_sekarang || ''} ${t.detail_kerusakan || ''} ${t.petugas_reparasi || ''} ${t.qc_pic || ''}`.toUpperCase();
         const matchesAll = keywords.every(kw => text.includes(kw));
         if (!matchesAll) return false;
       }
@@ -2920,7 +2923,12 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                       {item.sku}
                     </div>
                     <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                      {item.nama_produk}
+                      {item.nama_produk && item.nama_produk !== item.sku
+                        ? item.nama_produk
+                        : catalogSkuMap.get((item.sku || '').trim().toUpperCase())?.p ||
+                          catalogSkuMap.get((item.sku || '').trim().toUpperCase())?.n ||
+                          item.nama_produk ||
+                          item.sku}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-0.5">
                       <span>Size: <b className="text-slate-700 dark:text-slate-300">{item.size || '-'}</b></span>
