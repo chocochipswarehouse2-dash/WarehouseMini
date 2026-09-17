@@ -388,7 +388,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       setIsLoading(true);
       try {
         const data = await fetchQcReportsFromSupabase();
-        if (mounted && data && data.length > 0) {
+        if (mounted && data) {
           setReports(data);
           window.dispatchEvent(
             new CustomEvent('wms_qc_reports_updated', { detail: { reports: data } })
