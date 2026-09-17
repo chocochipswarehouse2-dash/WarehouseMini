@@ -1226,7 +1226,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         <div class="header">
           <div>
             <div class="logo-title" style="display: flex; align-items: center; gap: 8px;">
-              <img src="/logo.png" alt="Logo" referrerPolicy="no-referrer" style="height: 28px; object-fit: contain;" onerror="this.style.display='none'" />
+              <img src="/logo.svg" alt="Logo" referrerPolicy="no-referrer" style="height: 28px; object-fit: contain;" onerror="this.style.display='none'" />
               <span>WMS</span>
             </div>
             <div class="logo-sub">Surat Peminjaman Sementara (SPS)</div>

@@ -738,7 +738,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         <div class="header">
           <div>
             <div class="logo-title" style="display: flex; align-items: center; gap: 8px;">
-              <img src="/logo.png" alt="Logo" referrerPolicy="no-referrer" style="height: 28px; object-fit: contain;" onerror="this.style.display='none'" />
+              <img src="/logo.svg" alt="Logo" referrerPolicy="no-referrer" style="height: 28px; object-fit: contain;" onerror="this.style.display='none'" />
               <span>WMS</span>
             </div>
             <div class="logo-sub">Surat Peminjaman Sementara (SPS)</div>
@@ -891,7 +891,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       <body>
         <div class="header">
           <div>
-            <img src="/logo.png" style="height:28px;" />
+            <img src="/logo.svg" style="height:28px;" />
           </div>
           <div style="text-align:right;">
             <img src="${qrUrl}" width="80" height="80" alt="QR Code" style="display:block; margin-left:auto;" />

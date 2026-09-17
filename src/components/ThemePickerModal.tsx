@@ -30,11 +30,16 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
 
   const themes = [
     { id: 'rose', name: 'Rose / Pink', colorClass: 'bg-rose-500' },
-    { id: 'blue', name: 'Ocean Blue', colorClass: 'bg-blue-500' },
-    { id: 'teal', name: 'Teal Forest', colorClass: 'bg-teal-500' },
-    { id: 'emerald', name: 'Emerald', colorClass: 'bg-emerald-500' },
+    { id: 'pink', name: 'Pastel Pink', colorClass: 'bg-pink-400' },
+    { id: 'fuchsia', name: 'Fuchsia', colorClass: 'bg-fuchsia-400' },
     { id: 'purple', name: 'Purple', colorClass: 'bg-purple-500' },
     { id: 'indigo', name: 'Midnight Indigo', colorClass: 'bg-indigo-500' },
+    { id: 'blue', name: 'Ocean Blue', colorClass: 'bg-blue-500' },
+    { id: 'sky', name: 'Pastel Sky', colorClass: 'bg-sky-400' },
+    { id: 'cyan', name: 'Pastel Cyan', colorClass: 'bg-cyan-400' },
+    { id: 'teal', name: 'Teal Forest', colorClass: 'bg-teal-500' },
+    { id: 'emerald', name: 'Emerald', colorClass: 'bg-emerald-500' },
+    { id: 'lime', name: 'Pastel Lime', colorClass: 'bg-lime-400' },
     { id: 'orange', name: 'Orange', colorClass: 'bg-orange-500' },
     { id: 'amber', name: 'Amber Sunset', colorClass: 'bg-amber-500' },
     { id: 'grey', name: 'Grey (Monokrom)', colorClass: 'bg-slate-500' },
@@ -107,7 +112,7 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
               Warna Aksen
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {themes.map((theme) => (
                 <button
                   key={theme.id}

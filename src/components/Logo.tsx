@@ -33,7 +33,7 @@ export const AppLogo: React.FC<LogoProps> = ({ className = '', size = 36, onClic
     >
       {logoId === 'classic' || !selectedDesign ? (
         <img
-          src="/app-logo.png"
+          src="/app-logo.svg"
           alt="Chocochips Logo"
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
