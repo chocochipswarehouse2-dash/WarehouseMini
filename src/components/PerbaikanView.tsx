@@ -571,7 +571,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
           // Jika nama = SKU (artinya VIEW tidak ada nama), lookup dari katalog
           const nama = (rawNama && rawNama.toUpperCase() !== skuKey)
             ? rawNama
-            : (namaFromCatalog?.p || namaFromCatalog?.nama_produk || skuKey);
+            : (namaFromCatalog?.p || (namaFromCatalog?.nama_produk as string) || skuKey);
           result.push({
             sku: s.sku,
             nama,

@@ -73,7 +73,7 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
     const rawStatus = (record.status || 'pending').toLowerCase();
     const validStatus = ['pending', 'selesai', 'deleted'].includes(rawStatus)
       ? (rawStatus === 'deleted' ? 'DELETED' : rawStatus)
-      : 'pending';
+      : (rawStatus === 'selisih' ? 'selesai' : 'pending'); // Pengecekan_sj table only accepts pending, selesai, DELETED
 
     const validKomparasi = record.status_komparasi === 'SELISIH' ? 'SELISIH' : 'COCOK';
 

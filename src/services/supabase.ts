@@ -3620,7 +3620,7 @@ export async function completePickingSuratJalanSupabase(
   try {
     for (const item of items) {
       const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
-      const condition = item.id && !item.id.startsWith('pick_')
+      const condition = item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
         ? `id=eq.${item.id}`
         : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
