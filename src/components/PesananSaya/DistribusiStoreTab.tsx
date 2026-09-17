@@ -33,6 +33,8 @@ import {
 } from '../../services/gasTarikanMD';
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
+import { generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
+import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize } from '../../utils/sortUtils';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 
 interface TarikanMDViewProps {
@@ -153,13 +155,26 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
 
     // Jika nama masih kosong atau sama persis dengan SKU, cari dari katalog produk
     const cleanSku = sku.toUpperCase().trim();
+    const catProd = catalogMap.get(cleanSku);
     if (!nama || nama.toUpperCase() === cleanSku || nama.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '')) {
-      const catProd = catalogMap.get(cleanSku);
       if (catProd && (catProd.p || (catProd as any).nama_produk || catProd.n)) {
         nama = String(catProd.p || (catProd as any).nama_produk || catProd.n || '').trim();
       }
     }
     if (!nama) nama = sku;
+
+    // Detect size from variant column, catalog item, or SKU pattern
+    const detectedSize = resolveProductDisplaySize(
+      cleanSku,
+      rawVar,
+      catProd?.s ? String(catProd.s) : ((catProd as any)?.size ? String((catProd as any).size) : undefined)
+    ) || (rawVar ? rawVar.trim() : extractSizeFromSku(cleanSku));
+    const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
+
+    // Pastikan nama produk selalu memuat Size jika ada
+    if (effectiveSize && !nama.toUpperCase().includes(effectiveSize.toUpperCase())) {
+      nama = `${nama} (Size: ${effectiveSize})`;
+    }
 
     const category = get(col.category);
 
@@ -179,7 +194,7 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
     if (group.skuMap.has(sku)) {
       group.skuMap.get(sku)!.qty_sj += qty;
     } else {
-      group.skuMap.set(sku, { sku, nama_produk: nama, category, qty_sj: qty });
+      group.skuMap.set(sku, { sku, nama_produk: nama, size: effectiveSize || undefined, category, qty_sj: qty });
     }
   }
 
@@ -352,16 +367,36 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const comparisonData = useMemo<TarikanMDScanResult[]>(() => {
     if (!activeDraft) return [];
     return activeDraft.items.map(item => {
+      const cleanSku = (item.sku || '').trim().toUpperCase();
+      const prod = productCatalog?.find(
+        p => (p.k && p.k.trim().toUpperCase() === cleanSku) ||
+             (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
+      );
+
+      const resolvedSize = resolveProductDisplaySize(
+        cleanSku,
+        item.size,
+        prod?.s ? String(prod.s) : ((prod as any)?.size ? String((prod as any).size) : undefined)
+      ) || extractSizeFromSku(cleanSku);
+      const effectiveSize = (resolvedSize && resolvedSize !== '-') ? resolvedSize : (item.size || '');
+
+      const baseName = resolveProductName(cleanSku, item.nama_produk, prod);
+      const displayName = (effectiveSize && !baseName.toUpperCase().includes(effectiveSize.toUpperCase()))
+        ? `${baseName} (Size: ${effectiveSize})`
+        : formatProductNameWithSize(baseName, effectiveSize || undefined);
+
       const qty_scan = activeDraft.scanQty[item.sku] ?? 0;
       const selisih = qty_scan - item.qty_sj;
       return {
         ...item,
+        nama_produk: displayName,
+        size: effectiveSize || undefined,
         qty_scan,
         selisih,
         status: selisih === 0 ? 'COCOK' : selisih < 0 ? 'KURANG' : 'LEBIH',
       };
     });
-  }, [activeDraft]);
+  }, [activeDraft, productCatalog]);
 
   const summary = useMemo(() => {
     if (!activeDraft) {
@@ -477,9 +512,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
              (p.sku && String(p.sku).toUpperCase() === cleanSku)
       );
 
-      const resolvedName = masterProduct
+      const baseName = masterProduct
         ? (masterProduct.p || masterProduct.n || (masterProduct as any).nama_produk || sku)
         : 'SKU tidak terdaftar';
+
+      const detectedSize = resolveProductDisplaySize(
+        cleanSku,
+        undefined,
+        masterProduct?.s ? String(masterProduct.s) : ((masterProduct as any)?.size ? String((masterProduct as any).size) : undefined)
+      ) || extractSizeFromSku(cleanSku);
+      const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
+
+      const resolvedName = (effectiveSize && !baseName.toUpperCase().includes(effectiveSize.toUpperCase()) && baseName !== 'SKU tidak terdaftar')
+        ? `${baseName} (Size: ${effectiveSize})`
+        : formatProductNameWithSize(baseName, effectiveSize || undefined);
 
       const resolvedCategory = masterProduct?.category || masterProduct?.c || 'Lainnya';
 
@@ -492,6 +538,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
               ...d.unexpected,
               [sku]: {
                 nama: resolvedName,
+                size: effectiveSize || undefined,
                 qty: currentVal.qty + 1,
                 category: resolvedCategory,
               },
@@ -580,6 +627,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         tanggal_sj: cleanDate,
         sku: item.sku,
         nama_produk: item.nama_produk,
+        size: item.size,
         category: item.category || '',
         qty_sj: item.qty_sj,
         qty_scan: item.qty_scan,
@@ -602,6 +650,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         tanggal_sj: cleanDate,
         sku,
         nama_produk: val.nama || sku,
+        size: (val as any).size,
         category: val.category || 'Lebih',
         qty_sj: 0,
         qty_scan: val.qty,
@@ -1613,24 +1662,79 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         Keseluruhan data per baris produk akan ditulis ke Database.
                       </p>
                       
-                      {summary.has_selisih && summary.kurang > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const kurangItems = activeDraft.items.filter(it => (activeDraft.scanQty[it.sku] || 0) < it.qty_sj);
-                            const text = `*⚠️ Pengecekan Surat Jalan - Selisih (Kurang)*\nNo Surat Jalan: *${activeDraft.no_sj}*\nTujuan: *${activeDraft.destination}*\n\n*Daftar Barang Kurang:*\n${kurangItems.map((item, idx) => {
-                              const prod = productCatalog.find(p => p.sku === item.sku);
-                              const lokasi = prod?.lokasi || 'Tidak diketahui';
-                              const kurangQty = item.qty_sj - (activeDraft.scanQty[item.sku] || 0);
-                              return `${idx + 1}. ${item.sku} - ${item.nama_produk}\n   Kurang: ${kurangQty} pcs\n   Lokasi Picking: ${lokasi}`;
-                            }).join('\n\n')}\n\nTolong dicek kembali ya, takutnya lupa belum diambil. Terima kasih.`;
-                            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#1DA851] text-white text-[11px] font-bold rounded-lg transition-colors mt-2"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          Share ke WA (Selisih Kurang)
-                        </button>
+                      {summary.has_selisih && (
+                        <div className="flex items-center gap-2 flex-wrap mt-2">
+                          {summary.kurang > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const kurangItems = comparisonData
+                                  .filter(it => it.status === 'KURANG')
+                                  .map(it => ({
+                                    sku: it.sku,
+                                    nama_produk: it.nama_produk,
+                                    size: it.size,
+                                    qty_sj: it.qty_sj,
+                                    qty_scan: it.qty_scan,
+                                    selisih: it.selisih,
+                                  }));
+                                const text = generateSuratJalanSelisihMessage({
+                                  no_sj: activeDraft.no_sj,
+                                  destination: activeDraft.destination,
+                                  items: kurangItems,
+                                  productCatalog,
+                                  type: 'kurang',
+                                });
+                                window.open(getWhatsAppWebUrl('', text), '_blank');
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#1DA851] text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              Share ke WA (Selisih Kurang)
+                            </button>
+                          )}
+
+                          {(summary.lebih > 0 || summary.unexpectedCount > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const regularLebih = comparisonData
+                                  .filter(it => it.status === 'LEBIH')
+                                  .map(it => ({
+                                    sku: it.sku,
+                                    nama_produk: it.nama_produk,
+                                    size: it.size,
+                                    qty_sj: it.qty_sj,
+                                    qty_scan: it.qty_scan,
+                                    selisih: it.selisih,
+                                  }));
+
+                                const unexpectedLebih = Object.entries(activeDraft.unexpected || {}).map(([sku, val]) => ({
+                                  sku,
+                                  nama_produk: val.nama || sku,
+                                  size: (val as any).size,
+                                  qty_sj: 0,
+                                  qty_scan: val.qty,
+                                  selisih: val.qty,
+                                  is_unexpected: true,
+                                }));
+
+                                const text = generateSuratJalanSelisihMessage({
+                                  no_sj: activeDraft.no_sj,
+                                  destination: activeDraft.destination,
+                                  items: [...regularLebih, ...unexpectedLebih],
+                                  productCatalog,
+                                  type: 'lebih',
+                                });
+                                window.open(getWhatsAppWebUrl('', text), '_blank');
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              Share ke WA (Selisih Lebih)
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1950,6 +2054,28 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 <Download className="w-3.5 h-3.5 text-slate-500" />
                                 Export CSV
                               </button>
+
+                              {/* SHARE SELISIH WA */}
+                              {rec.items.some(i => i.status_item === 'KURANG' || i.selisih < 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const text = generateSuratJalanSelisihMessage({
+                                      no_sj: rec.no_sj,
+                                      destination: rec.destination,
+                                      items: rec.items,
+                                      productCatalog,
+                                      type: 'kurang',
+                                    });
+                                    window.open(getWhatsAppWebUrl('', text), '_blank');
+                                  }}
+                                  className="px-3 py-1.5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#1DA851] dark:text-[#25D366] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-[#25D366]/30 cursor-pointer"
+                                  title="Share daftar selisih kurang ke WhatsApp"
+                                >
+                                  <Send className="w-3.5 h-3.5 text-[#25D366]" />
+                                  Share WA (Kurang)
+                                </button>
+                              )}
                             </div>
 
                             {/* ADMIN ACTIONS: EDIT & HAPUS */}
@@ -2103,7 +2229,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                           )}
                                         </td>
                                         <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[200px]">
-                                          <div className="font-medium truncate">{item.nama_produk}</div>
+                                          <div className="font-medium truncate flex items-center gap-1.5">
+                                            <span className="truncate">{item.nama_produk}</span>
+                                            {item.size && (
+                                              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded shrink-0">
+                                                {item.size}
+                                              </span>
+                                            )}
+                                          </div>
                                           {item.category && (
                                             <div className="text-[9px] text-slate-400 font-normal truncate">{item.category}</div>
                                           )}

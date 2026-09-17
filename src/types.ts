@@ -645,6 +645,7 @@ export interface WmsSettings {
 export interface TarikanMDItem {
   sku: string;
   nama_produk: string;
+  size?: string;
   category?: string;
   qty_sj: number;
 }
@@ -666,6 +667,7 @@ export interface PengecekanSJItem {
   tanggal_sj: string;
   sku: string;
   nama_produk: string;
+  size?: string;
   category?: string;
   qty_sj: number;
   qty_scan: number;

@@ -1,4 +1,5 @@
-import { PeminjamanRecord } from '../types';
+import { PeminjamanRecord, ProductItem } from '../types';
+import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
 
 export interface FonnteConfig {
   token: string;
@@ -297,4 +298,102 @@ export function getWhatsAppWebUrl(phone: string, text: string): string {
     return `https://wa.me/${cleanPhone}?text=${encodedText}`;
   }
   return `https://api.whatsapp.com/send?text=${encodedText}`;
+}
+
+export interface SuratJalanSelisihItemParam {
+  sku: string;
+  nama_produk: string;
+  size?: string;
+  qty_sj: number;
+  qty_scan: number;
+  selisih?: number;
+  lokasi?: string;
+  is_unexpected?: boolean;
+}
+
+export interface SuratJalanSelisihMessageParams {
+  no_sj: string;
+  destination: string;
+  source?: string;
+  tanggal_sj?: string;
+  items: SuratJalanSelisihItemParam[];
+  productCatalog?: ProductItem[];
+  type?: 'kurang' | 'lebih' | 'semua';
+}
+
+/**
+ * Membuat format pesan WhatsApp untuk pelaporan selisih pengecekan Surat Jalan (Kurang / Lebih).
+ * Menjamin nama produk selalu memuat Size / Ukuran dengan jelas dan rapi.
+ */
+export function generateSuratJalanSelisihMessage(params: SuratJalanSelisihMessageParams): string {
+  const { no_sj, destination, items = [], productCatalog = [], type = 'kurang' } = params;
+
+  // Filter items
+  const kurangItems = items.filter(it => {
+    const selisih = it.selisih !== undefined ? it.selisih : (it.qty_scan - it.qty_sj);
+    return selisih < 0 || it.qty_scan < it.qty_sj;
+  });
+
+  const lebihItems = items.filter(it => {
+    const selisih = it.selisih !== undefined ? it.selisih : (it.qty_scan - it.qty_sj);
+    return selisih > 0 || it.qty_scan > it.qty_sj || Boolean(it.is_unexpected);
+  });
+
+  const formatItemRow = (it: SuratJalanSelisihItemParam, idx: number, mode: 'kurang' | 'lebih') => {
+    const cleanSku = (it.sku || '').trim().toUpperCase();
+    const prod = productCatalog.find(
+      p => (p.k && p.k.trim().toUpperCase() === cleanSku) ||
+           (p.sku && String(p.sku).trim().toUpperCase() === cleanSku)
+    );
+
+    const lokasi = it.lokasi || prod?.lokasi || (prod as any)?.location || 'Tidak diketahui';
+    
+    // Sizing resolution: explicit size -> catalog size -> SKU code pattern
+    const resolvedSize = resolveProductDisplaySize(
+      cleanSku,
+      it.size,
+      prod?.s ? String(prod.s) : ((prod as any)?.size ? String((prod as any).size) : undefined)
+    ) || extractSizeFromSku(cleanSku);
+
+    const displaySize = (resolvedSize && resolvedSize !== '-') ? resolvedSize : (it.size || '-');
+    const baseName = resolveProductName(cleanSku, it.nama_produk, prod);
+    
+    // Guarantee that the product name clearly incorporates the size
+    const nameWithSize = (displaySize !== '-' && !baseName.toUpperCase().includes(displaySize.toUpperCase()))
+      ? `${baseName} (Size: ${displaySize})`
+      : formatProductNameWithSize(baseName, displaySize !== '-' ? displaySize : undefined);
+
+    const diffQty = mode === 'kurang'
+      ? (it.selisih !== undefined && it.selisih < 0 ? Math.abs(it.selisih) : Math.max(0, it.qty_sj - it.qty_scan))
+      : (it.selisih !== undefined && it.selisih > 0 ? it.selisih : Math.max(0, it.qty_scan - it.qty_sj));
+
+    const diffLabel = mode === 'kurang' ? 'Kurang' : 'Lebih';
+
+    return `${idx + 1}. ${it.sku} - *${nameWithSize}*\n   • Size: *${displaySize}*\n   • ${diffLabel}: *${diffQty} pcs*\n   • Lokasi Picking: ${lokasi}`;
+  };
+
+  let title = `*⚠️ Pengecekan Surat Jalan - Selisih (Kurang)*`;
+  if (type === 'lebih') {
+    title = `*⚠️ Pengecekan Surat Jalan - Selisih (Lebih)*`;
+  } else if (type === 'semua' && lebihItems.length > 0 && kurangItems.length > 0) {
+    title = `*⚠️ Pengecekan Surat Jalan - Rekap Selisih*`;
+  }
+
+  let body = `${title}\nNo Surat Jalan: *${no_sj}*\nTujuan: *${destination}*\n`;
+
+  if (type === 'kurang' || (type === 'semua' && kurangItems.length > 0)) {
+    body += `\n*Daftar Barang Kurang:*\n${kurangItems.map((it, idx) => formatItemRow(it, idx, 'kurang')).join('\n\n')}\n`;
+  }
+
+  if (type === 'lebih' || (type === 'semua' && lebihItems.length > 0)) {
+    body += `\n*Daftar Barang Lebih / Tidak Terdaftar:*\n${lebihItems.map((it, idx) => formatItemRow(it, idx, 'lebih')).join('\n\n')}\n`;
+  }
+
+  if (type === 'kurang' || (type === 'semua' && kurangItems.length > 0)) {
+    body += `\nTolong dicek kembali ya, takutnya lupa belum diambil. Terima kasih.`;
+  } else {
+    body += `\nMohon diverifikasi kembali data kelebihan fisik ini. Terima kasih.`;
+  }
+
+  return body;
 }
