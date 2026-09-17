@@ -1,26 +1,54 @@
-import re
-
 with open('src/services/supabase.ts', 'r') as f:
     content = f.read()
 
-# Fix startsWith on number
-content = content.replace(
-    "const condition = item.id && !item.id.startsWith('pick_')",
-    "const condition = item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))"
-)
+# Fix cache handling issue in createPickingSuratJalanSupabase 
+# The issue is we create the cache with one set of keys (e.g., date formats, strings) and expect it to magically align.
+# Wait, let me check where we set local storage.
 
-# Fix in DistribusiStoreTab.tsx for invalid status
-with open('src/services/gasTarikanMD.ts', 'r') as f:
-    tarikan_content = f.read()
+content = content.replace('''
+  // 1. Immediately store to local caches so it appears in Tugas Picking right away
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // Update wms_picking_cache
+      const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
+      const filteredCache = cached.filter(
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+      );
+      localStorage.setItem('wms_picking_cache', JSON.stringify([...newItems, ...filteredCache]));
 
-# Fix status validation to accept 'selisih' or convert appropriately
-tarikan_content = tarikan_content.replace(
-    "const validStatus = ['pending', 'selesai', 'deleted'].includes(rawStatus)\n      ? (rawStatus === 'deleted' ? 'DELETED' : rawStatus)\n      : 'pending';",
-    "const validStatus = ['pending', 'selesai', 'deleted'].includes(rawStatus)\n      ? (rawStatus === 'deleted' ? 'DELETED' : rawStatus)\n      : (rawStatus === 'selisih' ? 'pending' : 'pending'); // Pengecekan_sj table only accepts pending, selesai, DELETED"
-)
+      // Update wms_raw_picking_list_cache (used by PickingTasksView)
+      const rawCached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_raw_picking_list_cache') || '[]');
+      const filteredRaw = rawCached.filter(
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+      );
+      localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify([...newItems, ...filteredRaw]));
+    }
+  } catch (cErr) {
+    console.warn('Error saving picking to local cache:', cErr);
+  }
+''', '''
+  // 1. Immediately store to local caches so it appears in Tugas Picking right away
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // Update wms_picking_cache
+      const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
+      const filteredCache = cached.filter(
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj)
+      );
+      localStorage.setItem('wms_picking_cache', JSON.stringify([...newItems, ...filteredCache]));
 
-with open('src/services/gasTarikanMD.ts', 'w') as f:
-    f.write(tarikan_content)
+      // Update wms_raw_picking_list_cache (used by PickingTasksView)
+      const rawCached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_raw_picking_list_cache') || '[]');
+      const filteredRaw = rawCached.filter(
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj)
+      );
+      localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify([...newItems, ...filteredRaw]));
+    }
+  } catch (cErr) {
+    console.warn('Error saving picking to local cache:', cErr);
+  }
+''')
 
 with open('src/services/supabase.ts', 'w') as f:
     f.write(content)
+

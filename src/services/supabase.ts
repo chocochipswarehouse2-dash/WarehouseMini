@@ -3374,11 +3374,9 @@ export async function fetchPickingListFromSupabase(): Promise<PickingListItem[]>
   } catch {}
 
   // Fetch from picking_list and peminjaman concurrently to avoid sequential bottlenecks
+  // Bypass fetchWithDeltaSync temporarily to ensure all fresh rows are fetched properly
   const [pickingRes, peminjamanRes] = await Promise.allSettled([
-    fetchWithDeltaSync<any>('picking_list', 
-      (row) => row.id || `${row.no_sj}_${row.sku}`,
-      (row) => row.no_sj
-    ),
+    supabaseFetch<any[]>('picking_list', 'GET', null, 'select=*&order=created_at.desc&limit=2000'),
     supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc&limit=100')
   ]);
 
@@ -3837,14 +3835,14 @@ export async function createPickingSuratJalanSupabase(
       // Update wms_picking_cache
       const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
       const filteredCache = cached.filter(
-        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj)
       );
       localStorage.setItem('wms_picking_cache', JSON.stringify([...newItems, ...filteredCache]));
 
       // Update wms_raw_picking_list_cache (used by PickingTasksView)
       const rawCached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_raw_picking_list_cache') || '[]');
       const filteredRaw = rawCached.filter(
-        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj && newItems.some((n) => n.sku === c.sku?.toUpperCase()))
+        (c) => !(c.no_sj?.toUpperCase() === cleanNoSj)
       );
       localStorage.setItem('wms_raw_picking_list_cache', JSON.stringify([...newItems, ...filteredRaw]));
     }
