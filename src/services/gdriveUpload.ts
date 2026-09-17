@@ -137,15 +137,15 @@ export async function uploadImageToGdrive(
       console.warn('GAS upload warning:', result.message || result);
       return {
         success: false,
-        url: base64Data, // Fallback tetap gunakan dataUrl agar foto tidak hilang
+        url: '', // STRICT NO-BASE64 FALLBACK
         error: result.message || 'Gagal upload ke Google Drive',
       };
     }
   } catch (err: any) {
-    console.warn('Gagal upload ke Google Drive via GAS, menggunakan fallback lokal:', err);
+    console.warn('Gagal upload ke Google Drive via GAS, Mencegah fallback base64:', err);
     return {
       success: false,
-      url: base64Data, // Fallback ke dataUrl lokal
+      url: '', // STRICT NO-BASE64 FALLBACK
       error: err?.message || 'Koneksi ke GAS gagal',
     };
   }
@@ -170,7 +170,8 @@ export async function uploadMultipleImagesToGdrive(
     return res.url;
   });
 
-  return Promise.all(uploadPromises);
+  const results = await Promise.all(uploadPromises);
+  return results.filter(url => url && url.trim() !== '');
 }
 
 /**
