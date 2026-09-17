@@ -5,10 +5,10 @@ export const DEFAULT_GDRIVE_FOLDER_URL =
   'https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
 
 export const DEFAULT_GDRIVE_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63/exec';
+  'https://script.google.com/macros/s/AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg/exec';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL =
-  'https://script.google.com/macros/s/AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63/exec';
+  'https://script.google.com/macros/s/AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg/exec';
 
 // In-memory cache for ultra-fast zero-latency access across components
 let cachedSettings: WmsSettings | null = null;
@@ -18,7 +18,7 @@ let isFetchingPromise: Promise<WmsSettings | null> | null = null;
  * Validasi dan bersihkan URL GAS jika merupakan URL script mati/404 lama
  */
 function sanitizeManualShipmentGasUrl(url?: string): string {
-  if (!url || !url.trim() || url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y')) {
+  if (!url || !url.trim() || url.includes('AKfycbwqoG7_rD_kLdO48x4W0-3f4m2A-xK7eH9fQp_6_h3Y') || url.includes('AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63')) {
     return DEFAULT_MANUAL_SHIPMENT_GAS_URL;
   }
   return url.trim();
@@ -38,7 +38,11 @@ function initCacheFromLocalStorage(): WmsSettings {
       localStorage.setItem('wms_manual_shipment_gas_url', manualShipmentGas);
     }
 
-    const gdriveGas = localStorage.getItem('wms_gdrive_gas_url') || DEFAULT_GDRIVE_GAS_URL;
+    const storedGdriveGas = localStorage.getItem('wms_gdrive_gas_url') || '';
+    const gdriveGas = sanitizeGdriveGasUrl(storedGdriveGas);
+    if (storedGdriveGas !== gdriveGas) {
+      localStorage.setItem('wms_gdrive_gas_url', gdriveGas);
+    }
     const gdriveFolder = localStorage.getItem('wms_gdrive_folder_url') || DEFAULT_GDRIVE_FOLDER_URL;
     const fonnteToken = localStorage.getItem('wms_fonnte_token') || '';
     const fonnteTarget = localStorage.getItem('wms_fonnte_group_target') || '';
@@ -117,6 +121,13 @@ export function getStoredGdriveFolderUrl(): string {
   );
 }
 
+function sanitizeGdriveGasUrl(url?: string): string {
+  if (!url || !url.trim() || url.includes('AKfycbyFxfqoqJhrPJOioPxnmbGJTjTTAwli6b87lgOQCPFDOoCVt5EJg3NHZT56zI52rM63')) {
+    return DEFAULT_GDRIVE_GAS_URL;
+  }
+  return url.trim();
+}
+
 /**
  * Sinkronisasi memori & LocalStorage dengan data terbaru dari Supabase
  */
@@ -132,11 +143,14 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
   const rawManualGas = data.manual_shipment_gas_url || jsonConfig.manual_shipment_gas_url || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
   const safeManualGas = sanitizeManualShipmentGasUrl(rawManualGas);
 
+  const rawGdriveGas = data.gdrive_gas_url || jsonConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL;
+  const safeGdriveGas = sanitizeGdriveGasUrl(rawGdriveGas);
+
   const merged: WmsSettings = {
     ...data,
     gas_endpoint: data.gas_endpoint || jsonConfig.gas_endpoint || '',
     manual_shipment_gas_url: safeManualGas,
-    gdrive_gas_url: data.gdrive_gas_url || jsonConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
+    gdrive_gas_url: safeGdriveGas,
     gdrive_folder_url: data.gdrive_folder_url || jsonConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
     roles: data.roles || jsonConfig.roles || null,
   };
