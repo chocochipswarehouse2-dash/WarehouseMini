@@ -120,7 +120,7 @@ export function getStoredSupabaseConfig() {
     const customUrl = localStorage.getItem('wms_supabase_url');
     const customKey = localStorage.getItem('wms_supabase_key');
     // If custom URL is valid AND not pointing to dead legacy projects
-    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho') && !customUrl.includes('vxongwtxmhjixhzeoidp')) {
+    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho') && !customUrl.includes('vxongwtxmhjixhzeoidp') && !customUrl.includes('ilhqerec')) {
       // If custom points to the main project atdedxyiielpmzjlnriv, ensure it uses the working publishable key
       if (customUrl.includes('atdedxyiielpmzjlnriv')) {
         return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_ANON_KEY };
@@ -152,8 +152,8 @@ export function getStoredSupabaseConfig() {
   }
   let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
-  // Auto-migrate legacy project ref (filgijcfhgqlirzhvwho or vxongwtxmhjixhzeoidp) to the new default atdedxyiielpmzjlnriv
-  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp')) {
+  // Auto-migrate legacy project ref (filgijcfhgqlirzhvwho or vxongwtxmhjixhzeoidp or ilhqerec) to the new default atdedxyiielpmzjlnriv
+  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp') || url.includes('ilhqerec')) {
     url = DEFAULT_SUPABASE_URL;
     key = DEFAULT_SUPABASE_ANON_KEY;
     if (isBrowser) {

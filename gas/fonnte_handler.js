@@ -101,12 +101,12 @@ function handleWhatsAppScan(payload) {
       
       if (upper.indexOf(' IN') > -1 || upper.indexOf('#IN') === 0) {
         currentType = TYPE_IN;
-        currentDeskripsi = line.replace(/^#[A-Z0-9_\\s]*IN\\b/i, '').trim() || 'IN';
+        currentDeskripsi = line.replace(/^#[a-z0-9_\s]*in\b/i, '').trim() || 'IN';
         continue;
       }
       if (upper.indexOf(' OUT') > -1 || upper.indexOf('#OUT') === 0) {
         currentType = TYPE_OUT;
-        currentDeskripsi = line.replace(/^#[A-Z0-9_\\s]*OUT\\b/i, '').trim() || 'OUT';
+        currentDeskripsi = line.replace(/^#[a-z0-9_\s]*out\b/i, '').trim() || 'OUT';
         continue;
       }
       
