@@ -682,105 +682,159 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const handleSyncPhysicalStock = async () => {
     setIsLoadingDb(true);
     try {
-      const freshPhysical = await fetchSupabaseStokFisikDirect(true);
+      const [freshTickets, freshPhysical] = await Promise.all([
+        fetchPerbaikanTicketsFromSupabase(true).catch(() => [] as PerbaikanTicket[]),
+        fetchSupabaseStokFisikDirect(true).catch(() => [] as StockRealtimeItem[]),
+      ]);
+
       if (freshPhysical && freshPhysical.length > 0) {
         setStokFisikList(freshPhysical);
       }
+      if (freshTickets && freshTickets.length > 0) {
+        setTickets(freshTickets);
+      }
+
+      const physicalSource = (freshPhysical && freshPhysical.length > 0) ? freshPhysical : stokFisikList;
+      const ticketsSource = (freshTickets && freshTickets.length > 0) ? freshTickets : tickets;
+
+      // Hitung item area perbaikan secara langsung dari data stok fisik terbaru
+      const currentRepairItems: Array<{
+        sku: string;
+        nama: string;
+        size?: string;
+        lokasi: string;
+        qty: number;
+        tahap: 'CUCI' | 'PERMAK' | 'DEFECT';
+      }> = [];
+
+      physicalSource.forEach((s) => {
+        const loc = String(s.lokasi || '').trim().toUpperCase();
+        const area = String(s.area || '').trim().toUpperCase();
+        const q = Number(s.sisa_stok || 0);
+        if (q <= 0) return;
+
+        let tahap: 'CUCI' | 'PERMAK' | 'DEFECT' | null = null;
+        if (loc.startsWith('CC') || loc.includes('CUCI') || area.includes('CUCI')) {
+          tahap = 'CUCI';
+        } else if (loc.startsWith('PMK') || loc.includes('PERMAK') || area.includes('PERMAK')) {
+          tahap = 'PERMAK';
+        } else if (loc.startsWith('DF') || loc.includes('DEFECT') || area.includes('DEFECT')) {
+          tahap = 'DEFECT';
+        }
+
+        if (tahap) {
+          const skuKey = String(s.sku || '').trim().toUpperCase();
+          const namaFromCatalog = catalogSkuMap.get(skuKey);
+          const rawNama = String(s.nama_produk || '').trim();
+          const nama = (rawNama && rawNama.toUpperCase() !== skuKey)
+            ? rawNama
+            : (namaFromCatalog?.p || (namaFromCatalog?.nama_produk as string) || skuKey);
+          currentRepairItems.push({
+            sku: s.sku,
+            nama,
+            size: s.size,
+            lokasi: s.lokasi,
+            qty: q,
+            tahap,
+          });
+        }
+      });
+
+      if (currentRepairItems.length === 0) {
+        onShowToast(
+          'Tidak ditemukan produk di rak CC, PMK, atau DF pada data stok fisik saat ini.',
+          'info'
+        );
+        return;
+      }
+
+      let addedCount = 0;
+      const updatedTickets = [...ticketsSource];
+
+      currentRepairItems.forEach((item, idx) => {
+        // Hitung tiket yang sudah ada untuk SKU, lokasi, dan tahap ini
+        const existingCount = updatedTickets.filter(
+          (t) =>
+            t.sku.toUpperCase() === item.sku.toUpperCase() &&
+            t.lokasi_sekarang.toUpperCase() === item.lokasi.toUpperCase() &&
+            t.tahap === item.tahap
+        ).length;
+
+        // Jumlah tiket yang kurang agar persis sama dengan jumlah fisik barang
+        const missingCount = Math.max(0, item.qty - existingCount);
+
+        if (missingCount > 0) {
+          const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+          const prefix = item.tahap === 'CUCI' ? 'CC' : item.tahap === 'PERMAK' ? 'PMK' : 'DF';
+
+          for (let i = 0; i < missingCount; i++) {
+            addedCount++;
+            const ticketRand = Math.floor(100 + Math.random() * 900);
+            const suffixIndex = existingCount + i + 1;
+            const ticketNo = `${prefix}-${todayStr}-${ticketRand}-${suffixIndex}`;
+
+            const newSyncedTicket: PerbaikanTicket = {
+              id: Date.now() + idx * 1000 + i,
+              ticket_no: ticketNo,
+              tanggal: new Date().toLocaleString('id-ID', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              sku: item.sku,
+              nama_produk: item.nama,
+              size: item.size || 'Default',
+              qty: 1, // Aturan WMS: 1 Produk = 1 Tiket
+              lokasi_asal: item.lokasi,
+              lokasi_sekarang: item.lokasi,
+              is_already_in_repair: true,
+              sumber_barang: 'Gudang Fisik',
+              kategori_rusak:
+                item.tahap === 'CUCI'
+                  ? 'Noda / Kotor'
+                  : item.tahap === 'PERMAK'
+                  ? 'Jahitan Rusak'
+                  : 'Cacat Kain / Warna',
+              detail_kerusakan: `Stok fisik terdeteksi di rak ${item.lokasi}. Silakan lengkapi foto dan keterangan via tombol Edit Data & Foto.`,
+              foto_urls: [],
+              tahap: item.tahap,
+              status_pengerjaan: item.tahap === 'DEFECT' ? 'GAGAL' : 'SEDANG_PROSES',
+              qc_pic: 'Stok Fisik Gudang',
+              qc_tanggal: new Date().toLocaleDateString('id-ID'),
+              qc_catatan: `Sinkronisasi otomatis dari data rak ${item.lokasi}`,
+              petugas_reparasi:
+                item.tahap === 'CUCI'
+                  ? 'Laundry / Vendor Cuci'
+                  : item.tahap === 'PERMAK'
+                  ? 'Penjahit Gudang'
+                  : undefined,
+              operator_input: session?.name || getUserPersonName(session?.username) || 'System',
+              created_at: new Date().toISOString(),
+            };
+
+            updatedTickets.unshift(newSyncedTicket);
+            savePerbaikanTicketToSupabase(newSyncedTicket).catch(console.warn);
+          }
+        }
+      });
+
+      if (addedCount > 0) {
+        setTickets(updatedTickets);
+        playSuccessBeep();
+        onShowToast(
+          `Berhasil menyinkronkan stok fisik: ${addedCount} tiket baru dibuat (1 tiket per pcs)!`,
+          'success'
+        );
+      } else {
+        onShowToast('Semua stok fisik rak CC, PMK, dan DF sudah lengkap tercatat di antrean (1 tiket per pcs).', 'info');
+      }
     } catch (e) {
       console.warn('Refresh physical stock error:', e);
+      onShowToast('Gagal menyinkronkan stok fisik: ' + String(e), 'error');
     } finally {
       setIsLoadingDb(false);
-    }
-
-    if (physicalRepairItems.length === 0) {
-      onShowToast(
-        'Tidak ditemukan produk di rak CC, PMK, atau DF pada data stok fisik saat ini.',
-        'info'
-      );
-      return;
-    }
-
-    let addedCount = 0;
-    const updatedTickets = [...tickets];
-
-    physicalRepairItems.forEach((item, idx) => {
-      // Hitung tiket yang sudah ada untuk SKU, lokasi, dan tahap ini
-      const existingCount = updatedTickets.filter(
-        (t) =>
-          t.sku.toUpperCase() === item.sku.toUpperCase() &&
-          t.lokasi_sekarang.toUpperCase() === item.lokasi.toUpperCase() &&
-          t.tahap === item.tahap
-      ).length;
-
-      // Jumlah tiket yang kurang agar persis sama dengan jumlah fisik barang
-      const missingCount = Math.max(0, item.qty - existingCount);
-
-      if (missingCount > 0) {
-        const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const prefix = item.tahap === 'CUCI' ? 'CC' : item.tahap === 'PERMAK' ? 'PMK' : 'DF';
-
-        for (let i = 0; i < missingCount; i++) {
-          addedCount++;
-          const ticketRand = Math.floor(100 + Math.random() * 900);
-          const suffixIndex = existingCount + i + 1;
-          const ticketNo = `${prefix}-${todayStr}-${ticketRand}-${suffixIndex}`;
-
-          const newSyncedTicket: PerbaikanTicket = {
-            id: Date.now() + idx * 1000 + i,
-            ticket_no: ticketNo,
-            tanggal: new Date().toLocaleString('id-ID', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            sku: item.sku,
-            nama_produk: item.nama,
-            size: item.size || 'Default',
-            qty: 1, // Aturan WMS: 1 Produk = 1 Tiket
-            lokasi_asal: item.lokasi,
-            lokasi_sekarang: item.lokasi,
-            is_already_in_repair: true,
-            sumber_barang: 'Gudang Fisik',
-            kategori_rusak:
-              item.tahap === 'CUCI'
-                ? 'Noda / Kotor'
-                : item.tahap === 'PERMAK'
-                ? 'Jahitan Rusak'
-                : 'Cacat Kain / Warna',
-            detail_kerusakan: `Stok fisik terdeteksi di rak ${item.lokasi}. Silakan lengkapi foto dan keterangan via tombol Edit Data & Foto.`,
-            foto_urls: [],
-            tahap: item.tahap,
-            status_pengerjaan: item.tahap === 'DEFECT' ? 'GAGAL' : 'SEDANG_PROSES',
-            qc_pic: 'Stok Fisik Gudang',
-            qc_tanggal: new Date().toLocaleDateString('id-ID'),
-            qc_catatan: `Sinkronisasi otomatis dari data rak ${item.lokasi}`,
-            petugas_reparasi:
-              item.tahap === 'CUCI'
-                ? 'Laundry / Vendor Cuci'
-                : item.tahap === 'PERMAK'
-                ? 'Penjahit Gudang'
-                : undefined,
-            operator_input: session?.name || getUserPersonName(session?.username) || 'System',
-            created_at: new Date().toISOString(),
-          };
-
-          updatedTickets.unshift(newSyncedTicket);
-          savePerbaikanTicketToSupabase(newSyncedTicket).catch(console.warn);
-        }
-      }
-    });
-
-    if (addedCount > 0) {
-      setTickets(updatedTickets);
-      playSuccessBeep();
-      onShowToast(
-        `Berhasil menyinkronkan stok fisik: ${addedCount} tiket baru dibuat (1 tiket per pcs)!`,
-        'success'
-      );
-    } else {
-      onShowToast('Semua stok fisik rak CC, PMK, dan DF sudah lengkap tercatat di antrean (1 tiket per pcs).', 'info');
     }
   };
 
