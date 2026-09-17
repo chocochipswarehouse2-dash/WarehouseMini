@@ -335,9 +335,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     return () => clearTimeout(timer);
   }, [tickets]);
 
-  // Tab State: 'input' | 'reject' | 'cuci' | 'permak' | 'defect' | 'rekap'
+  // Tab State: 'input' | 'reject' | 'cuci' | 'permak' | 'defect'
   const [activeTab, setActiveTab] = useState<
-    'input' | 'reject' | 'cuci' | 'permak' | 'defect' | 'rekap'
+    'input' | 'reject' | 'cuci' | 'permak' | 'defect'
   >(() => {
     if (activeSection === 'reject') return 'reject';
     if (activeSection === 'perbaikan') return 'cuci';
@@ -357,7 +357,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         setActiveTab('cuci');
       }
     } else if (activeSection === 'defect') {
-      if (activeTab !== 'defect' && activeTab !== 'rekap') {
+      if (activeTab !== 'defect') {
         setActiveTab('defect');
       }
     }
@@ -443,10 +443,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
   const [editBiayaReparasi, setEditBiayaReparasi] = useState<number>(0);
   const [editPhotos, setEditPhotos] = useState<Array<{ dataUrl: string; sizeText: string; savedPercent: number }>>([]);
   const [editIsCompressing, setEditIsCompressing] = useState(false);
-
-  // Filter khusus Arsip & Histori Pengecekan
-  const [filterArsipStatus, setFilterArsipStatus] = useState<'ALL' | 'SELESAI_GRADE_A' | 'SELESAI_DEFECT_SALE' | 'SELESAI_SCRAP'>('ALL');
-  const [searchSkuArsip, setSearchSkuArsip] = useState('');
 
   // Modal Sortir Kepala QC
   const [sortirModalTicket, setSortirModalTicket] = useState<PerbaikanTicket | null>(null);
@@ -650,17 +646,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
       if (activeTab === 'permak' && t.tahap !== 'PERMAK') return false;
       if (activeTab === 'defect' && t.tahap !== 'DEFECT') return false;
 
-      // Tab Arsip (rekap)
-      if (activeTab === 'rekap') {
-        const isFinished =
-          t.tahap === 'SELESAI_GRADE_A' ||
-          t.tahap === 'SELESAI_DEFECT_SALE' ||
-          t.tahap === 'SELESAI_SCRAP';
-        if (!isFinished) return false;
-        if (filterArsipStatus !== 'ALL' && t.tahap !== filterArsipStatus) return false;
-        if (searchSkuArsip.trim() && !t.sku.toUpperCase().includes(searchSkuArsip.trim().toUpperCase())) return false;
-      }
-
       // Kategori filter
       if (filterKategori !== 'ALL' && t.kategori_rusak !== filterKategori) return false;
 
@@ -679,7 +664,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
       return true;
     });
-  }, [tickets, activeTab, filterKategori, filterLokasi, deferredSearch, filterArsipStatus, searchSkuArsip]);
+  }, [tickets, activeTab, filterKategori, filterLokasi, deferredSearch]);
 
   // Total fisik barang (pcs) di daftar terfilter saat ini (misal 48 pcs di rak DF001)
   const filteredTotalPcs = useMemo(() => {
@@ -1902,29 +1887,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                     {stats.totalDefect} pcs
                   </span>
                 </button>
-
-                <button
-                  type="button"
-                  id="subtab-defect-arsip"
-                  onClick={() => setActiveTab('rekap')}
-                  className={`flex-1 flex items-center justify-center gap-2.5 py-2.5 px-2 rounded-lg font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer ${
-                    activeTab === 'rekap'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
-                  }`}
-                >
-                  <Archive className="w-4 h-4" />
-                  <span>Arsip & Selesai Obral</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                      activeTab === 'rekap'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'
-                    }`}
-                  >
-                    {stats.totalArsip} pcs
-                  </span>
-                </button>
               </div>
             </div>
           )}
@@ -2098,31 +2060,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             Rak DF • Menunggu ACC
           </div>
         </div>
-
-        {/* Card 5: Arsip Histori Pengecekan */}
-        <div
-          onClick={() => setActiveTab('rekap')}
-          className={`p-3.5 rounded-2xl border transition-all cursor-pointer col-span-2 sm:col-span-1 ${
-            activeTab === 'rekap'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 shadow-md'
-              : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-emerald-300'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>Arsip Histori Selesai</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
-              <Archive className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            {stats.totalArsip}{' '}
-            <span className="text-xs font-normal text-slate-400">pcs</span>
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1 truncate flex items-center gap-1">
-            <span className="text-emerald-600 font-bold">{stats.totalGradeA} Grade A</span> •{' '}
-            <span className="text-purple-600 font-bold">{stats.totalDefectSale} Obral</span>
-          </div>
-        </div>
       </div>
 
       {/* 3. Tab Bar Navigation */}
@@ -2177,19 +2114,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
         >
           <Tag className="w-4 h-4" />
           <span>4. Ruang Defect [DF] ({stats.totalDefect})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('rekap')}
-          className={`px-2 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
-            activeTab === 'rekap'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Archive className="w-4 h-4" />
-          <span>5. Arsip & Histori Pengecekan ({stats.totalArsip})</span>
         </button>
 
         <button
@@ -2766,106 +2690,6 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
                   : `${filteredTotalPcs} Pcs`}
               </span>
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Panel Khusus Tab 5: Arsip & Histori Pengecekan */}
-      {activeTab === 'rekap' && (
-        <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30 rounded-2xl space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 text-white">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                <Archive className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white flex items-center gap-2">
-                  <span>Arsip & Histori Pengecekan Produk</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-                    {stats.totalArsip} Selesai
-                  </span>
-                </h3>
-                <p className="text-[11px] text-slate-300">
-                  Rekam jejak audit pemeriksaan fisik pakaian (Lolos Grade A, Obral Defect, atau Scrap/Limbah).
-                </p>
-              </div>
-            </div>
-
-            {/* Filter Status Hasil Akhir Arsip */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-              <button
-                type="button"
-                onClick={() => setFilterArsipStatus('ALL')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  filterArsipStatus === 'ALL'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                Semua Arsip ({stats.totalArsip})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterArsipStatus('SELESAI_GRADE_A')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  filterArsipStatus === 'SELESAI_GRADE_A'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                ✨ Grade A ({stats.totalGradeA})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterArsipStatus('SELESAI_DEFECT_SALE')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  filterArsipStatus === 'SELESAI_DEFECT_SALE'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                🏷️ Defect Sale ({stats.totalDefectSale})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterArsipStatus('SELESAI_SCRAP')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  filterArsipStatus === 'SELESAI_SCRAP'
-                    ? 'bg-primary-600 text-white shadow-xs'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                🗑️ Scrap ({stats.totalScrap})
-              </button>
-            </div>
-          </div>
-
-          {/* Lacak Riwayat Berdasarkan SKU */}
-          <div className="pt-2 border-t border-slate-700/50 flex flex-col sm:flex-row items-center gap-2">
-            <div className="relative flex-1 w-full">
-              <History className="w-4 h-4 text-emerald-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchSkuArsip}
-                onChange={(e) => setSearchSkuArsip(e.target.value)}
-                placeholder="Lacak riwayat pengecekan SKU masa lalu (cth: ketik TSH-OVR-BLK-M)..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-900/90 border border-emerald-500/40 rounded-xl text-xs text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
-              />
-              {searchSkuArsip && (
-                <button
-                  type="button"
-                  onClick={() => setSearchSkuArsip('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            {searchSkuArsip && (
-              <span className="text-[11px] text-emerald-400 font-bold shrink-0">
-                Filter Histori SKU: <b className="font-mono text-white">{searchSkuArsip.toUpperCase()}</b>
-              </span>
-            )}
           </div>
         </div>
       )}

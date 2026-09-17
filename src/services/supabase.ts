@@ -4925,7 +4925,8 @@ export async function fetchPerbaikanTicketsFromSupabase(forceRefresh = false): P
     const maxRows = 20000;
 
     while (offset < maxRows) {
-      const query = `order=created_at.desc&limit=${pageSize}&offset=${offset}`;
+      // Exclude SELESAI statuses to drastically reduce egress for active ticket views
+      const query = `status_pengerjaan=not.in.(SELESAI_GRADE_A,SELESAI_DEFECT_SALE,SELESAI_SCRAP)&order=created_at.desc&limit=${pageSize}&offset=${offset}`;
       const chunk = await supabaseFetch<PerbaikanTicket[]>('perbaikan_tickets', 'GET', undefined, query);
       if (!chunk || !Array.isArray(chunk) || chunk.length === 0) break;
       allRemoteTickets.push(...chunk);
