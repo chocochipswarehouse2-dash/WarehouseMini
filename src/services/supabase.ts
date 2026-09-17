@@ -1090,7 +1090,7 @@ export async function fetchAllLogs(maxRows = 2000): Promise<LogProdukItem[]> {
             'GET',
             null,
             `select=*&order=created_at.desc&limit=${currentLimit}&offset=${offset}`
-          )
+          ).catch(() => null)
         );
         offset += currentLimit;
       }
@@ -1099,7 +1099,8 @@ export async function fetchAllLogs(maxRows = 2000): Promise<LogProdukItem[]> {
       let breakLoop = false;
       
       for (const chunk of results) {
-        if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+        if (chunk === null) continue;
+        if (!Array.isArray(chunk) || chunk.length === 0) {
           breakLoop = true;
           break;
         }
@@ -1675,7 +1676,7 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
 
       while (offset < maxRows) {
         const batchPromises = [];
-        const batchSize = 5;
+        const batchSize = 2;
         for (let i = 0; i < batchSize && offset < maxRows; i++) {
           const currentLimit = Math.min(pageSize, maxRows - offset);
           batchPromises.push(
@@ -1684,7 +1685,7 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
               'GET',
               null,
               `sisa_stok=neq.0&select=*&order=sku.asc,lokasi.asc&limit=${currentLimit}&offset=${offset}`
-            ).catch(() => []) // Catch individual failures
+            ).catch(() => null) // Catch individual failures
           );
           offset += currentLimit;
         }
@@ -1693,7 +1694,8 @@ export async function fetchAllStockRealtime(maxRows = 50000, skipDirectCache = f
         let breakLoop = false;
 
         for (const chunk of results) {
-          if (!chunk || !Array.isArray(chunk) || chunk.length === 0) {
+          if (chunk === null) continue; // Skip failed chunk, don't break
+          if (!Array.isArray(chunk) || chunk.length === 0) {
             breakLoop = true;
             break;
           }
@@ -2632,7 +2634,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     let offset = 0;
     while (offset < maxRowsPerTable) {
       const batchPromises = [];
-      const batchSize = 6;
+      const batchSize = 2;
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
@@ -2642,7 +2644,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
               Authorization: 'Bearer ' + supaKey,
               'Content-Type': 'application/json',
             },
-          }).then(r => r.ok ? r.json() : []).catch(() => [])
+          }).then(r => r.ok ? r.json() : []).catch(() => null)
         );
         offset += pageSize;
       }
@@ -2651,6 +2653,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       let breakLoop = false;
 
       for (const rows of results) {
+        if (rows === null) continue;
         if (!Array.isArray(rows) || rows.length === 0) {
           breakLoop = true;
           break;
