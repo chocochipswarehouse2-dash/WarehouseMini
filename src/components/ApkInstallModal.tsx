@@ -324,30 +324,64 @@ export const ApkInstallModal: React.FC<ApkInstallModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
                     <Monitor className="w-4 h-4 text-primary-500" />
-                    <span>Pasang di Komputer / Laptop Admin</span>
+                    <span>Mode Jendela Penuh (Full View App) di PC</span>
                   </div>
                   <span className="bg-primary-500/10 text-primary-500 font-bold px-2 py-0.5 rounded text-[10px]">
                     Chrome / Edge
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Di laptop atau komputer kantor, Anda juga bisa memasang aplikasi ini sebagai jendela mandiri tanpa tab browser yang mengganggu.
+                  Aplikasi ini mendukung <b>Tampilan Penuh (Standalone Window)</b> layaknya aplikasi desktop (seperti software kasir/POS asli) tanpa address bar, tombol navigasi, atau tab browser.
                 </p>
               </div>
 
-              <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2 text-[11px] text-slate-600 dark:text-slate-400">
-                <div className="font-bold text-slate-900 dark:text-white text-xs mb-1">
-                  Cara Pasang di PC (Google Chrome atau MS Edge):
+              {deferredPrompt && (
+                <button
+                  type="button"
+                  onClick={handleInstallPWA}
+                  className="w-full py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Pasang Warehouse Mini ke Komputer Sekarang</span>
+                </button>
+              )}
+
+              <div className="p-4 bg-slate-50 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3 text-[11px] text-slate-600 dark:text-slate-400">
+                <div className="font-bold text-slate-900 dark:text-white text-xs">
+                  Langkah agar Tampil Layaknya Aplikasi (Bukan Browser):
                 </div>
-                <p>
-                  1. Perhatikan bagian kanan kolom alamat URL (address bar) di atas.
-                </p>
-                <p>
-                  2. Klik ikon <b>Monitor kecil dengan panah bawah</b> (<i>"Install WMS Inventory"</i>).
-                </p>
-                <p>
-                  3. Klik <b>"Install"</b>. Aplikasi akan terbuka di jendela tersendiri dan ikon shortcut akan ditambahkan ke desktop serta taskbar Windows Anda!
-                </p>
+
+                <div className="space-y-2.5">
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-primary-500/10 text-primary-500 font-bold flex items-center justify-center shrink-0 text-xs">
+                      1
+                    </span>
+                    <div>
+                      <b>Metode 1 (Rekomendasi Utama):</b> Pada address bar (kolom URL browser) di kanan atas, klik ikon <b>Monitor kecil dengan panah bawah</b> (<i>"Install Warehouse Mini"</i>), lalu klik <b>Install</b>.
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-primary-500/10 text-primary-500 font-bold flex items-center justify-center shrink-0 text-xs">
+                      2
+                    </span>
+                    <div>
+                      <b>Metode 2 (Jika lewat Titik Tiga):</b> Klik menu <b>titik tiga (⋮)</b> Chrome/Edge &rarr; pilih <b>Simpan dan bagikan</b> (Save and share) &rarr; pilih <b>"Instal Warehouse Mini"</b>.<br />
+                      <span className="text-amber-600 dark:text-amber-400 text-[10px] font-semibold mt-1 block">
+                        *Catatan: Jika memilih "Buat pintasan" (Create shortcut), <b>WAJIB CENTANG</b> kotak <i>"Buka sebagai jendela" (Open as window)</i> agar tidak terbuka sebagai tab browser biasa.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white dark:bg-[#09090B] border border-slate-200/80 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-500 font-bold flex items-center justify-center shrink-0 text-xs">
+                      3
+                    </span>
+                    <div>
+                      <b>Sematkan ke Taskbar:</b> Saat jendela aplikasi terbuka sendiri (tanpa URL bar), <b>klik kanan ikon WMS di Taskbar Windows</b> bawah layar laptop/PC &rarr; pilih <b>"Sematkan ke taskbar" (Pin to taskbar)</b>.
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

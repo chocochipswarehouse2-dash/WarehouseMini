@@ -151,6 +151,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [databaseStatus, setDatabaseStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [databaseStatusMsg, setDatabaseStatusMsg] = useState<string>('');
   const [gdriveFolderUrl, setGdriveFolderUrl] = useState<string>('');
+  const [gdriveGasUrl, setGdriveGasUrl] = useState<string>('');
   const [isTestingGdrive, setIsTestingGdrive] = useState<boolean>(false);
   const [gdriveStatus, setGdriveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [gdriveStatusMsg, setGdriveStatusMsg] = useState<string>('');
@@ -292,6 +293,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           if (settings.gdrive_folder_url) {
             setGdriveFolderUrl(settings.gdrive_folder_url);
           }
+          if (settings.gdrive_gas_url) {
+            setGdriveGasUrl(settings.gdrive_gas_url);
+          }
           
           if (settings.fonnte_token !== undefined) {
             setFonnteToken(settings.fonnte_token);
@@ -337,6 +341,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const cleanUrl = supabaseUrl.trim();
     const cleanKey = supabaseKey.trim();
     const cleanGdrive = gdriveFolderUrl.trim();
+    const cleanGas = gdriveGasUrl.trim();
 
     if (!cleanUrl || !cleanKey) {
       onNotify('URL dan Anon Key Supabase tidak boleh kosong!', 'warning');
@@ -344,12 +349,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     saveSupabaseConfig(cleanUrl, cleanKey);
-    saveGdriveConfig(cleanGdrive, "");
+    saveGdriveConfig(cleanGdrive, cleanGas);
 
     try {
       await saveWmsSettings({
         gdrive_folder_url: cleanGdrive,
-        
+        gdrive_gas_url: cleanGas,
       });
     } catch {}
 
@@ -362,8 +367,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setGdriveStatus('idle');
     setGdriveStatusMsg('');
     try {
-      saveGdriveConfig(gdriveFolderUrl, "");
-      const res = await testGdriveConnection("", gdriveFolderUrl);
+      const cleanGas = gdriveGasUrl.trim();
+      const cleanFolder = gdriveFolderUrl.trim();
+      saveGdriveConfig(cleanFolder, cleanGas);
+      const res = await testGdriveConnection(cleanGas, cleanFolder);
       if (res.success) {
         setGdriveStatus('success');
         setGdriveStatusMsg(res.message);
@@ -1883,7 +1890,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     <div>
-                      
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          2. GAS Web App URL (Google Apps Script)
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={gdriveGasUrl}
+                        onChange={(e) => setGdriveGasUrl(e.target.value)}
+                        placeholder="https://script.google.com/macros/s/AKfycbw.../exec"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                      />
                     </div>
                   </div>
                 </div>
