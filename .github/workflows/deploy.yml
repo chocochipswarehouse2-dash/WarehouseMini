@@ -40,6 +40,11 @@ jobs:
         env:
           GITHUB_PAGES: 'true'
           NODE_OPTIONS: '--max_old_space_size=4096'
+          # Inject Supabase credentials dari GitHub Secrets
+          # Setup: GitHub Repo > Settings > Secrets > Actions > New repository secret
+          # Secret names: VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Verify build artifact

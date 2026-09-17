@@ -1,152 +1,405 @@
-# 🚀 PANDUAN LENGKAP MIGRASI AKUN SUPABASE WMS INVENTORY
+# 🚀 PANDUAN LENGKAP MIGRASI AKUN SUPABASE — WMS CHOCOCHIPS
 
-> **Tujuan:** Mengatasi pembatasan limit **Egress 5 GB/bulan** pada Supabase Free Tier dengan cara berpindah ke akun Supabase baru secara mudah, aman, dan tanpa kehilangan riwayat maupun data stok.
-
----
-
-## 📌 Ringkasan Solusi
-
-WMS Inventory menyediakan 2 cara fleksibel untuk migrasi:
-
-1. **Cara 1: Lewat Halaman Web App WMS (Sangat Direkomendasikan & Paling Mudah)**
-   - Dapat diakses langsung dari menu **Sidebar -> Alat & Utilitas -> Migrasi Supabase** (khusus Superadmin).
-   - Terdapat 5-step wizard otomatis:
-     - Step 1: Petunjuk buat project Supabase baru.
-     - Step 2: Copy/Download 1-klik seluruh skrip DDL SQL (24 tabel, index, view saldo fisik, RLS, realtime).
-     - Step 3: Input URL & Anon Key project baru + tes koneksi instan.
-     - Step 4: Scan baris tabel & Kloning data otomatis langsung di dalam browser (batching aman & progress bar realtime).
-     - Step 5: Switch akun Supabase aktif di browser seketika + copy env variable untuk Vercel.
-
-2. **Cara 2: Lewat Command Line (Node.js Script)**
-   - Jalankan `node tools/migrate-supabase.cjs`.
-   - Mengkloning seluruh data dari database lama ke database baru secara headless di terminal/server.
+> **Tujuan:** Memindahkan seluruh sistem WMS ke akun/project Supabase baru secara aman dan lengkap,  
+> tanpa kehilangan data, dan memastikan semua komponen (App, GAS, Fonnte, Vercel, GitHub) kembali berfungsi normal.
 
 ---
 
-## 🛠️ Langkah Demi Langkah (Step-by-Step)
+## 📌 Kapan Perlu Migrasi?
 
-### LANGKAH 1: Buat Akun & Project Baru di Supabase
-1. Buka [https://supabase.com/dashboard](https://supabase.com/dashboard) menggunakan akun Google / GitHub baru atau organisasi baru.
-2. Klik **New Project**.
-3. Masukkan:
-   - **Name**: `wms-inventory` (atau nama gudang Anda).
-   - **Database Password**: Buat password yang kuat dan simpan baik-baik.
-   - **Region**: Pilih **Singapore (ap-southeast-1)** untuk kecepatan latensi terbaik dari Indonesia.
-   - **Pricing Plan**: Free Tier.
-4. Tunggu 1-2 menit hingga provisioning database selesai.
-5. Pergi ke menu **Project Settings** -> **API**:
-   - Salin **Project URL** (contoh: `https://abcdefghijklmn.supabase.co`).
-   - Salin **anon / public key** (`eyJhbGci...`).
-   - *(Opsional jika lewat script CLI)*: Salin **service_role key** untuk bypass RLS.
+- Limit **Egress 5 GB/bulan** Supabase Free Tier hampir habis
+- Ingin pindah ke organisasi/akun Supabase baru
+- Rebuild project dari awal (misalnya: database korup/perlu reset total)
 
 ---
 
-### LANGKAH 2: Deploy Seluruh Struktur Tabel (Schema DDL)
-Database baru belum memiliki tabel apapun. Anda perlu mengeksekusi DDL master yang sudah disiapkan:
+## 🗺️ Peta Komponen yang Harus Diperbarui
 
-1. Di Supabase Dashboard project baru, buka menu **SQL Editor** (ikon `>_` di menu kiri).
-2. Klik tombol **New query**.
-3. Ambil isi skrip SQL dari salah satu sumber berikut:
-   - File lokal di repositori: `public/supabase_full_schema.sql`
-   - Atau lewat Web App WMS: Menu **Migrasi Supabase -> Step 2 -> Klik "Salin Skrip SQL DDL"**
-4. Tempelkan (paste) seluruh isi SQL tersebut ke dalam SQL Editor Supabase.
-5. Klik tombol **Run** (atau tekan `Ctrl + Enter`).
-6. Pastikan muncul pesan **"Success. No rows returned"**.
-
-> **Apa saja yang dibuat oleh skrip ini?**
-> - Seluruh 24 tabel WMS: `wms_users`, `master_produk`, `log_produk`, `stock_opname_queue`, `penerimaan_produksi`, `picking_list`, `peminjaman`, `perbaikan_tickets`, `qc_reports`, `manual_shipment`, `pengecekan_sj`, `address_book`, `karyawan`, `master_shift`, `roster_shift`, `presensi`, `lembur`, `perijinan_cuti`, `wms_projects`, `wms_agenda`, `wms_roadmap`, `wms_system_docs`, `outlet_config`, `wms_settings`.
-> - View `stok_real_fisik` dan `view_stok_realtime`.
-> - Indeks performa pencarian barcode, tanggal, SKU, status.
-> - Row Level Security (RLS) permissive policies.
-> - Supabase Realtime publication untuk sinkronisasi multi-device.
+```
+┌─────────────────────────────────────────────────────────────┐
+│ KOMPONEN             │ FILE/TEMPAT                          │
+├─────────────────────────────────────────────────────────────┤
+│ App React (Browser)  │ src/services/supabase.ts             │
+│ Build (Vercel)       │ Vercel Dashboard > Env Variables     │
+│ Build (GitHub Pages) │ GitHub Repo > Secrets > Actions      │
+│ GAS Bridge           │ SupabaseBridge_cloud.js (via clasp)  │
+│ GAS Script Props     │ GAS Editor > Project Settings        │
+│ Webhook WA (Fonnte)  │ Dashboard Fonnte (hanya verifikasi)  │
+│ Test Script          │ .env file lokal                      │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-### LANGKAH 3: Kloning Data dari Database Lama ke Database Baru
+## 📋 URUTAN FILE SQL YANG BENAR (untuk Setup DB Baru)
 
-#### Opsi A: Menggunakan Halaman Web App WMS (Rekomendasi)
-1. Buka WMS Inventory di browser dan login sebagai akun ber-role **Superadmin**.
-2. Klik menu **Migrasi Supabase** di bagian bawah Sidebar.
-3. Di **Langkah 3 (Koneksi Database)**:
-   - Masukkan **Supabase URL Baru** dan **Anon Key Baru** yang Anda dapatkan di Langkah 1.
-   - Klik **"Cek Koneksi Database Baru"**. Pastikan muncul centang hijau *Koneksi Berhasil!*.
-4. Di **Langkah 4 (Kloning Data Otomatis)**:
-   - Klik tombol **"1. Pindai Data Database Lama"** untuk melihat jumlah baris di setiap tabel.
-   - Klik tombol **"2. Mulai Kloning Semua Data ke Database Baru"**.
-   - Sistem akan menyalin data baris per baris secara bertahap (batch) dengan indikator progress bar dan log aktivitas real-time.
-   - Tunggu hingga muncul notifikasi **"Kloning Selesai 100%"**.
+Jalankan semua SQL ini secara berurutan di **Supabase SQL Editor**:
 
-#### Opsi B: Menggunakan Script Terminal (Node.js)
-Jika ingin melakukan migrasi dari terminal / command line:
-1. Buka terminal di folder proyek (`d:\Antigravity\WMS Inventory`).
-2. Jalankan perintah:
-   ```bash
-   node tools/migrate-supabase.cjs
-   ```
-3. Script akan membaca konfigurasi database lama dari `.env` dan meminta URL/Key database baru, atau Anda bisa langsung mengirimkan environment variable:
-   ```bash
-   $env:TARGET_SUPABASE_URL="https://abcdefghijklmn.supabase.co"
-   $env:TARGET_SUPABASE_KEY="eyJhbGciOi..."
-   node tools/migrate-supabase.cjs
-   ```
-4. Script akan menyalin seluruh data per tabel dengan pagination batch 500 baris.
-
-> ⚠️ **PENTING SETELAH KLONING DATA:**
-> Karena data lama disalin dengan ID eksisting, jalankan skrip sinkronisasi sequence `public/fix_sequences.sql` di SQL Editor Supabase baru (hanya butuh 0.5 detik). Hal ini mencegah error duplicate key ID saat melakukan Scan IN atau menambah data baru.
+```
+1.  supabase_schema.sql              ← Core: wms_users, master_produk, log_produk, dll
+2.  supabase_schema_hr.sql           ← HR: karyawan, shift, presensi, lembur, cuti
+3.  supabase_schema_agenda_project.sql ← Agenda & Project
+4.  supabase_schema_new_tables.sql   ← manual_shipment, pengecekan_sj, outlet_config
+5.  supabase_migration.sql           ← Transform data (jalankan SETELAH data termigrasi)
+6.  supabase_webhooks.sql            ← Bersihkan trigger lama (opsional)
+```
 
 ---
 
-### LANGKAH 4: Alihkan Web App ke Database Baru
+## 🛠️ LANGKAH DEMI LANGKAH
 
-#### 1. Untuk Perangkat/Browser Anda Saat Ini (Instan):
-- Pada halaman **Migrasi Supabase -> Step 5**, klik tombol:
-  👉 **"Aktifkan Database Baru Sekarang (Simpan & Reload)"**
-- Halaman akan memuat ulang (reload) dan langsung tersambung ke database Supabase baru.
+---
 
-#### 2. Untuk Seluruh Pengguna & Server Vercel (Produksi):
-Agar semua kru gudang, HP Android scanner, dan laptop admin tersambung ke database baru secara permanen:
-1. Buka dashboard hosting Vercel di [https://vercel.com](https://vercel.com).
+### LANGKAH 1 — Buat Project Supabase Baru
+
+1. Buka [https://supabase.com/dashboard](https://supabase.com/dashboard) dengan **akun baru atau organisasi baru**.
+2. Klik **New Project**, isi:
+   - **Name**: `wms-inventory` (atau sesuai preferensi)
+   - **Database Password**: buat password kuat, simpan di tempat aman
+   - **Region**: `Southeast Asia (Singapore)` untuk latensi terbaik dari Indonesia
+   - **Plan**: Free Tier
+3. Tunggu 1-2 menit hingga provisioning selesai.
+4. Pergi ke **Project Settings → API**, salin:
+   - ✅ **Project URL** → contoh: `https://newxxx.supabase.co`
+   - ✅ **anon / public key** → `sb_publishable_...` 
+   - ✅ **service_role key** → `eyJhbGci...` (simpan **sangat rahasia**, jangan commit!)
+
+---
+
+### LANGKAH 2 — Setup Schema Database Baru
+
+1. Di Supabase Dashboard project **baru**, buka **SQL Editor**.
+2. Klik **New Query**.
+3. Jalankan file-file SQL berikut satu per satu **(urutan penting!)**:
+
+```sql
+-- Paste isi dari: supabase_schema.sql
+-- Paste isi dari: supabase_schema_hr.sql
+-- Paste isi dari: supabase_schema_agenda_project.sql
+-- Paste isi dari: supabase_schema_new_tables.sql
+```
+
+4. Setelah tiap file, klik **Run** dan pastikan muncul pesan sukses.
+
+> **Yang dibuat:** 24+ tabel, index, VIEW stok_real_fisik, RLS policies, Realtime publication.
+
+---
+
+### LANGKAH 3 — Migrasi Data (Kloning dari DB Lama ke DB Baru)
+
+#### Opsi A: Via Terminal CLI (Direkomendasikan)
+
+```powershell
+# Buka terminal di folder proyek
+cd "d:\Antigravity\WMS Inventory"
+
+# Jalankan migrasi (ganti nilai URL dan KEY)
+node tools/migrate-supabase.cjs `
+  --source-url="https://LAMA.supabase.co" `
+  --source-key="sb_publishable_SOURCE_KEY" `
+  --target-url="https://BARU.supabase.co" `
+  --target-key="sb_publishable_TARGET_KEY"
+```
+
+**Flag opsional:**
+```powershell
+# Dry run dulu (simulasi, tanpa insert data)
+node tools/migrate-supabase.cjs ... --dry-run
+
+# Migrasi tabel tertentu saja
+node tools/migrate-supabase.cjs ... --tables=wms_users,master_produk,log_produk
+
+# Lewati tabel tertentu
+node tools/migrate-supabase.cjs ... --skip=wms_settings,wms_roadmap
+```
+
+Script akan otomatis:
+- Memverifikasi count source vs target setiap tabel
+- Retry 3x jika insert gagal (exponential backoff)
+- Menyimpan laporan ke `migration-report-YYYY-MM-DD.json`
+
+#### Opsi B: Via Web App WMS
+
+1. Login ke WMS sebagai **Superadmin**.
+2. Sidebar → **Alat & Utilitas → Migrasi Supabase**.
+3. Ikuti wizard 5-step yang tersedia.
+
+---
+
+### LANGKAH 4 — Fix Sequence (WAJIB untuk Tabel BIGINT)
+
+Setelah data termigrasi, jalankan SQL berikut di **SQL Editor DB Baru** untuk mencegah duplicate key error:
+
+```sql
+-- Fix sequence untuk tabel dengan BIGINT auto-increment
+SELECT setval(pg_get_serial_sequence('peminjaman', 'id'),
+  COALESCE((SELECT MAX(id) FROM peminjaman), 1));
+
+SELECT setval(pg_get_serial_sequence('perbaikan_tickets', 'id'),
+  COALESCE((SELECT MAX(id) FROM perbaikan_tickets), 1));
+
+SELECT setval(pg_get_serial_sequence('qc_reports', 'id'),
+  COALESCE((SELECT MAX(id) FROM qc_reports), 1));
+
+SELECT setval(pg_get_serial_sequence('master_shift', 'id'),
+  COALESCE((SELECT MAX(id) FROM master_shift), 1));
+
+SELECT setval(pg_get_serial_sequence('roster_shift', 'id'),
+  COALESCE((SELECT MAX(id) FROM roster_shift), 1));
+
+SELECT setval(pg_get_serial_sequence('presensi', 'id'),
+  COALESCE((SELECT MAX(id) FROM presensi), 1));
+
+SELECT setval(pg_get_serial_sequence('lembur', 'id'),
+  COALESCE((SELECT MAX(id) FROM lembur), 1));
+```
+
+---
+
+### LANGKAH 5 — Jalankan Script Transformasi Data (Opsional)
+
+Jika ada data di `log_produk` dengan type `PENGECEKAN_SJ` atau `MANUAL_SHIPMENT` yang belum dimigrasikan ke tabel baru:
+
+```powershell
+node migrate.js `
+  --url="https://BARU.supabase.co" `
+  --key="sb_publishable_TARGET_KEY"
+```
+
+Kemudian jalankan juga `supabase_migration.sql` di SQL Editor DB baru untuk migrasi permissions.
+
+---
+
+### LANGKAH 6 — Update Kode Sumber (src/services/supabase.ts)
+
+Edit file [`src/services/supabase.ts`](../src/services/supabase.ts), ubah:
+
+```typescript
+// Baris 42-43 — ganti dengan URL dan Key baru:
+export const DEFAULT_SUPABASE_URL = 'https://BARU.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_NEW_KEY';
+```
+
+Juga pastikan filter URL lama ada di baris ~123 dan ~156:
+```typescript
+// Tambahkan URL lama ke filter blacklist jika belum ada
+!customUrl.includes('URL_LAMA_REF')
+```
+
+---
+
+### LANGKAH 7 — Update Google Apps Script (GAS)
+
+#### 7a. Update SupabaseBridge_cloud.js
+
+Edit file [`SupabaseBridge_cloud.js`](../SupabaseBridge_cloud.js), ubah baris 6-7:
+
+```javascript
+const SUPABASE_URL = "https://BARU.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_NEW_ANON_KEY";
+```
+
+#### 7b. Deploy Perubahan ke GAS via Script
+
+```powershell
+# Pastikan clasp sudah login
+node tools/gas_deploy.cjs
+```
+
+Script ini akan otomatis:
+1. Mengambil file GAS dari cloud
+2. Mengupdate `SUPABASE_URL` dan `SUPABASE_ANON_KEY` di SupabaseBridge, WmsAuth, Wmsupdatedatabase
+3. Push ke GAS dan buat versi baru
+4. Update deployment aktif ke versi terbaru
+
+> **Jika gas_deploy.cjs gagal** (token expired), refresh dengan:  
+> `npx @google/clasp login` atau buka GAS Editor manual dan update URL secara langsung.
+
+---
+
+### LANGKAH 8 — Update Script Properties di GAS (WAJIB!)
+
+Script Properties menyimpan Service Role Key yang digunakan GAS untuk bypass RLS.
+
+1. Buka [Google Apps Script](https://script.google.com).
+2. Pilih project WMS (cari nama "WMS Inventory" atau "Webhook").
+3. Klik ⚙️ **Project Settings** (ikon roda gigi).
+4. Scroll ke bawah ke bagian **Script properties**.
+5. Cari properti bernama **`SUPABASE_SERVICE_KEY`**.
+6. Klik **Edit** dan masukkan **Service Role Key** dari project Supabase baru.
+7. Klik **Save script properties**.
+
+> ⚠️ **Jika lupa langkah ini:** Semua operasi GAS yang perlu bypass RLS (seperti sync data ke Sheets) akan gagal dengan error `401 Unauthorized` atau tidak ada data yang terkirim.
+
+---
+
+### LANGKAH 9 — Update Vercel Environment Variables
+
+1. Buka [Vercel Dashboard](https://vercel.com).
 2. Pilih project **WMS Inventory**.
-3. Masuk ke tab **Settings** -> **Environment Variables**.
-4. Ubah nilai variabel berikut:
-   - `VITE_SUPABASE_URL`: isi dengan URL Supabase baru.
-   - `VITE_SUPABASE_ANON_KEY`: isi dengan Anon Key Supabase baru.
-5. Simpan dan lakukan **Redeploy** (atau lakukan commit git push baru).
+3. Tab **Settings → Environment Variables**.
+4. Update nilai:
+   - **`VITE_SUPABASE_URL`** → `https://BARU.supabase.co`
+   - **`VITE_SUPABASE_ANON_KEY`** → `sb_publishable_NEW_KEY`
+5. Klik **Save**.
+6. Klik **Deployments → Redeploy** (pilih deployment terakhir → **Redeploy**).
+
+> Setelah redeploy, semua user yang buka app via Vercel URL akan otomatis menggunakan DB baru.
 
 ---
 
-## 📋 Daftar Tabel yang Dimigrasikan
+### LANGKAH 10 — Update GitHub Secrets (untuk GitHub Actions build)
 
-| No | Nama Tabel | Deskripsi Data |
-|---|---|---|
-| 1 | `wms_users` | Akun pengguna, PIN login, role, hak akses |
-| 2 | `master_produk` | Master katalog SKU, barcode, nama barang, kategori |
-| 3 | `log_produk` | Riwayat mutasi IN / OUT / SO gudang |
-| 4 | `stock_opname_queue` | Antrean approval stock opname fisik |
-| 5 | `penerimaan_produksi` | Surat jalan kedatangan CMT & kargo |
-| 6 | `picking_list` | Tugas picking surat jalan order penjualan |
-| 7 | `peminjaman` | Log peminjaman sampel, live streaming, studio |
-| 8 | `perbaikan_tickets` | Tiket perbaikan barang reject / defect |
-| 9 | `qc_reports` | Laporan quality control barang masuk/keluar |
-| 10 | `manual_shipment` | Rekap pengiriman paket manual & resi ekspedisi |
-| 11 | `pengecekan_sj` | Data audit verifikasi surat jalan |
-| 12 | `address_book` | Buku alamat pengiriman tujuan & customer |
-| 13 | `karyawan` | Master direktori biodata karyawan |
-| 14 | `master_shift` | Master pengaturan jam shift kerja |
-| 15 | `roster_shift` | Penjadwalan roster shift karyawan harian |
-| 16 | `presensi` | Log absensi GPS / foto masuk & pulang |
-| 17 | `lembur` | Pengajuan lembur dan approval HR |
-| 18 | `perijinan_cuti` | Pengajuan izin, sakit, cuti tahunan karyawan |
+Agar build via GitHub Actions (GitHub Pages) juga menggunakan URL baru:
+
+1. Buka halaman repositori GitHub: `github.com/chocochipswarehouse2-dash/WarehouseMini`
+2. Tab **Settings → Secrets and variables → Actions**.
+3. Klik **New repository secret** untuk setiap variabel:
+   - **`VITE_SUPABASE_URL`** → `https://BARU.supabase.co`
+   - **`VITE_SUPABASE_ANON_KEY`** → `sb_publishable_NEW_KEY`
+4. Simpan.
+5. Trigger build baru: lakukan `git push` atau klik **Actions → Re-run workflow**.
 
 ---
 
-## ❓ FAQ & Troubleshooting
+### LANGKAH 11 — Verifikasi Fonnte Webhook
 
-### Q: Apa yang terjadi jika akun lama terblokir atau limit egress habis 100%?
-Jika egress akun lama sudah mencapai limit 5GB, Supabase akan memblokir request API ke akun tersebut. Lakukan migrasi **sebelum** tanggal akhir bulan atau saat pemakaian egress mencapai 80-90%. Dashboard Supabase menampilkan indikator pemakaian egress di menu *Organization Settings -> Usage*.
+Fonnte mengirimkan pesan WA ke GAS Webhook URL. Pastikan URL-nya masih benar:
 
-### Q: Apakah data di database baru bisa diverifikasi?
-Bisa. Setelah migrasi, buka halaman **Inventory** atau **Mutasi Log**. Cek apakah saldo fisik, riwayat transaksi, dan user login sudah sama persis dengan sebelumnya.
+1. Buka [Dashboard Fonnte](https://fonnte.com/dashboard).
+2. Pilih **Device** yang digunakan.
+3. Cek **Webhook URL** — harus berisi GAS Web App URL yang aktif.
+   - Contoh format: `https://script.google.com/macros/s/XXXXXXXXXX/exec`
+4. Jika URL berubah setelah redeploy GAS, update di sini.
+5. Klik **Test Webhook** untuk memastikan response `OK`.
 
-### Q: Bagaimana jika saya ingin kembali ke database sebelumnya?
-Pada halaman **Migrasi Supabase**, terdapat tombol merah **"Kembalikan ke Database Default (Reset)"** yang akan menghapus override kustom di browser dan mengembalikan koneksi ke env default.
+> **Cara cek GAS Web App URL yang aktif:**  
+> GAS Editor → Deploy → Manage Deployments → salin URL dari deployment aktif.
+
+---
+
+### LANGKAH 12 — Git Commit & Push (Trigger Auto-Deploy)
+
+```powershell
+cd "d:\Antigravity\WMS Inventory"
+git add -A
+git commit -m "chore: migrate Supabase to new project BARU"
+git push origin main
+```
+
+GitHub Actions akan otomatis build dan deploy ke GitHub Pages.
+
+---
+
+### LANGKAH 13 — Instruksikan Semua Pengguna Clear Cache
+
+Kirim pesan ke semua kru gudang:
+
+> _"Mohon tutup dan buka kembali aplikasi WMS di HP/laptop kalian. Jika masih ada masalah login atau data tidak muncul, lakukan Clear Cache browser dan muat ulang halaman."_
+
+**Untuk pengguna yang perlu clear manual:**
+
+1. Di browser HP/laptop, buka **Pengaturan** (Settings)
+2. **Privacy → Clear browsing data**
+3. Centang **Cookies** dan **Cached images/files**
+4. Klik **Clear data**
+5. Buka kembali URL WMS
+
+---
+
+### LANGKAH 14 — Verifikasi End-to-End
+
+Jalankan test script (perbarui `.env` dulu dengan kredensial baru):
+
+```powershell
+# Buat file .env dari template
+Copy-Item .env.example .env
+# Edit .env dengan URL dan key baru
+notepad .env
+
+# Jalankan test
+npx ts-node test-webhook.ts
+```
+
+**Checklist manual:**
+- [ ] Login ke app berhasil (semua user)
+- [ ] Data Inventory / Stok tampil normal
+- [ ] Data Log Mutasi tampil normal
+- [ ] Perbaikan Tickets bisa dibuka
+- [ ] QC Reports bisa dibuka
+- [ ] Scan WA (#IN/#OUT) dari Fonnte masuk ke Supabase baru
+- [ ] GAS sync berjalan (cek Sheet Log Product dapat baris baru)
+- [ ] Vercel deployment berhasil (tidak ada build error)
+
+---
+
+## 📊 Daftar Tabel yang Dimigrasikan (24 Tabel)
+
+| No | Tabel | Keterangan |
+|----|-------|-----------|
+| 1 | `wms_users` | Akun login, role, permissions |
+| 2 | `master_produk` | Katalog SKU & barcode |
+| 3 | `outlet_config` | Daftar outlet & jasa kirim |
+| 4 | `address_book` | Buku alamat customer |
+| 5 | `log_produk` | Riwayat mutasi IN/OUT/SO |
+| 6 | `stock_opname_queue` | Antrean approval opname |
+| 7 | `penerimaan_produksi` | Surat jalan kedatangan CMT/kargo |
+| 8 | `picking_list` | Tugas picking marketplace |
+| 9 | `peminjaman` | Log peminjaman sampel/live |
+| 10 | `perbaikan_tickets` | Tiket reject/defect/repair |
+| 11 | `qc_reports` | Laporan QC barang masuk |
+| 12 | `manual_shipment` | Pengiriman manual & resi |
+| 13 | `pengecekan_sj` | Audit verifikasi surat jalan |
+| 14 | `karyawan` | Biodata karyawan |
+| 15 | `master_shift` | Master jam shift |
+| 16 | `roster_shift` | Jadwal shift karyawan |
+| 17 | `presensi` | Log absensi harian |
+| 18 | `lembur` | Pengajuan & approval lembur |
+| 19 | `perijinan_cuti` | Izin, sakit, cuti tahunan |
+| 20 | `wms_projects` | Manajemen proyek internal |
+| 21 | `wms_agenda` | Agenda & kalender kerja |
+| 22 | `wms_roadmap` | Roadmap pengembangan |
+| 23 | `wms_system_docs` | Dokumentasi sistem |
+| 24 | `wms_settings` | Konfigurasi sistem |
+
+---
+
+## ❓ Troubleshooting
+
+### Q: App terbuka tapi data kosong / loading terus
+**A:** Browser masih pakai URL lama dari localStorage. Instruksikan user clear localStorage:
+```
+F12 → Console → ketik: localStorage.clear() → Enter → reload
+```
+
+### Q: Scan WA masuk ke Fonnte tapi tidak masuk ke Supabase
+**A:** GAS Webhook masih menunjuk ke URL Supabase lama. Cek GAS Script Properties `SUPABASE_SERVICE_KEY` dan jalankan `gas_deploy.cjs` ulang.
+
+### Q: Error "duplicate key value" saat scan IN pertama kali
+**A:** Sequence BIGINT belum di-reset. Jalankan SQL di Langkah 4 (fix sequence).
+
+### Q: GAS deploy gagal dengan error "Token expired"
+**A:** Token clasp kadaluarsa. Jalankan di terminal: `npx @google/clasp login`
+
+### Q: Vercel deployment gagal build
+**A:** Pastikan GitHub Secrets `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY` sudah diset (Langkah 10).
+
+### Q: Supabase Realtime tidak berfungsi (data tidak update otomatis)
+**A:** Pastikan tabel sudah di-add ke publication. Jalankan di SQL Editor:
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.log_produk;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.master_produk;
+-- (ulangi untuk tabel lain yang butuh realtime)
+```
+
+### Q: Egress DB baru cepat habis setelah migrasi
+**A:** Aktifkan caching lokal (IndexedDB) — sudah ada di kode. Pastikan tidak ada loop yang fetch data berulang. Cek di Supabase Dashboard > Usage > Egress.
+
+---
+
+## 🔒 Catatan Keamanan
+
+- **Service Role Key** JANGAN pernah di-commit ke GitHub — selalu simpan di `.env` lokal dan GAS Script Properties
+- **anon/public key** aman untuk di-embed di source code (sudah dilindungi RLS)
+- File `.env` sudah ada di `.gitignore` — jangan hapus entri ini
+- Setelah migrasi selesai, **jangan** bagikan URL dan Key akun lama ke siapapun

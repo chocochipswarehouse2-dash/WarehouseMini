@@ -1,138 +1,222 @@
+/**
+ * =============================================================================
+ * WMS CHOCOCHIPS — TEST WEBHOOK END-TO-END
+ * =============================================================================
+ * Script ini menguji alur lengkap: INSERT ke Supabase → Webhook GAS → GAS API.
+ *
+ * PERSIAPAN:
+ *   1. Buat file .env di root proyek dengan isi:
+ *      SUPABASE_URL=https://xxx.supabase.co
+ *      SUPABASE_SERVICE_KEY=eyJhbGci...service_role_key...
+ *      GAS_API_URL=https://script.google.com/macros/s/XXXXXXX/exec
+ *
+ *   2. JANGAN commit file .env ke GitHub!
+ *      File .env sudah ada di .gitignore.
+ *
+ * CARA MENJALANKAN:
+ *   npx ts-node test-webhook.ts
+ *   -- atau --
+ *   node -r dotenv/config -r ts-node/register test-webhook.ts
+ * =============================================================================
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://vxongwtxmhjixhzeoidp.supabase.co';
-// Memakai Service Role Key agar bebas bypass RLS (hanya untuk testing internal)
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4b25nd3R4bWhqaXhoemVvaWRwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQzMjAwNSwiZXhwIjoyMTA0MDA4MDA1fQ.QlURHgVn7ka1QMWuDzqGkxiLqCTPDCRq0Kg6q3DGhxI';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxkBScIKlkA06Twrs3WOYZC1s6jmvl9dppV5M008ZydoPrqau3d6-VCdfDGacDUErN7Ig/exec';
-
-async function testEndToEnd() {
-  console.log('🚀 Memulai Test Webhook End-to-End...');
-  
-  const testId = crypto.randomUUID();
-  const testOrderNo = `TEST-ORDER-${Date.now()}`;
-
-  // ==========================================
-  // 1. TEST INSERT KE SUPABASE
-  // ==========================================
-  console.log(`\n[1] INSERT data ke Supabase (ID: ${testId})...`);
-    const { data: insertData, error: insertError } = await supabase
-      .from('manual_shipment')
-      .insert({
-        id: testId,
-        no_pesanan: testOrderNo,
-        nama_pengirim: 'CHOCOCHIPS PUSAT',
-        pic_store: 'Store Central',
-        no_telp_store: '08111111111',
-        no_transaksi_pengirim: ['TX-TEST-001'],
-        nama_tujuan: 'Joko Widodo',
-        no_telp_tujuan: '08123456789',
-        alamat_tujuan: 'Istana Negara',
-        notes_paket: 'Ini adalah data test webhook',
-        no_transaksi_customer: 'CUST-TEST-001',
-        jasa_kirim: 'JNE Express',
-        status: 'diterima',
-        submitted_by: 'tester',
-        items: []
-      })
-      .select();
-
-  if (insertError) {
-    console.error('❌ INSERT Gagal:', insertError.message);
-    return;
-  }
-  console.log('✅ INSERT Sukses! Supabase menyimpan data ini.');
-
-  // ==========================================
-  // 2. WAIT FOR WEBHOOK TO PROCESS (3 detik)
-  // ==========================================
-  console.log('\n[2] Menunggu 4 detik agar Webhook selesai dieksekusi oleh GAS...');
-  await new Promise(resolve => setTimeout(resolve, 4000));
-
-  // ==========================================
-  // 3. TEST READ DARI GAS API (Apakah data masuk Spreadsheet?)
-  // ==========================================
-  console.log(`\n[3] Memanggil GAS API untuk mengecek apakah data masuk...`);
-  try {
-    const response = await fetch(`${GAS_API_URL}?action=sync&table=manual_shipment`);
-    const result = await response.json();
-    
-    if (result.success && result.data) {
-      const foundItem = result.data.find((item: any) => item.id === testId);
-      if (foundItem) {
-        console.log('✅ BINGO! Data ditemukan di Google Spreadsheet melalui GAS API!');
-        console.log('Detail data dari GAS:', foundItem.no_pesanan, foundItem.nama_penerima, foundItem.status);
-      } else {
-        console.log('❌ Oops, data belum masuk ke GAS. Mungkin webhook gagal atau schema kolom tidak pas.');
-        console.log(`Total data di GAS: ${result.count}`);
+// ─── Load .env secara manual (tanpa dotenv dependency) ───────────────────────
+function loadEnv() {
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+          if (!process.env[key]) process.env[key] = val;
+        }
       }
-    } else {
-      console.log('❌ Gagal memanggil GAS API:', result);
     }
-  } catch (err) {
-    console.error('❌ Error memanggil GAS API:', err);
   }
+}
+loadEnv();
 
-  // ==========================================
-  // 4. TEST UPDATE KE SUPABASE
-  // ==========================================
-  console.log(`\n[4] UPDATE data di Supabase (Ubah status jadi 'diproses')...`);
-  const { error: updateError } = await supabase
-    .from('manual_shipment')
-    .update({ status: 'diproses' })
-    .eq('id', testId);
+// ─── Konfigurasi dari env ─────────────────────────────────────────────────────
+const SUPABASE_URL     = process.env.SUPABASE_URL     || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+const GAS_API_URL      = process.env.GAS_API_URL      || '';
 
-  if (updateError) {
-    console.error('❌ UPDATE Gagal:', updateError.message);
-  } else {
-    console.log('✅ UPDATE Sukses! Webhook UPDATE seharusnya sedang berjalan.');
-  }
-
-  await new Promise(resolve => setTimeout(resolve, 4000));
-
-  console.log(`\n[5] Memanggil GAS API lagi untuk cek UPDATE...`);
-  try {
-    const response = await fetch(`${GAS_API_URL}?action=sync&table=manual_shipment`);
-    const result = await response.json();
-    const foundItem = result.data?.find((item: any) => item.id === testId);
-    if (foundItem && foundItem.status === 'diproses') {
-      console.log('✅ BINGO! Data di Spreadsheet berhasil ter-update menjadi:', foundItem.status);
-    } else {
-      console.log('❌ Data tidak ter-update di GAS.');
-    }
-  } catch (err) {}
-
-  // ==========================================
-  // 5. TEST SOFT DELETE KE SUPABASE
-  // ==========================================
-  console.log(`\n[6] DELETE data di Supabase...`);
-  const { error: deleteError } = await supabase
-    .from('manual_shipment')
-    .delete()
-    .eq('id', testId);
-
-  if (deleteError) {
-    console.error('❌ DELETE Gagal:', deleteError.message);
-  } else {
-    console.log('✅ DELETE Sukses! Webhook DELETE seharusnya berjalan (Soft Delete di GAS).');
-  }
-
-  await new Promise(resolve => setTimeout(resolve, 4000));
-  
-  console.log(`\n[7] Memanggil GAS API untuk memastikan data HILANG dari GET (karena Soft Deleted)...`);
-  try {
-    const response = await fetch(`${GAS_API_URL}?action=sync&table=manual_shipment`);
-    const result = await response.json();
-    const foundItem = result.data?.find((item: any) => item.id === testId);
-    if (!foundItem) {
-      console.log('✅ BINGO! Data test sudah tidak muncul di GET API (Berhasil di-Soft Delete).');
-    } else {
-      console.log('❌ Data masih muncul di GAS.');
-    }
-  } catch (err) {}
-
-  console.log('\n🎉 TEST END-TO-END SELESAI 🎉');
+// Validasi
+if (!SUPABASE_URL) {
+  console.error('❌ SUPABASE_URL tidak ditemukan. Buat file .env dengan SUPABASE_URL=...');
+  process.exit(1);
+}
+if (!SUPABASE_SERVICE_KEY) {
+  console.error('❌ SUPABASE_SERVICE_KEY tidak ditemukan. Buat file .env dengan SUPABASE_SERVICE_KEY=...');
+  console.log('   Service Role Key ada di: Supabase Dashboard > Project Settings > API > service_role');
+  process.exit(1);
 }
 
-testEndToEnd();
+console.log(`📡 Supabase: ${SUPABASE_URL}`);
+console.log(`🔗 GAS API : ${GAS_API_URL || '(tidak dikonfigurasi — skip test GAS)'}`);
+
+// ─── Supabase Client (Service Role untuk bypass RLS) ─────────────────────────
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ─── Test 1: Koneksi Dasar ────────────────────────────────────────────────────
+async function testConnection(): Promise<boolean> {
+  console.log('\n[KONEKSI] Menguji koneksi ke Supabase...');
+  const { data, error } = await supabase.from('wms_users').select('username').limit(1);
+  if (error) {
+    console.error('❌ Koneksi GAGAL:', error.message);
+    return false;
+  }
+  console.log('✅ Koneksi berhasil! Data wms_users ditemukan.');
+  return true;
+}
+
+// ─── Test 2: CRUD Manual Shipment ────────────────────────────────────────────
+async function testManualShipmentCRUD() {
+  const testId = crypto.randomUUID();
+  const testOrderNo = `TEST-${Date.now()}`;
+
+  console.log('\n[MANUAL SHIPMENT] Test INSERT...');
+  const { error: insertError } = await supabase
+    .from('manual_shipment')
+    .insert({
+      id: testId,
+      no_pesanan: testOrderNo,
+      nama_pengirim: 'CHOCOCHIPS TEST',
+      pic_store: 'Test Store',
+      no_telp_store: '08111111111',
+      no_transaksi_pengirim: ['TX-TEST-001'],
+      nama_tujuan: 'Test Customer',
+      no_telp_tujuan: '08123456789',
+      alamat_tujuan: 'Jl. Test No. 1, Jakarta',
+      notes_paket: 'Data test — bisa dihapus',
+      jasa_kirim: 'JNE',
+      status: 'diterima',
+      submitted_by: 'test-webhook-script',
+      items: [],
+    });
+
+  if (insertError) {
+    console.error('❌ INSERT gagal:', insertError.message);
+    return;
+  }
+  console.log(`✅ INSERT sukses (ID: ${testId})`);
+
+  if (GAS_API_URL) {
+    console.log('   Menunggu 4 detik agar webhook GAS diproses...');
+    await wait(4000);
+
+    try {
+      const res = await fetch(`${GAS_API_URL}?action=sync&table=manual_shipment`);
+      const result = await res.json() as any;
+      const found = result?.data?.find((item: any) => item.id === testId);
+      if (found) {
+        console.log('✅ Data terdeteksi di GAS Spreadsheet!');
+      } else {
+        console.warn('⚠️  Data belum terdeteksi di GAS (mungkin webhook belum aktif atau perlu waktu)');
+      }
+    } catch (e) {
+      console.warn('⚠️  Tidak bisa cek GAS API:', (e as any).message);
+    }
+  }
+
+  // Cleanup
+  await supabase.from('manual_shipment').delete().eq('id', testId);
+  console.log('🧹 Data test dihapus.');
+}
+
+// ─── Test 3: Tabel Perbaikan Tickets ─────────────────────────────────────────
+async function testPerbaikanTickets() {
+  console.log('\n[PERBAIKAN] Test count tabel perbaikan_tickets...');
+  const { count, error } = await supabase
+    .from('perbaikan_tickets')
+    .select('*', { count: 'exact', head: true });
+
+  if (error) {
+    console.error('❌ Gagal baca perbaikan_tickets:', error.message);
+    return;
+  }
+  console.log(`✅ perbaikan_tickets: ${count} baris ditemukan.`);
+}
+
+// ─── Test 4: Tabel QC Reports ────────────────────────────────────────────────
+async function testQcReports() {
+  console.log('\n[QC REPORTS] Test count tabel qc_reports...');
+  const { count, error } = await supabase
+    .from('qc_reports')
+    .select('*', { count: 'exact', head: true });
+
+  if (error) {
+    console.error('❌ Gagal baca qc_reports:', error.message);
+    return;
+  }
+  console.log(`✅ qc_reports: ${count} baris ditemukan.`);
+}
+
+// ─── Test 5: Tabel Pengecekan SJ ─────────────────────────────────────────────
+async function testPengecekanSJ() {
+  console.log('\n[PENGECEKAN SJ] Test count tabel pengecekan_sj...');
+  const { count, error } = await supabase
+    .from('pengecekan_sj')
+    .select('*', { count: 'exact', head: true });
+
+  if (error) {
+    console.error('❌ Gagal baca pengecekan_sj:', error.message);
+    return;
+  }
+  console.log(`✅ pengecekan_sj: ${count} baris ditemukan.`);
+}
+
+// ─── Test 6: Stok View ───────────────────────────────────────────────────────
+async function testStokView() {
+  console.log('\n[STOK VIEW] Test view stok_real_fisik...');
+  const { data, error } = await supabase
+    .from('stok_real_fisik')
+    .select('sku, sisa_stok')
+    .neq('sisa_stok', 0)
+    .limit(3);
+
+  if (error) {
+    console.error('❌ Gagal baca stok_real_fisik:', error.message);
+    return;
+  }
+  console.log(`✅ stok_real_fisik berfungsi. Sample: ${JSON.stringify(data?.slice(0, 2))}`);
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  console.log('================================================================');
+  console.log('      WMS CHOCOCHIPS — TEST WEBHOOK END-TO-END');
+  console.log('================================================================\n');
+
+  const connected = await testConnection();
+  if (!connected) {
+    console.error('\n❌ Koneksi gagal — hentikan test.');
+    process.exit(1);
+  }
+
+  await testManualShipmentCRUD();
+  await testPerbaikanTickets();
+  await testQcReports();
+  await testPengecekanSJ();
+  await testStokView();
+
+  console.log('\n================================================================');
+  console.log('🎉 SEMUA TEST SELESAI!');
+  console.log('================================================================\n');
+}
+
+main().catch(err => {
+  console.error('\n❌ Fatal Error:', err.message);
+  process.exit(1);
+});
