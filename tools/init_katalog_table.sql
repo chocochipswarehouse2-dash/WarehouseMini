@@ -22,18 +22,22 @@ CREATE TABLE IF NOT EXISTS public.wms_katalog (
 ALTER TABLE public.wms_katalog ENABLE ROW LEVEL SECURITY;
 
 -- Policy untuk mengizinkan akses READ (Select) bagi user yang terautentikasi (atau anon jika dibutuhkan)
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.wms_katalog;
 CREATE POLICY "Enable read access for all users" ON public.wms_katalog
     FOR SELECT USING (true);
 
 -- Policy untuk mengizinkan INSERT bagi user yang terautentikasi
+DROP POLICY IF EXISTS "Enable insert for authenticated users" ON public.wms_katalog;
 CREATE POLICY "Enable insert for authenticated users" ON public.wms_katalog
     FOR INSERT WITH CHECK (auth.role() = 'authenticated' OR auth.role() = 'anon');
 
 -- Policy untuk mengizinkan UPDATE bagi user yang terautentikasi
+DROP POLICY IF EXISTS "Enable update for authenticated users" ON public.wms_katalog;
 CREATE POLICY "Enable update for authenticated users" ON public.wms_katalog
     FOR UPDATE USING (auth.role() = 'authenticated' OR auth.role() = 'anon');
 
 -- Policy untuk mengizinkan DELETE bagi user yang terautentikasi
+DROP POLICY IF EXISTS "Enable delete for authenticated users" ON public.wms_katalog;
 CREATE POLICY "Enable delete for authenticated users" ON public.wms_katalog
     FOR DELETE USING (auth.role() = 'authenticated' OR auth.role() = 'anon');
 
