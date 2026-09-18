@@ -123,21 +123,20 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
           displayPrice = rawPrice.startsWith('Rp') ? rawPrice : `Rp ${rawPrice}`;
         }
 
+        const variantText = [entry.warna, entry.size && entry.size !== 'Default' ? entry.size : ''].filter(Boolean).join(' | ') || 'Default';
+
         return Array.from({ length: copies }).map(
           () => `
-          <div class="thermal-page">
-            <div class="thermal-header">
-              <span class="product-title">${escapeHtml(entry.nama_produk)}</span>
-              <span class="catalog-badge">[ ${escapeHtml(entry.catalog_name)} ]</span>
-            </div>
-            <div class="thermal-body">
-              <div class="qr-box">
+          <div class="thermal-page-wrapper">
+            <div class="thermal-page-inner">
+              <div class="thermal-qr-container">
                 ${qrTag}
               </div>
-              <div class="info-box">
-                <div class="variant-line">${escapeHtml(entry.warna)} / ${escapeHtml(entry.size)}</div>
-                <div class="sku-line">${escapeHtml(entry.sku)}</div>
-                ${displayPrice ? `<div class="price-line">${escapeHtml(displayPrice)}</div>` : ''}
+              <div class="thermal-info-container">
+                <div class="thermal-line-title" title="${escapeHtml(entry.nama_produk)}">${escapeHtml(entry.nama_produk)}</div>
+                <div class="thermal-line-variant" title="${escapeHtml(variantText)}">${escapeHtml(variantText)}</div>
+                <div class="thermal-line-sku">${escapeHtml(entry.sku)}</div>
+                ${displayPrice ? `<div class="thermal-line-price">${escapeHtml(displayPrice)}</div>` : ''}
               </div>
             </div>
           </div>
@@ -167,8 +166,9 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
           <title>Cetak Barcode Produk 50x20mm</title>
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
           <style>
+            @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
             @page {
               size: 50mm 20mm landscape;
               margin: 0mm !important;
@@ -185,102 +185,108 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
               padding: 0 !important;
               background: #ffffff !important;
               color: #000000 !important;
-              font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+              font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
-            .thermal-page {
+            .thermal-page-wrapper {
+              display: block !important;
+              position: relative !important;
               width: 50mm !important;
               height: 20mm !important;
               max-width: 50mm !important;
               max-height: 20mm !important;
+              page-break-before: auto !important;
+              page-break-after: always !important;
+              page-break-inside: avoid !important;
+              break-before: auto !important;
+              break-after: page !important;
+              break-inside: avoid !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              box-sizing: border-box !important;
+            }
+            .thermal-page-inner {
+              width: 50mm !important;
+              height: 20mm !important;
+              max-width: 50mm !important;
+              max-height: 20mm !important;
+              box-sizing: border-box !important;
               padding: 1.0mm 1.5mm !important;
               display: flex !important;
-              flex-direction: column !important;
-              justify-content: space-between !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
               overflow: hidden !important;
-              page-break-after: always !important;
-              break-after: page !important;
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
               background: #ffffff !important;
+              color: #000000 !important;
             }
-            .thermal-header {
-              display: flex !important;
-              align-items: center !important;
-              justify-content: space-between !important;
-              border-bottom: 0.8px solid #000000 !important;
-              padding-bottom: 0.8px !important;
-              margin-bottom: 0.8px !important;
-              line-height: 1 !important;
-            }
-            .product-title {
-              font-size: 8pt !important;
-              font-weight: 700 !important;
-              text-transform: uppercase !important;
-              white-space: nowrap !important;
-              overflow: hidden !important;
-              text-overflow: ellipsis !important;
-              max-width: 36mm !important;
-              letter-spacing: -0.2px !important;
-            }
-            .catalog-badge {
-              font-size: 6pt !important;
-              font-weight: 800 !important;
-              border: 0.8px solid #000000 !important;
-              padding: 0.5px 2px !important;
-              border-radius: 1px !important;
-              white-space: nowrap !important;
-              line-height: 1 !important;
-            }
-            .thermal-body {
-              display: flex !important;
-              align-items: center !important;
-              gap: 1.8mm !important;
-              flex: 1 !important;
-              min-height: 0 !important;
-            }
-            .qr-box {
+            .thermal-qr-container {
               width: 13.5mm !important;
               height: 13.5mm !important;
+              margin-right: 1.5mm !important;
+              margin-bottom: 0 !important;
               flex-shrink: 0 !important;
               display: flex !important;
               align-items: center !important;
               justify-content: center !important;
+              background: #ffffff !important;
             }
-            .info-box {
+            .thermal-info-container {
               flex: 1 !important;
               min-width: 0 !important;
               display: flex !important;
               flex-direction: column !important;
               justify-content: center !important;
-              line-height: 1.15 !important;
+              overflow: hidden !important;
+              padding-right: 0.5mm !important;
+              text-align: left;
             }
-            .variant-line {
-              font-size: 7.2pt !important;
-              font-weight: 700 !important;
-              text-transform: uppercase !important;
+            .thermal-line-title {
+              font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+              font-size: 9.2pt !important;
+              font-weight: 600 !important;
+              line-height: 1.15 !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              color: #000000 !important;
+              letter-spacing: -0.05px !important;
+            }
+            .thermal-line-variant {
+              font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+              font-size: 8.4pt !important;
+              font-weight: 600 !important;
+              line-height: 1.15 !important;
               white-space: nowrap !important;
               overflow: hidden !important;
               text-overflow: ellipsis !important;
               color: #111111 !important;
+              letter-spacing: -0.05px !important;
+              margin-bottom: 0.15mm !important;
             }
-            .sku-line {
-              font-size: 7.5pt !important;
-              font-family: 'Courier New', Courier, monospace, sans-serif !important;
-              font-weight: 700 !important;
+            .thermal-line-sku {
+              font-size: 7.0pt !important;
+              font-weight: 600 !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif !important;
               white-space: nowrap !important;
               overflow: hidden !important;
               text-overflow: ellipsis !important;
               color: #222222 !important;
-              margin-top: 0.3mm !important;
+              line-height: 1.1 !important;
+              margin: 0.2mm 0 !important;
+              letter-spacing: 0px !important;
             }
-            .price-line {
-              font-size: 9pt !important;
-              font-weight: 800 !important;
-              color: #000000 !important;
-              margin-top: 0.4mm !important;
+            .thermal-line-price {
+              font-family: 'Quicksand', sans-serif !important;
+              font-size: 12.0pt !important;
+              font-weight: 700 !important;
               white-space: nowrap !important;
+              overflow: hidden !important;
+              color: #000000 !important;
+              line-height: 1.05 !important;
+              letter-spacing: -0.1px !important;
             }
           </style>
         </head>
@@ -447,22 +453,42 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
           {/* Thermal Preview Card */}
           <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
-              <span>Preview Desain Stiker Thermal 50x20mm:</span>
+              <span>Preview Desain Stiker Thermal 50×20 mm:</span>
             </h4>
             {entries[0] && (
-              <div className="inline-block p-2 bg-white text-black border border-slate-400 shadow-xs rounded-sm font-sans" style={{ width: '220px', height: '90px' }}>
-                <div className="flex items-center justify-between border-b border-black/40 pb-0.5">
-                  <span className="text-[9px] font-extrabold uppercase truncate tracking-tight">{entries[0].nama_produk}</span>
-                  <span className="text-[8px] font-bold bg-black text-white px-1 rounded-xs">{entries[0].catalog_name}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  {entries[0].qrDataUrl && (
-                    <img src={entries[0].qrDataUrl} alt="QR" className="w-11 h-11 shrink-0" />
-                  )}
-                  <div className="min-w-0 text-[8px] leading-tight flex-1">
-                    <div className="font-bold uppercase text-[9px] truncate">{entries[0].warna} - {entries[0].size}</div>
-                    <div className="font-mono font-bold text-[9px] truncate text-slate-900 mt-0.5">{entries[0].sku}</div>
-                    <div className="font-black text-[10px] mt-0.5 text-black">Rp {entries[0].price || '-'}</div>
+              <div
+                className="inline-block p-2 bg-white text-black border border-slate-300 shadow-xs rounded-sm"
+                style={{
+                  width: '260px',
+                  height: '104px',
+                  fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                }}
+              >
+                <div className="flex items-center h-full gap-2">
+                  <div className="w-18 h-18 shrink-0 flex items-center justify-center bg-white border border-slate-200 rounded-xs p-0.5">
+                    {entries[0].qrDataUrl ? (
+                      <img src={entries[0].qrDataUrl} alt="QR" className="w-full h-full object-contain" />
+                    ) : (
+                      <QrCode className="w-8 h-8 text-slate-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
+                    <div className="text-[11px] font-semibold text-black truncate tracking-tight">
+                      {entries[0].nama_produk}
+                    </div>
+                    <div className="text-[10px] font-semibold text-slate-800 truncate mt-0.5">
+                      {[entries[0].warna, entries[0].size && entries[0].size !== 'Default' ? entries[0].size : ''].filter(Boolean).join(' | ') || 'Default'}
+                    </div>
+                    <div className="text-[9px] font-mono font-semibold text-slate-700 truncate mt-0.5">
+                      {entries[0].sku}
+                    </div>
+                    <div className="text-sm font-bold text-black truncate mt-1 tracking-tight">
+                      {entries[0].price
+                        ? entries[0].price.toString().startsWith('Rp')
+                          ? entries[0].price
+                          : `Rp ${entries[0].price}`
+                        : '-'}
+                    </div>
                   </div>
                 </div>
               </div>
