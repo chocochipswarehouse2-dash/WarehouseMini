@@ -1,6 +1,8 @@
 import { KatalogBatch, KatalogItem } from '../../types';
 import { saveWmsSettings, fetchWmsSettings } from '../../services/settings';
 import initial325bData from '../../data/initialKatalog325b.json';
+import { getSupabaseClient } from '../../services/supabase';
+
 
 export const KATALOG_STORAGE_KEY = 'wms_katalog_manual_data';
 
@@ -110,25 +112,37 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
     console.warn('LocalStorage save failed, trying fallback:', lsErr);
   }
 
-  // 2. Simpan ke Supabase Cloud Settings:
+  // 2. Simpan ke Supabase Cloud (tabel wms_katalog)
   // PASTI-KAN TIDAK ADA GAMBAR BASE64 YANG TERSIMPAN DI SUPABASE
-  // Hanya simpan URL Google Drive / link web eksternal untuk menghemat bandwidth & ruang database
   try {
-    const cleanBatches = batches.map((b) => ({
-      ...b,
-      items: b.items.map((it) => {
-        if (it.image_url && it.image_url.startsWith('data:image')) {
-          // Buang base64 dari Supabase
-          return { ...it, image_url: '' };
-        }
-        return it;
-      }),
-    }));
-    const cleanJsonStr = JSON.stringify(cleanBatches);
-    await saveWmsSettings({ katalog_manual_data: cleanJsonStr });
+    const client = getSupabaseClient();
+    
+    // Transform batches to rows
+    const rowsToUpsert: any[] = [];
+    batches.forEach((b) => {
+      b.items.forEach((it) => {
+        rowsToUpsert.push({
+          id: it.id,
+          catalog_id: b.id,
+          catalog_name: b.name,
+          nomor: it.nomor,
+          deskripsi: it.deskripsi,
+          price: String(it.price || ''),
+          variants: it.variants || [],
+          image_url: (it.image_url && it.image_url.startsWith('data:image')) ? '' : it.image_url,
+          is_hidden: it.is_hidden || false,
+        });
+      });
+    });
+
+    if (rowsToUpsert.length > 0) {
+      // Upsert ke wms_katalog (update on conflict UUID)
+      const { error } = await client.from('wms_katalog').upsert(rowsToUpsert, { onConflict: 'id' });
+      if (error) throw error;
+    }
     return true;
   } catch (cloudErr) {
-    console.error('Supabase cloud save error for katalog_manual_data:', cloudErr);
+    console.error('Supabase cloud save error for wms_katalog:', cloudErr);
     return false;
   }
 }
@@ -136,19 +150,49 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
 // Ambil list batches dari Cloud atau LocalStorage
 export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
   try {
-    const settings = await fetchWmsSettings();
-    if (settings?.katalog_manual_data) {
-      const fromCloud = parseStoredKatalogBatches(settings.katalog_manual_data);
-      if (fromCloud.length > 0) {
-        // Simpan mirror ke local storage
-        try {
-          localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(fromCloud));
-        } catch {}
-        return fromCloud;
-      }
+    const client = getSupabaseClient();
+    const { data, error } = await client.from('wms_katalog').select('*').order('created_at', { ascending: true });
+    
+    if (!error && data && data.length > 0) {
+      // Transform rows back to batches
+      const batchMap = new Map<string, KatalogBatch>();
+      
+      data.forEach((row: any) => {
+        const batchId = row.catalog_id || 'batch-325b';
+        const batchName = row.catalog_name || 'Katalog';
+        
+        if (!batchMap.has(batchId)) {
+          batchMap.set(batchId, {
+            id: batchId,
+            name: batchName,
+            created_at: row.created_at || new Date().toISOString(),
+            items: []
+          });
+        }
+        
+        batchMap.get(batchId)!.items.push({
+          id: row.id,
+          nomor: row.nomor || '',
+          deskripsi: row.deskripsi || '',
+          price: row.price || '',
+          variants: row.variants || [],
+          image_url: row.image_url || '',
+          catalog_id: batchId,
+          catalog_name: batchName,
+          is_hidden: row.is_hidden || false
+        });
+      });
+      
+      const fromCloud = Array.from(batchMap.values());
+      
+      // Simpan mirror ke local storage
+      try {
+        localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(fromCloud));
+      } catch {}
+      return fromCloud;
     }
   } catch (err) {
-    console.warn('Gagal fetch setting cloud katalog, mencoba local storage:', err);
+    console.warn('Gagal fetch cloud katalog, mencoba local storage:', err);
   }
 
   // Fallback LocalStorage

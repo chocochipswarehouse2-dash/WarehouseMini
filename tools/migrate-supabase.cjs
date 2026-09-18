@@ -124,6 +124,7 @@ const ALL_TABLES = [
   'wms_roadmap',
   'wms_system_docs',
   'wms_settings',
+  'wms_katalog',
 ];
 
 // Filter tabel berdasarkan flag --tables dan --skip
