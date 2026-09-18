@@ -70,9 +70,9 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-xl max-h-[95vh] flex flex-col rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
               <UploadCloud className="w-5 h-5" />
@@ -96,169 +96,171 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
         </div>
 
         {/* Content & Form */}
-        <form onSubmit={handleSave} className="p-6 space-y-5">
-          {/* Ringkasan Data yang Diekstrak & Info Google Drive Storage */}
-          <div className="grid grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-center">
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">Produk</span>
-              <p className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{parsedItems.length}</p>
+        <form onSubmit={handleSave} className="flex flex-col min-h-0 overflow-hidden">
+          <div className="p-6 space-y-5 overflow-y-auto">
+            {/* Ringkasan Data yang Diekstrak & Info Google Drive Storage */}
+            <div className="grid grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-center">
+              <div>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Produk</span>
+                <p className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{parsedItems.length}</p>
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Total Varian</span>
+                <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{totalVariants}</p>
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Foto Terbaca</span>
+                <p className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{totalImages} Item</p>
+              </div>
             </div>
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">Total Varian</span>
-              <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{totalVariants}</p>
-            </div>
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">Foto Terbaca</span>
-              <p className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{totalImages} Item</p>
-            </div>
-          </div>
 
-          {/* Badge Storage Google Drive (Bukan di Supabase) */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-200">
-            <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <div className="leading-snug">
-              <span className="font-bold">Penyimpanan Foto:</span> Foto produk otomatis dikompres dan disimpan aman di <strong>Google Drive Cloud</strong>. Database Supabase bebas dari beban data base64.
+            {/* Badge Storage Google Drive (Bukan di Supabase) */}
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-200">
+              <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div className="leading-snug">
+                <span className="font-bold">Penyimpanan Foto:</span> Foto produk otomatis dikompres dan disimpan aman di <strong>Google Drive Cloud</strong>. Database Supabase bebas dari beban data base64.
+              </div>
             </div>
-          </div>
 
-          {uploadProgressMsg && (
-            <div className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs text-indigo-700 dark:text-indigo-300 font-semibold animate-pulse">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span>{uploadProgressMsg}</span>
-            </div>
-          )}
+            {uploadProgressMsg && (
+              <div className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs text-indigo-700 dark:text-indigo-300 font-semibold animate-pulse">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>{uploadProgressMsg}</span>
+              </div>
+            )}
 
-          {/* Opsi Mode Upload: Baru vs Replace */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Pilihan Penyimpanan:
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label
-                className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                  mode === 'new'
-                    ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20'
-                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="uploadMode"
-                  checked={mode === 'new'}
-                  onChange={() => setMode('new')}
-                  className="mt-1 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <div className="font-bold text-sm">Katalog Baru</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Buat kelompok terpisah (misal: 326 B, 325 A).
+            {/* Opsi Mode Upload: Baru vs Replace */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Pilihan Penyimpanan:
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    mode === 'new'
+                      ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="uploadMode"
+                    checked={mode === 'new'}
+                    onChange={() => setMode('new')}
+                    className="mt-1 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <div className="font-bold text-sm">Katalog Baru</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Buat kelompok terpisah (misal: 326 B, 325 A).
+                    </div>
                   </div>
-                </div>
-              </label>
+                </label>
 
-              <label
-                className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                  mode === 'replace'
-                    ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 text-amber-950 dark:text-amber-100 ring-2 ring-amber-500/20'
-                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="uploadMode"
-                  checked={mode === 'replace'}
-                  onChange={() => setMode('replace')}
-                  disabled={existingBatches.length === 0}
-                  className="mt-1 text-amber-600 focus:ring-amber-500"
-                />
-                <div>
-                  <div className="font-bold text-sm">Replace / Timpa</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Perbarui data pada katalog yang sudah ada.
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    mode === 'replace'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 text-amber-950 dark:text-amber-100 ring-2 ring-amber-500/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="uploadMode"
+                    checked={mode === 'replace'}
+                    onChange={() => setMode('replace')}
+                    disabled={existingBatches.length === 0}
+                    className="mt-1 text-amber-600 focus:ring-amber-500"
+                  />
+                  <div>
+                    <div className="font-bold text-sm">Replace / Timpa</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Perbarui data pada katalog yang sudah ada.
+                    </div>
                   </div>
-                </div>
-              </label>
+                </label>
+              </div>
             </div>
-          </div>
 
-          {/* Jika Mode Replace: Dropdown Pilih Katalog yang Mau Ditimpa */}
-          {mode === 'replace' && (
-            <div className="space-y-1.5 p-3.5 bg-amber-50/60 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800/50">
-              <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600" />
-                Pilih Katalog yang Akan Ditimpa (Replace):
+            {/* Jika Mode Replace: Dropdown Pilih Katalog yang Mau Ditimpa */}
+            {mode === 'replace' && (
+              <div className="space-y-1.5 p-3.5 bg-amber-50/60 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800/50">
+                <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  Pilih Katalog yang Akan Ditimpa (Replace):
+                </label>
+                <select
+                  value={targetBatchId}
+                  onChange={(e) => {
+                    setTargetBatchId(e.target.value);
+                    const selected = existingBatches.find((b) => b.id === e.target.value);
+                    if (selected) setCatalogName(selected.name);
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                >
+                  {existingBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.items.length} Produk)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Data produk lama dalam katalog ini akan digantikan dengan data baru dari file Excel ini.
+                </p>
+              </div>
+            )}
+
+            {/* Input Nama Katalog */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Nama / No Katalog (Contoh: "326 B", "325 A"):
               </label>
-              <select
-                value={targetBatchId}
-                onChange={(e) => {
-                  setTargetBatchId(e.target.value);
-                  const selected = existingBatches.find((b) => b.id === e.target.value);
-                  if (selected) setCatalogName(selected.name);
-                }}
-                className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 rounded-lg text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-              >
-                {existingBatches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.items.length} Produk)
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                Data produk lama dalam katalog ini akan digantikan dengan data baru dari file Excel ini.
+              <input
+                type="text"
+                required
+                value={catalogName}
+                onChange={(e) => setCatalogName(e.target.value)}
+                placeholder="Contoh: 326 B atau 325 A"
+                className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-hidden transition-all shadow-xs"
+              />
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Nama ini akan muncul sebagai badge tanda pengenal di setiap kartu produk dan opsi filter katalog.
               </p>
             </div>
-          )}
 
-          {/* Input Nama Katalog */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Nama / No Katalog (Contoh: "326 B", "325 A"):
-            </label>
-            <input
-              type="text"
-              required
-              value={catalogName}
-              onChange={(e) => setCatalogName(e.target.value)}
-              placeholder="Contoh: 326 B atau 325 A"
-              className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-hidden transition-all shadow-xs"
-            />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Nama ini akan muncul sebagai badge tanda pengenal di setiap kartu produk dan opsi filter katalog.
-            </p>
-          </div>
-
-          {/* Daftar Singkat Produk yang akan disimpan */}
-          <div className="space-y-1.5">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Preview Daftar Produk ({parsedItems.length}):
-            </span>
-            <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 p-2 text-xs">
-              {parsedItems.slice(0, 10).map((it, idx) => (
-                <div key={idx} className="py-1.5 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 truncate">
-                    <span className="font-mono text-slate-400">#{it.nomor || idx + 1}</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                      {it.deskripsi || 'Tanpa Nama'}
-                    </span>
+            {/* Daftar Singkat Produk yang akan disimpan */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Preview Daftar Produk ({parsedItems.length}):
+              </span>
+              <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 p-2 text-xs">
+                {parsedItems.slice(0, 10).map((it, idx) => (
+                  <div key={idx} className="py-1.5 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="font-mono text-slate-400">#{it.nomor || idx + 1}</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                        {it.deskripsi || 'Tanpa Nama'}
+                      </span>
+                    </div>
+                    <div className="text-right text-slate-500 dark:text-slate-400 shrink-0">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        {it.price ? `Rp ${it.price}` : '-'}
+                      </span>{' '}
+                      • {it.variants?.length || 0} Varian
+                    </div>
                   </div>
-                  <div className="text-right text-slate-500 dark:text-slate-400 shrink-0">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      {it.price ? `Rp ${it.price}` : '-'}
-                    </span>{' '}
-                    • {it.variants?.length || 0} Varian
+                ))}
+                {parsedItems.length > 10 && (
+                  <div className="py-1.5 text-center text-slate-400 italic">
+                    + {parsedItems.length - 10} produk lainnya
                   </div>
-                </div>
-              ))}
-              {parsedItems.length > 10 && (
-                <div className="py-1.5 text-center text-slate-400 italic">
-                  + {parsedItems.length - 10} produk lainnya
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 shrink-0">
             <button
               type="button"
               onClick={onClose}
