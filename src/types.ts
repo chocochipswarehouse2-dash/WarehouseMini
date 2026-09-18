@@ -29,8 +29,25 @@ export type ActivePage =
   | 'pesanan_saya'
   | 'manual_shipment'
   | 'roadmap'
+  | 'katalog_produk'
   | 'pusat_resolusi'
   | 'supabase_migration';
+
+export interface KatalogVariant {
+  warna: string;
+  size: string;
+  sku: string;
+  qty: number;
+}
+
+export interface KatalogItem {
+  id: string;
+  nomor: string;
+  deskripsi: string;
+  price: string | number;
+  variants: KatalogVariant[];
+  image_url: string;
+}
 
 export type UserRole =
   | 'Superadmin'

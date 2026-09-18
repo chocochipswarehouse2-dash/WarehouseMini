@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   ClipboardCheck,
   ClipboardList,
+  BookOpen,
   ArrowRightLeft,
   Boxes,
   Lock,
@@ -180,6 +181,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ScanBarcode,
       description: 'Scan Rak, Mutasi Log & SO',
       access: canMutasi,
+    },
+    {
+      id: 'katalog_produk' as ActivePage,
+      label: 'Katalog Produk',
+      shortLabel: 'Katalog',
+      icon: BookOpen,
+      description: 'Katalog Produk Manual',
+      access: true, // Everyone can see it or limit to certain roles? Let's say true
     },
     {
       id: 'perbaikan' as ActivePage,

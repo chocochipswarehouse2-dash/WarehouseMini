@@ -8,5 +8,6 @@ export interface WmsSettings {
   manual_shipment_gas_url?: string;
   gdrive_gas_url?: string;
   gdrive_folder_url?: string;
+  katalog_manual_data?: string;
   updated_at?: string;
 }

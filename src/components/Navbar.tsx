@@ -32,6 +32,7 @@ import {
   Printer,
   QrCode,
   ShieldAlert,
+  BookOpen,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -89,6 +90,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'pesanan_saya':
       case 'manual_shipment':
         return { title: 'Pesanan Saya', subtitle: 'Form Pesanan & Rekap Pengiriman', icon: Package };
+      case 'katalog_produk':
+        return { title: 'Katalog Produk', subtitle: 'Manajemen Katalog Manual', icon: BookOpen };
       case 'penerimaan':
         return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
       case 'scanner':

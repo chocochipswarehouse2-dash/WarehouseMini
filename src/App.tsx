@@ -20,6 +20,7 @@ import {
 } from './types';
 import RoadmapView from "./components/RoadmapView";
 import { Sidebar } from './components/Sidebar';
+import { KatalogProdukView } from './components/KatalogProdukView';
 import { OperasiStokView } from './components/OperasiStokView';
 import { ImportStokModal, ImportRow } from './components/ImportStokModal';
 import { LoginModal } from './components/LoginModal';
@@ -157,6 +158,7 @@ import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
 const PAGE_TO_PATH: Record<ActivePage, string> = {
   dashboard: 'dashboard',
   operasi_stok: 'operasi-stok',
+  katalog_produk: 'katalog-produk',
   agenda: 'agenda',
   pesanan_saya: 'pesanan-saya',
   loading_dock: 'loading-dock',
@@ -187,6 +189,8 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
   'operasi-stok': 'operasi_stok',
+  'katalog-produk': 'katalog_produk',
+  'katalog': 'katalog_produk',
   '': 'dashboard',
   'dashboard': 'dashboard',
   'agenda': 'agenda',
@@ -1804,6 +1808,9 @@ export default function App() {
                     session={session}
                     onNotify={showToast}
                   />
+              )}
+              {activePage === 'katalog_produk' && (
+                  <KatalogProdukView onNotify={showToast} />
               )}
               {activePage === 'roadmap' && (
                   <RoadmapView session={session} onShowToast={showToast} />
