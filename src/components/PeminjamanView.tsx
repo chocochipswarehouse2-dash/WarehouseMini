@@ -55,6 +55,7 @@ import {
   fetchStockForSkus,
   isWarehouseLocation,
   supabaseFetch,
+  insertPickingListRowsToSupabase,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -900,7 +901,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             created_at: nowIso,
           };
         });
-        await supabaseFetch('picking_list', 'POST', pickingTasks);
+        await insertPickingListRowsToSupabase(pickingTasks);
       } catch (err) {
         console.warn('Gagal menambahkan ke picking_list Supabase', err);
       }

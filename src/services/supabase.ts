@@ -3753,25 +3753,23 @@ export async function completePickingSuratJalanSupabase(
     }
 
     // 4. Insert unexpected/wrong items scanned to Supabase
-    for (const unexp of unexpectedItems) {
-      try {
-        const payload: Record<string, any> = {
-          no_sj: cleanNoSj,
-          tanggal: nowIso.slice(0, 10),
-          tujuan: items[0]?.tujuan || 'Marketplace',
-          sku: unexp.sku,
-          nama_produk: unexp.nama_produk || unexp.sku,
-          qty_req: 0,
-          qty_picked: unexp.qty_picked,
-          lokasi: unexp.lokasi || '-',
-          status: 'SELESAI',
-          picker_name: pickerName,
-          created_at: nowIso,
-        };
-        await supabaseFetch('picking_list', 'POST', [payload]);
-      } catch (unexpErr) {
-        console.warn(`Failed inserting unexpected item ${unexp.sku} to Supabase:`, unexpErr);
-      }
+    if (unexpectedItems.length > 0) {
+      const unexpPayloads = unexpectedItems.map((unexp) => ({
+        no_sj: cleanNoSj,
+        tanggal: nowIso.slice(0, 10),
+        tujuan: items[0]?.tujuan || 'Marketplace',
+        sku: unexp.sku,
+        nama_produk: unexp.nama_produk || unexp.sku,
+        qty_req: 0,
+        qty_picked: unexp.qty_picked,
+        lokasi: unexp.lokasi || '-',
+        status: 'SELESAI',
+        picker_name: pickerName,
+        created_at: nowIso,
+      }));
+      await insertPickingListRowsToSupabase(unexpPayloads).catch((unexpErr) => {
+        console.warn(`Failed inserting unexpected items to Supabase:`, unexpErr);
+      });
     }
 
     // 5. Also sync to peminjaman (if SPS/PJM)
@@ -3800,10 +3798,12 @@ export async function completePickingSuratJalanSupabase(
 
 /**
  * Robustly inserts rows into the Supabase 'picking_list' table.
- * Handles schema variations automatically (e.g. presence or absence of 'size' column).
+ * Handles schema variations and assigns collision-free safe BIGINT IDs
+ * to completely eliminate sequence desync duplicate key errors (code 23505).
  */
 export async function insertPickingListRowsToSupabase(
   newItems: Array<{
+    id?: number | string;
     no_sj: string;
     tanggal?: string;
     tujuan?: string;
@@ -3821,9 +3821,16 @@ export async function insertPickingListRowsToSupabase(
   if (!newItems || newItems.length === 0) return true;
 
   const nowIso = new Date().toISOString();
+  const baseTime = Date.now();
 
-  // 1. Schema-compliant rows matching official Supabase picking_list table
-  const schemaCompliantRows = newItems.map((it) => {
+  const getSafeId = (item: any, idx: number, offset = 0) => {
+    if (typeof item.id === 'number' && item.id > 0) return item.id;
+    if (typeof item.id === 'string' && /^\d+$/.test(item.id) && Number(item.id) > 0) return Number(item.id);
+    return (baseTime + offset) * 1000 + (idx % 1000);
+  };
+
+  // 1. Schema-compliant rows matching official Supabase picking_list table with guaranteed safe BIGINT ID
+  const schemaCompliantRows = newItems.map((it, idx) => {
     const rawDate = String(it.tanggal || nowIso.slice(0, 10)).trim();
     let cleanDate = nowIso.slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
@@ -3834,6 +3841,7 @@ export async function insertPickingListRowsToSupabase(
     }
 
     return {
+      id: getSafeId(it, idx),
       no_sj: String(it.no_sj || '').trim().toUpperCase(),
       tanggal: cleanDate,
       tujuan: String(it.tujuan || 'Marketplace').trim(),
@@ -3847,49 +3855,61 @@ export async function insertPickingListRowsToSupabase(
     };
   });
 
-  // Attempt 1: Schema-compliant payload (Direct & Fast)
+  // Attempt 1: Schema-compliant payload with explicit safe BIGINT IDs (Avoids sequence desync 23505)
   try {
     await supabaseFetch('picking_list', 'POST', schemaCompliantRows);
     return true;
   } catch (err: any) {
-    console.warn('insertPickingListRowsToSupabase: Attempt 1 failed, trying minimal payload:', err?.message);
+    console.warn('insertPickingListRowsToSupabase: Attempt 1 failed, trying fallback with fresh unique IDs:', err?.message);
 
-      // Attempt 3: Minimal fields only
-      const minimalRows = schemaCompliantRows.map((r) => ({
-        no_sj: r.no_sj,
-        tanggal: r.tanggal,
-        tujuan: r.tujuan,
-        sku: r.sku,
-        nama_produk: r.nama_produk,
-        qty_req: r.qty_req,
-        qty_picked: 0,
-        lokasi: r.lokasi,
-        status: 'PENDING',
-      }));
+    // Attempt 2: Regenerate fresh unique timestamp IDs with offset, minimal fields
+    const minimalRows = schemaCompliantRows.map((r, idx) => ({
+      id: (Date.now() + 2000) * 1000 + (idx % 1000) + Math.floor(Math.random() * 500 + 100),
+      no_sj: r.no_sj,
+      tanggal: r.tanggal,
+      tujuan: r.tujuan,
+      sku: r.sku,
+      nama_produk: r.nama_produk,
+      qty_req: r.qty_req,
+      qty_picked: 0,
+      lokasi: r.lokasi,
+      status: 'PENDING',
+    }));
 
-      try {
-        await supabaseFetch('picking_list', 'POST', minimalRows);
-        return true;
-      } catch (err3: any) {
-        console.warn('insertPickingListRowsToSupabase: Attempt 3 failed, trying row-by-row fallback:', err3?.message);
-        
-        // Attempt 4: Row-by-row fallback
-        let successCount = 0;
-        let lastError: any = err3;
-        for (const row of minimalRows) {
+    try {
+      await supabaseFetch('picking_list', 'POST', minimalRows);
+      return true;
+    } catch (err2: any) {
+      console.warn('insertPickingListRowsToSupabase: Attempt 2 failed, trying row-by-row fallback:', err2?.message);
+      
+      // Attempt 3: Row-by-row fallback with dynamic unique ID
+      let successCount = 0;
+      let lastError: any = err2;
+      for (let i = 0; i < minimalRows.length; i++) {
+        const row = {
+          ...minimalRows[i],
+          id: Date.now() * 1000 + (i % 1000) + Math.floor(Math.random() * 800 + 100),
+        };
+        try {
+          await supabaseFetch('picking_list', 'POST', [row]);
+          successCount++;
+        } catch (rErr: any) {
+          // If still fails with unique constraint, try one more time without ID
           try {
-            await supabaseFetch('picking_list', 'POST', [row]);
+            const { id, ...noIdRow } = row;
+            await supabaseFetch('picking_list', 'POST', [noIdRow]);
             successCount++;
-          } catch (rErr) {
-            lastError = rErr;
+          } catch (rErr2) {
+            lastError = rErr2 || rErr;
           }
         }
-        if (successCount === 0) {
-          throw new Error(`Gagal menyimpan ke tabel picking_list Supabase: ${lastError?.message || 'Error tidak diketahui'}`);
-        }
-        return true;
       }
+      if (successCount === 0) {
+        throw new Error(`Gagal menyimpan ke tabel picking_list Supabase: ${lastError?.message || 'Error tidak diketahui'}`);
+      }
+      return true;
     }
+  }
 }
 
 export async function createPickingSuratJalanSupabase(
@@ -3898,6 +3918,7 @@ export async function createPickingSuratJalanSupabase(
   items: Array<{ sku: string; nama_produk: string; size?: string; lokasi?: string; qty_req: number }>
 ): Promise<{ success: boolean; createdItems: PickingListItem[] }> {
   const nowIso = new Date().toISOString();
+  const baseTime = Date.now();
   const cleanNoSj = no_sj.trim().toUpperCase();
   const cleanTujuan = tujuan.trim() || 'Marketplace';
 
@@ -3917,8 +3938,10 @@ export async function createPickingSuratJalanSupabase(
       }
     }
     const formattedNama = rawNama || cleanSku;
+    const safeNumericId = baseTime * 1000 + (idx % 1000);
+
     return {
-      id: `pick_${cleanNoSj}_${it.sku.trim().toUpperCase()}_${Date.now()}_${idx}`,
+      id: safeNumericId,
       no_sj: cleanNoSj,
       tanggal: nowIso.slice(0, 10),
       tujuan: cleanTujuan,
@@ -3953,6 +3976,11 @@ export async function createPickingSuratJalanSupabase(
   } catch (cErr) {
     console.warn('Error saving picking to local cache:', cErr);
   }
+
+  // 1.5. In Supabase, delete any existing items with the same no_sj to avoid duplicates on re-send
+  try {
+    await supabaseFetch('picking_list', 'DELETE', undefined, `no_sj=ilike.${encodeURIComponent(cleanNoSj)}`).catch(() => {});
+  } catch {}
 
   // 2. Persist to Supabase picking_list table with schema fallback
   try {

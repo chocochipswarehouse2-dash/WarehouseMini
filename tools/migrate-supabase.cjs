@@ -368,6 +368,7 @@ async function run() {
     console.log('    → Cek di dashboard Fonnte: Device > Webhook URL');
     console.log('\n[H] JALANKAN SEQUENCE FIX (penting untuk tabel BIGINT):');
     console.log('    → Di SQL Editor Supabase baru, jalankan:');
+    console.log('       SELECT setval(pg_get_serial_sequence(\'picking_list\', \'id\'), COALESCE(MAX(id), 1)) FROM picking_list;');
     console.log('       SELECT setval(pg_get_serial_sequence(\'peminjaman\', \'id\'), COALESCE(MAX(id), 1)) FROM peminjaman;');
     console.log('       SELECT setval(pg_get_serial_sequence(\'perbaikan_tickets\', \'id\'), COALESCE(MAX(id), 1)) FROM perbaikan_tickets;');
     console.log('       SELECT setval(pg_get_serial_sequence(\'qc_reports\', \'id\'), COALESCE(MAX(id), 1)) FROM qc_reports;');

@@ -503,7 +503,7 @@ export interface SimpanPenerimaanPayload {
 export type PickingStatus = 'PENDING' | 'SEDANG PICKING' | 'TERCETAK' | 'SELESAI';
 
 export interface PickingListItem {
-  id?: string;
+  id?: string | number;
   no_sj: string;
   tanggal: string;
   tujuan: string;
@@ -652,6 +652,7 @@ export interface WmsSettings {
   config_json?: string;
   roles?: Record<string, any>;
   agenda_categories?: Record<string, any>;
+  katalog_manual_data?: string;
   updated_at?: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, Image as ImageIcon, Trash2, Camera, Upload } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, Image as ImageIcon, Trash2, Camera, Upload, BookOpen } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import { KatalogItem, KatalogVariant } from '../types';
 import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
@@ -161,7 +161,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ onNotify }
           );
           await saveCatalog(updatedCatalog);
         } else {
-          onNotify(result.message || 'Gagal mengupload gambar', 'error');
+          onNotify(result.error || 'Gagal mengupload gambar', 'error');
         }
       } catch (err) {
         console.error('Upload err', err);
