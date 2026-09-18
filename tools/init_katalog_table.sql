@@ -69,8 +69,37 @@ DECLARE
     batch jsonb;
     item jsonb;
     manual_data text;
+    col_exists boolean;
 BEGIN
-    SELECT katalog_manual_data INTO manual_data FROM public.wms_settings LIMIT 1;
+    -- 1. Cek apakah kolom katalog_manual_data ada di tabel wms_settings
+    SELECT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema='public' AND table_name='wms_settings' AND column_name='katalog_manual_data'
+    ) INTO col_exists;
+
+    -- 2. Jika kolom ada, ambil nilainya dari row 1
+    IF col_exists THEN
+        EXECUTE 'SELECT katalog_manual_data FROM public.wms_settings WHERE id = 1 LIMIT 1' INTO manual_data;
+    END IF;
+
+    -- 3. Jika kosong atau kolom tidak ada, coba ambil dari payload JSON di row 2 (CONFIG_GAS)
+    IF manual_data IS NULL OR manual_data = '' THEN
+        SELECT fonnte_group_target INTO manual_data 
+        FROM public.wms_settings 
+        WHERE id = 2 OR fonnte_token = 'CONFIG_GAS' 
+        LIMIT 1;
+        
+        IF manual_data IS NOT NULL AND manual_data != '' THEN
+            BEGIN
+                manual_data := (manual_data::jsonb)->>'katalog_manual_data';
+            EXCEPTION WHEN OTHERS THEN
+                manual_data := NULL;
+            END;
+        END IF;
+    END IF;
+
+    -- 4. Jika data ditemukan, lakukan migrasi ke tabel wms_katalog
     IF manual_data IS NOT NULL AND manual_data != '' THEN
         row_data := manual_data::jsonb;
         FOR batch IN SELECT * FROM jsonb_array_elements(row_data)
