@@ -147,7 +147,7 @@ export const QualityControlView: React.FC<QualityControlViewProps> = ({
 
   return (
     <div className="space-y-3 pb-12">
-      {/* 4 Tabs Quality Control - Tampilan HP Rapi (Grid 4 Kolom Teratur Tanpa Terpotong) */}
+      {/* 4 Tabs Laporan QC - Tampilan HP Rapi (Grid 4 Kolom Teratur Tanpa Terpotong) */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
         <div className="grid grid-cols-4 sm:flex sm:items-center gap-1 sm:gap-1.5">
           {/* Tab 1: Form Laporan (Input QC) */}

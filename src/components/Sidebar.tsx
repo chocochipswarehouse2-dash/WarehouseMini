@@ -183,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'perbaikan' as ActivePage,
-      label: 'Quality Control',
+      label: 'Laporan QC',
       shortLabel: 'QC',
       icon: ClipboardCheck,
       description: 'Laporan QC, Perbaikan & Defect',

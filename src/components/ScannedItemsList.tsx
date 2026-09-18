@@ -19,6 +19,7 @@ interface ScannedItemsListProps {
   onRemoveItem: (id: string) => void;
   onClearAll: () => void;
   onUpdateCategory?: (id: string, newCategory: CategoryType) => void;
+  onUpdateQty?: (id: string, newQty: number) => void;
 }
 
 export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
@@ -26,6 +27,7 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
   onRemoveItem,
   onClearAll,
   onUpdateCategory,
+  onUpdateQty,
 }) => {
   const totalScannedQty = items.reduce((sum, item) => sum + (item.qty || 1), 0);
   const listBottomRef = useRef<HTMLDivElement>(null);
@@ -193,10 +195,30 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                         Size: {item.size}
                       </span>
                     )}
-                    {/* Qty Label */}
-                    <span className="text-[11px] font-black bg-primary-500/20 text-primary-700 dark:text-primary-300 border border-primary-500/40 px-2 py-0.5 rounded-md uppercase">
-                      x{item.qty || 1}
-                    </span>
+                    {/* Qty Label with Edit Buttons */}
+                    <div className="flex items-center bg-primary-500/10 border border-primary-500/20 rounded-md overflow-hidden">
+                      {onUpdateQty && (
+                        <button
+                          type="button"
+                          onClick={() => onUpdateQty(item.id, Math.max(1, (item.qty || 1) - 1))}
+                          className="px-2 py-0.5 text-primary-600 dark:text-primary-400 hover:bg-primary-500/20 active:bg-primary-500/30 font-bold transition-colors select-none cursor-pointer"
+                        >
+                          -
+                        </button>
+                      )}
+                      <span className="text-[11px] font-black text-primary-700 dark:text-primary-300 px-2 py-0.5 uppercase">
+                        x{item.qty || 1}
+                      </span>
+                      {onUpdateQty && (
+                        <button
+                          type="button"
+                          onClick={() => onUpdateQty(item.id, (item.qty || 1) + 1)}
+                          className="px-2 py-0.5 text-primary-600 dark:text-primary-400 hover:bg-primary-500/20 active:bg-primary-500/30 font-bold transition-colors select-none cursor-pointer"
+                        >
+                          +
+                        </button>
+                      )}
+                    </div>
 
                     {/* Catalog Verified Status */}
                     {!item.isInvalidSku && (

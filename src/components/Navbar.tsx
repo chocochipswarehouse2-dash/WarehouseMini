@@ -104,7 +104,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'peminjaman':
         return { title: 'Peminjaman (SPS)', subtitle: 'Log Pinjam Live & Studio', icon: FileText };
       case 'perbaikan':
-        return { title: 'Quality Control', subtitle: 'Laporan QC, Perbaikan & Defect', icon: ClipboardCheck };
+        return { title: 'Laporan QC', subtitle: 'Laporan QC, Perbaikan & Defect', icon: ClipboardCheck };
       case 'karyawan':
         return { title: 'Data Karyawan', subtitle: 'Direktori & Profil Karyawan', icon: Users };
       case 'presensi':

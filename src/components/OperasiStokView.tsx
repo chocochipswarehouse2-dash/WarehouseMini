@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScanBarcode, ArrowRightLeft, ClipboardList } from 'lucide-react';
+import { ScanBarcode, ArrowRightLeft, ClipboardList, FileSpreadsheet } from 'lucide-react';
 
 import { hasPermission, isSuperadmin } from '../services/permissions';
 
@@ -8,13 +8,15 @@ interface OperasiStokViewProps {
   mutasiLogComponent: React.ReactNode;
   stockOpnameComponent: React.ReactNode;
   session?: any;
+  onOpenImportModal?: () => void;
 }
 
 export function OperasiStokView({
   scannerComponent,
   mutasiLogComponent,
   stockOpnameComponent,
-  session
+  session,
+  onOpenImportModal
 }: OperasiStokViewProps) {
   const userIsAdmin = isSuperadmin(session);
   
@@ -32,8 +34,8 @@ export function OperasiStokView({
     <div className="w-full min-h-full">
       {/* HEADER & TABS - Natural flow, not frozen so it scrolls away naturally */}
       <div className="pb-2">
-        <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
-          <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-1.5">
+        <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+          <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-1.5 flex-1">
             {tabs.some(t => t.id === 'scanner') && (
             <button
               type="button"
@@ -82,6 +84,17 @@ export function OperasiStokView({
             </button>
             )}
           </div>
+          
+          {onOpenImportModal && (
+            <button
+              type="button"
+              onClick={onOpenImportModal}
+              className="py-2 px-3 sm:py-2.5 sm:px-4 text-xs sm:text-sm font-bold bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer shadow-sm mx-1 sm:mx-0"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Impor Data Excel</span>
+            </button>
+          )}
         </div>
       </div>
 

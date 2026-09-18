@@ -3,20 +3,18 @@ import {
   Calendar, Briefcase, Plus, X, UploadCloud, FileText, Image as ImageIcon, 
   CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, User, Tag, 
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
-  AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal,
+  AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
   FolderPlus, CalendarDays, ListFilter
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { 
   getAgendaEvents, saveAgendaEvent, deleteAgendaEvent, 
-  getProjects, saveProject, deleteProject 
-} from '../services/supabase';
+  getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote } from '../services/supabase';
 import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
 import { AgendaCategoryModal } from './AgendaCategoryModal';
 import { 
   AgendaEvent, ProjectItem, AgendaCategory, ProjectStatus, 
-  ProjectPriority, AgendaAttachment, ProjectTask 
-} from '../types';
+  ProjectPriority, AgendaAttachment, ProjectTask, NoteItem, NoteColor } from '../types';
 
 interface AgendaViewProps {
   session?: any;
@@ -114,7 +112,7 @@ const MONTHS_ID = [
 
 export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) => {
   // Main Tab
-  const [activeTab, setActiveTab] = useState<'calendar' | 'project'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'project' | 'notes'>('calendar');
 
   // Calendar View Mode: week (default desktop), month, day, agenda (default mobile)
   const [calendarView, setCalendarView] = useState<'week' | 'month' | 'day' | 'agenda'>('week');
@@ -124,6 +122,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   // Data state
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [notes, setNotes] = useState<NoteItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -165,6 +164,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   }, []);
 
   const [projectStatusFilter, setProjectStatusFilter] = useState<string>('all');
+  const [projectPriorityFilter, setProjectPriorityFilter] = useState<string>('all');
+  const [creatorFilter, setCreatorFilter] = useState<string>('all');
+  const [isNoteModalOpen, setNoteModalOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<Partial<NoteItem> | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   // Modals
@@ -190,12 +193,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [agendaData, projectData] = await Promise.all([
+      const [agendaData, projectData, noteData] = await Promise.all([
         getAgendaEvents(),
-        getProjects()
+        getProjects(),
+        getNotes()
       ]);
       setEvents(agendaData);
       setProjects(projectData);
+      setNotes(noteData);
     } catch (err) {
       console.error('Error loading agenda/projects:', err);
     } finally {
@@ -209,13 +214,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     // Listen to real-time events
     const handleAgendaUpdate = () => loadData();
     const handleProjectUpdate = () => loadData();
+    const handleNoteUpdate = () => loadData();
 
     window.addEventListener('wms_agenda_updated', handleAgendaUpdate);
     window.addEventListener('wms_projects_updated', handleProjectUpdate);
+    window.addEventListener('wms_notes_updated', handleNoteUpdate);
 
     return () => {
       window.removeEventListener('wms_agenda_updated', handleAgendaUpdate);
       window.removeEventListener('wms_projects_updated', handleProjectUpdate);
+      window.removeEventListener('wms_notes_updated', handleNoteUpdate);
     };
   }, []);
 
@@ -346,9 +354,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   }, [events, selectedCategories, searchQuery]);
 
   // Filtered Projects
-  const filteredProjects = useMemo(() => {
+    const filteredProjects = useMemo(() => {
     return projects.filter(p => {
       if (projectStatusFilter !== 'all' && p.status !== projectStatusFilter) return false;
+      if (projectPriorityFilter !== 'all' && p.priority !== projectPriorityFilter) return false;
+      if (creatorFilter !== 'all' && p.created_by !== creatorFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = p.title.toLowerCase().includes(q);
@@ -358,7 +368,20 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       }
       return true;
     });
-  }, [projects, projectStatusFilter, searchQuery]);
+  }, [projects, projectStatusFilter, projectPriorityFilter, creatorFilter, searchQuery]);
+
+  const filteredNotes = useMemo(() => {
+    return notes.filter(n => {
+      if (creatorFilter !== 'all' && n.created_by !== creatorFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (n.title || '').toLowerCase().includes(q);
+        const matchContent = (n.content || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchContent) return false;
+      }
+      return true;
+    });
+  }, [notes, creatorFilter, searchQuery]);
 
   // Event occurrences mapped by date
   const eventsByDate = useMemo(() => {
@@ -374,6 +397,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   // Header Title Range
   const headerTitle = useMemo(() => {
     if (activeTab === 'project') return 'Manajemen Project & Inisiatif';
+    if (activeTab === 'notes') return 'Catatan & Sticky Notes';
     if (calendarView === 'month') {
       return `${MONTHS_ID[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
     }
@@ -461,6 +485,50 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   };
 
   // Open Add Project Modal
+  const handleOpenAddNote = (existing?: NoteItem) => {
+    if (existing) {
+      setEditingNote({ ...existing });
+    } else {
+      setEditingNote({
+        title: '',
+        content: '',
+        color: 'yellow',
+        created_by: session?.name || session?.username || 'Warehouse'
+      });
+    }
+    setNoteModalOpen(true);
+  };
+
+  const handleSaveNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingNote?.content?.trim()) {
+      onShowToast?.('Isi catatan wajib diisi', 'error');
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      await saveNote(editingNote);
+      onShowToast?.('Catatan berhasil disimpan!', 'success');
+      setNoteModalOpen(false);
+      loadData();
+    } catch (err) {
+      onShowToast?.('Gagal menyimpan catatan', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    if (!window.confirm('Yakin ingin menghapus catatan ini?')) return;
+    try {
+      await deleteNote(id);
+      onShowToast?.('Catatan berhasil dihapus', 'info');
+      loadData();
+    } catch (err) {
+      onShowToast?.('Gagal menghapus catatan', 'error');
+    }
+  };
+
   const handleOpenAddProject = (existing?: ProjectItem) => {
     if (existing) {
       setEditingProject({ ...existing });
@@ -625,7 +693,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white dark:bg-[#1a2332] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-primary-500 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-primary-500/25">
-            {activeTab === 'calendar' ? <Calendar className="w-6 h-6" /> : <Briefcase className="w-6 h-6" />}
+            {activeTab === 'calendar' ? <Calendar className="w-6 h-6" /> : activeTab === 'project' ? <Briefcase className="w-6 h-6" /> : <StickyNote className="w-6 h-6" />}
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2">
@@ -671,11 +739,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               {filteredProjects.length}
             </span>
           </button>
+          <button
+            onClick={() => setActiveTab('notes')}
+            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'notes'
+                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <StickyNote className="w-4 h-4" />
+            <span>Catatan</span>
+            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold">
+              {filteredNotes.length}
+            </span>
+          </button>
         </div>
       </div>
 
       {/* Main Content Body */}
-      {activeTab === 'calendar' ? (
+      {activeTab === 'calendar' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           
           {/* Left Sidebar Panel (Desktop: permanent 3 cols; Mobile: expandable drawer or toggle) */}
@@ -1408,55 +1490,71 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             )}
           </div>
         </div>
-      ) : (
+      )}
+      {activeTab === 'project' && (
         /* PROJECT & INITIATIVE TAB */
         <div className="space-y-5">
           
           {/* Controls Bar for Projects */}
-          <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-            
-            {/* Status Filter Chips (Scrollable on mobile) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-              {[
-                { id: 'all', label: 'Semua Project' },
-                { id: 'in_progress', label: 'In Progress' },
-                { id: 'planned', label: 'Direncanakan' },
-                { id: 'review', label: 'Review' },
-                { id: 'completed', label: 'Selesai' }
-              ].map(st => (
-                <button
-                  key={st.id}
-                  onClick={() => setProjectStatusFilter(st.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                    projectStatusFilter === st.id
-                      ? 'bg-primary-500 text-white shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
+          <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between items-stretch gap-3">
+            <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
+              {/* Filters */}
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={projectStatusFilter}
+                  onChange={(e) => setProjectStatusFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
                 >
-                  {st.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Actions: Search & Add */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 md:w-56">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Cari project / PIC..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-primary-500"
-                />
+                  <option value="all">Semua Status</option>
+                  <option value="planned">Mulai (Planned)</option>
+                  <option value="in_progress">Berjalan (In Progress)</option>
+                  <option value="review">Evaluasi (Review)</option>
+                  <option value="completed">Selesai (Completed)</option>
+                  <option value="on_hold">Ditunda (On Hold)</option>
+                </select>
+                <select
+                  value={projectPriorityFilter}
+                  onChange={(e) => setProjectPriorityFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
+                >
+                  <option value="all">Semua Urgensi</option>
+                  <option value="low">Rendah (Low)</option>
+                  <option value="medium">Sedang (Medium)</option>
+                  <option value="high">Tinggi (High)</option>
+                  <option value="urgent">Mendesak (Urgent)</option>
+                </select>
+                <select
+                  value={creatorFilter}
+                  onChange={(e) => setCreatorFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-primary-500 outline-none bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 min-w-[130px]"
+                >
+                  <option value="all">Semua Pembuat</option>
+                  {[...new Set(projects.map(p => p.created_by).filter(Boolean))].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
-              <button
-                onClick={() => handleOpenAddProject()}
-                className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white px-2 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md shadow-primary-500/20 shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Buat Project</span>
-              </button>
+              
+              {/* Actions: Search & Add */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 md:w-56">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari project / PIC..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <button
+                  onClick={() => handleOpenAddProject()}
+                  className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white px-3 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md shadow-primary-500/20 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Buat Project</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1477,9 +1575,29 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                     {/* Header: Status, Priority & Actions */}
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-md tracking-wider ${stCfg.badge}`}>
-                          {stCfg.label}
-                        </span>
+                        <select
+                          value={proj.status}
+                          onChange={async (e) => {
+                            const newStatus = e.target.value;
+                            try {
+                              await saveProject({ 
+                                ...proj, 
+                                status: newStatus as any, 
+                                progress: newStatus === 'completed' ? 100 : proj.progress 
+                              });
+                              loadData();
+                            } catch(err) {
+                              console.error(err);
+                            }
+                          }}
+                          className={`text-[10px] font-black uppercase px-2 py-1 rounded-md tracking-wider cursor-pointer border-none outline-none appearance-none ${stCfg.badge}`}
+                        >
+                          <option value="planned">MULAI (PLANNED)</option>
+                          <option value="in_progress">BERJALAN (IN PROGRESS)</option>
+                          <option value="review">EVALUASI (REVIEW)</option>
+                          <option value="completed">SELESAI (COMPLETED)</option>
+                          <option value="on_hold">DITUNDA (ON HOLD)</option>
+                        </select>
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${priCfg.color}`}>
                           {priCfg.label}
                         </span>
@@ -1577,6 +1695,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
         <button
           onClick={() => {
             if (activeTab === 'calendar') handleOpenAddEvent();
+            else if (activeTab === 'notes') handleOpenAddNote();
             else handleOpenAddProject();
           }}
           aria-label="Tambah Baru"
@@ -1585,6 +1704,80 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           <Plus className="w-7 h-7 stroke-[2.5]" />
         </button>
       </div>
+
+      
+      {activeTab === 'notes' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <StickyNote className="w-6 h-6 text-primary-500" />
+              Kumpulan Catatan
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={creatorFilter}
+                onChange={(e) => setCreatorFilter(e.target.value)}
+                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500/50 outline-none min-w-[150px] bg-slate-50 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 font-bold"
+              >
+                <option value="all">Semua Pembuat</option>
+                {[...new Set(notes.map(n => n.created_by).filter(Boolean))].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+            {filteredNotes.length === 0 ? (
+              <div className="col-span-full py-16 text-center text-slate-400 bg-white dark:bg-[#1a2332] rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                <StickyNote className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                <p className="font-bold text-lg mb-1">Belum ada catatan.</p>
+                <p className="text-sm">Klik tombol + untuk menambah sticky note baru.</p>
+              </div>
+            ) : (
+              filteredNotes.map(note => (
+                <div 
+                  key={note.id}
+                  onClick={() => handleOpenAddNote(note)}
+                  className={`relative p-6 rounded-2xl shadow-sm border-2 group hover:-translate-y-1 hover:shadow-xl transition-all cursor-pointer flex flex-col min-h-[200px] ${
+                    note.color === 'yellow' ? 'bg-[#fef9c3] border-[#fef08a] text-[#854d0e]' :
+                    note.color === 'blue' ? 'bg-[#e0f2fe] border-[#bae6fd] text-[#075985]' :
+                    note.color === 'green' ? 'bg-[#dcfce7] border-[#bbf7d0] text-[#166534]' :
+                    note.color === 'pink' ? 'bg-[#fce7f3] border-[#fbcfe8] text-[#9d174d]' :
+                    note.color === 'purple' ? 'bg-[#f3e8ff] border-[#e9d5ff] text-[#6b21a8]' :
+                    'bg-[#ffedd5] border-[#fed7aa] text-[#9a3412]'
+                  }`}
+                >
+                  {/* Pin/Clip Graphic */}
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-10 h-3 rounded-full bg-black/10 shadow-inner border border-black/5" />
+                  
+                  <div className="flex justify-between items-start mb-3 gap-2">
+                    <h3 className="font-black text-lg line-clamp-2 leading-tight">{note.title || 'Tanpa Judul'}</h3>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteNote(note.id); }}
+                      className="shrink-0 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/10 text-black/40 hover:text-red-600 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="text-sm whitespace-pre-wrap flex-1 mb-6 opacity-90 font-medium">
+                    {note.content}
+                  </div>
+                  
+                  <div className="mt-auto pt-4 border-t border-black/10 flex justify-between items-center text-xs font-bold opacity-70">
+                    <span className="flex items-center gap-1.5 bg-black/5 px-2 py-1 rounded-md">
+                      <User className="w-3.5 h-3.5" /> {note.created_by}
+                    </span>
+                    <span>{note.created_at ? new Date(note.created_at).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'}) : ''}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
 
       {/* ===================================================================== */}
       {/* MODAL TAMBAH / EDIT AGENDA (DENGAN TOGGLE SEPANJANG HARI) */}
@@ -1897,6 +2090,88 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       {/* ===================================================================== */}
       {/* MODAL TAMBAH / EDIT PROJECT */}
       {/* ===================================================================== */}
+      
+      {/* Note Modal */}
+      {isNoteModalOpen && editingNote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+              <h2 className="text-lg font-bold text-gray-800">
+                {editingNote.id ? 'Edit Catatan' : 'Buat Catatan Baru'}
+              </h2>
+              <button onClick={() => setNoteModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveNote} className="p-4 overflow-y-auto space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Judul (Opsional)</label>
+                <input
+                  type="text"
+                  value={editingNote.title}
+                  onChange={e => setEditingNote({...editingNote, title: e.target.value})}
+                  className="w-full border rounded-xl px-3 py-2"
+                  placeholder="Judul catatan..."
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Isi Catatan <span className="text-red-500">*</span></label>
+                <textarea
+                  required
+                  value={editingNote.content}
+                  onChange={e => setEditingNote({...editingNote, content: e.target.value})}
+                  className="w-full border rounded-xl px-3 py-2 h-32 resize-none"
+                  placeholder="Tulis sesuatu..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Warna Sticky Note</label>
+                <div className="flex gap-3">
+                  {(['yellow', 'blue', 'green', 'pink', 'purple', 'orange'] as const).map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setEditingNote({...editingNote, color})}
+                      className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                        editingNote.color === color ? 'scale-110 border-gray-800' : 'border-transparent hover:scale-105'
+                      } ${
+                        color === 'yellow' ? 'bg-yellow-200' :
+                        color === 'blue' ? 'bg-blue-200' :
+                        color === 'green' ? 'bg-green-200' :
+                        color === 'pink' ? 'bg-pink-200' :
+                        color === 'purple' ? 'bg-purple-200' :
+                        'bg-orange-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              <div className="pt-4 flex justify-end gap-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setNoteModalOpen(false)}
+                  className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSyncing}
+                  className="px-4 py-2 text-white bg-primary hover:bg-primary/90 rounded-xl flex items-center"
+                >
+                  {isSyncing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                  Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {isProjectModalOpen && editingProject && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
           <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200 dark:border-slate-800">

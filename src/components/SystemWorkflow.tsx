@@ -24,7 +24,7 @@ export interface FlowCategory {
 const DEFAULT_FLOWS: FlowCategory[] = [
   {
     id: 'flow_inbound',
-    title: '1. Inbound & Quality Control',
+    title: '1. Inbound & Laporan QC',
     desc: 'Alur penerimaan barang produksi hingga inspeksi mutu.',
     nodes: [
       {

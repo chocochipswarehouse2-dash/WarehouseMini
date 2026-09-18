@@ -149,9 +149,6 @@ SELECT setval(pg_get_serial_sequence('roster_shift', 'id'),
 
 SELECT setval(pg_get_serial_sequence('presensi', 'id'),
   COALESCE((SELECT MAX(id) FROM presensi), 1));
-
-SELECT setval(pg_get_serial_sequence('lembur', 'id'),
-  COALESCE((SELECT MAX(id) FROM lembur), 1));
 ```
 
 ---
@@ -191,6 +188,8 @@ Juga pastikan filter URL lama ada di baris ~123 dan ~156:
 ### LANGKAH 7 — Update Google Apps Script (GAS)
 
 #### 7a. Update SupabaseBridge_cloud.js
+
+**Penjelasan:** File `SupabaseBridge_cloud.js` berfungsi sebagai "jembatan" yang menghubungkan Google Apps Script (GAS) dengan database Supabase. Saat ada pesan masuk dari Fonnte (Webhook WA), GAS akan memprosesnya di `Webhook_cloud.js`, dan menggunakan `SupabaseBridge_cloud.js` untuk mengirim/menyimpan data hasil scan WA tersebut ke Supabase. Oleh karena itu, URL dan Key di file ini **wajib** diupdate.
 
 Edit file [`SupabaseBridge_cloud.js`](../SupabaseBridge_cloud.js), ubah baris 6-7:
 
@@ -238,7 +237,8 @@ Script Properties menyimpan Service Role Key yang digunakan GAS untuk bypass RLS
 1. Buka [Vercel Dashboard](https://vercel.com).
 2. Pilih project **WMS Inventory**.
 3. Tab **Settings → Environment Variables**.
-4. Update nilai:
+4. Update nilai untuk `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY`.
+   > **Catatan Penting:** Di Vercel, environment variable yang sudah ada biasanya tidak bisa diedit secara langsung. Anda harus menghapus variabel lama terlebih dahulu (klik icon titik tiga di sebelah kanan variabel -> **Delete**), lalu buat variabel baru dengan nama yang sama dan isi (Value) dengan kredensial dari Supabase baru Anda.
    - **`VITE_SUPABASE_URL`** → `https://BARU.supabase.co`
    - **`VITE_SUPABASE_ANON_KEY`** → `sb_publishable_NEW_KEY`
 5. Klik **Save**.

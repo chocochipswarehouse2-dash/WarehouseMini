@@ -99,7 +99,7 @@ export const PERMISSION_GROUPS = [
   },
   {
     id: 'g_ops_qc',
-    title: 'Quality Control',
+    title: 'Laporan QC',
     badge: '🔧',
     description: 'QC & Perbaikan',
     permissions: [

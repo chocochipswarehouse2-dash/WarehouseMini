@@ -21,6 +21,7 @@ import {
 import RoadmapView from "./components/RoadmapView";
 import { Sidebar } from './components/Sidebar';
 import { OperasiStokView } from './components/OperasiStokView';
+import { ImportStokModal, ImportRow } from './components/ImportStokModal';
 import { LoginModal } from './components/LoginModal';
 import { ScanMethodSelector } from './components/ScanMethodSelector';
 import { PhysicalScanInput } from './components/PhysicalScanInput';
@@ -534,6 +535,7 @@ export default function App() {
   const [hasScannedSku, setHasScannedSku] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [showQuickTags, setShowQuickTags] = useState<boolean>(true);
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
   // Synchronous refs to prevent stale closure during camera barcode callbacks
   const currentCategoryRef = useRef<CategoryType>(currentCategory);
@@ -1200,6 +1202,126 @@ export default function App() {
     showToast(`Kategori item diubah ke #${newCat} (${newCat === 'SO' ? 'Opname' : newCat === 'IN' ? 'Masuk' : 'Keluar'})`, 'info');
   };
 
+  const handleUpdateItemQty = (id: string, newQty: number) => {
+    if (newQty <= 0) {
+      handleRemoveItem(id);
+      return;
+    }
+    setScannedData((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, qty: newQty } : item))
+    );
+  };
+
+  const handleProcessImport = async (validRows: ImportRow[]) => {
+    try {
+      const logsToInsert: Parameters<typeof insertLogProduk>[0] = [];
+      const soFisik: Record<string, Record<string, number>> = {};
+      const waktuPesan = new Date();
+      const personName = session?.name || getUserPersonName(session?.username) || 'Petugas';
+      const operatorName = `${personName} | Import`;
+      const invoiceBase = `IMP-${waktuPesan.getTime()}`;
+
+      for (let i = 0; i < validRows.length; i++) {
+        const row = validRows[i];
+        const line = row.sku.toUpperCase();
+        const cType: CategoryType = row.tipe;
+        const cLokasi = row.lokasi || 'DEFAULT';
+        const ketText = row.keterangan || 'Hasil Import Data';
+        
+        if (cType === 'IN' || cType === 'OUT') {
+          logsToInsert.push({
+            type: cType,
+            invoice: invoiceBase,
+            sku: line,
+            nama_produk: row.productName || line,
+            size: '', // Since size isn't easily extracted from name, leave blank or lookup
+            area: getAreaFromLokasi(cLokasi),
+            lokasi: cLokasi,
+            qty: row.qty,
+            operator: operatorName,
+            keterangan: ketText,
+            created_at: waktuPesan.toISOString(),
+          });
+        } else if (cType === 'SO') {
+          if (!soFisik[cLokasi]) soFisik[cLokasi] = {};
+          soFisik[cLokasi][line] = (soFisik[cLokasi][line] || 0) + row.qty;
+          
+          logsToInsert.push({
+            type: 'SO',
+            invoice: invoiceBase,
+            sku: line,
+            nama_produk: row.productName || line,
+            size: '',
+            area: getAreaFromLokasi(cLokasi),
+            lokasi: cLokasi,
+            qty: row.qty,
+            operator: operatorName,
+            keterangan: ketText,
+            created_at: waktuPesan.toISOString(),
+          });
+        }
+      }
+
+      if (logsToInsert.length > 0) {
+        await insertLogProduk(logsToInsert);
+      }
+
+      const lokasis = Object.keys(soFisik);
+      if (lokasis.length > 0) {
+        const currentStock = await fetchStockForLocations(lokasis);
+        const soQueueToInsert: Parameters<typeof insertStockOpnameQueue>[0] = [];
+
+        lokasis.forEach((lokasi) => {
+          const physicalCounts = soFisik[lokasi];
+          const systemStockForLokasi = currentStock.filter(
+            (s) => s.lokasi.toUpperCase() === lokasi.toUpperCase()
+          );
+
+          const allSkus = new Set([
+            ...Object.keys(physicalCounts),
+            ...systemStockForLokasi.map((s) => s.sku),
+          ]);
+
+          allSkus.forEach((sku) => {
+            const qty_fisik = physicalCounts[sku] || 0;
+            const sysRow = systemStockForLokasi.find(
+              (s) => s.sku.toUpperCase() === sku.toUpperCase()
+            );
+            const qty_sistem = sysRow ? Number(sysRow.sisa_stok) : 0;
+            const selisih = qty_fisik - qty_sistem;
+
+            if (selisih === 0) return; // Skip if no difference
+
+            soQueueToInsert.push({
+              sesi_id: invoiceBase,
+              tanggal: waktuPesan.toISOString(),
+              sku,
+              nama_produk: sysRow?.nama_produk || sku,
+              size: sysRow?.size || '',
+              lokasi,
+              alasan: `Import Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
+              area: sysRow?.area || getAreaFromLokasi(lokasi),
+              qty_sistem,
+              qty_fisik,
+              selisih,
+              status: 'PENDING',
+              jenis: 'Opname',
+              operator: operatorName,
+              invoice: invoiceBase,
+            });
+          });
+        });
+
+        if (soQueueToInsert.length > 0) {
+          await insertStockOpnameQueue(soQueueToInsert);
+        }
+      }
+    } catch (error: any) {
+      console.error(error);
+      throw new Error(error.message || 'Gagal menyimpan ke database Supabase');
+    }
+  };
+
   // Save to Supabase & Sheets
   const handleSaveData = async () => {
     if (scannedData.length === 0 || isSaving) return;
@@ -1484,6 +1606,7 @@ export default function App() {
               {activePage === 'operasi_stok' && (
                 <OperasiStokView
                   session={session}
+                  onOpenImportModal={() => setIsImportModalOpen(true)}
                   scannerComponent={
                     <div className="w-full max-w-2xl mx-auto space-y-4">
                       {/* STICKY / FREEZE SCANNER METHOD & INPUT CARD */}
@@ -1528,6 +1651,7 @@ export default function App() {
                         onRemoveItem={handleRemoveItem}
                         onClearAll={handleClearAll}
                         onUpdateCategory={handleUpdateItemCategory}
+                        onUpdateQty={handleUpdateItemQty}
                       />
 
                       {/* Bottom Save Action Bar */}
@@ -1721,6 +1845,14 @@ export default function App() {
       <LogoPreviewModal
         isOpen={isLogoPreviewOpen}
         onClose={() => setIsLogoPreviewOpen(false)}
+      />
+
+      <ImportStokModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        productCatalog={productDatabase}
+        onNotify={showToast}
+        onProcess={handleProcessImport}
       />
 
       <SettingsModal

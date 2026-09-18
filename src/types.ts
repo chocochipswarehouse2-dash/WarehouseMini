@@ -796,6 +796,18 @@ export interface ProjectTask {
   due_date?: string;
 }
 
+export type NoteColor = 'yellow' | 'blue' | 'green' | 'pink' | 'purple' | 'orange';
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+  color: NoteColor;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ProjectItem {
   id: string;
   title: string;

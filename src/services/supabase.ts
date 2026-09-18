@@ -33,6 +33,7 @@ import {
   SimpanPenerimaanPayload,
   AgendaEvent,
   ProjectItem,
+  NoteItem,
 } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize, cleanProductName } from '../utils/sortUtils';
 import { registerUserNames, getUserPersonName } from '../utils/userResolver';
@@ -6646,3 +6647,101 @@ export async function deleteProject(id: string): Promise<void> {
   }
 }
 
+
+const LOCAL_NOTES_KEY = 'wms_local_notes_v1';
+
+export async function getNotes(): Promise<NoteItem[]> {
+  try {
+    const data = await supabaseFetch<NoteItem[]>('wms_notes', 'GET', null, 'order=created_at.desc');
+    if (Array.isArray(data)) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(data));
+      }
+      return data;
+    }
+  } catch (err) {
+    console.info('Supabase wms_notes offline/not yet migrated, using local cache:', err);
+  }
+
+  // Fallback ke localStorage
+  if (typeof window !== 'undefined') {
+    const cached = localStorage.getItem(LOCAL_NOTES_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+  }
+  return [];
+}
+
+export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
+  const isNew = !item.id;
+  const id = item.id || `local-note-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const now = new Date().toISOString();
+  
+  const payload: NoteItem = {
+    id,
+    title: item.title || '',
+    content: item.content || '',
+    color: item.color || 'yellow',
+    created_by: item.created_by || 'Warehouse',
+    created_at: isNew ? now : item.created_at || now,
+    updated_at: now
+  };
+
+  try {
+    if (isNew && !id.startsWith('local-note-')) {
+      await supabaseFetch('wms_notes', 'POST', [payload]);
+    } else if (!isNew && !id.startsWith('local-note-')) {
+      const { id: _id, ...updateData } = payload;
+      await supabaseFetch('wms_notes', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
+    }
+  } catch (err) {
+    console.warn('Gagal simpan catatan di Supabase, fallback ke localStorage:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_NOTES_KEY);
+      let list: NoteItem[] = [];
+      if (cached) {
+        list = JSON.parse(cached);
+      }
+      
+      if (isNew) {
+        list = [payload, ...list];
+      } else {
+        list = list.map(n => n.id === payload.id ? payload : n);
+      }
+      
+      localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(list));
+      window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { item: payload } }));
+    } catch {}
+  }
+  
+  return payload;
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  try {
+    if (!id.startsWith('local-note-')) {
+      await supabaseFetch('wms_notes', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+    }
+  } catch (err) {
+    console.warn('Gagal hapus catatan di Supabase:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(LOCAL_NOTES_KEY);
+      if (cached) {
+        let list: NoteItem[] = JSON.parse(cached);
+        list = list.filter(n => n.id !== id);
+        localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(list));
+        window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { deletedId: id } }));
+      }
+    } catch {}
+  }
+}
