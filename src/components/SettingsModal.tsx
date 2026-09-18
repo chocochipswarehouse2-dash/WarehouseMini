@@ -70,6 +70,7 @@ import {
   deleteWmsUserFromSupabase,
   fetchKaryawanDirectory,
   supabaseFetch,
+  DEFAULT_WMS_USERS,
 } from '../services/supabase';
 import {
   DEFAULT_GDRIVE_FOLDER_URL,
@@ -232,6 +233,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } catch (err) {
       console.warn('Error fetching users from Supabase:', err);
       setUserList(getLocalUsers());
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const handleRestoreDefaultUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      let insertedCount = 0;
+      for (const defUser of DEFAULT_WMS_USERS) {
+        const result = await saveWmsUserToSupabase(defUser);
+        if (result.success) insertedCount++;
+      }
+      onNotify(`Berhasil memulihkan ${insertedCount} user bawaan.`, 'success');
+      await loadUsersFromSupabase();
+    } catch (err) {
+      console.error('Gagal memulihkan default users:', err);
+      onNotify('Gagal memulihkan default users', 'error');
     } finally {
       setIsLoadingUsers(false);
     }
@@ -1682,6 +1701,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       <Key className="w-3 h-3 text-primary-500" />
                       <span>{showPasswords ? 'Sembunyikan Password' : 'Lihat Password'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRestoreDefaultUsers}
+                      disabled={isLoadingUsers}
+                      className="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      <RotateCcw className={`w-3 h-3 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                      <span>Pulihkan Default</span>
                     </button>
 
                     <button
