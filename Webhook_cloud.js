@@ -73,6 +73,14 @@ function doPost(e) {
   // Tidak membuang waktu, tidak menyentuh Google Sheets, dan tidak mengunci Lock.
   // =========================================================================
   const message = String(json.message || json.pesan || json.text || "").trim();
+  
+  if (message === "PING TEST WEBHOOK") {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: "PING OK - Webhook Standalone Aktif"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   if (!message.startsWith("#")) {
     return ContentService.createTextOutput("IGNORED_NO_HASHTAG");
   }
