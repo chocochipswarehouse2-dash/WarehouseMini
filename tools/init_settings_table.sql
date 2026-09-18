@@ -18,6 +18,7 @@ ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS gdrive_folder_url text;
 ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS fonnte_token text;
 ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS fonnte_group_target text;
 ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS fonnte_auto_send boolean DEFAULT true;
+ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS katalog_manual_data text;
 ALTER TABLE public.wms_settings ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT timezone('utc'::text, now());
 
 ALTER TABLE public.wms_settings ENABLE ROW LEVEL SECURITY;

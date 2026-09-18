@@ -48,6 +48,7 @@ function initCacheFromLocalStorage(): WmsSettings {
     const fonnteTarget = localStorage.getItem('wms_fonnte_group_target') || '';
     const fonnteAuto = localStorage.getItem('wms_fonnte_auto_send') !== 'false';
     const waWebhookGasUrl = localStorage.getItem('wms_wa_webhook_gas_url') || '';
+    const katalogManualData = localStorage.getItem('wms_katalog_manual_data') || '';
     const rolesConfig = localStorage.getItem('wms_roles_config');
     let parsedRoles = null;
     if (rolesConfig) {
@@ -66,6 +67,7 @@ function initCacheFromLocalStorage(): WmsSettings {
       fonnte_group_target: fonnteTarget,
       fonnte_auto_send: fonnteAuto,
       wa_webhook_gas_url: waWebhookGasUrl,
+      katalog_manual_data: katalogManualData,
       roles: parsedRoles,
     };
   } catch {
@@ -75,6 +77,7 @@ function initCacheFromLocalStorage(): WmsSettings {
       gdrive_gas_url: DEFAULT_GDRIVE_GAS_URL,
       gdrive_folder_url: DEFAULT_GDRIVE_FOLDER_URL,
       wa_webhook_gas_url: '',
+      katalog_manual_data: '',
     };
   }
   return cachedSettings;
@@ -166,6 +169,7 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     gdrive_gas_url: safeGdriveGas,
     gdrive_folder_url: data.gdrive_folder_url || jsonConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
     roles: data.roles || jsonConfig.roles || null,
+    katalog_manual_data: data.katalog_manual_data !== undefined ? data.katalog_manual_data : (jsonConfig.katalog_manual_data || cachedSettings?.katalog_manual_data || ''),
   };
 
   cachedSettings = merged;
@@ -201,6 +205,9 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     }
     if (merged.wa_webhook_gas_url !== undefined) {
       localStorage.setItem('wms_wa_webhook_gas_url', merged.wa_webhook_gas_url);
+    }
+    if (merged.katalog_manual_data !== undefined) {
+      localStorage.setItem('wms_katalog_manual_data', merged.katalog_manual_data);
     }
   } catch {}
 
@@ -257,6 +264,7 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           gdrive_folder_url: row1.gdrive_folder_url || gasConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
           roles: gasConfig.roles || null,
           agenda_categories: gasConfig.agenda_categories || null,
+          katalog_manual_data: row1.katalog_manual_data || gasConfig.katalog_manual_data || localStorage.getItem('wms_katalog_manual_data') || '',
           updated_at: row1.updated_at || new Date().toISOString(),
         };
 
@@ -297,6 +305,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
       wa_webhook_gas_url: updated.wa_webhook_gas_url || '',
       roles: updated.roles || null,
       agenda_categories: updated.agenda_categories || null,
+      katalog_manual_data: updated.katalog_manual_data || '',
     };
 
     // A. Simpan row id: 1 (Fonnte & kolom spesifik jika sudah ada di database)
@@ -310,11 +319,12 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
         manual_shipment_gas_url: updated.manual_shipment_gas_url || '',
         gdrive_gas_url: updated.gdrive_gas_url || '',
         gdrive_folder_url: updated.gdrive_folder_url || '',
+        katalog_manual_data: updated.katalog_manual_data || '',
         updated_at: new Date().toISOString(),
       };
       await supabaseFetch('wms_settings', 'PATCH', row1Payload, 'id=eq.1');
     } catch {
-      // Jika kolom gas_endpoint belum ditambahkan ke schema tabel di Supabase, update hanya kolom fonnte di row 1
+      // Jika kolom gas_endpoint atau katalog_manual_data belum ditambahkan ke schema tabel di Supabase, update hanya kolom fonnte di row 1
       try {
         const fallbackRow1 = {
           fonnte_token: updated.fonnte_token || '',

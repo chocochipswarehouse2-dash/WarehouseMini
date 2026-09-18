@@ -1810,7 +1810,7 @@ export default function App() {
                   />
               )}
               {activePage === 'katalog_produk' && (
-                  <KatalogProdukView onNotify={showToast} />
+                  <KatalogProdukView session={session} onNotify={showToast} />
               )}
               {activePage === 'roadmap' && (
                   <RoadmapView session={session} onShowToast={showToast} />

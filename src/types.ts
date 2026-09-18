@@ -47,6 +47,16 @@ export interface KatalogItem {
   price: string | number;
   variants: KatalogVariant[];
   image_url: string;
+  catalog_id?: string;
+  catalog_name?: string;
+}
+
+export interface KatalogBatch {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at?: string;
+  items: KatalogItem[];
 }
 
 export type UserRole =
