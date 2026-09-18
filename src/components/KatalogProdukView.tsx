@@ -31,11 +31,17 @@ import {
   Package,
   Sparkles,
   ExternalLink,
+  Cloud,
+  ZoomIn,
 } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import JSZip from 'jszip';
 import { KatalogBatch, KatalogItem, KatalogVariant, UserSession } from '../types';
 import { uploadImageToGdrive } from '../services/gdriveUpload';
+import {
+  uploadKatalogImageToGdrive,
+  syncAndMigrateKatalogImagesToGdrive,
+} from '../services/katalogGdrive';
 import {
   loadKatalogBatches,
   persistKatalogBatches,
@@ -46,6 +52,7 @@ import {
 import { KatalogUploadModal } from './katalog/KatalogUploadModal';
 import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { KatalogA4PrintModal } from './katalog/KatalogA4PrintModal';
+import { KatalogImageLightbox } from './katalog/KatalogImageLightbox';
 
 interface KatalogProdukViewProps {
   session?: UserSession | null;
@@ -101,12 +108,24 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [suggestedUploadName, setSuggestedUploadName] = useState('');
   const [uploadFileName, setUploadFileName] = useState('');
   const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState<string>('');
+  const [isMigratingToGdrive, setIsMigratingToGdrive] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<string>('');
 
   // Modals
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
   const [barcodeTargetItem, setBarcodeTargetItem] = useState<KatalogItem | null>(null);
   const [barcodeTargetItems, setBarcodeTargetItems] = useState<KatalogItem[] | null>(null);
   const [a4ModalOpen, setA4ModalOpen] = useState(false);
+  const [a4TargetItems, setA4TargetItems] = useState<KatalogItem[] | null>(null);
+  const [a4TargetCatalogNames, setA4TargetCatalogNames] = useState<string[]>([]);
+
+  // Lightbox Fullscreen Foto
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxItem, setLightboxItem] = useState<KatalogItem | null>(null);
+
+  // Hide / Unhide State
+  const [showHiddenItems, setShowHiddenItems] = useState(false);
 
   // Admin Rename Modal
   const [renameModalOpen, setRenameModalOpen] = useState(false);
@@ -187,10 +206,15 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const filteredBatches = useMemo(() => {
     return batches
       .filter((b) => selectedCatalogIds.includes(b.id))
+      .filter((b) => showHiddenItems || !b.is_hidden)
       .map((b) => {
-        if (!searchQuery.trim()) return b;
+        let items = b.items;
+        if (!showHiddenItems) {
+          items = items.filter((it) => !it.is_hidden);
+        }
+        if (!searchQuery.trim()) return { ...b, items };
         const q = searchQuery.toLowerCase();
-        const filteredItems = b.items.filter((it) => {
+        const filteredItems = items.filter((it) => {
           const matchName = it.deskripsi.toLowerCase().includes(q);
           const matchNo = it.nomor.toLowerCase().includes(q);
           const matchVariant = it.variants.some(
@@ -204,11 +228,18 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         return { ...b, items: filteredItems };
       })
       .filter((b) => b.items.length > 0 || !searchQuery.trim());
-  }, [batches, selectedCatalogIds, searchQuery]);
+  }, [batches, selectedCatalogIds, searchQuery, showHiddenItems]);
 
   const allFilteredItems = useMemo(() => {
     return filteredBatches.flatMap((b) => b.items);
   }, [filteredBatches]);
+
+  const totalHiddenItemsCount = useMemo(() => {
+    return batches.reduce((acc, b) => {
+      const hiddenInBatch = b.items.filter((it) => it.is_hidden).length;
+      return acc + (b.is_hidden ? b.items.length : hiddenInBatch);
+    }, 0);
+  }, [batches]);
 
   const totalFilteredVariants = useMemo(() => {
     return allFilteredItems.reduce((sum, it) => sum + (it.variants?.length || 0), 0);
@@ -220,6 +251,16 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       0
     );
   }, [allFilteredItems]);
+
+  // Hitung jumlah item dengan foto base64 (yang perlu dimigrasikan ke Google Drive)
+  const totalBase64Count = useMemo(() => {
+    return batches.reduce((acc, b) => {
+      return (
+        acc +
+        b.items.filter((it) => it.image_url && it.image_url.startsWith('data:image')).length
+      );
+    }, 0);
+  }, [batches]);
 
   // Handle Upload Excel File & Parsing
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -486,6 +527,45 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
     targetBatchId?: string
   ) => {
     const cleanName = catalogName.trim();
+    setUploadProgressMsg('Menyiapkan foto katalog...');
+
+    // Cek apakah ada gambar yang perlu diupload ke Google Drive
+    const itemsToSave: KatalogItem[] = [];
+    const itemsWithImages = parsedUploadItems.filter(
+      (it) => it.image_url && it.image_url.startsWith('data:image')
+    );
+
+    if (itemsWithImages.length > 0) {
+      setUploadProgressMsg(`Mengunggah 0/${itemsWithImages.length} foto ke Google Drive...`);
+      let uploadedCount = 0;
+
+      for (const item of parsedUploadItems) {
+        if (item.image_url && item.image_url.startsWith('data:image')) {
+          setUploadProgressMsg(
+            `Mengunggah foto produk ${uploadedCount + 1}/${itemsWithImages.length} ke Google Drive...`
+          );
+          const gdriveRes = await uploadKatalogImageToGdrive(
+            item.image_url,
+            item.nomor || item.deskripsi || cleanName
+          );
+          const finalUrl =
+            gdriveRes.success && gdriveRes.url && !gdriveRes.url.startsWith('data:')
+              ? gdriveRes.url
+              : item.image_url;
+          itemsToSave.push({
+            ...item,
+            image_url: finalUrl,
+          });
+          uploadedCount++;
+        } else {
+          itemsToSave.push(item);
+        }
+      }
+    } else {
+      itemsToSave.push(...parsedUploadItems);
+    }
+
+    setUploadProgressMsg('Menyimpan data katalog ke database...');
     let updatedBatches: KatalogBatch[] = [...batches];
 
     if (mode === 'replace' && targetBatchId) {
@@ -496,7 +576,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             ...b,
             name: cleanName,
             updated_at: new Date().toISOString(),
-            items: parsedUploadItems.map((it) => ({
+            items: itemsToSave.map((it) => ({
               ...it,
               catalog_id: b.id,
               catalog_name: cleanName,
@@ -507,7 +587,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       });
       await saveBatches(
         updatedBatches,
-        `Katalog "${cleanName}" berhasil diperbarui (replace) dengan ${parsedUploadItems.length} produk!`
+        `Katalog "${cleanName}" berhasil diperbarui (replace) dengan ${itemsToSave.length} produk (Foto di Google Drive)!`
       );
     } else {
       // Tambah batch baru
@@ -516,7 +596,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         id: newBatchId,
         name: cleanName,
         created_at: new Date().toISOString(),
-        items: parsedUploadItems.map((it) => ({
+        items: itemsToSave.map((it) => ({
           ...it,
           catalog_id: newBatchId,
           catalog_name: cleanName,
@@ -527,9 +607,10 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       setSelectedCatalogIds((prev) => [...prev, newBatchId]);
       await saveBatches(
         updatedBatches,
-        `Katalog "${cleanName}" berhasil disimpan dengan ${parsedUploadItems.length} produk!`
+        `Katalog "${cleanName}" berhasil disimpan dengan ${itemsToSave.length} produk (Foto di Google Drive)!`
       );
     }
+    setUploadProgressMsg('');
   };
 
   // Admin Aksi: Hapus Katalog
@@ -581,26 +662,44 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
     await saveBatches(nextBatches, 'Produk dihapus dari katalog');
   };
 
-  // Upload Foto per Kartu Produk
+  // Upload Foto per Kartu Produk (Langsung kompres & upload ke Google Drive)
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !targetImageUploadItemId) return;
+
+    const targetItem = allFilteredItems.find((it) => it.id === targetImageUploadItemId);
+    const itemName = targetItem?.nomor || targetItem?.deskripsi || 'produk-katalog';
 
     setUploadingImageId(targetImageUploadItemId);
     try {
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const base64 = ev.target?.result as string;
-        if (!base64) return;
-        const compressed = await compressImageDataUri(base64, 800, 0.8);
+        if (!base64) {
+          setUploadingImageId(null);
+          setTargetImageUploadItemId(null);
+          return;
+        }
+
+        onNotify('Mengompres dan mengunggah foto ke Google Drive...', 'info');
+        const gdriveRes = await uploadKatalogImageToGdrive(base64, itemName);
+        const finalImageUrl =
+          gdriveRes.success && gdriveRes.url && !gdriveRes.url.startsWith('data:')
+            ? gdriveRes.url
+            : await compressImageDataUri(base64, 800, 0.8);
 
         const nextBatches = batches.map((b) => ({
           ...b,
           items: b.items.map((it) =>
-            it.id === targetImageUploadItemId ? { ...it, image_url: compressed } : it
+            it.id === targetImageUploadItemId ? { ...it, image_url: finalImageUrl } : it
           ),
         }));
-        await saveBatches(nextBatches, 'Foto produk berhasil diperbarui');
+        await saveBatches(
+          nextBatches,
+          gdriveRes.success && gdriveRes.url && !gdriveRes.url.startsWith('data:')
+            ? 'Foto produk berhasil disimpan di Google Drive!'
+            : 'Foto produk disimpan secara lokal'
+        );
         setUploadingImageId(null);
         setTargetImageUploadItemId(null);
       };
@@ -609,6 +708,117 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       onNotify('Gagal memproses gambar', 'error');
       setUploadingImageId(null);
       setTargetImageUploadItemId(null);
+    }
+  };
+
+  // Migrasi Otomatis Seluruh Foto Base64 ke Google Drive Cloud & Bersihkan Supabase
+  const handleMigrateAllImagesToGdrive = async () => {
+    if (totalBase64Count === 0) {
+      onNotify('Semua foto sudah tersimpan di Google Drive Cloud!', 'info');
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Terdapat ${totalBase64Count} foto produk yang masih dalam format lokal/base64.\n\nMigrasikan sekarang ke Google Drive dan bersihkan data base64 dari Supabase?`
+      )
+    ) {
+      return;
+    }
+
+    setIsMigratingToGdrive(true);
+    setMigrationStatus('Memulai migrasi foto ke Google Drive Cloud...');
+    try {
+      const result = await syncAndMigrateKatalogImagesToGdrive(
+        batches,
+        (current, total, itemName) => {
+          setMigrationStatus(`Mengunggah foto ${current}/${total}: ${itemName}...`);
+        }
+      );
+
+      setBatches(result.updatedBatches);
+      await saveBatches(result.updatedBatches);
+
+      if (result.errors.length === 0) {
+        onNotify(
+          `Sukses! ${result.migratedCount} foto berhasil dimigrasikan ke Google Drive Cloud dan database dibersihkan!`,
+          'success'
+        );
+      } else {
+        onNotify(
+          `Migrasi selesai (${result.migratedCount} foto), beberapa catatan: ${result.errors.slice(0, 2).join(', ')}`,
+          'warning'
+        );
+      }
+    } catch (err: any) {
+      console.error('Migration error:', err);
+      onNotify(`Gagal melakukan migrasi: ${err?.message || 'Error tidak diketahui'}`, 'error');
+    } finally {
+      setIsMigratingToGdrive(false);
+      setMigrationStatus('');
+    }
+  };
+
+  // Toggle Hide/Unhide Produk
+  const handleToggleHideProduct = async (batchId: string, productId: string) => {
+    let targetStatus = false;
+    const updated = batches.map((b) => {
+      if (b.id !== batchId) return b;
+      return {
+        ...b,
+        items: b.items.map((it) => {
+          if (it.id !== productId) return it;
+          targetStatus = !it.is_hidden;
+          return { ...it, is_hidden: !it.is_hidden };
+        }),
+      };
+    });
+    await saveBatches(
+      updated,
+      targetStatus ? 'Produk disembunyikan' : 'Produk ditampilkan kembali'
+    );
+  };
+
+  // Toggle Hide/Unhide Seluruh Katalog (Batch)
+  const handleToggleHideBatch = async (batchId: string) => {
+    const targetBatch = batches.find((b) => b.id === batchId);
+    if (!targetBatch) return;
+    const isNowHidden = !targetBatch.is_hidden;
+    const updated = batches.map((b) => {
+      if (b.id !== batchId) return b;
+      return { ...b, is_hidden: isNowHidden };
+    });
+    await saveBatches(
+      updated,
+      isNowHidden
+        ? `Katalog "${targetBatch.name}" disembunyikan`
+        : `Katalog "${targetBatch.name}" ditampilkan kembali`
+    );
+  };
+
+  // Lightbox Handlers
+  const handleOpenLightbox = (item: KatalogItem) => {
+    setLightboxItem(item);
+    setLightboxOpen(true);
+  };
+
+  const handleSelectNextLightbox = () => {
+    if (!lightboxItem) return;
+    const currentIndex = allFilteredItems.findIndex((it) => it.id === lightboxItem.id);
+    if (currentIndex >= 0 && currentIndex < allFilteredItems.length - 1) {
+      setLightboxItem(allFilteredItems[currentIndex + 1]);
+    } else if (allFilteredItems.length > 0) {
+      setLightboxItem(allFilteredItems[0]);
+    }
+  };
+
+  const handleSelectPrevLightbox = () => {
+    if (!lightboxItem) return;
+    const currentIndex = allFilteredItems.findIndex((it) => it.id === lightboxItem.id);
+    if (currentIndex > 0) {
+      setLightboxItem(allFilteredItems[currentIndex - 1]);
+    } else if (allFilteredItems.length > 0) {
+      setLightboxItem(allFilteredItems[allFilteredItems.length - 1]);
     }
   };
 
@@ -681,9 +891,13 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                   Multi-Katalog
                 </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Foto Google Drive</span>
+                </span>
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Kelompokkan produk per nama katalog (misal: 325 B, 325 A, 326 B). Tampilkan, cetak barcode thermal & dokumen A4.
+                Kelompokkan produk per nama katalog (misal: 325 B, 325 A, 326 B). Foto dikompres & disimpan di Google Drive, Supabase bersih dari base64.
               </p>
             </div>
           </div>
@@ -691,10 +905,36 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
         {/* Action Buttons Utama */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Tombol Migrasi Gambar Base64 ke GDrive (jika ada data base64 lama) */}
+          {totalBase64Count > 0 && (
+            <button
+              type="button"
+              onClick={handleMigrateAllImagesToGdrive}
+              disabled={isMigratingToGdrive}
+              className="px-3.5 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/60 dark:hover:bg-amber-900/70 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-amber-300 dark:border-amber-700 animate-pulse"
+              title="Pindahkan foto produk format base64 lama ke Google Drive Cloud dan hapus dari Supabase"
+            >
+              {isMigratingToGdrive ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-700" />
+                  <span>Migrasi ke GDrive...</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-4 h-4 text-amber-700 dark:text-amber-300" />
+                  <span>Migrasi {totalBase64Count} Foto ke GDrive</span>
+                </>
+              )}
+            </button>
+          )}
           {/* Tombol Cetak A4 */}
           <button
             type="button"
-            onClick={() => setA4ModalOpen(true)}
+            onClick={() => {
+              setA4TargetItems(allFilteredItems);
+              setA4TargetCatalogNames(filteredBatches.map((b) => b.name));
+              setA4ModalOpen(true);
+            }}
             disabled={allFilteredItems.length === 0}
             className="px-3.5 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs border border-blue-200 dark:border-blue-800 disabled:opacity-50"
             title="Cetak katalog rapi dalam format A4"
@@ -761,6 +1001,21 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           </button>
         </div>
       </div>
+
+      {/* BANNER STATUS MIGRASI FOTO KE GOOGLE DRIVE */}
+      {isMigratingToGdrive && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
+          <RefreshCw className="w-5 h-5 animate-spin text-amber-600 dark:text-amber-400 shrink-0" />
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+              Proses Migrasi Foto ke Google Drive Berjalan
+            </h4>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+              {migrationStatus || 'Sedang mengompresi dan mengunggah foto ke Google Drive Cloud...'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* DROPLIST SUSUNAN KATALOG & MULTI-SELECT FILTER BAR */}
       <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
@@ -893,6 +1148,35 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               )}
             </button>
 
+            {/* Toggle Sembunyikan / Tampilkan Data Hide */}
+            <button
+              type="button"
+              onClick={() => setShowHiddenItems(!showHiddenItems)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                showHiddenItems
+                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+              }`}
+              title="Tampilkan produk atau katalog yang berstatus di-hide / tersembunyi"
+            >
+              {showHiddenItems ? (
+                <>
+                  <Eye className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Data Hide Terbuka</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <span>Data Hide Tersembunyi</span>
+                </>
+              )}
+              {totalHiddenItemsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">
+                  {totalHiddenItemsCount}
+                </span>
+              )}
+            </button>
+
             {/* Toggle Dikelompokkan per Katalog vs Tampilan Gabung */}
             <button
               type="button"
@@ -1000,13 +1284,23 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             return (
               <div key={batch.id} className="space-y-4">
                 {/* Header Tiap Katalog */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-                  <div className="flex items-center gap-3">
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border ${
+                  batch.is_hidden
+                    ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
+                    : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-800'
+                }`}>
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <span
                       className={`px-3 py-1 rounded-xl text-xs font-black tracking-wider uppercase border shadow-xs ${palette.bg} ${palette.text} ${palette.border}`}
                     >
                       Katalog {batch.name}
                     </span>
+                    {batch.is_hidden && (
+                      <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                        <EyeOff className="w-3 h-3" />
+                        <span>Katalog Tersembunyi</span>
+                      </span>
+                    )}
                     <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                       <strong>{batch.items.length}</strong> Model Produk • <strong>{batchVariants}</strong> Varian • Total <strong>{batchQty}</strong> pcs
                     </div>
@@ -1014,11 +1308,28 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
                   {/* Aksi Per-Katalog */}
                   <div className="flex items-center gap-2">
+                    {/* Tombol Hide / Unhide Katalog */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleHideBatch(batch.id)}
+                      className={`p-1.5 rounded-xl border transition-all flex items-center gap-1 cursor-pointer ${
+                        batch.is_hidden
+                          ? 'text-amber-700 hover:text-amber-900 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700'
+                          : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                      title={batch.is_hidden ? 'Tampilkan seluruh katalog ini (Unhide)' : 'Sembunyikan seluruh katalog ini (Hide)'}
+                    >
+                      {batch.is_hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      <span className="text-xs font-bold hidden md:inline">
+                        {batch.is_hidden ? 'Unhide' : 'Hide'}
+                      </span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
                         setBarcodeTargetItem(null);
-                        setBarcodeTargetItems(batch.items);
+                        setBarcodeTargetItems(batch.items.filter((it) => showHiddenItems || !it.is_hidden));
                         setBarcodeModalOpen(true);
                       }}
                       className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
@@ -1031,10 +1342,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                     <button
                       type="button"
                       onClick={() => {
+                        setA4TargetItems(batch.items.filter((it) => showHiddenItems || !it.is_hidden));
+                        setA4TargetCatalogNames([batch.name]);
                         setA4ModalOpen(true);
                       }}
                       className="px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                      title="Cetak format A4 untuk katalog ini"
+                      title="Cetak format A4 untuk katalog ini saja"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>Cetak A4</span>
@@ -1098,6 +1411,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                         imageInputRef.current?.click();
                       }}
                       onDeleteProduct={() => handleDeleteProduct(batch.id, prod.id)}
+                      onToggleHideProduct={() => handleToggleHideProduct(batch.id, prod.id)}
+                      onImageClick={() => handleOpenLightbox(prod)}
                       isUploadingPhoto={uploadingImageId === prod.id}
                       isAdmin={isAdmin}
                     />
@@ -1137,6 +1452,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                   imageInputRef.current?.click();
                 }}
                 onDeleteProduct={() => handleDeleteProduct(parentBatch.id, prod.id)}
+                onToggleHideProduct={() => handleToggleHideProduct(parentBatch.id, prod.id)}
+                onImageClick={() => handleOpenLightbox(prod)}
                 isUploadingPhoto={uploadingImageId === prod.id}
                 isAdmin={isAdmin}
               />
@@ -1157,6 +1474,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         sourceFileName={uploadFileName}
         existingBatches={batches}
         onConfirmSave={handleConfirmSaveUpload}
+        uploadProgressMsg={uploadProgressMsg}
       />
 
       {/* MODAL CETAK BARCODE THERMAL 50x20mm */}
@@ -1172,8 +1490,21 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       <KatalogA4PrintModal
         isOpen={a4ModalOpen}
         onClose={() => setA4ModalOpen(false)}
-        items={allFilteredItems}
-        catalogNames={filteredBatches.map((b) => b.name)}
+        items={a4TargetItems || allFilteredItems}
+        catalogNames={a4TargetCatalogNames.length > 0 ? a4TargetCatalogNames : filteredBatches.map((b) => b.name)}
+      />
+
+      {/* FULLSCREEN IMAGE LIGHTBOX POPUP */}
+      <KatalogImageLightbox
+        isOpen={lightboxOpen}
+        onClose={() => {
+          setLightboxOpen(false);
+          setLightboxItem(null);
+        }}
+        item={lightboxItem}
+        allItems={allFilteredItems}
+        onSelectNext={handleSelectNextLightbox}
+        onSelectPrev={handleSelectPrevLightbox}
       />
 
       {/* MODAL RENAME NAMA KATALOG */}
@@ -1223,6 +1554,8 @@ interface ProductCardItemProps {
   onPrintBarcode: () => void;
   onUploadPhoto: () => void;
   onDeleteProduct: () => void;
+  onToggleHideProduct: () => void;
+  onImageClick: () => void;
   isUploadingPhoto: boolean;
   isAdmin: boolean;
 }
@@ -1236,6 +1569,8 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
   onPrintBarcode,
   onUploadPhoto,
   onDeleteProduct,
+  onToggleHideProduct,
+  onImageClick,
   isUploadingPhoto,
   isAdmin,
 }) => {
@@ -1245,15 +1580,86 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
   const showTable = !hideVariants || isExpanded;
 
   return (
-    <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
-      {/* Bagian Atas: Gambar, Badge Katalog & Nomor */}
+    <div
+      className={`bg-white dark:bg-slate-850 rounded-2xl border ${
+        item.is_hidden
+          ? 'border-amber-300 dark:border-amber-800 bg-amber-50/15 dark:bg-amber-950/10'
+          : 'border-slate-200/80 dark:border-slate-800'
+      } shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group`}
+    >
+      {/* Bagian Atas: Header Bar & Gambar Produk Utuh */}
       <div>
-        <div className="relative aspect-4/3 w-full bg-slate-100 dark:bg-slate-800/60 overflow-hidden border-b border-slate-100 dark:border-slate-800 flex items-center justify-center">
+        {/* BARIS HEADER KARTU (Supaya tidak menutupi gambar produk) */}
+        <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shrink-0 shadow-2xs">
+              Katalog {item.catalog_name || batch.name}
+            </span>
+            {item.nomor && (
+              <span className="px-1.5 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 shrink-0">
+                #{item.nomor}
+              </span>
+            )}
+            {item.is_hidden && (
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 flex items-center gap-0.5 shrink-0 border border-amber-300 dark:border-amber-700">
+                <EyeOff className="w-3 h-3" />
+                <span>Tersembunyi</span>
+              </span>
+            )}
+          </div>
+
+          {/* Tombol Aksi di Baris Atas: Upload Foto & Hide/Unhide */}
+          <div className="flex items-center gap-1 shrink-0">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUploadPhoto();
+                }}
+                disabled={isUploadingPhoto}
+                className="px-2 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                title="Unggah atau ganti foto produk"
+              >
+                {isUploadingPhoto ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                ) : (
+                  <Camera className="w-3.5 h-3.5" />
+                )}
+                <span className="hidden sm:inline">Foto</span>
+              </button>
+            )}
+
+            {/* Tombol Hide / Unhide Produk */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleHideProduct();
+              }}
+              className={`p-1.5 text-xs rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                item.is_hidden
+                  ? 'text-amber-700 hover:text-amber-900 bg-amber-100 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700'
+                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+              title={item.is_hidden ? 'Tampilkan produk ini kembali (Unhide)' : 'Sembunyikan produk ini (Hide)'}
+            >
+              {item.is_hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* CONTAINER GAMBAR PRODUK (BERSIH DARI BADGE, BISA DI-KLIK FULLSCREEN) */}
+        <div
+          onClick={onImageClick}
+          className="relative aspect-4/3 w-full bg-slate-100 dark:bg-slate-800/60 overflow-hidden border-b border-slate-100 dark:border-slate-800 flex items-center justify-center cursor-zoom-in group/img"
+          title="Klik foto untuk melihat tampilan penuh (fullscreen popup tanpa terpotong)"
+        >
           {item.image_url ? (
             <img
               src={item.image_url}
               alt={item.deskripsi}
-              className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-102"
+              className="w-full h-full object-cover object-top transition-transform duration-300 group-hover/img:scale-105"
               crossOrigin="anonymous"
               loading="lazy"
             />
@@ -1264,34 +1670,13 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
             </div>
           )}
 
-          {/* BADGE NAMA KATALOG & NOMOR */}
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
-            <span className="px-2.5 py-1 rounded-lg text-xs font-black tracking-wide uppercase bg-slate-900/90 text-white backdrop-blur-md shadow-xs border border-white/20">
-              Katalog {item.catalog_name || batch.name}
+          {/* Hover Overlay Hint: Klik Fullscreen */}
+          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white pointer-events-none">
+            <span className="px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-xs text-xs font-semibold flex items-center gap-1.5 shadow-md">
+              <ZoomIn className="w-3.5 h-3.5" />
+              <span>Buka Fullscreen</span>
             </span>
-            {item.nomor && (
-              <span className="px-2 py-1 rounded-lg text-xs font-mono font-bold bg-white/90 dark:bg-slate-900/90 text-slate-800 dark:text-slate-100 backdrop-blur-md shadow-xs">
-                #{item.nomor}
-              </span>
-            )}
           </div>
-
-          {/* Tombol Ganti Foto (Admin) */}
-          {isAdmin && (
-            <button
-              onClick={onUploadPhoto}
-              disabled={isUploadingPhoto}
-              type="button"
-              className="absolute bottom-3 right-3 p-2 bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-900 rounded-xl shadow-md backdrop-blur-xs transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-              title="Ganti atau unggah foto produk"
-            >
-              {isUploadingPhoto ? (
-                <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-              ) : (
-                <Camera className="w-4 h-4" />
-              )}
-            </button>
-          )}
         </div>
 
         {/* Info Nama Produk & Harga */}

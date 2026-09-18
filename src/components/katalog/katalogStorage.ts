@@ -53,10 +53,12 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
         name: b.name || `Katalog ${idx + 1}`,
         created_at: b.created_at || new Date().toISOString(),
         updated_at: b.updated_at,
+        is_hidden: Boolean(b.is_hidden),
         items: (b.items || []).map((it: any) => ({
           ...it,
           catalog_id: it.catalog_id || b.id || `batch-${idx + 1}`,
           catalog_name: it.catalog_name || b.name || `Katalog ${idx + 1}`,
+          is_hidden: Boolean(it.is_hidden),
         })),
       }));
     }
@@ -66,10 +68,12 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
       id: 'batch-325b',
       name: '325 B',
       created_at: new Date().toISOString(),
+      is_hidden: false,
       items: parsed.map((it: any) => ({
         ...it,
         catalog_id: 'batch-325b',
         catalog_name: it.catalog_name || '325 B',
+        is_hidden: Boolean(it.is_hidden),
       })),
     };
     return [defaultBatch];
@@ -99,16 +103,29 @@ export function getDefaultInitialBatch(): KatalogBatch {
 export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<boolean> {
   const jsonStr = JSON.stringify(batches);
 
-  // 1. Simpan ke LocalStorage
+  // 1. Simpan ke LocalStorage (lengkap dengan URL)
   try {
     localStorage.setItem(KATALOG_STORAGE_KEY, jsonStr);
   } catch (lsErr) {
     console.warn('LocalStorage save failed, trying fallback:', lsErr);
   }
 
-  // 2. Simpan ke Supabase Cloud Settings
+  // 2. Simpan ke Supabase Cloud Settings:
+  // PASTI-KAN TIDAK ADA GAMBAR BASE64 YANG TERSIMPAN DI SUPABASE
+  // Hanya simpan URL Google Drive / link web eksternal untuk menghemat bandwidth & ruang database
   try {
-    await saveWmsSettings({ katalog_manual_data: jsonStr });
+    const cleanBatches = batches.map((b) => ({
+      ...b,
+      items: b.items.map((it) => {
+        if (it.image_url && it.image_url.startsWith('data:image')) {
+          // Buang base64 dari Supabase
+          return { ...it, image_url: '' };
+        }
+        return it;
+      }),
+    }));
+    const cleanJsonStr = JSON.stringify(cleanBatches);
+    await saveWmsSettings({ katalog_manual_data: cleanJsonStr });
     return true;
   } catch (cloudErr) {
     console.error('Supabase cloud save error for katalog_manual_data:', cloudErr);

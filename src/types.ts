@@ -49,6 +49,7 @@ export interface KatalogItem {
   image_url: string;
   catalog_id?: string;
   catalog_name?: string;
+  is_hidden?: boolean;
 }
 
 export interface KatalogBatch {
@@ -57,6 +58,7 @@ export interface KatalogBatch {
   created_at: string;
   updated_at?: string;
   items: KatalogItem[];
+  is_hidden?: boolean;
 }
 
 export type UserRole =

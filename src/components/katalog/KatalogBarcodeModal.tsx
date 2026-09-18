@@ -108,7 +108,210 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
       onNotify('Jumlah stiker yang akan dicetak adalah 0', 'warning');
       return;
     }
-    window.print();
+
+    // Bangun HTML cetak thermal 50x20mm murni
+    const pagesHtml = entries
+      .flatMap((entry) => {
+        const copies = Math.max(0, entry.copies || 0);
+        const qrTag = entry.qrDataUrl
+          ? `<img src="${entry.qrDataUrl}" alt="QR" style="width: 13.5mm; height: 13.5mm; object-fit: contain; image-rendering: pixelated; display: block;" />`
+          : `<div style="font-size: 8px; font-weight: bold; text-align: center;">${entry.sku}</div>`;
+
+        let rawPrice = String(entry.price || '').replace(/^Rp\s*/i, '').trim();
+        let displayPrice = '';
+        if (rawPrice) {
+          displayPrice = rawPrice.startsWith('Rp') ? rawPrice : `Rp ${rawPrice}`;
+        }
+
+        return Array.from({ length: copies }).map(
+          () => `
+          <div class="thermal-page">
+            <div class="thermal-header">
+              <span class="product-title">${escapeHtml(entry.nama_produk)}</span>
+              <span class="catalog-badge">[ ${escapeHtml(entry.catalog_name)} ]</span>
+            </div>
+            <div class="thermal-body">
+              <div class="qr-box">
+                ${qrTag}
+              </div>
+              <div class="info-box">
+                <div class="variant-line">${escapeHtml(entry.warna)} / ${escapeHtml(entry.size)}</div>
+                <div class="sku-line">${escapeHtml(entry.sku)}</div>
+                ${displayPrice ? `<div class="price-line">${escapeHtml(displayPrice)}</div>` : ''}
+              </div>
+            </div>
+          </div>
+        `
+        );
+      })
+      .join('');
+
+    // Buat iframe terisolasi agar TIDAK ADA duplikasi halaman dari parent document!
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-9999px';
+    iframe.style.left = '-9999px';
+    iframe.style.width = '50mm';
+    iframe.style.height = '20mm';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Cetak Barcode Produk 50x20mm</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800&display=swap" rel="stylesheet">
+          <style>
+            @page {
+              size: 50mm 20mm landscape;
+              margin: 0mm !important;
+            }
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+              margin: 0;
+              padding: 0;
+            }
+            html, body {
+              width: 50mm !important;
+              height: 20mm !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+              font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .thermal-page {
+              width: 50mm !important;
+              height: 20mm !important;
+              max-width: 50mm !important;
+              max-height: 20mm !important;
+              padding: 1.0mm 1.5mm !important;
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: space-between !important;
+              overflow: hidden !important;
+              page-break-after: always !important;
+              break-after: page !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              background: #ffffff !important;
+            }
+            .thermal-header {
+              display: flex !important;
+              align-items: center !important;
+              justify-content: space-between !important;
+              border-bottom: 0.8px solid #000000 !important;
+              padding-bottom: 0.8px !important;
+              margin-bottom: 0.8px !important;
+              line-height: 1 !important;
+            }
+            .product-title {
+              font-size: 8pt !important;
+              font-weight: 700 !important;
+              text-transform: uppercase !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              max-width: 36mm !important;
+              letter-spacing: -0.2px !important;
+            }
+            .catalog-badge {
+              font-size: 6pt !important;
+              font-weight: 800 !important;
+              border: 0.8px solid #000000 !important;
+              padding: 0.5px 2px !important;
+              border-radius: 1px !important;
+              white-space: nowrap !important;
+              line-height: 1 !important;
+            }
+            .thermal-body {
+              display: flex !important;
+              align-items: center !important;
+              gap: 1.8mm !important;
+              flex: 1 !important;
+              min-height: 0 !important;
+            }
+            .qr-box {
+              width: 13.5mm !important;
+              height: 13.5mm !important;
+              flex-shrink: 0 !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+            }
+            .info-box {
+              flex: 1 !important;
+              min-width: 0 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: center !important;
+              line-height: 1.15 !important;
+            }
+            .variant-line {
+              font-size: 7.2pt !important;
+              font-weight: 700 !important;
+              text-transform: uppercase !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              color: #111111 !important;
+            }
+            .sku-line {
+              font-size: 7.5pt !important;
+              font-family: 'Courier New', Courier, monospace, sans-serif !important;
+              font-weight: 700 !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              color: #222222 !important;
+              margin-top: 0.3mm !important;
+            }
+            .price-line {
+              font-size: 9pt !important;
+              font-weight: 800 !important;
+              color: #000000 !important;
+              margin-top: 0.4mm !important;
+              white-space: nowrap !important;
+            }
+          </style>
+        </head>
+        <body>
+          ${pagesHtml}
+        </body>
+      </html>
+    `;
+
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 2000);
+    }, 250);
+  };
+
+  const escapeHtml = (str: string) => {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   };
 
   return (
@@ -287,79 +490,6 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
             <span>Cetak {totalLabels} Stiker Thermal (50x20 mm)</span>
           </button>
         </div>
-      </div>
-
-      {/* HIDDEN PRINT-ONLY CONTAINER (FOR WINDOW.PRINT THERMAL) */}
-      <div id="thermal-katalog-print-area" className="hidden print:block" ref={printAreaRef}>
-        <style dangerouslySetInnerHTML={{ __html: `
-          @media print {
-            body * {
-              visibility: hidden !important;
-            }
-            #thermal-katalog-print-area, #thermal-katalog-print-area * {
-              visibility: visible !important;
-            }
-            #thermal-katalog-print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 50mm !important;
-              margin: 0 !important;
-              padding: 0 !important;
-            }
-            .thermal-sticker-page {
-              width: 50mm !important;
-              height: 20mm !important;
-              page-break-after: always !important;
-              page-break-inside: avoid !important;
-              box-sizing: border-box !important;
-              padding: 1.5mm 2mm !important;
-              overflow: hidden !important;
-              display: flex !important;
-              flex-direction: column !important;
-              justify-content: space-between !important;
-              font-family: Arial, Helvetica, sans-serif !important;
-              color: black !important;
-              background: white !important;
-            }
-            @page {
-              size: 50mm 20mm;
-              margin: 0;
-            }
-          }
-        `}} />
-
-        {entries.flatMap((entry, eIdx) =>
-          Array.from({ length: entry.copies }).map((_, cIdx) => (
-            <div key={`${eIdx}-${cIdx}`} className="thermal-sticker-page">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid black', paddingBottom: '1px', lineHeight: 1 }}>
-                <span style={{ fontSize: '7.5pt', fontWeight: 'bold', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '34mm' }}>
-                  {entry.nama_produk}
-                </span>
-                <span style={{ fontSize: '6pt', fontWeight: 'bold', border: '0.5px solid black', padding: '0.5px 1.5px' }}>
-                  {entry.catalog_name}
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '2mm', marginTop: '1mm' }}>
-                {entry.qrDataUrl && (
-                  <img src={entry.qrDataUrl} alt="QR" style={{ width: '13mm', height: '13mm' }} />
-                )}
-                <div style={{ flex: 1, minWidth: 0, lineHeight: 1.15 }}>
-                  <div style={{ fontSize: '6.5pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                    {entry.warna} / {entry.size}
-                  </div>
-                  <div style={{ fontSize: '7pt', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                    {entry.sku}
-                  </div>
-                  <div style={{ fontSize: '8pt', fontWeight: '900', marginTop: '0.5mm' }}>
-                    Rp {entry.price || '-'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
       </div>
     </div>
   );

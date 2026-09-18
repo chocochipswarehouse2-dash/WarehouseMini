@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, UploadCloud, Layers, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { X, UploadCloud, Layers, AlertTriangle, CheckCircle2, RefreshCw, Cloud, ShieldCheck } from 'lucide-react';
 import { KatalogBatch, KatalogItem } from '../../types';
 
 interface KatalogUploadModalProps {
@@ -10,6 +10,7 @@ interface KatalogUploadModalProps {
   sourceFileName: string;
   existingBatches: KatalogBatch[];
   onConfirmSave: (batchName: string, mode: 'new' | 'replace', targetBatchId?: string) => Promise<void>;
+  uploadProgressMsg?: string;
 }
 
 export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
@@ -20,6 +21,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
   sourceFileName,
   existingBatches,
   onConfirmSave,
+  uploadProgressMsg,
 }) => {
   const [catalogName, setCatalogName] = useState(suggestedName);
   const [mode, setMode] = useState<'new' | 'replace'>('new');
@@ -95,7 +97,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
 
         {/* Content & Form */}
         <form onSubmit={handleSave} className="p-6 space-y-5">
-          {/* Ringkasan Data yang Diekstrak */}
+          {/* Ringkasan Data yang Diekstrak & Info Google Drive Storage */}
           <div className="grid grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-center">
             <div>
               <span className="text-xs text-slate-500 dark:text-slate-400">Produk</span>
@@ -110,6 +112,21 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
               <p className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{totalImages} Item</p>
             </div>
           </div>
+
+          {/* Badge Storage Google Drive (Bukan di Supabase) */}
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-200">
+            <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="leading-snug">
+              <span className="font-bold">Penyimpanan Foto:</span> Foto produk otomatis dikompres dan disimpan aman di <strong>Google Drive Cloud</strong>. Database Supabase bebas dari beban data base64.
+            </div>
+          </div>
+
+          {uploadProgressMsg && (
+            <div className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs text-indigo-700 dark:text-indigo-300 font-semibold animate-pulse">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>{uploadProgressMsg}</span>
+            </div>
+          )}
 
           {/* Opsi Mode Upload: Baru vs Replace */}
           <div className="space-y-2">

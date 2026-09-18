@@ -21,7 +21,230 @@ export const KatalogA4PrintModal: React.FC<KatalogA4PrintModalProps> = ({
   if (!isOpen) return null;
 
   const handlePrint = () => {
-    window.print();
+    if (items.length === 0) return;
+
+    const cardsHtml = items
+      .map((prod, idx) => {
+        const totalVarian = prod.variants?.length || 0;
+        const totalStok = prod.variants?.reduce((s, v) => s + (v.qty || 0), 0) || 0;
+
+        let variantRows = '';
+        if (showVariantsTable && prod.variants && prod.variants.length > 0) {
+          variantRows = `
+            <div style="margin-top: 2.5mm; border-top: 0.5px solid #ddd; padding-top: 1.5mm;">
+              <table style="width: 100%; font-size: 7.5pt; border-collapse: collapse; text-align: left;">
+                <thead>
+                  <tr style="border-bottom: 1px solid #ccc; color: #555;">
+                    <th style="padding: 1px 0;">Warna</th>
+                    <th style="padding: 1px 0;">Size</th>
+                    <th style="padding: 1px 0;">SKU</th>
+                    <th style="padding: 1px 0; text-align: right;">Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${prod.variants
+                    .map(
+                      (v) => `
+                    <tr style="border-bottom: 0.5px solid #eee;">
+                      <td style="padding: 1px 0; font-weight: 600;">${v.warna || '-'}</td>
+                      <td style="padding: 1px 0;">${v.size || 'Default'}</td>
+                      <td style="padding: 1px 0; font-family: monospace; font-weight: bold;">${v.sku || '-'}</td>
+                      <td style="padding: 1px 0; text-align: right; font-weight: bold;">${v.qty}</td>
+                    </tr>
+                  `
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+
+        const imgTag = prod.image_url
+          ? `<img src="${prod.image_url}" alt="${escapeHtml(prod.deskripsi)}" style="width: 24mm; height: 30mm; object-fit: cover; border-radius: 3px; border: 1px solid #ddd;" />`
+          : `<div style="width: 24mm; height: 30mm; background: #f3f4f6; border-radius: 3px; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center; font-size: 7pt; color: #888;">No Photo</div>`;
+
+        return `
+          <div class="product-card">
+            <div class="card-header">
+              <span class="catalog-tag">Katalog ${escapeHtml(prod.catalog_name || '325 B')}</span>
+              <span class="nomor-tag">#${escapeHtml(prod.nomor || String(idx + 1))}</span>
+            </div>
+            <div class="card-body">
+              ${imgTag}
+              <div class="card-info">
+                <div class="product-name">${escapeHtml(prod.deskripsi)}</div>
+                <div class="product-price">Rp ${escapeHtml(String(prod.price || '-'))}</div>
+                <div class="product-meta">${totalVarian} Varian • Total ${totalStok} pcs</div>
+              </div>
+            </div>
+            ${variantRows}
+          </div>
+        `;
+      })
+      .join('');
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Katalog Produk WMS A4</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm !important;
+            }
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+              margin: 0;
+              padding: 0;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif !important;
+              color: #000000 !important;
+              background: #ffffff !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .page-header {
+              display: flex !important;
+              justify-content: space-between !important;
+              align-items: center !important;
+              border-bottom: 2px solid #000000 !important;
+              padding-bottom: 3mm !important;
+              margin-bottom: 4mm !important;
+            }
+            .title {
+              font-size: 15pt !important;
+              font-weight: 900 !important;
+              text-transform: uppercase !important;
+            }
+            .subtitle {
+              font-size: 8.5pt !important;
+              color: #444444 !important;
+              margin-top: 1mm !important;
+            }
+            .date {
+              font-size: 8.5pt !important;
+              font-weight: bold !important;
+              color: #333333 !important;
+              text-align: right !important;
+            }
+            .grid-container {
+              display: grid !important;
+              grid-template-columns: ${layoutMode === 'grid4' ? '1fr 1fr' : '1fr'} !important;
+              gap: 4mm !important;
+            }
+            .product-card {
+              border: 1px solid #999999 !important;
+              border-radius: 4px !important;
+              padding: 3mm !important;
+              background: #ffffff !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .card-header {
+              display: flex !important;
+              justify-content: space-between !important;
+              align-items: center !important;
+              border-bottom: 1px solid #cccccc !important;
+              padding-bottom: 1.5mm !important;
+              margin-bottom: 2mm !important;
+            }
+            .catalog-tag {
+              font-size: 8pt !important;
+              font-weight: 900 !important;
+              background: #000000 !important;
+              color: #ffffff !important;
+              padding: 1px 5px !important;
+              border-radius: 3px !important;
+              text-transform: uppercase !important;
+            }
+            .nomor-tag {
+              font-size: 8.5pt !important;
+              font-family: monospace !important;
+              font-weight: bold !important;
+              color: #555555 !important;
+            }
+            .card-body {
+              display: flex !important;
+              gap: 3mm !important;
+            }
+            .card-info {
+              flex: 1 !important;
+              min-width: 0 !important;
+            }
+            .product-name {
+              font-size: 10pt !important;
+              font-weight: 900 !important;
+              color: #000000 !important;
+              line-height: 1.2 !important;
+            }
+            .product-price {
+              font-size: 9pt !important;
+              font-weight: bold !important;
+              color: #047857 !important;
+              margin-top: 1mm !important;
+            }
+            .product-meta {
+              font-size: 7.5pt !important;
+              color: #555555 !important;
+              margin-top: 0.5mm !important;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="page-header">
+            <div>
+              <div class="title">Katalog Produk WMS</div>
+              <div class="subtitle">Koleksi: <strong>${catalogNames.join(', ') || 'Semua'}</strong> • Total ${items.length} Produk (${totalVariants} Varian)</div>
+            </div>
+            <div class="date">
+              ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
+          </div>
+          <div class="grid-container">
+            ${cardsHtml}
+          </div>
+        </body>
+      </html>
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-9999px';
+    iframe.style.left = '-9999px';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 2000);
+    }, 300);
+  };
+
+  const escapeHtml = (str: string) => {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   };
 
   const totalVariants = items.reduce((sum, it) => sum + (it.variants?.length || 0), 0);
@@ -243,136 +466,6 @@ export const KatalogA4PrintModal: React.FC<KatalogA4PrintModalProps> = ({
             <Printer className="w-4 h-4" />
             <span>Cetak Dokumen A4 / Simpan PDF</span>
           </button>
-        </div>
-      </div>
-
-      {/* HIDDEN PRINT-ONLY CONTAINER (FOR WINDOW.PRINT A4) */}
-      <div id="katalog-a4-print-area" className="hidden print:block">
-        <style dangerouslySetInnerHTML={{ __html: `
-          @media print {
-            body * {
-              visibility: hidden !important;
-            }
-            #katalog-a4-print-area, #katalog-a4-print-area * {
-              visibility: visible !important;
-            }
-            #katalog-a4-print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              background: white !important;
-              color: black !important;
-            }
-            @page {
-              size: A4 portrait;
-              margin: 10mm;
-            }
-            .page-break-inside-avoid {
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-          }
-        `}} />
-
-        <div style={{ width: '100%', fontFamily: 'Arial, sans-serif', color: 'black' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '3mm', marginBottom: '4mm' }}>
-            <div>
-              <h1 style={{ fontSize: '16pt', fontWeight: '900', margin: 0, textTransform: 'uppercase' }}>
-                Katalog Produk WMS
-              </h1>
-              <div style={{ fontSize: '9pt', color: '#444', marginTop: '1mm' }}>
-                Koleksi: <strong>{catalogNames.join(', ') || 'Semua'}</strong> • Total {items.length} Produk ({totalVariants} Varian)
-              </div>
-            </div>
-            <div style={{ textAlign: 'right', fontSize: '9pt', color: '#444' }}>
-              <strong>{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
-            </div>
-          </div>
-
-          {/* Grid Cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: layoutMode === 'grid4' ? '1fr 1fr' : '1fr',
-            gap: '4mm',
-          }}>
-            {items.map((prod, idx) => (
-              <div
-                key={idx}
-                className="page-break-inside-avoid"
-                style={{
-                  border: '1px solid #999',
-                  borderRadius: '4px',
-                  padding: '3mm',
-                  background: 'white',
-                  marginBottom: '2mm',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #ccc', paddingBottom: '1.5mm', marginBottom: '2mm' }}>
-                  <span style={{ fontSize: '8pt', fontWeight: '900', background: '#000', color: '#fff', padding: '1px 5px', borderRadius: '3px', textTransform: 'uppercase' }}>
-                    Katalog {prod.catalog_name || '325 B'}
-                  </span>
-                  <span style={{ fontSize: '8.5pt', fontFamily: 'monospace', fontWeight: 'bold', color: '#666' }}>
-                    #{prod.nomor || idx + 1}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', gap: '3mm' }}>
-                  {prod.image_url ? (
-                    <img
-                      src={prod.image_url}
-                      alt={prod.deskripsi}
-                      style={{ width: '22mm', height: '28mm', objectFit: 'cover', borderRadius: '3px', border: '1px solid #ddd' }}
-                    />
-                  ) : (
-                    <div style={{ width: '22mm', height: '28mm', background: '#eee', borderRadius: '3px', border: '1px solid #ddd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7pt', color: '#888' }}>
-                      No Photo
-                    </div>
-                  )}
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '10.5pt', fontWeight: '900', color: '#000', lineHeight: 1.2 }}>
-                      {prod.deskripsi}
-                    </div>
-                    <div style={{ fontSize: '9.5pt', fontWeight: 'bold', color: '#047857', marginTop: '1mm' }}>
-                      Rp {prod.price || '-'}
-                    </div>
-                    <div style={{ fontSize: '8pt', color: '#555', marginTop: '0.5mm' }}>
-                      {prod.variants?.length || 0} Varian • Total {prod.variants?.reduce((s, v) => s + (v.qty || 0), 0) || 0} pcs
-                    </div>
-                  </div>
-                </div>
-
-                {showVariantsTable && prod.variants && prod.variants.length > 0 && (
-                  <div style={{ marginTop: '2.5mm', borderTop: '0.5px solid #ddd', paddingTop: '1.5mm' }}>
-                    <table style={{ width: '100%', fontSize: '7.5pt', borderCollapse: 'collapse', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #ccc', color: '#666' }}>
-                          <th style={{ padding: '1px 0' }}>Warna</th>
-                          <th style={{ padding: '1px 0' }}>Size</th>
-                          <th style={{ padding: '1px 0' }}>SKU</th>
-                          <th style={{ padding: '1px 0', textAlign: 'right' }}>Qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {prod.variants.map((v, vIdx) => (
-                          <tr key={vIdx} style={{ borderBottom: '0.5px solid #eee' }}>
-                            <td style={{ padding: '1px 0', fontWeight: '500' }}>{v.warna || '-'}</td>
-                            <td style={{ padding: '1px 0' }}>{v.size || 'Default'}</td>
-                            <td style={{ padding: '1px 0', fontFamily: 'monospace', fontWeight: 'bold' }}>{v.sku || '-'}</td>
-                            <td style={{ padding: '1px 0', textAlign: 'right', fontWeight: 'bold' }}>{v.qty}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>
