@@ -59,7 +59,6 @@ CREATE TRIGGER update_wms_katalog_timestamp
 -- SCRIPT MIGRASI (OPSIONAL - JALANKAN SEKALI JIKA INGIN MEMINDAHKAN DARI WMS_SETTINGS)
 -- Jika ingin otomatis memindahkan dari wms_settings ke wms_katalog, uncomment baris di bawah
 -- =====================================================================================
-/*
 DO $$
 DECLARE
     row_data jsonb;
@@ -92,4 +91,3 @@ BEGIN
         END LOOP;
     END IF;
 END $$;
-*/
