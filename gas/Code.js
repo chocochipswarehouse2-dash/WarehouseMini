@@ -6,8 +6,8 @@
  * - tabel 'stock_opname_queue'
  */
 
-var SUPABASE_URL = 'https://atdedxyiielpmzjlnriv.supabase.co';
-var SUPABASE_ANON_KEY = 'sb_publishable_ZoVorqMTbLr9Fj3jif5M3Q_lnuzi0bb';
+var SUPABASE_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
+var SUPABASE_ANON_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
 
 /**
  * Entry point doPost
