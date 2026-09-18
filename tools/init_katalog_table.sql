@@ -2,8 +2,10 @@
 -- MEMBUAT TABEL WMS_KATALOG
 -- =====================================================================================
 
+DROP TABLE IF EXISTS public.wms_katalog CASCADE;
+
 CREATE TABLE IF NOT EXISTS public.wms_katalog (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     catalog_id TEXT NOT NULL,
     catalog_name TEXT NOT NULL,
     nomor TEXT,
@@ -109,7 +111,7 @@ BEGIN
                 INSERT INTO public.wms_katalog(
                     id, catalog_id, catalog_name, nomor, deskripsi, price, variants, image_url, is_hidden, created_at
                 ) VALUES (
-                    COALESCE((item->>'id')::uuid, gen_random_uuid()),
+                    COALESCE(item->>'id', gen_random_uuid()::text),
                     COALESCE(item->>'catalog_id', batch->>'id', 'batch-325b'),
                     COALESCE(item->>'catalog_name', batch->>'name', '325 B'),
                     item->>'nomor',
