@@ -98,8 +98,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [searchQuery, setSearchQuery] = useState('');
   const [hideVariants, setHideVariants] = useState(false);
   const [groupByCatalog, setGroupByCatalog] = useState(true);
-  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
-  const [isCatalogDropdownOpen, setIsCatalogDropdownOpen] = useState(false);
+  const [cardTableVisible, setCardTableVisible] = useState<Record<string, boolean>>({});
 
   // Upload Excel Flow
   const [isParsingExcel, setIsParsingExcel] = useState(false);
@@ -123,9 +122,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   // Lightbox Fullscreen Foto
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxItem, setLightboxItem] = useState<KatalogItem | null>(null);
-
-  // Hide / Unhide State
-  const [showHiddenItems, setShowHiddenItems] = useState(false);
 
   // Admin Rename Modal
   const [renameModalOpen, setRenameModalOpen] = useState(false);
@@ -206,12 +202,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const filteredBatches = useMemo(() => {
     return batches
       .filter((b) => selectedCatalogIds.includes(b.id))
-      .filter((b) => showHiddenItems || !b.is_hidden)
       .map((b) => {
-        let items = b.items;
-        if (!showHiddenItems) {
-          items = items.filter((it) => !it.is_hidden);
-        }
+        const items = b.items;
         if (!searchQuery.trim()) return { ...b, items };
         const q = searchQuery.toLowerCase();
         const filteredItems = items.filter((it) => {
@@ -228,18 +220,11 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         return { ...b, items: filteredItems };
       })
       .filter((b) => b.items.length > 0 || !searchQuery.trim());
-  }, [batches, selectedCatalogIds, searchQuery, showHiddenItems]);
+  }, [batches, selectedCatalogIds, searchQuery]);
 
   const allFilteredItems = useMemo(() => {
     return filteredBatches.flatMap((b) => b.items);
   }, [filteredBatches]);
-
-  const totalHiddenItemsCount = useMemo(() => {
-    return batches.reduce((acc, b) => {
-      const hiddenInBatch = b.items.filter((it) => it.is_hidden).length;
-      return acc + (b.is_hidden ? b.items.length : hiddenInBatch);
-    }, 0);
-  }, [batches]);
 
   const totalFilteredVariants = useMemo(() => {
     return allFilteredItems.reduce((sum, it) => sum + (it.variants?.length || 0), 0);
@@ -759,41 +744,18 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
     }
   };
 
-  // Toggle Hide/Unhide Produk
-  const handleToggleHideProduct = async (batchId: string, productId: string) => {
-    let targetStatus = false;
-    const updated = batches.map((b) => {
-      if (b.id !== batchId) return b;
-      return {
-        ...b,
-        items: b.items.map((it) => {
-          if (it.id !== productId) return it;
-          targetStatus = !it.is_hidden;
-          return { ...it, is_hidden: !it.is_hidden };
-        }),
-      };
-    });
-    await saveBatches(
-      updated,
-      targetStatus ? 'Produk disembunyikan' : 'Produk ditampilkan kembali'
-    );
+  // Toggle Hide/Unhide Tabel Rincian Varian (Global & Per-Kartu)
+  const handleToggleGlobalHideVariants = () => {
+    const nextHide = !hideVariants;
+    setHideVariants(nextHide);
+    setCardTableVisible({});
   };
 
-  // Toggle Hide/Unhide Seluruh Katalog (Batch)
-  const handleToggleHideBatch = async (batchId: string) => {
-    const targetBatch = batches.find((b) => b.id === batchId);
-    if (!targetBatch) return;
-    const isNowHidden = !targetBatch.is_hidden;
-    const updated = batches.map((b) => {
-      if (b.id !== batchId) return b;
-      return { ...b, is_hidden: isNowHidden };
+  const handleToggleCardTable = (productId: string) => {
+    setCardTableVisible((prev) => {
+      const current = prev[productId] !== undefined ? prev[productId] : !hideVariants;
+      return { ...prev, [productId]: !current };
     });
-    await saveBatches(
-      updated,
-      isNowHidden
-        ? `Katalog "${targetBatch.name}" disembunyikan`
-        : `Katalog "${targetBatch.name}" ditampilkan kembali`
-    );
   };
 
   // Lightbox Handlers
@@ -879,31 +841,24 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       />
 
       {/* HEADER UTAMA & STATUS STORAGE */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-850 p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+            <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl shrink-0">
               <BookOpen className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2.5">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
                 <span>Katalog Produk WMS</span>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                  Multi-Katalog
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                  <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Foto Google Drive</span>
-                </span>
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Kelompokkan produk per nama katalog (misal: 325 B, 325 A, 326 B). Foto dikompres & disimpan di Google Drive, Supabase bersih dari base64.
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Katalog model pakaian & rincian varian multi-koleksi, cetak barcode thermal dan format A4.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Action Buttons Utama */}
+        {/* Action Buttons Toolbar Utama (Rapi, Sejajar, Tidak Berantakan) */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Tombol Migrasi Gambar Base64 ke GDrive (jika ada data base64 lama) */}
           {totalBase64Count > 0 && (
@@ -911,22 +866,34 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               type="button"
               onClick={handleMigrateAllImagesToGdrive}
               disabled={isMigratingToGdrive}
-              className="px-3.5 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/60 dark:hover:bg-amber-900/70 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-amber-300 dark:border-amber-700 animate-pulse"
-              title="Pindahkan foto produk format base64 lama ke Google Drive Cloud dan hapus dari Supabase"
+              className="px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/60 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-amber-300 dark:border-amber-700"
+              title="Pindahkan foto format base64 lama ke Google Drive Cloud"
             >
               {isMigratingToGdrive ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-700" />
-                  <span>Migrasi ke GDrive...</span>
-                </>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <>
-                  <Cloud className="w-4 h-4 text-amber-700 dark:text-amber-300" />
-                  <span>Migrasi {totalBase64Count} Foto ke GDrive</span>
-                </>
+                <Cloud className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
               )}
+              <span>Migrasi GDrive ({totalBase64Count})</span>
             </button>
           )}
+
+          {/* Tombol Cetak Barcode */}
+          <button
+            type="button"
+            onClick={() => {
+              setBarcodeTargetItem(null);
+              setBarcodeTargetItems(allFilteredItems);
+              setBarcodeModalOpen(true);
+            }}
+            disabled={allFilteredItems.length === 0}
+            className="px-3 py-2 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/40 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-violet-200 dark:border-violet-800 shadow-2xs disabled:opacity-50"
+            title="Cetak stiker barcode thermal 50x20mm"
+          >
+            <QrCode className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+            <span>Cetak Barcode ({allFilteredItems.length})</span>
+          </button>
+
           {/* Tombol Cetak A4 */}
           <button
             type="button"
@@ -936,27 +903,11 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               setA4ModalOpen(true);
             }}
             disabled={allFilteredItems.length === 0}
-            className="px-3.5 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs border border-blue-200 dark:border-blue-800 disabled:opacity-50"
-            title="Cetak katalog rapi dalam format A4"
+            className="px-3 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-blue-200 dark:border-blue-800 shadow-2xs disabled:opacity-50"
+            title="Cetak katalog rapi dalam format dokumen A4"
           >
             <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span>Cetak Format A4</span>
-          </button>
-
-          {/* Tombol Cetak Barcode Semua Terpilih */}
-          <button
-            type="button"
-            onClick={() => {
-              setBarcodeTargetItem(null);
-              setBarcodeTargetItems(allFilteredItems);
-              setBarcodeModalOpen(true);
-            }}
-            disabled={allFilteredItems.length === 0}
-            className="px-3.5 py-2 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/40 dark:hover:bg-violet-900/50 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs border border-violet-200 dark:border-violet-800 disabled:opacity-50"
-            title="Cetak thermal sticker barcode 50x20mm"
-          >
-            <QrCode className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-            <span>Cetak Barcode ({allFilteredItems.length})</span>
+            <span>Format A4</span>
           </button>
 
           {/* Tombol Upload Excel */}
@@ -967,38 +918,40 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               fileInputRef.current?.click();
             }}
             disabled={isParsingExcel}
-            className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm hover:shadow-md disabled:opacity-50"
+            className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs hover:shadow-md disabled:opacity-50"
           >
             {isParsingExcel ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Membaca Excel & Gambar...</span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Membaca Excel...</span>
               </>
             ) : (
               <>
                 <UploadCloud className="w-4 h-4" />
-                <span>Upload Excel Katalog</span>
+                <span>Upload Excel</span>
               </>
             )}
           </button>
 
-          {/* Template & Reset */}
-          <button
-            onClick={handleDownloadTemplate}
-            type="button"
-            className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
-            title="Unduh Template Excel Contoh"
-          >
-            <Download className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleResetTo325B}
-            type="button"
-            className="p-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 rounded-xl transition-all cursor-pointer border border-emerald-200 dark:border-emerald-800"
-            title="Reset / Muat Ulang Data 325 B Bawaan"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+          {/* Template & Reset Icons */}
+          <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-1.5 ml-0.5">
+            <button
+              onClick={handleDownloadTemplate}
+              type="button"
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+              title="Unduh Template Excel"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleResetTo325B}
+              type="button"
+              className="p-2 text-slate-500 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/40 rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+              title="Muat Ulang Data Bawaan 325 B"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1017,163 +970,53 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         </div>
       )}
 
-      {/* DROPLIST SUSUNAN KATALOG & MULTI-SELECT FILTER BAR */}
+      {/* FILTER & KONTROL TAMPILAN (RAPI, 2 BARIS TERATUR) */}
       <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        {/* Baris 1: Pencarian & Kontrol Tampilan Sejajar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Label dan Droplist Selector */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Layers className="w-4 h-4 text-indigo-500" />
-              Susunan Katalog:
-            </span>
-
-            {/* Droplist Button */}
-            <div className="relative inline-block text-left">
+          {/* Input Pencarian */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari nama produk, nomor katalog, warna, SKU..."
+              className="w-full pl-10 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all"
+            />
+            {searchQuery && (
               <button
-                type="button"
-                onClick={() => setIsCatalogDropdownOpen(!isCatalogDropdownOpen)}
-                className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center gap-2 cursor-pointer transition-colors"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
               >
-                <span>
-                  {selectedCatalogIds.length === batches.length
-                    ? `Semua Katalog (${batches.length})`
-                    : `${selectedCatalogIds.length} Katalog Terpilih`}
-                </span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                ✕
               </button>
-
-              {/* Dropdown Menu Multi-Select */}
-              {isCatalogDropdownOpen && (
-                <div className="absolute left-0 mt-2 w-64 bg-white dark:bg-slate-850 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-30 animate-in fade-in zoom-in-95 duration-100">
-                  <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-500 uppercase">Pilih Katalog</span>
-                    <button
-                      type="button"
-                      onClick={selectAllCatalogs}
-                      className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold hover:underline cursor-pointer"
-                    >
-                      Pilih Semua
-                    </button>
-                  </div>
-                  <div className="max-h-56 overflow-y-auto py-1">
-                    {batches.map((b) => {
-                      const isSelected = selectedCatalogIds.includes(b.id);
-                      const palette = getBatchPalette(b.name);
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => toggleSelectCatalog(b.id)}
-                          className="w-full px-3 py-2 text-left text-xs font-semibold flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            {isSelected ? (
-                              <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                            ) : (
-                              <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                            )}
-                            <span className="text-slate-800 dark:text-slate-200 font-bold">{b.name}</span>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${palette.bg} ${palette.text}`}>
-                            {b.items.length} Produk
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Pills untuk Semua / Per Katalog */}
-            <div className="flex flex-wrap items-center gap-1.5 ml-2">
-              <button
-                type="button"
-                onClick={selectAllCatalogs}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  selectedCatalogIds.length === batches.length
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                }`}
-              >
-                Semua ({batches.reduce((acc, b) => acc + b.items.length, 0)})
-              </button>
-
-              {batches.map((b) => {
-                const isSelected = selectedCatalogIds.includes(b.id);
-                const palette = getBatchPalette(b.name);
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => toggleSelectCatalog(b.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-                      isSelected
-                        ? `${palette.bg} ${palette.text} ${palette.border} ring-2 ring-indigo-500/20 shadow-xs`
-                        : 'bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-                    }`}
-                    title={`Klik untuk menampilkan / menyembunyikan katalog ${b.name}`}
-                  >
-                    <span>{b.name}</span>
-                    <span className="text-[10px] opacity-80">({b.items.length})</span>
-                  </button>
-                );
-              })}
-            </div>
+            )}
           </div>
 
-          {/* Mode Tampilan & Toggle Sembunyikan Varian */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Toggle Sembunyikan / Tampilkan Varian */}
+          {/* Tombol Kontrol: Hide/Unhide Tabel Varian & Grup per Katalog */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Toggle Sembunyikan / Tampilkan Tabel Varian */}
             <button
               type="button"
-              onClick={() => setHideVariants(!hideVariants)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              onClick={handleToggleGlobalHideVariants}
+              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
                 hideVariants
-                  ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                  ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-700 shadow-2xs'
                   : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
               }`}
-              title="Sembunyikan atau tampilkan tabel Warna, Size, SKU, dan QTY"
+              title="Sembunyikan atau tampilkan tabel rincian Warna, Size, SKU, dan Qty pada semua kartu"
             >
               {hideVariants ? (
                 <>
                   <EyeOff className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Varian Disembunyikan</span>
+                  <span>Tabel Varian: Ditutup</span>
                 </>
               ) : (
                 <>
                   <Eye className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
-                  <span>Tampilkan Varian</span>
+                  <span>Tabel Varian: Dibuka</span>
                 </>
-              )}
-            </button>
-
-            {/* Toggle Sembunyikan / Tampilkan Data Hide */}
-            <button
-              type="button"
-              onClick={() => setShowHiddenItems(!showHiddenItems)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
-                showHiddenItems
-                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border-amber-300 dark:border-amber-700 shadow-2xs'
-                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
-              }`}
-              title="Tampilkan produk atau katalog yang berstatus di-hide / tersembunyi"
-            >
-              {showHiddenItems ? (
-                <>
-                  <Eye className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                  <span>Data Hide Terbuka</span>
-                </>
-              ) : (
-                <>
-                  <EyeOff className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                  <span>Data Hide Tersembunyi</span>
-                </>
-              )}
-              {totalHiddenItemsCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">
-                  {totalHiddenItemsCount}
-                </span>
               )}
             </button>
 
@@ -1181,32 +1024,52 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             <button
               type="button"
               onClick={() => setGroupByCatalog(!groupByCatalog)}
-              className="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <Package className="w-3.5 h-3.5 text-indigo-500" />
-              <span>{groupByCatalog ? 'Grup per Katalog' : 'Tampilan Gabung'}</span>
+              <span>{groupByCatalog ? 'Per Katalog' : 'Semua Grid'}</span>
             </button>
           </div>
         </div>
 
-        {/* Input Pencarian Cepat */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari nama produk, nomor katalog, warna, SKU..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
-            >
-              ✕
-            </button>
-          )}
+        {/* Baris 2: Tabs Filter Katalog (Pills Rapi Tanpa Dropdown Berantakan) */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+            Katalog:
+          </span>
+
+          <button
+            type="button"
+            onClick={selectAllCatalogs}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              selectedCatalogIds.length === batches.length
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+            }`}
+          >
+            Semua ({batches.reduce((acc, b) => acc + b.items.length, 0)})
+          </button>
+
+          {batches.map((b) => {
+            const isSelected = selectedCatalogIds.includes(b.id);
+            const palette = getBatchPalette(b.name);
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => toggleSelectCatalog(b.id)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                  isSelected
+                    ? `${palette.bg} ${palette.text} ${palette.border} ring-2 ring-indigo-500/20 shadow-xs`
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
+                }`}
+                title={`Tampilkan / Sembunyikan katalog ${b.name}`}
+              >
+                <span>{b.name}</span>
+                <span className="text-[10px] opacity-80">({b.items.length})</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1284,23 +1147,13 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             return (
               <div key={batch.id} className="space-y-4">
                 {/* Header Tiap Katalog */}
-                <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border ${
-                  batch.is_hidden
-                    ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
-                    : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-800'
-                }`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border bg-slate-50 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-800">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <span
                       className={`px-3 py-1 rounded-xl text-xs font-black tracking-wider uppercase border shadow-xs ${palette.bg} ${palette.text} ${palette.border}`}
                     >
                       Katalog {batch.name}
                     </span>
-                    {batch.is_hidden && (
-                      <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                        <EyeOff className="w-3 h-3" />
-                        <span>Katalog Tersembunyi</span>
-                      </span>
-                    )}
                     <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                       <strong>{batch.items.length}</strong> Model Produk • <strong>{batchVariants}</strong> Varian • Total <strong>{batchQty}</strong> pcs
                     </div>
@@ -1308,28 +1161,11 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
                   {/* Aksi Per-Katalog */}
                   <div className="flex items-center gap-2">
-                    {/* Tombol Hide / Unhide Katalog */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleHideBatch(batch.id)}
-                      className={`p-1.5 rounded-xl border transition-all flex items-center gap-1 cursor-pointer ${
-                        batch.is_hidden
-                          ? 'text-amber-700 hover:text-amber-900 bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700'
-                          : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                      }`}
-                      title={batch.is_hidden ? 'Tampilkan seluruh katalog ini (Unhide)' : 'Sembunyikan seluruh katalog ini (Hide)'}
-                    >
-                      {batch.is_hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                      <span className="text-xs font-bold hidden md:inline">
-                        {batch.is_hidden ? 'Unhide' : 'Hide'}
-                      </span>
-                    </button>
-
                     <button
                       type="button"
                       onClick={() => {
                         setBarcodeTargetItem(null);
-                        setBarcodeTargetItems(batch.items.filter((it) => showHiddenItems || !it.is_hidden));
+                        setBarcodeTargetItems(batch.items);
                         setBarcodeModalOpen(true);
                       }}
                       className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
@@ -1342,7 +1178,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                     <button
                       type="button"
                       onClick={() => {
-                        setA4TargetItems(batch.items.filter((it) => showHiddenItems || !it.is_hidden));
+                        setA4TargetItems(batch.items);
                         setA4TargetCatalogNames([batch.name]);
                         setA4ModalOpen(true);
                       }}
@@ -1396,11 +1232,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                       key={prod.id}
                       item={prod}
                       batch={batch}
-                      hideVariants={hideVariants}
-                      isExpanded={Boolean(expandedCards[prod.id])}
-                      onToggleExpand={() =>
-                        setExpandedCards((prev) => ({ ...prev, [prod.id]: !prev[prod.id] }))
+                      isTableVisible={
+                        cardTableVisible[prod.id] !== undefined
+                          ? cardTableVisible[prod.id]
+                          : !hideVariants
                       }
+                      onToggleTable={() => handleToggleCardTable(prod.id)}
                       onPrintBarcode={() => {
                         setBarcodeTargetItem(prod);
                         setBarcodeTargetItems(null);
@@ -1411,7 +1248,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                         imageInputRef.current?.click();
                       }}
                       onDeleteProduct={() => handleDeleteProduct(batch.id, prod.id)}
-                      onToggleHideProduct={() => handleToggleHideProduct(batch.id, prod.id)}
                       onImageClick={() => handleOpenLightbox(prod)}
                       isUploadingPhoto={uploadingImageId === prod.id}
                       isAdmin={isAdmin}
@@ -1437,11 +1273,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                 key={prod.id}
                 item={prod}
                 batch={parentBatch}
-                hideVariants={hideVariants}
-                isExpanded={Boolean(expandedCards[prod.id])}
-                onToggleExpand={() =>
-                  setExpandedCards((prev) => ({ ...prev, [prod.id]: !prev[prod.id] }))
+                isTableVisible={
+                  cardTableVisible[prod.id] !== undefined
+                    ? cardTableVisible[prod.id]
+                    : !hideVariants
                 }
+                onToggleTable={() => handleToggleCardTable(prod.id)}
                 onPrintBarcode={() => {
                   setBarcodeTargetItem(prod);
                   setBarcodeTargetItems(null);
@@ -1452,7 +1289,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                   imageInputRef.current?.click();
                 }}
                 onDeleteProduct={() => handleDeleteProduct(parentBatch.id, prod.id)}
-                onToggleHideProduct={() => handleToggleHideProduct(parentBatch.id, prod.id)}
                 onImageClick={() => handleOpenLightbox(prod)}
                 isUploadingPhoto={uploadingImageId === prod.id}
                 isAdmin={isAdmin}
@@ -1548,13 +1384,11 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 interface ProductCardItemProps {
   item: KatalogItem;
   batch: KatalogBatch;
-  hideVariants: boolean;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
+  isTableVisible: boolean;
+  onToggleTable: () => void;
   onPrintBarcode: () => void;
   onUploadPhoto: () => void;
   onDeleteProduct: () => void;
-  onToggleHideProduct: () => void;
   onImageClick: () => void;
   isUploadingPhoto: boolean;
   isAdmin: boolean;
@@ -1563,13 +1397,11 @@ interface ProductCardItemProps {
 const ProductCardItem: React.FC<ProductCardItemProps> = ({
   item,
   batch,
-  hideVariants,
-  isExpanded,
-  onToggleExpand,
+  isTableVisible,
+  onToggleTable,
   onPrintBarcode,
   onUploadPhoto,
   onDeleteProduct,
-  onToggleHideProduct,
   onImageClick,
   isUploadingPhoto,
   isAdmin,
@@ -1577,19 +1409,11 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
   const totalQty = item.variants?.reduce((sum, v) => sum + (v.qty || 0), 0) || 0;
   const uniqueColors = Array.from(new Set(item.variants?.map((v) => v.warna).filter(Boolean)));
 
-  const showTable = !hideVariants || isExpanded;
-
   return (
-    <div
-      className={`bg-white dark:bg-slate-850 rounded-2xl border ${
-        item.is_hidden
-          ? 'border-amber-300 dark:border-amber-800 bg-amber-50/15 dark:bg-amber-950/10'
-          : 'border-slate-200/80 dark:border-slate-800'
-      } shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group`}
-    >
+    <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
       {/* Bagian Atas: Header Bar & Gambar Produk Utuh */}
       <div>
-        {/* BARIS HEADER KARTU (Supaya tidak menutupi gambar produk) */}
+        {/* BARIS HEADER KARTU (Rapi, Sejajar, Tidak Berantakan) */}
         <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="px-2 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shrink-0 shadow-2xs">
@@ -1600,17 +1424,11 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
                 #{item.nomor}
               </span>
             )}
-            {item.is_hidden && (
-              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 flex items-center gap-0.5 shrink-0 border border-amber-300 dark:border-amber-700">
-                <EyeOff className="w-3 h-3" />
-                <span>Tersembunyi</span>
-              </span>
-            )}
           </div>
 
-          {/* Tombol Aksi di Baris Atas: Upload Foto & Hide/Unhide */}
-          <div className="flex items-center gap-1 shrink-0">
-            {isAdmin && (
+          {/* Tombol Aksi di Baris Atas: Upload Foto */}
+          {isAdmin && (
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={(e) => {
@@ -1628,32 +1446,15 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
                 )}
                 <span className="hidden sm:inline">Foto</span>
               </button>
-            )}
-
-            {/* Tombol Hide / Unhide Produk */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleHideProduct();
-              }}
-              className={`p-1.5 text-xs rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                item.is_hidden
-                  ? 'text-amber-700 hover:text-amber-900 bg-amber-100 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700'
-                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title={item.is_hidden ? 'Tampilkan produk ini kembali (Unhide)' : 'Sembunyikan produk ini (Hide)'}
-            >
-              {item.is_hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* CONTAINER GAMBAR PRODUK (BERSIH DARI BADGE, BISA DI-KLIK FULLSCREEN) */}
+        {/* CONTAINER GAMBAR PRODUK */}
         <div
           onClick={onImageClick}
           className="relative aspect-4/3 w-full bg-slate-100 dark:bg-slate-800/60 overflow-hidden border-b border-slate-100 dark:border-slate-800 flex items-center justify-center cursor-zoom-in group/img"
-          title="Klik foto untuk melihat tampilan penuh (fullscreen popup tanpa terpotong)"
+          title="Klik foto untuk melihat tampilan penuh"
         >
           {item.image_url ? (
             <img
@@ -1679,11 +1480,11 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
           </div>
         </div>
 
-        {/* Info Nama Produk & Harga */}
-        <div className="p-4 space-y-2">
+        {/* Info Nama Produk, Harga, & Barcode */}
+        <div className="p-4 space-y-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 leading-snug">
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-2">
                 {item.deskripsi || 'Produk Tanpa Nama'}
               </h2>
               <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
@@ -1703,30 +1504,43 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
             </button>
           </div>
 
-          {/* Ringkasan Varian (Ketika Disembunyikan atau Ditampilkan) */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-1.5 font-medium">
+          {/* Baris Ringkasan Varian + Tombol Sembunyikan/Tampilkan Varian */}
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
               <span>{item.variants?.length || 0} Varian</span>
-              <span>•</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300">Total {totalQty} pcs</span>
+              <span className="mx-1">•</span>
+              <strong className="text-slate-700 dark:text-slate-300">Total {totalQty} pcs</strong>
             </div>
 
-            {hideVariants && (
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
-              >
-                <span>{isExpanded ? 'Tutup Detail' : 'Buka Detail'}</span>
-                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </button>
-            )}
+            {/* Tombol Hide / Unhide Rincian Varian */}
+            <button
+              type="button"
+              onClick={onToggleTable}
+              className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                isTableVisible
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                  : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
+              }`}
+              title={isTableVisible ? 'Sembunyikan tabel rincian varian' : 'Tampilkan tabel rincian varian'}
+            >
+              {isTableVisible ? (
+                <>
+                  <EyeOff className="w-3 h-3 text-slate-500" />
+                  <span>Sembunyikan Varian</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                  <span>Lihat Varian</span>
+                </>
+              )}
+            </button>
           </div>
 
-          {/* Tabel Detail Varian: Warna, Size, SKU, Qty (Dapat dihide/unhide) */}
-          {showTable && item.variants && item.variants.length > 0 && (
-            <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40">
+          {/* Tabel Detail Varian: Warna, Size, SKU, Qty */}
+          {isTableVisible && item.variants && item.variants.length > 0 && (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 overflow-hidden">
+              <div className="max-h-48 overflow-y-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-100/80 dark:bg-slate-800/80 sticky top-0 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     <tr>
@@ -1757,20 +1571,17 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
             </div>
           )}
 
-          {/* Ringkasan Warna jika Varian Disembunyikan dan Belum Di-expand */}
-          {!showTable && uniqueColors.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 pt-1">
-              {uniqueColors.slice(0, 5).map((col, cIdx) => (
+          {/* Ringkasan Warna Saat Varian Disembunyikan (Rapi & Kompak) */}
+          {!isTableVisible && uniqueColors.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {uniqueColors.map((col, cIdx) => (
                 <span
                   key={cIdx}
-                  className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                  className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700"
                 >
                   {col}
                 </span>
               ))}
-              {uniqueColors.length > 5 && (
-                <span className="text-[10px] text-slate-400">+{uniqueColors.length - 5} lainnya</span>
-              )}
             </div>
           )}
         </div>
