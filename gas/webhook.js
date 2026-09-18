@@ -37,32 +37,23 @@ function doPost(e) {
       }
     }
 
-    // 1. Parse payload (Bisa URL Encoded dari Fonnte atau JSON)
-    var payload = {};
-    var isFonnteForm = (e && e.parameter && (e.parameter.sender || e.parameter.pengirim || e.parameter.from) && (e.parameter.message || e.parameter.text || e.parameter.pesan));
-    
-    if (isFonnteForm) {
-      payload = e.parameter;
-    } else if (e && e.postData && e.postData.contents) {
-      try {
-        payload = JSON.parse(e.postData.contents);
-      } catch (parseErr) {
-        return jsonResponse({ success: false, error: 'Invalid JSON: ' + parseErr.toString() });
-      }
-    } else {
-      return jsonResponse({ success: false, error: 'No payload received' });
-    }
-
-    // Intercept WhatsApp / Fonnte payload (Bebas dari WEBHOOK_SECRET)
-    if ((payload.message || payload.text || payload.pesan) && (payload.sender || payload.pengirim || payload.from || payload.phone)) {
-      return handleWhatsAppScan(payload);
-    }
-
-    // 2. Verifikasi secret token untuk request selain Fonnte
+    // 1. Verifikasi secret token
     var secret = (e && e.parameter && e.parameter.secret) ? e.parameter.secret : '';
     if (secret !== WEBHOOK_SECRET) {
       Logger.log('Unauthorized webhook attempt. Secret mismatch.');
       return jsonResponse({ success: false, error: 'Unauthorized' });
+    }
+
+    // 2. Parse payload
+    if (!e || !e.postData || !e.postData.contents) {
+      return jsonResponse({ success: false, error: 'No payload received' });
+    }
+
+    var payload;
+    try {
+      payload = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return jsonResponse({ success: false, error: 'Invalid JSON: ' + parseErr.toString() });
     }
 
     var type       = String(payload.type || '').toUpperCase();      // INSERT | UPDATE | DELETE
@@ -73,6 +64,11 @@ function doPost(e) {
     // Intercept GDrive Image Upload
     if (payload.base64File && payload.fileName) {
       return handleGDriveUpload(payload);
+    }
+
+    // Intercept WhatsApp / Fonnte payload
+    if (payload.message && payload.sender) {
+      return handleWhatsAppScan(payload);
     }
 
     Logger.log('Webhook: type=' + type + ' table=' + table);
