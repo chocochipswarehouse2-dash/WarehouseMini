@@ -72,7 +72,8 @@ function generateInvoice() {
 function handleWhatsAppScan(payload) {
   try {
     var sender = payload.sender || payload.pengirim || payload.from || payload.phone || '';
-    var name = payload.pushname || payload.name || sender;
+    var actualSender = payload.participant || sender; // Participant is the person in a group
+    var name = payload.pushname || payload.name || actualSender;
     var message = (payload.message || payload.pesan || payload.text || '').trim();
     
     if (!message) {
@@ -84,7 +85,7 @@ function handleWhatsAppScan(payload) {
     var currentDeskripsi = '';
     var currentLokasi = '';
     var rows = [];
-    var operator = name + ' | ' + sender;
+    var operator = name + ' | ' + actualSender;
     
     var TYPE_IN = 'IN';
     var TYPE_OUT = 'OUT';

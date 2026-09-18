@@ -67,7 +67,7 @@ function doPost(e) {
     }
 
     // Intercept WhatsApp / Fonnte payload
-    if (payload.message && payload.sender) {
+    if ((payload.message || payload.text || payload.pesan) && (payload.sender || payload.from || payload.phone)) {
       return handleWhatsAppScan(payload);
     }
 
