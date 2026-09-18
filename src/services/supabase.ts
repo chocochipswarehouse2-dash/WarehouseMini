@@ -3583,7 +3583,7 @@ export async function savePickingItemToSupabase(item: PickingListItem): Promise<
 
   // 2. Sync to Supabase
   try {
-    const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
+    const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(item.id));
     if (isUuid) {
       await supabaseFetch('picking_list', 'PATCH', item, `id=eq.${item.id}`);
     } else {
@@ -3615,7 +3615,7 @@ export async function savePickingBatchToSupabase(items: PickingListItem[]): Prom
   // 2. Sync to Supabase
   try {
     for (const it of items) {
-      const isUuid = it.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(it.id);
+      const isUuid = it.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(it.id));
       if (isUuid) {
         await supabaseFetch('picking_list', 'PATCH', it, `id=eq.${it.id}`);
       } else {
@@ -3721,7 +3721,7 @@ export async function completePickingSuratJalanSupabase(
   // 3. Update Supabase picking_list table
   try {
     for (const item of items) {
-      const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id);
+      const isUuid = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(item.id));
       const condition = item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
         ? `id=eq.${item.id}`
         : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;

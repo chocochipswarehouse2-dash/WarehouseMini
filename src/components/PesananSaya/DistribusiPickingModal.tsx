@@ -8,7 +8,7 @@ import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, Stock
 import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
-import { extractSizeFromSku } from '../../utils/sortUtils';
+import { extractSizeFromSku, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
 
 interface DistribusiPickingModalProps {
   isOpen: boolean;
@@ -222,9 +222,13 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         || productCatalog.find(p => (p.k && p.k.toUpperCase().trim() === cleanSku) || ((p as any).sku && String((p as any).sku).toUpperCase().trim() === cleanSku))
         || productCatalog.find(p => p.k && p.k.replace(/\s+/g, '').toUpperCase() === cleanSku.replace(/\s+/g, ''));
 
-      let size = prod?.s;
+      let size = extractCleanSizeToken(prod?.s) || extractCleanSizeToken((it as any).size);
+      const skuSize = extractSizeFromSku(cleanSku);
+      if (skuSize && skuSize !== '-' && skuSize !== 'DEFAULT') {
+        size = skuSize;
+      }
       if (!size || size === '-') {
-        size = extractSizeFromSku(cleanSku);
+        size = '-';
       }
 
       const locs = getProductLocations(cleanSku, (it as any).lokasi);
@@ -234,19 +238,6 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       let lokasiDisplay = '-';
       let isKosong = false;
 
-      if (locs.length > 0) {
-        lokasiDisplay = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
-      } else if (isRealtimeLoaded) {
-        lokasiDisplay = emptyRacks.length > 0 ? `KOSONG (Rak: ${emptyRacks.join(', ')})` : 'KOSONG (0 pcs)';
-        isKosong = true;
-      } else if ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'Warehouse') {
-        lokasiDisplay = (it as any).lokasi;
-      } else if (prod?.lokasi && isWarehouseLocation(prod.lokasi)) {
-        lokasiDisplay = prod.lokasi;
-      } else {
-        lokasiDisplay = loadingStock ? 'Memeriksa Rak...' : 'Belum Ada Rak';
-      }
-
       const primaryLokasi = locs.length > 0
         ? locs[0].lokasi
         : (emptyRacks.length > 0
@@ -255,11 +246,32 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                 ? (it as any).lokasi
                 : (prod?.lokasi && isWarehouseLocation(prod.lokasi) ? prod.lokasi : 'Warehouse')));
 
+      if (locs.length > 0) {
+        lokasiDisplay = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+      } else if (isRealtimeLoaded) {
+        isKosong = true;
+        if (emptyRacks.length > 0) {
+          lokasiDisplay = emptyRacks.join(', ');
+        } else if (primaryLokasi && primaryLokasi !== '-' && primaryLokasi !== 'Warehouse') {
+          lokasiDisplay = primaryLokasi;
+        } else {
+          lokasiDisplay = 'Belum Ada Rak';
+        }
+      } else if ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'Warehouse') {
+        lokasiDisplay = (it as any).lokasi;
+      } else if (prod?.lokasi && isWarehouseLocation(prod.lokasi)) {
+        lokasiDisplay = prod.lokasi;
+      } else {
+        lokasiDisplay = loadingStock ? 'Memeriksa Rak...' : 'Belum Ada Rak';
+      }
+
       // Pastikan nama_produk mengambil nama asli dari katalog jika di draft isinya hanya SKU
       const catalogProdName = (prod?.p || prod?.nama_produk || prod?.n || (prod as any)?.name || (prod as any)?.nama || '').trim();
       const rawDraftName = (it.nama_produk || '').trim();
       const isDraftNameSku = !rawDraftName || rawDraftName.toUpperCase() === cleanSku || rawDraftName.toUpperCase().replace(/\s+/g, '') === cleanSku.replace(/\s+/g, '');
-      const nama = (!isDraftNameSku && rawDraftName) ? rawDraftName : (catalogProdName || rawDraftName || cleanSku);
+      const rawChosenName = (!isDraftNameSku && rawDraftName) ? rawDraftName : (catalogProdName || rawDraftName || cleanSku);
+      // Clean product name so it never contains baked/nested "(Size: ...)"
+      const nama = cleanProductName(rawChosenName);
 
       return {
         no: idx + 1,
@@ -308,9 +320,23 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
 
     // Grouping per lokasi jika memungkinkan
     enrichedItems.forEach((it, idx) => {
-      text += `${idx + 1}. 📍 *[${it.lokasi}]*\n`;
+      let locTag = '';
+      if (it.locList && it.locList.length > 0) {
+        locTag = `Rak ${it.locList.map(l => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ')}`;
+      } else if (it.primaryLokasi && it.primaryLokasi !== '-' && it.primaryLokasi !== 'Warehouse') {
+        locTag = `Rak ${it.primaryLokasi}`;
+      } else if (it.lokasi && it.lokasi !== '-' && it.lokasi !== 'Belum Ada Rak') {
+        locTag = `Rak ${it.lokasi}`;
+      } else {
+        locTag = 'Belum Ada Rak';
+      }
+
+      const stockNote = it.isKosong ? ' ⚠️ _(Stok sistem: 0 pcs - cek fisik)_' : '';
+      const sizeTag = it.size && it.size !== '-' ? ` (Size: ${it.size})` : '';
+
+      text += `${idx + 1}. 📍 *[${locTag}]*${stockNote}\n`;
       text += `   • SKU: \`${it.sku}\`\n`;
-      text += `   • Produk: ${it.nama_produk} (Size: ${it.size})\n`;
+      text += `   • Produk: ${it.nama_produk}${sizeTag}\n`;
       text += `   • Qty Ambil: *${it.qty} pcs* [ ]\n\n`;
     });
 
@@ -342,14 +368,14 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         (it, idx) => `
         <tr>
           <td style="text-align:center; font-weight:bold;">${idx + 1}</td>
-          <td style="font-weight:800; color:${it.isKosong ? '#e11d48' : '#0f172a'}; font-family:monospace; background:${it.isKosong ? '#fff1f2' : '#f8fafc'}; text-align:center;">${it.lokasi}</td>
+          <td style="font-weight:800; color:${it.isKosong ? '#e11d48' : '#0f172a'}; font-family:monospace; background:${it.isKosong ? '#fff1f2' : '#f8fafc'}; text-align:center;">${it.primaryLokasi || it.lokasi}</td>
           <td style="font-family:monospace; font-weight:700;">${it.sku}</td>
           <td>${it.nama_produk}</td>
           <td style="text-align:center; font-weight:bold;">${it.size}</td>
           <td style="text-align:center; font-weight:900; font-size:13px; color:#0f172a;">${it.qty}</td>
           <td style="text-align:center;"><div class="check-box"></div></td>
           <td style="text-align:center;"><div class="blank-line"></div></td>
-          <td style="font-size:10px; color:#64748b;">${it.isKosong ? 'Stok 0' : '-'}</td>
+          <td style="font-size:10px; color:${it.isKosong ? '#e11d48' : '#64748b'}; font-weight:${it.isKosong ? '700' : '400'};">${it.isKosong ? 'Stok 0 (Cek Fisik)' : '-'}</td>
         </tr>
       `
       )
@@ -788,9 +814,9 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                         <div className="flex items-center flex-wrap gap-1.5">
                           <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{it.sku}</span>
                           {it.isKosong ? (
-                            <span className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 rounded text-[10px] font-extrabold flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                              {it.lokasi}
+                            <span className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60 rounded text-[10px] font-extrabold flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                              Rak: {it.primaryLokasi || it.lokasi} (Stok 0)
                             </span>
                           ) : (
                             <span className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60 rounded text-[10px] font-extrabold flex items-center gap-1">
@@ -799,7 +825,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate mt-0.5">{it.nama_produk} (Size: {it.size})</div>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">{it.nama_produk}{it.size && it.size !== '-' ? ` (Size: ${it.size})` : ''}</div>
                       </div>
                       <div className="font-extrabold text-slate-900 dark:text-white shrink-0">
                         {it.qty} pcs
@@ -969,9 +995,9 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                             <div className="flex items-center flex-wrap gap-1.5">
                               <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{it.sku}</span>
                               {it.isKosong ? (
-                                <span className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 rounded text-[10px] font-extrabold flex items-center gap-1">
-                                  <AlertTriangle className="w-3 h-3 shrink-0" />
-                                  {it.lokasi}
+                                <span className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60 rounded text-[10px] font-extrabold flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                  Rak: {it.primaryLokasi || it.lokasi} (Stok 0)
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/60 rounded text-[10px] font-extrabold flex items-center gap-1">
@@ -980,7 +1006,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-500 truncate mt-0.5">{it.nama_produk} (Size: {it.size})</div>
+                            <div className="text-[11px] text-slate-500 truncate mt-0.5">{it.nama_produk}{it.size && it.size !== '-' ? ` (Size: ${it.size})` : ''}</div>
                           </div>
                           <div className="font-extrabold text-slate-900 dark:text-white shrink-0">
                             {it.qty} pcs

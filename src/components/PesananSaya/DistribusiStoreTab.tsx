@@ -35,7 +35,7 @@ import {
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
-import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize } from '../../utils/sortUtils';
+import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 
 interface TarikanMDViewProps {
@@ -163,19 +163,15 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
       }
     }
     if (!nama) nama = sku;
+    nama = cleanProductName(nama);
 
     // Detect size from variant column, catalog item, or SKU pattern
     const detectedSize = resolveProductDisplaySize(
       cleanSku,
       rawVar,
       catProd?.s ? String(catProd.s) : ((catProd as any)?.size ? String((catProd as any).size) : undefined)
-    ) || (rawVar ? rawVar.trim() : extractSizeFromSku(cleanSku));
+    ) || (rawVar ? extractCleanSizeToken(rawVar) : extractSizeFromSku(cleanSku));
     const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
-
-    // Pastikan nama produk selalu memuat Size jika ada
-    if (effectiveSize && !nama.toUpperCase().includes(effectiveSize.toUpperCase())) {
-      nama = `${nama} (Size: ${effectiveSize})`;
-    }
 
     const category = get(col.category);
 
@@ -402,15 +398,12 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       const effectiveSize = (resolvedSize && resolvedSize !== '-') ? resolvedSize : (item.size || '');
 
       const baseName = resolveProductName(cleanSku, item.nama_produk, prod);
-      const displayName = (effectiveSize && !baseName.toUpperCase().includes(effectiveSize.toUpperCase()))
-        ? `${baseName} (Size: ${effectiveSize})`
-        : formatProductNameWithSize(baseName, effectiveSize || undefined);
 
       const qty_scan = activeDraft.scanQty[item.sku] ?? 0;
       const selisih = qty_scan - item.qty_sj;
       return {
         ...item,
-        nama_produk: displayName,
+        nama_produk: baseName,
         size: effectiveSize || undefined,
         qty_scan,
         selisih,

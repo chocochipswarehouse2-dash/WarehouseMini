@@ -151,18 +151,67 @@ export function formatProductNameWithSize(name: string, size?: string): string {
 /**
  * Cleans up duplicated product names often found in bad legacy data 
  * e.g., "Narcissa Top Brown (S) - NARCISSA TOP BROWN (S) - NARCISSA..."
+ * or nested repetitive size patterns like "Nami Shorts Black (Size: Nami Shorts Black (XXL))".
  */
 export function cleanProductName(name: string): string {
   if (!name) return '';
-  const parts = name.split(' - ');
+  let cleaned = name.trim();
+
+  // Strip (Size: ... anything ...) until balanced
+  while (cleaned.includes('(Size:')) {
+    const idx = cleaned.indexOf('(Size:');
+    let depth = 0;
+    let end = -1;
+    for (let i = idx; i < cleaned.length; i++) {
+      if (cleaned[i] === '(') depth++;
+      else if (cleaned[i] === ')') {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end !== -1) {
+      cleaned = cleaned.slice(0, idx) + cleaned.slice(end + 1);
+    } else {
+      cleaned = cleaned.slice(0, idx);
+    }
+    cleaned = cleaned.trim();
+  }
+
+  const parts = cleaned.split(' - ');
   if (parts.length > 1) {
     const first = parts[0].trim().toLowerCase();
     const second = parts[1].trim().toLowerCase();
     if (first === second || second.startsWith(first) || first.startsWith(second)) {
-      return parts[0].trim();
+      cleaned = parts[0].trim();
     }
   }
-  return name.trim();
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Extracts a clean single size token (e.g. 'XXL', 'S', 'L', 'All Size')
+ * even if the input string contains full product titles or variation strings.
+ */
+export function extractCleanSizeToken(str?: string): string {
+  if (!str) return '';
+  const trimmed = str.trim();
+  if (/^(ALL SIZE|DEFAULT|ALL|ONESIZE|ONE SIZE|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|\d{2})$/i.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+  // Find standard size inside parentheses e.g. (XXL) or (Size: XXL) or (L)
+  const sizeInParen = trimmed.match(/\((?:Size:\s*)?(XXXL|XXL|XL|XS|S|M|L|2XL|3XL|\d{2}|ALL\s*SIZE)\)/i);
+  if (sizeInParen && sizeInParen[1]) {
+    return sizeInParen[1].toUpperCase();
+  }
+  // Match standard size at the end of string
+  const endSize = trimmed.match(/\b(XXXL|XXL|XL|XS|S|M|L|2XL|3XL|\d{2})\b$/i);
+  if (endSize && endSize[1]) {
+    return endSize[1].toUpperCase();
+  }
+  return trimmed;
 }
 
 /**
@@ -222,9 +271,9 @@ export function resolveProductName(
 
 /**
  * Resolves the display size for an item:
- * 1. Explicit size from record (if not '-' or 'Default')
- * 2. Size from catalog
- * 3. Extracted size from SKU
+ * 1. SKU suffix (authoritative in WMS)
+ * 2. Explicit size from record (if not '-' or 'Default')
+ * 3. Size from catalog
  * 4. 'All Size' if explicitly marked as 'Default' or no size variant
  */
 export function resolveProductDisplaySize(
@@ -232,23 +281,23 @@ export function resolveProductDisplaySize(
   recordSize?: string,
   catalogSize?: string
 ): string | null {
-  const rawSize = (recordSize || '').trim();
+  const cleanSku = (sku || '').trim().toUpperCase();
+  const fromSku = extractSizeFromSku(cleanSku);
+  if (fromSku && fromSku !== '-' && fromSku !== 'DEFAULT') {
+    return fromSku;
+  }
+
+  const rawSize = extractCleanSizeToken(recordSize || '');
   if (rawSize && rawSize !== '-' && rawSize.toUpperCase() !== 'DEFAULT') {
     return rawSize;
   }
 
-  const cleanCatSize = (catalogSize || '').trim();
+  const cleanCatSize = extractCleanSizeToken(catalogSize || '');
   if (cleanCatSize && cleanCatSize !== '-' && cleanCatSize.toUpperCase() !== 'DEFAULT') {
     return cleanCatSize;
   }
 
-  const cleanSku = (sku || '').trim().toUpperCase();
-  const fromSku = extractSizeFromSku(cleanSku);
-  if (fromSku && fromSku !== '-') {
-    return fromSku;
-  }
-
-  if (rawSize.toUpperCase() === 'DEFAULT') {
+  if (recordSize && recordSize.toUpperCase() === 'DEFAULT') {
     return 'All Size';
   }
 
