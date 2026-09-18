@@ -37,6 +37,7 @@ import {
 import * as xlsx from 'xlsx';
 import JSZip from 'jszip';
 import { KatalogBatch, KatalogItem, KatalogVariant, UserSession } from '../types';
+import { isSuperadmin, hasPermission } from '../services/permissions';
 import { uploadImageToGdrive } from '../services/gdriveUpload';
 import {
   uploadKatalogImageToGdrive,
@@ -134,12 +135,13 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [targetImageUploadItemId, setTargetImageUploadItemId] = useState<string | null>(null);
   const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
 
-  // Hak Akses Admin
+  // Hak Akses Admin / Kelola Katalog
   const isAdmin =
     !session ||
-    session.role === 'Superadmin' ||
+    isSuperadmin(session) ||
     session.role === 'HR & Admin' ||
-    Boolean(session.permissions?.action_edit_master);
+    hasPermission(session, 'action_upload_katalog') ||
+    hasPermission(session, 'action_edit_master');
 
   // Pemuatan Awal
   useEffect(() => {

@@ -96,6 +96,16 @@ export const PERMISSION_GROUPS = [
     ]
   },
   {
+    id: 'g_ops_katalog',
+    title: 'Katalog Produk',
+    badge: '📖',
+    description: 'Katalog visual produk, foto model & cetak',
+    permissions: [
+      { key: 'menu_ops_katalog_produk', label: 'Menu Katalog Produk', description: 'Akses halaman katalog produk', isSuperadminOnly: false },
+      { key: 'action_upload_katalog', label: 'Upload & Kelola Foto/Excel', description: 'Upload file excel katalog, ganti batch & upload foto', isSuperadminOnly: false },
+    ]
+  },
+  {
     id: 'g_ops_lainnya',
     title: 'Operasional Lainnya',
     badge: '📦',

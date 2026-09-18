@@ -121,6 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_qc_permak') ||
     hasPermission(session, 'tab_ops_qc_defect');
   const canInventory = userIsAdmin || hasPermission(session, 'menu_ops_inventory');
+  const canKatalogProduk = userIsAdmin || hasPermission(session, 'menu_ops_katalog_produk');
   const canPicking = userIsAdmin || hasPermission(session, 'menu_ops_picking');
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
@@ -188,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Katalog',
       icon: BookOpen,
       description: 'Katalog Produk Manual',
-      access: true, // Everyone can see it or limit to certain roles? Let's say true
+      access: canKatalogProduk,
     },
     {
       id: 'perbaikan' as ActivePage,

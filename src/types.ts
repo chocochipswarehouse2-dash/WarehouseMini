@@ -110,6 +110,7 @@ export type UserPermissionKey =
   | 'tab_ops_qc_permak'
   | 'tab_ops_qc_defect'
   | 'menu_ops_inventory'
+  | 'menu_ops_katalog_produk'
   | 'menu_ops_picking'
   | 'menu_ops_peminjaman'
   | 'menu_ops_roadmap'
@@ -125,6 +126,7 @@ export type UserPermissionKey =
   | 'action_cetak_barcode'
   | 'action_export_data'
   | 'action_import_data'
+  | 'action_upload_katalog'
   | 'action_sync_dealpos'
   | 'action_edit_master'
   | 'action_delete_master';

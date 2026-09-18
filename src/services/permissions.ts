@@ -111,6 +111,16 @@ export const PERMISSION_GROUPS = [
     ]
   },
   {
+    id: 'g_ops_katalog',
+    title: 'Katalog Produk',
+    badge: '📖',
+    description: 'Katalog visual produk, foto model & cetak',
+    permissions: [
+      { key: 'menu_ops_katalog_produk', label: 'Menu Katalog Produk', description: 'Akses halaman katalog produk', isSuperadminOnly: false },
+      { key: 'action_upload_katalog', label: 'Upload & Kelola Foto/Excel', description: 'Upload file excel katalog, ganti batch & upload foto', isSuperadminOnly: false },
+    ]
+  },
+  {
     id: 'g_ops_lainnya',
     title: 'Operasional Lainnya',
     badge: '📦',
@@ -260,7 +270,8 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'cetak_barcode': return hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || hasPermission(session, 'action_cetak_label') || hasPermission(session, 'menu_ops_inventory');
     case 'pesanan_saya': return hasPermission(session, 'menu_ops_pesanan_saya') || hasPermission(session, 'tab_ops_pesanan_dashboard') || hasPermission(session, 'tab_ops_pesanan_manual_shipment') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'tab_ops_pesanan_shopee') || hasPermission(session, 'tab_ops_pesanan_tiktok') || hasPermission(session, 'tab_ops_pesanan_website') || hasPermission(session, 'tab_ops_pesanan_woocommerce') || hasPermission(session, 'tab_ops_pesanan_lazada');
     case 'manual_shipment': return hasPermission(session, 'tab_ops_pesanan_manual_shipment');
-        case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
+    case 'katalog_produk': return hasPermission(session, 'menu_ops_katalog_produk');
+    case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
     case 'pusat_resolusi': return hasPermission(session, 'menu_ops_resolusi') || hasPermission(session, 'tab_ops_resolusi_retur') || hasPermission(session, 'tab_ops_resolusi_refund') || hasPermission(session, 'tab_ops_resolusi_gagal') || hasPermission(session, 'tab_ops_resolusi_komplain') || hasPermission(session, 'tab_ops_resolusi_rating');
     case 'supabase_migration': return false;
     default:
@@ -290,6 +301,7 @@ export const getDefaultPageForSession = (session: UserSession | null): ActivePag
   
   if (hasPermission(session, 'menu_ops_qc') || hasPermission(session, 'tab_ops_qc_reject') || hasPermission(session, 'tab_ops_qc_cuci') || hasPermission(session, 'tab_ops_qc_permak') || hasPermission(session, 'tab_ops_qc_defect')) return 'perbaikan';
   
+  if (hasPermission(session, 'menu_ops_katalog_produk')) return 'katalog_produk';
   if (hasPermission(session, 'menu_ops_inventory')) return 'inventory';
   if (hasPermission(session, 'menu_hr_presensi')) return 'presensi';
   if (hasPermission(session, 'menu_hr_approval')) return 'hr_approval';
@@ -314,6 +326,10 @@ export const canViewDashboard = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_dashboard') || isSuperadmin(session);
 export const canPeminjaman = (session: UserSession | null) =>
   hasPermission(session, 'menu_ops_peminjaman') || isSuperadmin(session);
+export const canKatalogProduk = (session: UserSession | null) =>
+  hasPermission(session, 'menu_ops_katalog_produk') || isSuperadmin(session);
+export const canManageKatalogProduk = (session: UserSession | null) =>
+  hasPermission(session, 'action_upload_katalog') || hasPermission(session, 'action_edit_master') || isSuperadmin(session);
 
 export const TOTAL_PERMISSIONS_COUNT = PERMISSION_GROUPS.reduce(
   (acc, g) => acc + g.permissions.length,
