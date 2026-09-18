@@ -3,8 +3,8 @@
  * Menghubungkan Google Apps Script dengan Supabase PostgreSQL
  ************************************************/
 
-const SUPABASE_URL = "https://atdedxyiielpmzjlnriv.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_ZoVorqMTbLr9Fj3jif5M3Q_lnuzi0bb";
+const SUPABASE_URL = "https://ilhqerecxbywqrhfpbbc.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn";
 const SUPABASE_SERVICE_KEY = (typeof PropertiesService !== 'undefined' && PropertiesService.getScriptProperties) 
   ? (PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY') || "") 
   : "";

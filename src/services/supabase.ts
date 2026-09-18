@@ -39,8 +39,8 @@ import { registerUserNames, getUserPersonName } from '../utils/userResolver';
 import { ALL_PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, isSuperadmin } from './permissions';
 
 
-export const DEFAULT_SUPABASE_URL = 'https://atdedxyiielpmzjlnriv.supabase.co';
-export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_ZoVorqMTbLr9Fj3jif5M3Q_lnuzi0bb';
+export const DEFAULT_SUPABASE_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
 
 // Empty baseline seed - no dummy items
 export const DEFAULT_SEED_PRODUCTS: ProductItem[] = [];
@@ -120,9 +120,9 @@ export function getStoredSupabaseConfig() {
     const customUrl = localStorage.getItem('wms_supabase_url');
     const customKey = localStorage.getItem('wms_supabase_key');
     // If custom URL is valid AND not pointing to dead legacy projects
-    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho') && !customUrl.includes('vxongwtxmhjixhzeoidp')) {
-      // If custom points to the main project atdedxyiielpmzjlnriv, ensure it uses the working publishable key
-      if (customUrl.includes('atdedxyiielpmzjlnriv')) {
+    if (customUrl && customKey && customUrl.startsWith('http') && !customUrl.includes('filgijcfhgqlirzhvwho') && !customUrl.includes('vxongwtxmhjixhzeoidp') && !customUrl.includes('atdedxyiielpmzjlnriv')) {
+      // If custom points to the main project ilhqerecxbywqrhfpbbc, ensure it uses the working publishable key
+      if (customUrl.includes('ilhqerecxbywqrhfpbbc')) {
         return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_ANON_KEY };
       }
       try {
@@ -152,8 +152,8 @@ export function getStoredSupabaseConfig() {
   }
   let key = (isBrowser ? localStorage.getItem('wms_supabase_key') : null) || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
-  // Auto-migrate legacy project ref (filgijcfhgqlirzhvwho or vxongwtxmhjixhzeoidp) to the new default atdedxyiielpmzjlnriv
-  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp')) {
+  // Auto-migrate legacy project ref (filgijcfhgqlirzhvwho, vxongwtxmhjixhzeoidp, or atdedxyiielpmzjlnriv) to the new default ilhqerecxbywqrhfpbbc
+  if (!url || !url.startsWith('http') || url.includes('filgijcfhgqlirzhvwho') || url.includes('vxongwtxmhjixhzeoidp') || url.includes('atdedxyiielpmzjlnriv')) {
     url = DEFAULT_SUPABASE_URL;
     key = DEFAULT_SUPABASE_ANON_KEY;
     if (isBrowser) {
