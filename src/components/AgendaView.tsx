@@ -9,7 +9,8 @@ import {
 import { compressImage } from '../utils/imageCompressor';
 import { 
   getAgendaEvents, saveAgendaEvent, deleteAgendaEvent, 
-  getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote } from '../services/supabase';
+  getProjects, saveProject, deleteProject, getNotes, saveNote, deleteNote,
+  getSupabaseClient } from '../services/supabase';
 import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
 import { AgendaCategoryModal } from './AgendaCategoryModal';
 import { 
@@ -211,7 +212,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   useEffect(() => {
     loadData();
 
-    // Listen to real-time events
+    // Listen to local window events
     const handleAgendaUpdate = () => loadData();
     const handleProjectUpdate = () => loadData();
     const handleNoteUpdate = () => loadData();
@@ -220,10 +221,36 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
     window.addEventListener('wms_projects_updated', handleProjectUpdate);
     window.addEventListener('wms_notes_updated', handleNoteUpdate);
 
+    // Supabase Realtime multi-user subscription
+    let channel: any = null;
+    try {
+      const client = getSupabaseClient();
+      channel = client
+        .channel('wms-agenda-projects-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_agenda' }, () => {
+          loadData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_projects' }, () => {
+          loadData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'wms_notes' }, () => {
+          loadData();
+        })
+        .subscribe();
+    } catch (e) {
+      console.warn('Realtime subscription not available:', e);
+    }
+
     return () => {
       window.removeEventListener('wms_agenda_updated', handleAgendaUpdate);
       window.removeEventListener('wms_projects_updated', handleProjectUpdate);
       window.removeEventListener('wms_notes_updated', handleNoteUpdate);
+      if (channel) {
+        try {
+          const client = getSupabaseClient();
+          client.removeChannel(channel);
+        } catch {}
+      }
     };
   }, []);
 
@@ -687,7 +714,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   };
 
   return (
-    <div className="p-3 sm:p-6 space-y-2 sm:space-y-3 max-w-7xl mx-auto pb-28 text-slate-900 dark:text-slate-100">
+    <div className="w-full max-w-[1600px] mx-auto space-y-3 pb-16 text-slate-900 dark:text-slate-100">
       
       {/* Top Header & Tab Switcher */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white dark:bg-[#1a2332] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1079,116 +1106,60 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             {/* 1. WEEK VIEW (Time Slot Grid - Exactly Like Reference Screenshot) */}
             {calendarView === 'week' && (
               <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
-                
-                {/* Day Header Row */}
-                <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30">
-                  <div className="p-3 text-center text-[11px] font-bold text-slate-400 border-r border-slate-200 dark:border-slate-800">
-                    WIB (+7)
-                  </div>
-                  {weekDates.map((date, idx) => {
-                    const isTod = isToday(date);
-                    return (
-                      <div
-                        key={idx}
-                        className={`p-3 text-center border-r border-slate-200 dark:border-slate-800 last:border-0 ${
-                          isTod ? 'bg-primary-50/60 dark:bg-primary-950/20' : ''
-                        }`}
-                      >
-                        <div className="text-[11px] font-bold text-slate-400 uppercase">
-                          {DAYS_NAME[date.getDay()]}
-                        </div>
-                        <div className={`text-base font-black mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-full ${
-                          isTod ? 'bg-primary-500 text-white' : 'text-slate-800 dark:text-slate-100'
-                        }`}>
-                          {date.getDate()}
-                        </div>
+                <div className="overflow-x-auto scrollbar-thin">
+                  <div className="min-w-[850px]">
+                    {/* Day Header Row */}
+                    <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30">
+                      <div className="p-3 text-center text-[11px] font-bold text-slate-400 border-r border-slate-200 dark:border-slate-800">
+                        WIB (+7)
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* Sepanjang Hari (All Day) Banner Row */}
-                <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-amber-50/30 dark:bg-amber-950/10 min-h-[44px]">
-                  <div className="p-2 flex items-center justify-center text-[10px] font-black text-amber-700 dark:text-amber-400 border-r border-slate-200 dark:border-slate-800 uppercase tracking-wider">
-                    <Sun className="w-3 h-3 mr-1 inline text-amber-500" />
-                    All Day
-                  </div>
-                  {weekDates.map((date, idx) => {
-                    const dStr = formatIsoDate(date);
-                    const dayEvents = (eventsByDate.get(dStr) || []).filter(e => e.is_all_day);
-
-                    return (
-                      <div
-                        key={idx}
-                        onClick={() => handleOpenAddEvent(dStr)}
-                        className="p-1 border-r border-slate-200 dark:border-slate-800 last:border-0 space-y-1 hover:bg-slate-100/50 dark:hover:bg-slate-800/40 cursor-pointer"
-                      >
-                        {dayEvents.map(evt => {
-                          const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
-                          return (
-                            <div
-                              key={evt.id}
-                              onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                              className={`text-[10px] p-1.5 rounded-lg font-bold truncate border shadow-xs transition-transform hover:scale-[1.02] cursor-pointer ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
-                            >
-                              ☀️ {evt.title}
+                      {weekDates.map((date, idx) => {
+                        const isTod = isToday(date);
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3 text-center border-r border-slate-200 dark:border-slate-800 last:border-0 ${
+                              isTod ? 'bg-primary-50/60 dark:bg-primary-950/20' : ''
+                            }`}
+                          >
+                            <div className="text-[11px] font-bold text-slate-400 uppercase">
+                              {DAYS_NAME[date.getDay()]}
                             </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
+                            <div className={`text-base font-black mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-full ${
+                              isTod ? 'bg-primary-500 text-white' : 'text-slate-800 dark:text-slate-100'
+                            }`}>
+                              {date.getDate()}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
 
-                {/* Hourly Time Slot Grid */}
-                <div className="overflow-y-auto max-h-[640px] divide-y divide-slate-100 dark:divide-slate-800/50">
-                  {HOURS.map(hour => (
-                    <div key={hour} className="grid grid-cols-8 min-h-[56px] relative group">
-                      
-                      {/* Time Column */}
-                      <div className="p-2 text-right pr-3 text-[11px] font-bold text-slate-400 border-r border-slate-200 dark:border-slate-800 select-none">
-                        {String(hour).padStart(2, '0')}:00
+                    {/* Sepanjang Hari (All Day) Banner Row */}
+                    <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-amber-50/30 dark:bg-amber-950/10 min-h-[44px]">
+                      <div className="p-2 flex items-center justify-center text-[10px] font-black text-amber-700 dark:text-amber-400 border-r border-slate-200 dark:border-slate-800 uppercase tracking-wider">
+                        <Sun className="w-3 h-3 mr-1 inline text-amber-500" />
+                        All Day
                       </div>
-
-                      {/* 7 Days Columns */}
                       {weekDates.map((date, idx) => {
                         const dStr = formatIsoDate(date);
-                        const dayTimedEvents = (eventsByDate.get(dStr) || []).filter(e => {
-                          if (e.is_all_day) return false;
-                          if (!e.start_time) return false;
-                          const evtHour = parseInt(e.start_time.split(':')[0], 10);
-                          return evtHour === hour;
-                        });
+                        const dayEvents = (eventsByDate.get(dStr) || []).filter(e => e.is_all_day);
 
                         return (
                           <div
                             key={idx}
-                            onClick={() => handleOpenAddEvent(dStr, hour)}
-                            className="p-1 border-r border-slate-100 dark:border-slate-800/40 last:border-0 relative hover:bg-slate-50/70 dark:hover:bg-slate-800/20 cursor-pointer transition-colors"
+                            onClick={() => handleOpenAddEvent(dStr)}
+                            className="p-1 border-r border-slate-200 dark:border-slate-800 last:border-0 space-y-1 hover:bg-slate-100/50 dark:hover:bg-slate-800/40 cursor-pointer"
                           >
-                            {dayTimedEvents.map(evt => {
+                            {dayEvents.map(evt => {
                               const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
                               return (
                                 <div
                                   key={evt.id}
                                   onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                  className={`p-2 rounded-xl border mb-1 font-sans shadow-xs transition-all hover:shadow-md cursor-pointer ${cfg.cardBg} ${cfg.border} border-l-4`}
+                                  className={`text-[10px] p-1.5 rounded-lg font-bold truncate border shadow-xs transition-transform hover:scale-[1.02] cursor-pointer ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
                                 >
-                                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-bold mb-0.5">
-                                    <span className="flex items-center gap-1">
-                                      <Clock className="w-2.5 h-2.5" />
-                                      {evt.start_time} - {evt.end_time || ''}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight line-clamp-2">
-                                    {evt.title}
-                                  </p>
-                                  {evt.location && (
-                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 truncate">
-                                      <MapPin className="w-2.5 h-2.5 shrink-0" />
-                                      {evt.location}
-                                    </p>
-                                  )}
+                                  ☀️ {evt.title}
                                 </div>
                               );
                             })}
@@ -1196,7 +1167,66 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                         );
                       })}
                     </div>
-                  ))}
+
+                    {/* Hourly Time Slot Grid */}
+                    <div className="overflow-y-auto max-h-[640px] divide-y divide-slate-100 dark:divide-slate-800/50">
+                      {HOURS.map(hour => (
+                        <div key={hour} className="grid grid-cols-8 min-h-[56px] relative group">
+                          
+                          {/* Time Column */}
+                          <div className="p-2 text-right pr-3 text-[11px] font-bold text-slate-400 border-r border-slate-200 dark:border-slate-800 select-none">
+                            {String(hour).padStart(2, '0')}:00
+                          </div>
+
+                          {/* 7 Days Columns */}
+                          {weekDates.map((date, idx) => {
+                            const dStr = formatIsoDate(date);
+                            const dayTimedEvents = (eventsByDate.get(dStr) || []).filter(e => {
+                              if (e.is_all_day) return false;
+                              if (!e.start_time) return false;
+                              const evtHour = parseInt(e.start_time.split(':')[0], 10);
+                              return evtHour === hour;
+                            });
+
+                            return (
+                              <div
+                                key={idx}
+                                onClick={() => handleOpenAddEvent(dStr, hour)}
+                                className="p-1 border-r border-slate-100 dark:border-slate-800/40 last:border-0 relative hover:bg-slate-50/70 dark:hover:bg-slate-800/20 cursor-pointer transition-colors"
+                              >
+                                {dayTimedEvents.map(evt => {
+                                  const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                                  return (
+                                    <div
+                                      key={evt.id}
+                                      onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
+                                      className={`p-2 rounded-xl border mb-1 font-sans shadow-xs transition-all hover:shadow-md cursor-pointer ${cfg.cardBg} ${cfg.border} border-l-4`}
+                                    >
+                                      <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-bold mb-0.5">
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="w-2.5 h-2.5" />
+                                          {evt.start_time} - {evt.end_time || ''}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight line-clamp-2">
+                                        {evt.title}
+                                      </p>
+                                      {evt.location && (
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 truncate">
+                                          <MapPin className="w-2.5 h-2.5 shrink-0" />
+                                          {evt.location}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1280,7 +1310,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   </button>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[600px] overflow-y-auto">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {/* All day section in day view */}
                   {((eventsByDate.get(formatIsoDate(currentDate)) || []).filter(e => e.is_all_day)).map(evt => {
                     const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
@@ -1727,7 +1757,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
             </div>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-6">
             {filteredNotes.length === 0 ? (
               <div className="col-span-full py-16 text-center text-slate-400 bg-white dark:bg-[#1a2332] rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
                 <StickyNote className="w-16 h-16 mx-auto mb-4 opacity-20" />
@@ -1802,8 +1832,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               </button>
             </div>
 
-            {/* Modal Form Content */}
-            <form onSubmit={handleSaveAgenda} className="p-5 sm:p-6 overflow-y-auto space-y-2">
+            {/* Modal Form */}
+            <form onSubmit={handleSaveAgenda} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4">
               
               {/* Judul Agenda */}
               <div className="space-y-1.5">
@@ -2052,13 +2083,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 )}
               </div>
 
-              {/* Modal Footer Buttons */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+              </div>
+
+              {/* Modal Footer Buttons (Docked / Sticky) */}
+              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex items-center justify-between gap-3">
                 {editingEvent.id ? (
                   <button
                     type="button"
                     onClick={() => handleDeleteEvent(editingEvent.id!)}
-                    className="px-2 py-2.5 rounded-xl font-bold text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40"
+                    className="px-3 py-2 rounded-xl font-bold text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 transition-colors"
                   >
                     Hapus
                   </button>
@@ -2068,14 +2101,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   <button
                     type="button"
                     onClick={() => setAgendaModalOpen(false)}
-                    className="px-2 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200"
+                    className="px-4 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition-colors"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
                     disabled={isSyncing}
-                    className="px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 transition-all flex items-center gap-2"
+                    className="px-5 py-2 rounded-xl font-bold text-xs text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 transition-all flex items-center gap-2"
                   >
                     {isSyncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     Simpan Agenda
@@ -2093,78 +2126,88 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
       
       {/* Note Modal */}
       {isNoteModalOpen && editingNote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-              <h2 className="text-lg font-bold text-gray-800">
-                {editingNote.id ? 'Edit Catatan' : 'Buat Catatan Baru'}
-              </h2>
-              <button onClick={() => setNoteModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full">
-                <X className="w-5 h-5 text-gray-500" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-[#1a2332] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-slate-800">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/50 shrink-0">
+              <div className="flex items-center gap-2">
+                <StickyNote className="w-5 h-5 text-primary-500" />
+                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                  {editingNote.id ? 'Edit Catatan' : 'Buat Catatan Baru'}
+                </h2>
+              </div>
+              <button 
+                onClick={() => setNoteModalOpen(false)} 
+                className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleSaveNote} className="p-4 overflow-y-auto space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Judul (Opsional)</label>
-                <input
-                  type="text"
-                  value={editingNote.title}
-                  onChange={e => setEditingNote({...editingNote, title: e.target.value})}
-                  className="w-full border rounded-xl px-3 py-2"
-                  placeholder="Judul catatan..."
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Isi Catatan <span className="text-red-500">*</span></label>
-                <textarea
-                  required
-                  value={editingNote.content}
-                  onChange={e => setEditingNote({...editingNote, content: e.target.value})}
-                  className="w-full border rounded-xl px-3 py-2 h-32 resize-none"
-                  placeholder="Tulis sesuatu..."
-                />
-              </div>
+            <form onSubmit={handleSaveNote} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Judul (Opsional)</label>
+                  <input
+                    type="text"
+                    value={editingNote.title || ''}
+                    onChange={e => setEditingNote({...editingNote, title: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white"
+                    placeholder="Judul catatan..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Isi Catatan <span className="text-rose-500">*</span></label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={editingNote.content || ''}
+                    onChange={e => setEditingNote({...editingNote, content: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary-500 text-slate-900 dark:text-white resize-none"
+                    placeholder="Tulis sesuatu..."
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Warna Sticky Note</label>
-                <div className="flex gap-3">
-                  {(['yellow', 'blue', 'green', 'pink', 'purple', 'orange'] as const).map(color => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setEditingNote({...editingNote, color})}
-                      className={`w-8 h-8 rounded-full border-2 transition-transform ${
-                        editingNote.color === color ? 'scale-110 border-gray-800' : 'border-transparent hover:scale-105'
-                      } ${
-                        color === 'yellow' ? 'bg-yellow-200' :
-                        color === 'blue' ? 'bg-blue-200' :
-                        color === 'green' ? 'bg-green-200' :
-                        color === 'pink' ? 'bg-pink-200' :
-                        color === 'purple' ? 'bg-purple-200' :
-                        'bg-orange-200'
-                      }`}
-                    />
-                  ))}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Warna Sticky Note</label>
+                  <div className="flex gap-3">
+                    {(['yellow', 'blue', 'green', 'pink', 'purple', 'orange'] as const).map(color => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setEditingNote({...editingNote, color})}
+                        className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                          editingNote.color === color ? 'scale-110 border-primary-500 ring-2 ring-primary-500/30' : 'border-transparent hover:scale-105'
+                        } ${
+                          color === 'yellow' ? 'bg-yellow-200' :
+                          color === 'blue' ? 'bg-blue-200' :
+                          color === 'green' ? 'bg-green-200' :
+                          color === 'pink' ? 'bg-pink-200' :
+                          color === 'purple' ? 'bg-purple-200' :
+                          'bg-orange-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
               
-              <div className="pt-4 flex justify-end gap-2 border-t">
+              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setNoteModalOpen(false)}
-                  className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isSyncing}
-                  className="px-4 py-2 text-white bg-primary hover:bg-primary/90 rounded-xl flex items-center"
+                  className="px-5 py-2 text-xs font-bold text-white bg-primary-500 hover:bg-primary-600 rounded-xl flex items-center gap-1.5 shadow-md shadow-primary-500/20 transition-all"
                 >
-                  {isSyncing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                  Simpan
+                  {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
+                  Simpan Catatan
                 </button>
               </div>
             </form>
@@ -2191,7 +2234,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
               </button>
             </div>
 
-            <form onSubmit={handleSaveProject} className="p-5 sm:p-6 overflow-y-auto space-y-2">
+            {/* Modal Form */}
+            <form onSubmit={handleSaveProject} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4">
               
               {/* Nama Project */}
               <div className="space-y-1.5">
@@ -2373,20 +2418,23 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 ></textarea>
               </div>
 
-              {/* Footer */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+              </div>
+
+              {/* Footer (Docked / Sticky) */}
+              <div className="shrink-0 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setProjectModalOpen(false)}
-                  className="px-2 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200"
+                  className="px-4 py-2 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isSyncing}
-                  className="px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20"
+                  className="px-5 py-2 rounded-xl font-bold text-xs text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 transition-all flex items-center gap-1.5"
                 >
+                  {isSyncing ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
                   Simpan Project
                 </button>
               </div>

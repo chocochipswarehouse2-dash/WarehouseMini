@@ -1,5 +1,5 @@
 -- ==============================================================================
--- WMS CHOCOCHIPS - SKEMA DATABASE: wms_projects & wms_agenda
+-- WMS CHOCOCHIPS - SKEMA DATABASE: wms_projects, wms_agenda, & wms_notes
 -- ==============================================================================
 -- Jalankan di Supabase SQL Editor.
 -- Aman dieksekusi berulang kali (IF NOT EXISTS & ON CONFLICT DO NOTHING).
@@ -41,8 +41,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   is_all_day BOOLEAN DEFAULT false,
   start_time TEXT DEFAULT '', -- format "HH:mm" misal "09:00"
   end_time TEXT DEFAULT '',   -- format "HH:mm" misal "10:30"
-  category TEXT DEFAULT 'umum' 
-    CHECK (category IN ('meeting', 'operasional', 'project', 'supplier', 'urgent', 'umum')),
+  category TEXT DEFAULT 'umum', -- Kategori dinamis (tidak dibatasi CHECK constraint agar mendukung custom category)
   location TEXT DEFAULT '',
   pic TEXT DEFAULT '',
   project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
@@ -52,15 +51,33 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Drop constraint kategori lama jika ada (agar kategori kustom/kapital tidak ditolak)
+ALTER TABLE public.wms_agenda DROP CONSTRAINT IF EXISTS wms_agenda_category_check;
+
 -- Index untuk tabel wms_agenda
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_category ON public.wms_agenda(category);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_project_id ON public.wms_agenda(project_id);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_created_at ON public.wms_agenda(created_at DESC);
 
--- 3. PERMISSIONS & ROW LEVEL SECURITY (RLS)
+-- 3. TABEL CATATAN & STICKY NOTES (wms_notes)
+CREATE TABLE IF NOT EXISTS public.wms_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT DEFAULT '',
+  content TEXT NOT NULL,
+  color TEXT DEFAULT 'yellow',
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index untuk tabel wms_notes
+CREATE INDEX IF NOT EXISTS idx_wms_notes_created_at ON public.wms_notes(created_at DESC);
+
+-- 4. PERMISSIONS & ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.wms_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wms_agenda ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_notes ENABLE ROW LEVEL SECURITY;
 
 -- Policy untuk wms_projects (Akses penuh untuk aplikasi WMS)
 DO $$
@@ -94,4 +111,38 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_agenda' AND policyname = 'Allow public delete wms_agenda') THEN
     CREATE POLICY "Allow public delete wms_agenda" ON public.wms_agenda FOR DELETE USING (true);
   END IF;
+END $$;
+
+-- Policy untuk wms_notes (Akses penuh untuk aplikasi WMS)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_notes' AND policyname = 'Allow public read wms_notes') THEN
+    CREATE POLICY "Allow public read wms_notes" ON public.wms_notes FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_notes' AND policyname = 'Allow public insert wms_notes') THEN
+    CREATE POLICY "Allow public insert wms_notes" ON public.wms_notes FOR INSERT WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_notes' AND policyname = 'Allow public update wms_notes') THEN
+    CREATE POLICY "Allow public update wms_notes" ON public.wms_notes FOR UPDATE USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_notes' AND policyname = 'Allow public delete wms_notes') THEN
+    CREATE POLICY "Allow public delete wms_notes" ON public.wms_notes FOR DELETE USING (true);
+  END IF;
+END $$;
+
+-- 5. TAMBAHKAN KE REALTIME PUBLICATION SUPABASE (Jika didukung)
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_agenda;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_projects;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.wms_notes;
+EXCEPTION WHEN OTHERS THEN NULL;
 END $$;

@@ -6440,15 +6440,49 @@ function getDefaultProjectsSeed(): ProjectItem[] {
 }
 
 /**
+ * Helper aman untuk menyimpan ke localStorage dengan proteksi QuotaExceededError
+ * Jika kuota browser 5MB penuh akibat lampiran gambar Base64, lakukan sanitasi data URL besar agar cache lokal tetap selamat tanpa crash.
+ */
+function safeSetLocalStorage(key: string, data: any): void {
+  if (typeof window === 'undefined') return;
+  const rawStr = typeof data === 'string' ? data : JSON.stringify(data);
+  try {
+    localStorage.setItem(key, rawStr);
+  } catch (err: any) {
+    if (err?.name === 'QuotaExceededError' || err?.code === 22 || err?.number === -2147024882) {
+      console.warn(`[LocalStorage] Quota penuh saat menyimpan ${key}. Membersihkan data URL gambar besar untuk cache lokal.`);
+      try {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        if (Array.isArray(parsed)) {
+          const sanitized = parsed.map((item: any) => {
+            if (item && Array.isArray(item.attachments)) {
+              return {
+                ...item,
+                attachments: item.attachments.map((att: any) => ({
+                  ...att,
+                  url: att.url && att.url.length > 500 ? '[local_cache_omitted_data_url]' : att.url
+                }))
+              };
+            }
+            return item;
+          });
+          localStorage.setItem(key, JSON.stringify(sanitized));
+        }
+      } catch (e) {
+        console.error(`[LocalStorage] Gagal memangkas cache untuk ${key}:`, e);
+      }
+    }
+  }
+}
+
+/**
  * Mengambil daftar agenda dari Supabase dengan fallback ke local cache
  */
 export async function getAgendaEvents(): Promise<AgendaEvent[]> {
   try {
     const data = await supabaseFetch<AgendaEvent[]>('wms_agenda', 'GET', null, 'order=start_date.asc,start_time.asc');
     if (Array.isArray(data)) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(data));
-      }
+      safeSetLocalStorage(LOCAL_AGENDA_KEY, data);
       return data;
     }
   } catch (err) {
@@ -6467,7 +6501,7 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
 
     // Baseline Seed jika storage kosong
     const seed = getDefaultAgendaSeed();
-    localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(seed));
+    safeSetLocalStorage(LOCAL_AGENDA_KEY, seed);
     return seed;
   }
 
@@ -6525,7 +6559,7 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
       } else {
         list.push(payload);
       }
-      localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(list));
+      safeSetLocalStorage(LOCAL_AGENDA_KEY, list);
       window.dispatchEvent(new CustomEvent('wms_agenda_updated', { detail: { item: payload } }));
     } catch (e) {
       console.error('Local cache error:', e);
@@ -6551,7 +6585,7 @@ export async function deleteAgendaEvent(id: string): Promise<void> {
       if (cached) {
         let list: AgendaEvent[] = JSON.parse(cached);
         list = list.filter(a => a.id !== id);
-        localStorage.setItem(LOCAL_AGENDA_KEY, JSON.stringify(list));
+        safeSetLocalStorage(LOCAL_AGENDA_KEY, list);
         window.dispatchEvent(new CustomEvent('wms_agenda_updated', { detail: { deletedId: id } }));
       }
     } catch {}
@@ -6565,9 +6599,7 @@ export async function getProjects(): Promise<ProjectItem[]> {
   try {
     const data = await supabaseFetch<ProjectItem[]>('wms_projects', 'GET', null, 'order=created_at.desc');
     if (Array.isArray(data)) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(data));
-      }
+      safeSetLocalStorage(LOCAL_PROJECTS_KEY, data);
       return data;
     }
   } catch (err) {
@@ -6585,7 +6617,7 @@ export async function getProjects(): Promise<ProjectItem[]> {
     }
 
     const seed = getDefaultProjectsSeed();
-    localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(seed));
+    safeSetLocalStorage(LOCAL_PROJECTS_KEY, seed);
     return seed;
   }
 
@@ -6642,7 +6674,7 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
       } else {
         list.unshift(payload);
       }
-      localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(list));
+      safeSetLocalStorage(LOCAL_PROJECTS_KEY, list);
       window.dispatchEvent(new CustomEvent('wms_projects_updated', { detail: { item: payload } }));
     } catch (e) {
       console.error('Local cache error:', e);
@@ -6668,13 +6700,12 @@ export async function deleteProject(id: string): Promise<void> {
       if (cached) {
         let list: ProjectItem[] = JSON.parse(cached);
         list = list.filter(p => p.id !== id);
-        localStorage.setItem(LOCAL_PROJECTS_KEY, JSON.stringify(list));
+        safeSetLocalStorage(LOCAL_PROJECTS_KEY, list);
         window.dispatchEvent(new CustomEvent('wms_projects_updated', { detail: { deletedId: id } }));
       }
     } catch {}
   }
 }
-
 
 const LOCAL_NOTES_KEY = 'wms_local_notes_v1';
 
@@ -6682,9 +6713,7 @@ export async function getNotes(): Promise<NoteItem[]> {
   try {
     const data = await supabaseFetch<NoteItem[]>('wms_notes', 'GET', null, 'order=created_at.desc');
     if (Array.isArray(data)) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(data));
-      }
+      safeSetLocalStorage(LOCAL_NOTES_KEY, data);
       return data;
     }
   } catch (err) {
@@ -6706,7 +6735,7 @@ export async function getNotes(): Promise<NoteItem[]> {
 
 export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
   const isNew = !item.id;
-  const id = item.id || `local-note-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const id = item.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `note-${Date.now()}`);
   const now = new Date().toISOString();
   
   const payload: NoteItem = {
@@ -6720,9 +6749,9 @@ export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
   };
 
   try {
-    if (isNew && !id.startsWith('local-note-')) {
+    if (isNew) {
       await supabaseFetch('wms_notes', 'POST', [payload]);
-    } else if (!isNew && !id.startsWith('local-note-')) {
+    } else {
       const { id: _id, ...updateData } = payload;
       await supabaseFetch('wms_notes', 'PATCH', updateData, `id=eq.${encodeURIComponent(id)}`);
     }
@@ -6739,12 +6768,12 @@ export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
       }
       
       if (isNew) {
-        list = [payload, ...list];
+        list = [payload, ...list.filter(n => n.id !== payload.id)];
       } else {
         list = list.map(n => n.id === payload.id ? payload : n);
       }
       
-      localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(list));
+      safeSetLocalStorage(LOCAL_NOTES_KEY, list);
       window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { item: payload } }));
     } catch {}
   }
@@ -6754,9 +6783,7 @@ export async function saveNote(item: Partial<NoteItem>): Promise<NoteItem> {
 
 export async function deleteNote(id: string): Promise<void> {
   try {
-    if (!id.startsWith('local-note-')) {
-      await supabaseFetch('wms_notes', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
-    }
+    await supabaseFetch('wms_notes', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
   } catch (err) {
     console.warn('Gagal hapus catatan di Supabase:', err);
   }
@@ -6767,9 +6794,10 @@ export async function deleteNote(id: string): Promise<void> {
       if (cached) {
         let list: NoteItem[] = JSON.parse(cached);
         list = list.filter(n => n.id !== id);
-        localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(list));
+        safeSetLocalStorage(LOCAL_NOTES_KEY, list);
         window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { deletedId: id } }));
       }
     } catch {}
   }
 }
+
