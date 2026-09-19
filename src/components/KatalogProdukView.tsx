@@ -54,6 +54,7 @@ import { KatalogUploadModal } from './katalog/KatalogUploadModal';
 import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { KatalogA4PrintModal } from './katalog/KatalogA4PrintModal';
 import { KatalogImageLightbox } from './katalog/KatalogImageLightbox';
+import { KatalogFilterDropdown } from './katalog/KatalogFilterDropdown';
 
 interface KatalogProdukViewProps {
   session?: UserSession | null;
@@ -1032,44 +1033,16 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           </div>
         </div>
 
-        {/* Baris 2: Tabs Filter Katalog (Pills Rapi Tanpa Dropdown Berantakan) */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
-            Katalog:
-          </span>
-
-          <button
-            type="button"
-            onClick={selectAllCatalogs}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              selectedCatalogIds.length === batches.length
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-            }`}
-          >
-            Semua ({batches.reduce((acc, b) => acc + b.items.length, 0)})
-          </button>
-
-          {batches.map((b) => {
-            const isSelected = selectedCatalogIds.includes(b.id);
-            const palette = getBatchPalette(b.name);
-            return (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => toggleSelectCatalog(b.id)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-                  isSelected
-                    ? `${palette.bg} ${palette.text} ${palette.border} ring-2 ring-indigo-500/20 shadow-xs`
-                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100'
-                }`}
-                title={`Tampilkan / Sembunyikan katalog ${b.name}`}
-              >
-                <span>{b.name}</span>
-                <span className="text-[10px] opacity-80">({b.items.length})</span>
-              </button>
-            );
-          })}
+        {/* Baris 2: Filter Dropdown Katalog (Scalable untuk ribuan katalog dengan pencarian & multi-select) */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <KatalogFilterDropdown
+            batches={batches}
+            selectedCatalogIds={selectedCatalogIds}
+            onToggleCatalog={toggleSelectCatalog}
+            onSelectAll={selectAllCatalogs}
+            onSelectOnly={selectOnlyCatalog}
+            getBatchPalette={getBatchPalette}
+          />
         </div>
       </div>
 
