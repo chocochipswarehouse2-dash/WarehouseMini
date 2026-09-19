@@ -69,48 +69,49 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-xl max-h-[95vh] flex flex-col rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-              <UploadCloud className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-xl max-h-[94vh] sm:max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
+        <form onSubmit={handleSave} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Header */}
+          <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 truncate">
+                  Simpan & Kelompokkan Katalog
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Dari file: <span className="font-semibold text-slate-700 dark:text-slate-300">{sourceFileName}</span>
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                Simpan & Kelompokkan Katalog
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Dari file: <span className="font-semibold text-slate-700 dark:text-slate-300">{sourceFileName}</span>
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            disabled={isSaving}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
-        {/* Content & Form */}
-        <form onSubmit={handleSave} className="flex flex-col min-h-0 overflow-hidden">
-          <div className="p-6 space-y-5 overflow-y-auto">
+          {/* Scrollable Content */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
             {/* Ringkasan Data yang Diekstrak & Info Google Drive Storage */}
-            <div className="grid grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-center">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 p-3 sm:p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-center">
               <div>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Produk</span>
-                <p className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{parsedItems.length}</p>
+                <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">Produk</span>
+                <p className="text-base sm:text-lg font-extrabold text-indigo-600 dark:text-indigo-400">{parsedItems.length}</p>
               </div>
               <div>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Total Varian</span>
-                <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{totalVariants}</p>
+                <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">Total Varian</span>
+                <p className="text-base sm:text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{totalVariants}</p>
               </div>
               <div>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Foto Terbaca</span>
-                <p className="text-lg font-extrabold text-amber-600 dark:text-amber-400">{totalImages} Item</p>
+                <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">Foto Terbaca</span>
+                <p className="text-base sm:text-lg font-extrabold text-amber-600 dark:text-amber-400">{totalImages} Item</p>
               </div>
             </div>
 
@@ -124,8 +125,8 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
 
             {uploadProgressMsg && (
               <div className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs text-indigo-700 dark:text-indigo-300 font-semibold animate-pulse">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>{uploadProgressMsg}</span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                <span className="truncate">{uploadProgressMsg}</span>
               </div>
             )}
 
@@ -134,7 +135,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
               <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Pilihan Penyimpanan:
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                 <label
                   className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                     mode === 'new'
@@ -186,7 +187,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
             {mode === 'replace' && (
               <div className="space-y-1.5 p-3.5 bg-amber-50/60 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800/50">
                 <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                   Pilih Katalog yang Akan Ditimpa (Replace):
                 </label>
                 <select
@@ -221,7 +222,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
                 value={catalogName}
                 onChange={(e) => setCatalogName(e.target.value)}
                 placeholder="Contoh: 326 B atau 325 A"
-                className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-hidden transition-all shadow-xs"
+                className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-hidden transition-all shadow-xs text-sm sm:text-base"
               />
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Nama ini akan muncul sebagai badge tanda pengenal di setiap kartu produk dan opsi filter katalog.
@@ -233,7 +234,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                 Preview Daftar Produk ({parsedItems.length}):
               </span>
-              <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 p-2 text-xs">
+              <div className="max-h-32 sm:max-h-36 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 p-2 text-xs">
                 {parsedItems.slice(0, 10).map((it, idx) => (
                   <div key={idx} className="py-1.5 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 truncate">
@@ -259,8 +260,8 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 shrink-0">
+          {/* Action Buttons (Sticky Footer) */}
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 shrink-0 gap-3">
             <button
               type="button"
               onClick={onClose}
@@ -272,7 +273,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
             <button
               type="submit"
               disabled={isSaving || !catalogName.trim()}
-              className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
             >
               {isSaving ? (
                 <>
@@ -282,7 +283,7 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Simpan Katalog "{catalogName}"</span>
+                  <span className="max-w-[200px] sm:max-w-xs truncate">Simpan Katalog "{catalogName}"</span>
                 </>
               )}
             </button>
