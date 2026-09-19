@@ -85,7 +85,8 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const canExportData = hasPermission(session, 'action_export_data');
   const currentOperator = session?.username || 'Operator';
 
-  const loadSoData = async () => {
+  const loadSoData = async (_arg?: any) => {
+    const silentSync = typeof _arg === 'boolean' ? _arg : true;
     // 1. Instant Cache Load: Render immediately if cached data exists (0ms response)
     if (typeof window !== 'undefined' && window.localStorage && soQueue.length === 0) {
       try {
@@ -102,6 +103,20 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     setIsLoading(soQueue.length === 0);
     setFetchError(null);
     try {
+      if (silentSync) {
+        // Auto-reconcile any pending WhatsApp/External SO scans from log_produk to stock_opname_queue in background
+        syncPendingStockOpnameFromLogProduk().then((syncRes) => {
+          if (syncRes && syncRes.newQueueItemsCount > 0) {
+            fetchStockOpnameQueue('ALL').then((freshData) => {
+              if (freshData && Array.isArray(freshData)) {
+                const unique = Array.from(new Map(freshData.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
+                setSoQueue(unique);
+              }
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+
       const data = await fetchStockOpnameQueue('ALL');
       if (data && Array.isArray(data) && data.length > 0) {
         const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
@@ -127,6 +142,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
+      await syncPendingStockOpnameFromLogProduk().catch(() => {});
       const data = await fetchStockOpnameQueue();
       const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
       setSoQueue(unique);
@@ -143,6 +159,37 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
 
   useEffect(() => {
     loadSoData();
+
+    // Subscribe to realtime updates for stock_opname_queue & log_produk SO inserts
+    const unsubQueue = globalRealtimeStore.subscribe('stock_opname_queue', () => {
+      fetchStockOpnameQueue('ALL').then((freshData) => {
+        if (freshData && Array.isArray(freshData)) {
+          const unique = Array.from(new Map(freshData.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
+          setSoQueue(unique);
+        }
+      }).catch(() => {});
+    });
+
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', (payload) => {
+      const newRow = payload?.new as any;
+      if (newRow && newRow.type === 'SO') {
+        syncPendingStockOpnameFromLogProduk().then((res) => {
+          if (res && res.newQueueItemsCount > 0) {
+            fetchStockOpnameQueue('ALL').then((freshData) => {
+              if (freshData && Array.isArray(freshData)) {
+                const unique = Array.from(new Map(freshData.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
+                setSoQueue(unique);
+              }
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    });
+
+    return () => {
+      unsubQueue();
+      unsubLog();
+    };
   }, []);
 
   // Filtered SO queue
