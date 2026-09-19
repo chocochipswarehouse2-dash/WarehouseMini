@@ -117,10 +117,10 @@ export const CetakLokasiRakTab: React.FC = () => {
   // Generate QR Data URL
   const generateQr = useCallback(async (text: string): Promise<string> => {
     try {
-      return await QRCode.toDataURL(text || ' ', {
+      return await QRCode.toDataURL(String(text || ' '), {
         errorCorrectionLevel: 'H',
         margin: 1,
-        scale: 8,
+        scale: 4,
         color: { dark: '#000000', light: '#ffffff' },
       });
     } catch (err) {
@@ -129,18 +129,19 @@ export const CetakLokasiRakTab: React.FC = () => {
     }
   }, []);
 
-  // Sync QR Cache for queue items
+  // Sync QR Cache for queue items (safe effect without recursive re-triggers)
   useEffect(() => {
-    const unCached = queue.filter((i) => !qrCache[i.qrPayload]);
+    const unCached = queue.filter((i) => i && i.qrPayload && !qrCache[String(i.qrPayload)]);
     if (unCached.length === 0) return;
 
     let isMounted = true;
     (async () => {
       const newEntries: Record<string, string> = {};
       for (const item of unCached) {
-        if (!newEntries[item.qrPayload]) {
-          const url = await generateQr(item.qrPayload);
-          if (url) newEntries[item.qrPayload] = url;
+        const payloadStr = String(item.qrPayload || '');
+        if (payloadStr && !newEntries[payloadStr] && !qrCache[payloadStr]) {
+          const url = await generateQr(payloadStr);
+          newEntries[payloadStr] = url || 'FAILED';
         }
       }
       if (isMounted && Object.keys(newEntries).length > 0) {
@@ -151,7 +152,7 @@ export const CetakLokasiRakTab: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [queue, qrCache, generateQr]);
+  }, [queue, generateQr]);
 
   // ==========================================
   // 1. RANGE GENERATOR FORM STATE
@@ -210,10 +211,10 @@ export const CetakLokasiRakTab: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     return queue.filter(
       (item) =>
-        item.locCode.toLowerCase().includes(q) ||
-        item.qrPayload.toLowerCase().includes(q) ||
-        item.zoneDesc.toLowerCase().includes(q) ||
-        (item.tagBadge && item.tagBadge.toLowerCase().includes(q))
+        String(item.locCode || '').toLowerCase().includes(q) ||
+        String(item.qrPayload || '').toLowerCase().includes(q) ||
+        String(item.zoneDesc || '').toLowerCase().includes(q) ||
+        (item.tagBadge && String(item.tagBadge).toLowerCase().includes(q))
     );
   }, [queue, searchQuery]);
 

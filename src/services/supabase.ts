@@ -2980,7 +2980,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
     let offset = 0;
     while (offset < maxRowsPerTable) {
       const batchPromises = [];
-      const batchSize = 2;
+      const batchSize = 4;
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(

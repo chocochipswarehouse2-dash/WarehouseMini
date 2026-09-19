@@ -104,10 +104,10 @@ export const CetakCustomQrTab: React.FC = () => {
 
   const generateQr = useCallback(async (text: string): Promise<string> => {
     try {
-      return await QRCode.toDataURL(text || ' ', {
+      return await QRCode.toDataURL(String(text || ' '), {
         errorCorrectionLevel: 'H',
         margin: 1,
-        scale: 8,
+        scale: 4,
         color: { dark: '#000000', light: '#ffffff' },
       });
     } catch (err) {
@@ -117,16 +117,17 @@ export const CetakCustomQrTab: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const unCached = queue.filter((i) => !qrCache[i.qrPayload]);
+    const unCached = queue.filter((i) => i && i.qrPayload && !qrCache[String(i.qrPayload)]);
     if (unCached.length === 0) return;
 
     let isMounted = true;
     (async () => {
       const newEntries: Record<string, string> = {};
       for (const item of unCached) {
-        if (!newEntries[item.qrPayload]) {
-          const url = await generateQr(item.qrPayload);
-          if (url) newEntries[item.qrPayload] = url;
+        const payloadStr = String(item.qrPayload || '');
+        if (payloadStr && !newEntries[payloadStr] && !qrCache[payloadStr]) {
+          const url = await generateQr(payloadStr);
+          newEntries[payloadStr] = url || 'FAILED';
         }
       }
       if (isMounted && Object.keys(newEntries).length > 0) {
@@ -137,7 +138,7 @@ export const CetakCustomQrTab: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [queue, qrCache, generateQr]);
+  }, [queue, generateQr]);
 
   // ==========================================
   // 1. MANUAL FREE FORM STATE
@@ -184,10 +185,10 @@ export const CetakCustomQrTab: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     return queue.filter(
       (item) =>
-        item.title.toLowerCase().includes(q) ||
-        item.qrPayload.toLowerCase().includes(q) ||
-        (item.subtitle && item.subtitle.toLowerCase().includes(q)) ||
-        (item.badge && item.badge.toLowerCase().includes(q))
+        String(item.title || '').toLowerCase().includes(q) ||
+        String(item.qrPayload || '').toLowerCase().includes(q) ||
+        (item.subtitle && String(item.subtitle).toLowerCase().includes(q)) ||
+        (item.badge && String(item.badge).toLowerCase().includes(q))
     );
   }, [queue, searchQuery]);
 

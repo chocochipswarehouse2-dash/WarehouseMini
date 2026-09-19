@@ -57,44 +57,53 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
   const [outletDropdownOpen, setOutletDropdownOpen] = useState(false);
   const [outletSearch, setOutletSearch] = useState('');
 
-  // Discover all possible outlets/channels dynamically across the catalog
-  const availableOutlets = useMemo(() => {
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+
+  // Fast Catalog Map for O(1) Lookups
+  const catalogMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    for (let i = 0; i < productCatalog.length; i++) {
+      const p = productCatalog[i];
+      const sku = String(p.k || (p as any).sku || '').toUpperCase().trim();
+      if (sku) map.set(sku, p);
+    }
+    return map;
+  }, [productCatalog]);
+
+  // Discover all possible outlets/channels dynamically across the catalog (fast scan)
+  const { availableOutlets, availableCategories } = useMemo(() => {
     const outletsSet = new Set<string>();
     DEFAULT_MAIN_OUTLETS.forEach((o) => outletsSet.add(o.key));
+    const catSet = new Set<string>();
 
-    productCatalog.forEach((p) => {
+    const scanLimit = Math.min(productCatalog.length, 5000);
+    for (let i = 0; i < scanLimit; i++) {
+      const p = productCatalog[i];
+      const cat = p.category || (p as any).kategori;
+      if (cat && String(cat).trim()) {
+        catSet.add(String(cat).trim());
+      }
       const dpRaw = (p as any)?.dealpos_channels;
       if (dpRaw && typeof dpRaw === 'object') {
-        Object.keys(dpRaw).forEach((k) => {
+        const keys = Object.keys(dpRaw);
+        for (let j = 0; j < keys.length; j++) {
+          const k = keys[j];
           if (
             typeof dpRaw[k] === 'number' &&
             !['TP', 'tag_price', 'TagPrice', 'price', 'harga', 'd', 'b', 'cabang'].includes(k)
           ) {
             outletsSet.add(k);
           }
-        });
-        if (dpRaw.cabang && typeof dpRaw.cabang === 'object') {
-          Object.keys(dpRaw.cabang).forEach((k) => outletsSet.add(k));
-        }
-        if (dpRaw.b && typeof dpRaw.b === 'object') {
-          Object.keys(dpRaw.b).forEach((k) => outletsSet.add(k));
         }
       }
-    });
+    }
 
-    return Array.from(outletsSet);
-  }, [productCatalog]);
-
-  // Discover unique categories
-  const availableCategories = useMemo(() => {
-    const catSet = new Set<string>();
-    productCatalog.forEach((p) => {
-      const cat = p.category || (p as any).kategori;
-      if (cat && String(cat).trim()) {
-        catSet.add(String(cat).trim());
-      }
-    });
-    return Array.from(catSet).sort();
+    return {
+      availableOutlets: Array.from(outletsSet),
+      availableCategories: Array.from(catSet).sort(),
+    };
   }, [productCatalog]);
 
   // Toggle outlet selection
@@ -123,7 +132,7 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     return productCatalog.filter((p) => {
       // 1. Search Query
       if (query) {
-        const sku = String(p.k || '').toLowerCase();
+        const sku = String(p.k || (p as any).sku || '').toLowerCase();
         const nama = String(p.n || p.p || p.nama_produk || '').toLowerCase();
         const size = String(p.s || p.size || '').toLowerCase();
         const lokasi = String(p.lokasi || '').toLowerCase();
@@ -159,9 +168,22 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     });
   }, [productCatalog, searchQuery, selectedCategory, stockFilter, qtyMode, selectedOutlets]);
 
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, stockFilter, qtyMode, selectedOutlets]);
+
+  // Pagination Slice
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedProducts = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, safeCurrentPage, pageSize]);
+
   // Get effective qty for a product
   const getProductQty = (p: ProductItem): number => {
-    const sku = p.k || '';
+    const sku = String(p.k || (p as any).sku || '');
     const sel = itemSelections[sku];
     if (sel && sel.customQty !== undefined) return sel.customQty;
 
@@ -174,7 +196,8 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
 
   // Toggle single item selection
   const handleToggleItem = (p: ProductItem) => {
-    const sku = p.k || '';
+    const sku = String(p.k || (p as any).sku || '');
+    if (!sku) return;
     setItemSelections((prev) => {
       const current = prev[sku];
       const isSel = current?.selected ?? false;
@@ -190,23 +213,25 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
 
   // Change individual item qty
   const handleItemQtyChange = (p: ProductItem, newQty: number) => {
-    const sku = p.k || '';
+    const sku = String(p.k || (p as any).sku || '');
+    if (!sku) return;
     const q = Math.max(1, newQty);
     setItemSelections((prev) => ({
       ...prev,
       [sku]: {
-        selected: prev[sku]?.selected ?? true, // Auto-select when editing qty
+        selected: prev[sku]?.selected ?? true,
         customQty: q,
       },
     }));
   };
 
-  // Bulk Select/Deselect visible
-  const handleSelectAllVisible = (selectAll: boolean) => {
+  // Bulk Select/Deselect visible on CURRENT page
+  const handleSelectAllCurrentPage = (selectAll: boolean) => {
     setItemSelections((prev) => {
       const next = { ...prev };
-      filteredProducts.forEach((p) => {
-        const sku = p.k || '';
+      paginatedProducts.forEach((p) => {
+        const sku = String(p.k || (p as any).sku || '');
+        if (!sku) return;
         next[sku] = {
           selected: selectAll,
           customQty: prev[sku]?.customQty ?? getProductQty(p),
@@ -216,17 +241,45 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     });
   };
 
+  // Bulk Select ALL filtered products (capped safely)
+  const handleSelectAllFiltered = (selectAll: boolean) => {
+    setItemSelections((prev) => {
+      const next = { ...prev };
+      filteredProducts.forEach((p) => {
+        const sku = String(p.k || (p as any).sku || '');
+        if (!sku) return;
+        next[sku] = {
+          selected: selectAll,
+          customQty: prev[sku]?.customQty ?? getProductQty(p),
+        };
+      });
+      return next;
+    });
+    if (selectAll) {
+      onShowToast?.(`${filteredProducts.length} produk hasil filter terpilih`, 'info');
+    } else {
+      onShowToast?.('Pilihan produk dikosongkan', 'info');
+    }
+  };
+
+  // Clear all selections
+  const handleClearAllSelections = () => {
+    setItemSelections({});
+    onShowToast?.('Semua pilihan produk dibatalkan', 'info');
+  };
+
   // Apply Batch Qty to all selected items
   const handleApplyBatchQtyToSelected = () => {
     setItemSelections((prev) => {
       const next = { ...prev };
-      filteredProducts.forEach((p) => {
-        const sku = p.k || '';
+      let count = 0;
+      Object.keys(next).forEach((sku) => {
         if (next[sku]?.selected) {
           next[sku] = {
             selected: true,
             customQty: Math.max(1, manualBatchQty),
           };
+          count++;
         }
       });
       return next;
@@ -243,11 +296,12 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     setItemSelections((prev) => {
       const next = { ...prev };
       filteredProducts.forEach((p) => {
-        const sku = p.k || '';
+        const sku = String(p.k || (p as any).sku || '');
+        if (!sku) return;
         const st = getOutletStockForProduct(p, selectedOutlets);
         const autoQty = Math.max(1, st > 0 ? st : 1);
         next[sku] = {
-          selected: prev[sku]?.selected ?? (st > 0), // Auto select if has stock
+          selected: prev[sku]?.selected ?? (st > 0),
           customQty: autoQty,
         };
       });
@@ -256,13 +310,19 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     onShowToast?.(`Qty disesuaikan dengan stok ${selectedOutlets.length} outlet terpilih`, 'info');
   };
 
-  // Calculate selected counts
+  // Calculate selected items using fast Map lookup (O(selected) instead of O(catalog))
   const selectedProductsList = useMemo(() => {
-    return productCatalog.filter((p) => {
-      const sku = p.k || '';
-      return itemSelections[sku]?.selected === true;
-    });
-  }, [productCatalog, itemSelections]);
+    const list: ProductItem[] = [];
+    const entries = Object.entries(itemSelections);
+    for (let i = 0; i < entries.length; i++) {
+      const [sku, sel] = entries[i];
+      if (sel && sel.selected) {
+        const prod = catalogMap.get(sku.toUpperCase());
+        if (prod) list.push(prod);
+      }
+    }
+    return list;
+  }, [catalogMap, itemSelections]);
 
   const totalSelectedStickers = useMemo(() => {
     return selectedProductsList.reduce((acc, p) => {
@@ -496,25 +556,32 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
 
       {/* 3. SELECTION ACTIONS & SUMMARY BANNER */}
       <div className="p-3 bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => handleSelectAllCurrentPage(true)}
+            className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 hover:bg-purple-50 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+          >
+            Pilih Halaman Ini ({paginatedProducts.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectAllFiltered(true)}
+            className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+          >
+            Pilih Semua Filter ({filteredProducts.length})
+          </button>
+          {selectedProductsList.length > 0 && (
             <button
               type="button"
-              onClick={() => handleSelectAllVisible(true)}
-              className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold cursor-pointer"
+              onClick={handleClearAllSelections}
+              className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-rose-50 text-rose-600 rounded-lg text-xs font-bold cursor-pointer transition-colors"
             >
-              Pilih {filteredProducts.length} Ditampilkan
+              Reset Pilihan
             </button>
-            <button
-              type="button"
-              onClick={() => handleSelectAllVisible(false)}
-              className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 text-slate-500 rounded-lg text-xs font-bold cursor-pointer"
-            >
-              Batal Pilih
-            </button>
-          </div>
+          )}
 
-          <div className="text-xs font-black text-purple-950 dark:text-purple-200">
+          <div className="text-xs font-black text-purple-950 dark:text-purple-200 ml-1">
             {selectedProductsList.length} Produk Terpilih ({totalSelectedStickers} Stiker)
           </div>
         </div>
@@ -530,8 +597,74 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
         </button>
       </div>
 
-      {/* 4. PRODUCT MULTI-CHOICE TABLE */}
+      {/* 4. PAGINATION CONTROLS & TABLE */}
       <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
+        {/* Pagination Top Bar */}
+        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-600 dark:text-slate-300 font-semibold">
+              Menampilkan {filteredProducts.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1} - {Math.min(safeCurrentPage * pageSize, filteredProducts.length)} dari <span className="font-bold text-purple-600 dark:text-purple-400">{filteredProducts.length}</span> produk
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 text-[11px]">Per halaman:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={safeCurrentPage <= 1}
+                className="px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+              >
+                &laquo;
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safeCurrentPage <= 1}
+                className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+              >
+                &lsaquo; Prev
+              </button>
+              <span className="px-2 font-bold text-slate-700 dark:text-slate-200">
+                {safeCurrentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safeCurrentPage >= totalPages}
+                className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+              >
+                Next &rsaquo;
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safeCurrentPage >= totalPages}
+                className="px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+              >
+                &raquo;
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="max-h-96 overflow-y-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[11px]">
@@ -540,15 +673,16 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
                   <input
                     type="checkbox"
                     checked={
-                      filteredProducts.length > 0 &&
-                      filteredProducts.every((p) => itemSelections[p.k || '']?.selected)
+                      paginatedProducts.length > 0 &&
+                      paginatedProducts.every((p) => itemSelections[String(p.k || (p as any).sku || '')]?.selected)
                     }
-                    onChange={(e) => handleSelectAllVisible(e.target.checked)}
+                    onChange={(e) => handleSelectAllCurrentPage(e.target.checked)}
                     className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    title="Pilih/Batal semua item pada halaman ini"
                   />
                 </th>
-                <th className="py-2.5 px-3">SKU & Kategori</th>
-                <th className="py-2.5 px-3">Nama Produk & Varian</th>
+                <th className="py-2.5 px-3">SKU &amp; Kategori</th>
+                <th className="py-2.5 px-3">Nama Produk &amp; Varian</th>
                 <th className="py-2.5 px-2.5 text-center">Size</th>
                 <th className="py-2.5 px-3">Harga Master</th>
                 <th className="py-2.5 px-3 text-center">
@@ -565,8 +699,8 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((prod) => {
-                  const sku = prod.k || '';
+                paginatedProducts.map((prod) => {
+                  const sku = String(prod.k || (prod as any).sku || '');
                   const isChecked = itemSelections[sku]?.selected ?? false;
                   const currentStock =
                     qtyMode === 'outlet'

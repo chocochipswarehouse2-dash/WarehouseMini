@@ -104,10 +104,8 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   const catalogMap = useMemo(() => {
     const map = new Map<string, ProductItem>();
     productCatalog.forEach((p) => {
-      if (p.k) map.set(p.k.toLowerCase().trim(), p);
-      if (typeof (p as any).sku === 'string' && (p as any).sku) {
-        map.set((p as any).sku.toLowerCase().trim(), p);
-      }
+      const k = String(p.k || (p as any).sku || '').toLowerCase().trim();
+      if (k) map.set(k, p);
     });
     return map;
   }, [productCatalog]);
@@ -115,10 +113,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   // Generate QR Data URLs
   const generateQrDataUrl = useCallback(async (text: string): Promise<string> => {
     try {
-      return await QRCode.toDataURL(text, {
+      return await QRCode.toDataURL(String(text || ' '), {
         errorCorrectionLevel: 'M',
         margin: 0,
-        scale: 6,
+        scale: 4,
         color: { dark: '#000000', light: '#ffffff' },
       });
     } catch (err) {
@@ -127,18 +125,19 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
     }
   }, []);
 
-  // Sync QR Cache for queue items
+  // Sync QR Cache for queue items (safe effect without recursive re-triggers)
   useEffect(() => {
-    const unCached = queue.filter((i) => !qrCache[i.sku]);
+    const unCached = queue.filter((i) => i && i.sku && !qrCache[String(i.sku)]);
     if (unCached.length === 0) return;
 
     let isMounted = true;
     (async () => {
       const newEntries: Record<string, string> = {};
       for (const item of unCached) {
-        if (!newEntries[item.sku]) {
-          const url = await generateQrDataUrl(item.sku);
-          if (url) newEntries[item.sku] = url;
+        const skuStr = String(item.sku || '');
+        if (skuStr && !newEntries[skuStr] && !qrCache[skuStr]) {
+          const url = await generateQrDataUrl(skuStr);
+          newEntries[skuStr] = url || 'FAILED';
         }
       }
       if (isMounted && Object.keys(newEntries).length > 0) {
@@ -149,7 +148,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [queue, qrCache, generateQrDataUrl]);
+  }, [queue, generateQrDataUrl]);
 
   // Queue stats
   const selectedItems = useMemo(() => queue.filter((i) => i.selected !== false), [queue]);
@@ -164,10 +163,10 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
     const q = queueSearchQuery.toLowerCase().trim();
     return queue.filter(
       (item) =>
-        item.sku.toLowerCase().includes(q) ||
-        item.nama.toLowerCase().includes(q) ||
-        item.size.toLowerCase().includes(q) ||
-        (item.lokasi && item.lokasi.toLowerCase().includes(q))
+        String(item.sku || '').toLowerCase().includes(q) ||
+        String(item.nama || '').toLowerCase().includes(q) ||
+        String(item.size || '').toLowerCase().includes(q) ||
+        (item.lokasi && String(item.lokasi).toLowerCase().includes(q))
     );
   }, [queue, queueSearchQuery]);
 
@@ -176,8 +175,12 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
 
   // Add Single Item to Queue
   const handleAddToQueue = (newItem: Omit<ProductBarcodeItem, 'id' | 'selected'>) => {
+    const skuClean = String(newItem.sku || '').trim();
+    if (!skuClean) return;
     setQueue((prev) => {
-      const existingIdx = prev.findIndex((i) => i.sku.toLowerCase() === newItem.sku.toLowerCase());
+      const existingIdx = prev.findIndex(
+        (i) => String(i.sku || '').toLowerCase() === skuClean.toLowerCase()
+      );
       if (existingIdx >= 0) {
         const updated = [...prev];
         updated[existingIdx] = {
@@ -194,6 +197,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         return [
           {
             ...newItem,
+            sku: skuClean,
             id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             selected: true,
           },
@@ -201,17 +205,21 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         ];
       }
     });
-    onShowToast?.(`Berhasil menambahkan ${newItem.sku} (${newItem.copies} stiker)`, 'success');
+    onShowToast?.(`Berhasil menambahkan ${skuClean} (${newItem.copies} stiker)`, 'success');
   };
 
   // Add Multiple Items to Queue
   const handleAddMultipleToQueue = (newItems: Omit<ProductBarcodeItem, 'id' | 'selected'>[]) => {
     setQueue((prev) => {
       const map = new Map<string, ProductBarcodeItem>();
-      prev.forEach((item) => map.set(item.sku.toLowerCase(), { ...item }));
+      prev.forEach((item) => {
+        const k = String(item.sku || '').toLowerCase().trim();
+        if (k) map.set(k, { ...item });
+      });
 
       newItems.forEach((newItem) => {
-        const key = newItem.sku.toLowerCase();
+        const key = String(newItem.sku || '').toLowerCase().trim();
+        if (!key) return;
         if (map.has(key)) {
           const exist = map.get(key)!;
           exist.copies += newItem.copies;
@@ -223,6 +231,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         } else {
           map.set(key, {
             ...newItem,
+            sku: String(newItem.sku || '').trim(),
             id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             selected: true,
           });
@@ -357,8 +366,9 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           settings.showSize
         );
 
+        const skuKey = String(item.sku || '').toLowerCase().trim();
         const effectivePrice =
-          item.price || getProductMasterPrice(catalogMap.get(item.sku.toLowerCase()));
+          item.price || (skuKey ? getProductMasterPrice(catalogMap.get(skuKey)) : 0);
         const priceText = formatProductPriceWithTag(
           effectivePrice,
           settings.priceTagMode,
@@ -901,8 +911,9 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                     </td>
                     <td className="py-3 px-3">
                       {(() => {
+                        const skuKey = String(item.sku || '').toLowerCase().trim();
                         const pr =
-                          item.price || getProductMasterPrice(catalogMap.get(item.sku.toLowerCase()));
+                          item.price || (skuKey ? getProductMasterPrice(catalogMap.get(skuKey)) : 0);
                         return pr ? (
                           <span className="font-black text-purple-700 dark:text-purple-300">
                             {formatProductPriceWithTag(pr, settings.priceTagMode, settings.customPricePrefix)}
