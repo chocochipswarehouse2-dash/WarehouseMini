@@ -6,7 +6,8 @@
  * 
  * Flow:
  * 1 Pesan WA = 1 Invoice
- * Pesan WA -> Webhook -> Tulis ke log_produk Supabase -> Supabase Kalkulasi -> Tulis ke stock_opname_queue
+ * Pesan WA -> Webhook -> Tulis Raw Scan ke log_produk Supabase -> Return HTTP 200
+ * (GAS MURNI PENCATAT PESAN, NOL KALKULASI STOK DI GAS)
  */
 
 /**
@@ -68,8 +69,8 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'Empty message ignored.' });
     }
     
-    // Deduplication check via CacheService (TTL 90s)
-    var dedupKey = 'DEDUP_' + String(actualSender || sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
+    // Deduplication check via CacheService (TTL 120s)
+    var dedupKey = 'DEDUP_' + String(actualSender || sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + message.length + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
     try {
       var cache = CacheService.getScriptCache();
       if (cache && dedupKey.length > 8) {
@@ -78,7 +79,7 @@ function handleWhatsAppScan(payload) {
           Logger.log('Duplicate WA message ignored: ' + dedupKey);
           return jsonResponse({ success: true, message: 'Duplicate webhook ignored.' });
         }
-        cache.put(dedupKey, 'PROCESSED', 90);
+        cache.put(dedupKey, 'PROCESSED', 120);
       }
     } catch (eDedup) {}
     
@@ -195,7 +196,7 @@ function handleWhatsAppScan(payload) {
     var invoice = generateInvoice();
     var nowIso = new Date().toISOString();
     
-    // Batch lookup metadata produk
+    // Batch lookup metadata produk (1 request kilat jika <= 50 sku)
     var uniqueSkus = [];
     var skuSeen = {};
     for (var k = 0; k < rawItems.length; k++) {
@@ -207,7 +208,7 @@ function handleWhatsAppScan(payload) {
     }
     
     var metaMap = {};
-    if (uniqueSkus.length > 0) {
+    if (uniqueSkus.length > 0 && uniqueSkus.length <= 50) {
       try {
         var inClause = uniqueSkus.map(function(itemSku) { 
           return '"' + itemSku.replace(/"/g, '""') + '"'; 
@@ -248,101 +249,20 @@ function handleWhatsAppScan(payload) {
       });
     }
     
-    // Tulis ke log_produk Supabase
+    // Tulis ke log_produk Supabase (NOL KALKULASI DI GAS)
     supabaseApiFetch('log_produk', 'POST', logEntries);
     Logger.log('Insert log_produk success. Invoice=' + invoice + ', Items=' + logEntries.length);
     
-    // Jika tipe SO, Supabase kalkulasi hasil hitung dan tulis ke stock_opname_queue
-    var queueCount = 0;
-    if (typeFinal === TYPE_SO) {
-      queueCount = kalkulasiDanTulisSoQueueSupabase(invoice, logEntries, lokasiFinal, areaFinal, operator, nowIso);
-    }
-    
     return jsonResponse({
       success: true,
-      message: 'Processed WA scan successfully.',
+      message: 'Scan berhasil dicatat ke log_produk.',
       invoice: invoice,
       type: typeFinal,
-      total_items: logEntries.length,
-      queue_items: queueCount
+      total_items: logEntries.length
     });
     
   } catch (err) {
     Logger.log('Fonnte handler error: ' + err.toString());
     return jsonResponse({ success: false, error: err.toString() });
-  }
-}
-
-function kalkulasiDanTulisSoQueueSupabase(invoice, logEntries, lokasi, area, operator, nowIso) {
-  try {
-    var hitungFisikMap = {};
-    var skuList = [];
-    var metaMap = {};
-    
-    for (var i = 0; i < logEntries.length; i++) {
-      var entry = logEntries[i];
-      var skuUpper = entry.sku.toUpperCase();
-      hitungFisikMap[skuUpper] = (hitungFisikMap[skuUpper] || 0) + (Number(entry.qty) || 0);
-      if (skuList.indexOf(skuUpper) === -1) {
-        skuList.push(skuUpper);
-        metaMap[skuUpper] = {
-          nama_produk: entry.nama_produk,
-          size: entry.size
-        };
-      }
-    }
-    
-    if (skuList.length === 0) return 0;
-    
-    var inClause = skuList.map(function(s) { return '"' + s.replace(/"/g, '""') + '"'; }).join(',');
-    var endpoint = 'stok_real_fisik?sku=in.(' + encodeURIComponent(inClause) + ')&lokasi=eq.' + encodeURIComponent(lokasi) + '&select=sku,lokasi,sisa_stok';
-    var stockRows = supabaseApiFetch(endpoint, 'GET') || [];
-    
-    var stockMap = {};
-    for (var s = 0; s < stockRows.length; s++) {
-      var row = stockRows[s];
-      if (row && row.sku) {
-        stockMap[row.sku.toUpperCase()] = Number(row.sisa_stok) || 0;
-      }
-    }
-    
-    var queueRows = [];
-    for (var k = 0; k < skuList.length; k++) {
-      var targetSku = skuList[k];
-      var qtyFisik = hitungFisikMap[targetSku] || 0;
-      var qtySistem = stockMap[targetSku] || 0;
-      var selisih = qtyFisik - qtySistem;
-      
-      if (selisih !== 0) {
-        var mInfo = metaMap[targetSku] || {};
-        queueRows.push({
-          sesi_id: invoice,
-          tanggal: nowIso,
-          sku: targetSku,
-          nama_produk: mInfo.nama_produk || targetSku,
-          size: mInfo.size || '-',
-          lokasi: lokasi,
-          area: area,
-          qty_sistem: qtySistem,
-          qty_fisik: qtyFisik,
-          selisih: selisih,
-          status: 'PENDING',
-          jenis: 'Opname WA',
-          alasan: 'Selisih Opname (' + (selisih > 0 ? '+' + selisih : selisih) + ')',
-          operator: operator,
-          invoice: invoice
-        });
-      }
-    }
-    
-    if (queueRows.length > 0) {
-      supabaseApiFetch('stock_opname_queue', 'POST', queueRows);
-      Logger.log('Tulis ke stock_opname_queue sukses. Invoice=' + invoice + ', Antrean=' + queueRows.length);
-    }
-    
-    return queueRows.length;
-  } catch (err) {
-    Logger.log('Gagal kalkulasi SO queue: ' + err.toString());
-    return 0;
   }
 }

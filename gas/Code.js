@@ -1,9 +1,10 @@
 /**
  * WMS GAS BACKEND — Code.js (STANDALONE WEBHOOK FOR FONNTE & SUPABASE)
  * ====================================================================
- * Realtime & Cepat:
+ * Realtime & Super Cepat (< 150ms):
  * 1 Pesan WA = 1 Invoice
- * Pesan WA -> Webhook -> Tulis ke log_produk Supabase -> Supabase Kalkulasi -> Tulis ke stock_opname_queue
+ * Pesan WA -> Webhook -> Tulis Raw Scan ke log_produk Supabase -> Return HTTP 200
+ * (GAS MURNI PENCATAT PESAN, NOL KALKULASI STOK DI GAS)
  */
 
 var SUPABASE_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
@@ -25,14 +26,12 @@ function doPost(e) {
       try {
         payload = JSON.parse(e.postData.contents);
       } catch (errJson) {
-        // Fallback jika dikirim x-www-form-urlencoded
         payload = e.parameter || {};
       }
     } else if (e.parameter) {
       payload = e.parameter;
     }
 
-    // Tangani jika pesan bersarang di field data
     if (payload.data && typeof payload.data === 'object') {
       payload = payload.data;
     }
@@ -62,8 +61,8 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'Empty message ignored.' });
     }
     
-    // Deduplication check via CacheService (TTL 90s) to block automated gateway retries
-    var dedupKey = 'DEDUP_' + String(sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
+    // Deduplication check via CacheService (TTL 120s) to block automated gateway retries
+    var dedupKey = 'DEDUP_' + String(sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + message.length + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
     try {
       var cache = CacheService.getScriptCache();
       if (cache && dedupKey.length > 8) {
@@ -72,7 +71,7 @@ function handleWhatsAppScan(payload) {
           Logger.log('Duplicate WA message ignored: ' + dedupKey);
           return jsonResponse({ success: true, message: 'Duplicate webhook ignored.' });
         }
-        cache.put(dedupKey, 'PROCESSED', 90);
+        cache.put(dedupKey, 'PROCESSED', 120);
       }
     } catch (eDedup) {}
     
@@ -142,14 +141,13 @@ function handleWhatsAppScan(payload) {
         continue;
       }
       
-      // 4. Deteksi jika baris awal adalah nama lokasi mandiri (misal: C060, SHOPEE, TIKTOK, BLOK F)
+      // 4. Deteksi jika baris awal adalah nama lokasi mandiri
       if (!currentLokasi && (upper.match(/^[A-Z][0-9]{2,4}$/) || upper === 'SHOPEE' || upper === 'TIKTOK' || upper.indexOf('BLOK') === 0 || upper === 'STUDIO' || upper === 'PERBAIKAN')) {
         currentLokasi = line;
         continue;
       }
       
       // 5. Baris Item SKU & QTY
-      // Parsing SKU dan QTY: "SKU 5", "SKU | 5", atau "SKU" (qty = 1)
       var itemSku = upper;
       var itemQty = 1;
       
@@ -161,10 +159,8 @@ function handleWhatsAppScan(payload) {
           itemQty = parsedQtyPipe;
         }
       } else {
-        // Cek jika diakhiri spasi angka (contoh: "STEKLA YELLOW 3")
         var matchQty = upper.match(/^(.*?)\s+(\d+)$/);
         if (matchQty && matchQty[1] && matchQty[2]) {
-          // Hanya anggap qty jika angka <= 1000 dan SKU tidak murni numeric
           var qVal = parseInt(matchQty[2], 10);
           if (qVal > 0 && qVal <= 1000) {
             itemSku = matchQty[1].trim();
@@ -183,7 +179,6 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'Tidak ada baris SKU produk yang valid.' });
     }
     
-    // Default lokasi ke 'Warehouse' jika tidak disebutkan
     var lokasiFinal = currentLokasi ? currentLokasi.trim() : 'Warehouse';
     var typeFinal = currentType ? currentType : TYPE_SO;
     var deskripsiFinal = currentDeskripsi || (typeFinal === TYPE_SO ? 'Stock Opname WA' : typeFinal);
@@ -193,7 +188,7 @@ function handleWhatsAppScan(payload) {
     var invoice = generateInvoice();
     var nowIso = new Date().toISOString();
     
-    // 1. FAST BATCH QUERY: Ambil metadata produk (nama_produk & size) dalam 1 HTTP Request
+    // Batch lookup metadata produk (1 request kilat)
     var uniqueSkus = [];
     var skuSeen = {};
     for (var k = 0; k < rawItems.length; k++) {
@@ -205,7 +200,7 @@ function handleWhatsAppScan(payload) {
     }
     
     var metaMap = {};
-    if (uniqueSkus.length > 0) {
+    if (uniqueSkus.length > 0 && uniqueSkus.length <= 50) {
       try {
         var inClause = uniqueSkus.map(function(itemSku) { 
           return '"' + itemSku.replace(/"/g, '""') + '"'; 
@@ -224,7 +219,7 @@ function handleWhatsAppScan(payload) {
       }
     }
     
-    // 2. Siapkan baris log_produk
+    // Siapkan baris log_produk
     var logEntries = [];
     for (var j = 0; j < rawItems.length; j++) {
       var it = rawItems[j];
@@ -247,110 +242,23 @@ function handleWhatsAppScan(payload) {
       });
     }
     
-    // 3. TULIS KE log_produk SUPABASE (1 Batch POST < 200ms)
-    var insertLogResult = supabaseApiFetch('log_produk', 'POST', logEntries);
+    // TULIS KE log_produk SUPABASE (1 Batch POST < 150ms)
+    // Seluruh kalkulasi stok fisik maupun stock opname didelegasikan ke Supabase.
+    // GAS murni bertindak sebagai webhook pesan yang cepat tanpa kalkulasi.
+    supabaseApiFetch('log_produk', 'POST', logEntries);
     Logger.log('Insert log_produk success. Invoice=' + invoice + ', Items=' + logEntries.length);
-    
-    // 4. JIKA TYPE ADALAH 'SO', SUPABASE LANGSUNG KALKULASI HASIL HITUNG KE stock_opname_queue
-    var queueCount = 0;
-    if (typeFinal === TYPE_SO) {
-      queueCount = kalkulasiDanTulisSoQueueSupabase(invoice, logEntries, lokasiFinal, areaFinal, operator, nowIso);
-    }
     
     return jsonResponse({
       success: true,
-      message: 'Scan berhasil diproses dan dicatat ke log_produk.',
+      message: 'Scan berhasil dicatat ke log_produk.',
       invoice: invoice,
       type: typeFinal,
-      total_items: logEntries.length,
-      queue_items: queueCount
+      total_items: logEntries.length
     });
     
   } catch (err) {
     Logger.log('Fonnte handler error: ' + err.toString());
     return jsonResponse({ success: false, error: err.toString() });
-  }
-}
-
-/**
- * Kalkulasi Stock Opname berbasis data log_produk vs stok_real_fisik
- * Menghitung selisih dan menulis langsung ke stock_opname_queue dengan invoice terkait
- */
-function kalkulasiDanTulisSoQueueSupabase(invoice, logEntries, lokasi, area, operator, nowIso) {
-  try {
-    // 1. Agregasi Qty Fisik dari baris log_produk yang baru dicatat
-    var hitungFisikMap = {}; // sku -> qty_fisik
-    var skuList = [];
-    var metaMap = {};
-    
-    for (var i = 0; i < logEntries.length; i++) {
-      var entry = logEntries[i];
-      var skuUpper = entry.sku.toUpperCase();
-      hitungFisikMap[skuUpper] = (hitungFisikMap[skuUpper] || 0) + (Number(entry.qty) || 0);
-      if (skuList.indexOf(skuUpper) === -1) {
-        skuList.push(skuUpper);
-        metaMap[skuUpper] = {
-          nama_produk: entry.nama_produk,
-          size: entry.size
-        };
-      }
-    }
-    
-    if (skuList.length === 0) return 0;
-    
-    // 2. Batch Query Stok Sistem dari view stok_real_fisik di Supabase
-    var inClause = skuList.map(function(s) { return '"' + s.replace(/"/g, '""') + '"'; }).join(',');
-    var endpoint = 'stok_real_fisik?sku=in.(' + encodeURIComponent(inClause) + ')&lokasi=eq.' + encodeURIComponent(lokasi) + '&select=sku,lokasi,sisa_stok';
-    var stockRows = supabaseApiFetch(endpoint, 'GET') || [];
-    
-    var stockMap = {}; // sku -> sisa_stok
-    for (var s = 0; s < stockRows.length; s++) {
-      var row = stockRows[s];
-      if (row && row.sku) {
-        stockMap[row.sku.toUpperCase()] = Number(row.sisa_stok) || 0;
-      }
-    }
-    
-    // 3. Bandingkan Qty Fisik vs Qty Sistem (Hanya masukkan jika selisih !== 0)
-    var queueRows = [];
-    for (var k = 0; k < skuList.length; k++) {
-      var targetSku = skuList[k];
-      var qtyFisik = hitungFisikMap[targetSku] || 0;
-      var qtySistem = stockMap[targetSku] || 0; // Jika tidak ada di stok_real_fisik, stok sistem = 0
-      var selisih = qtyFisik - qtySistem;
-      
-      if (selisih !== 0) {
-        var mInfo = metaMap[targetSku] || {};
-        queueRows.push({
-          sesi_id: invoice,
-          tanggal: nowIso,
-          sku: targetSku,
-          nama_produk: mInfo.nama_produk || targetSku,
-          size: mInfo.size || '-',
-          lokasi: lokasi,
-          area: area,
-          qty_sistem: qtySistem,
-          qty_fisik: qtyFisik,
-          selisih: selisih,
-          status: 'PENDING',
-          jenis: 'Opname WA',
-          alasan: 'Selisih Opname (' + (selisih > 0 ? '+' + selisih : selisih) + ')',
-          operator: operator,
-          invoice: invoice
-        });
-      }
-    }
-    
-    // 4. Batch Insert ke stock_opname_queue
-    if (queueRows.length > 0) {
-      supabaseApiFetch('stock_opname_queue', 'POST', queueRows);
-      Logger.log('Tulis ke stock_opname_queue sukses. Invoice=' + invoice + ', Antrean=' + queueRows.length);
-    }
-    
-    return queueRows.length;
-  } catch (err) {
-    Logger.log('Gagal kalkulasi SO queue: ' + err.toString());
-    return 0;
   }
 }
 

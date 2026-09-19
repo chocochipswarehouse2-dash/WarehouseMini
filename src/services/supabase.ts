@@ -1514,7 +1514,7 @@ export async function syncPendingStockOpnameFromLogProduk(
     // 6. Batch fetch live system stock from stok_real_fisik
     const distinctSkus = Array.from(new Set(unqueuedEntries.map((e) => e.sku)));
     const stockMap = new Map<string, number>();
-    const skuChunkSize = 100;
+    const skuChunkSize = 50;
     for (let i = 0; i < distinctSkus.length; i += skuChunkSize) {
       const chunk = distinctSkus.slice(i, i + skuChunkSize);
       const inClause = chunk.map((s) => `"${s}"`).join(',');
