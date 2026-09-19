@@ -58,6 +58,7 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -86,26 +87,11 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
     }
     setShowUrlInput(false);
     setCustomUrl('');
+    setIsDraggingOver(false);
   }, [isOpen, mode, itemToEdit, batchId]);
 
-  if (!isOpen) return null;
-
-  // Format input harga agar otomatis rapi
-  const handlePriceChange = (val: string) => {
-    const raw = val.replace(/[^0-9]/g, '');
-    if (!raw) {
-      setPrice('');
-      return;
-    }
-    const formatted = Number(raw).toLocaleString('id-ID');
-    setPrice(formatted);
-  };
-
-  // Upload & Kompres Foto
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Handler umum pemrosesan File/Blob Gambar (dari File Picker, Drag & Drop, atau Paste)
+  const processImageFile = async (file: File | Blob) => {
     setIsProcessingImage(true);
     try {
       const reader = new FileReader();
@@ -138,6 +124,98 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
       console.error('Error reading image:', err);
       onNotify('Gagal memproses gambar', 'error');
       setIsProcessingImage(false);
+    }
+  };
+
+  // Handler global Clipboard Paste (Ctrl+V) saat modal dibuka
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePaste = (e: ClipboardEvent) => {
+      // Jika user sedang mengetik di input text/url/number biasa, dan bukan menempel gambar murni, biarkan default
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      let foundImage = false;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          const blob = item.getAsFile();
+          if (blob) {
+            e.preventDefault();
+            foundImage = true;
+            onNotify('Foto dari Clipboard (Paste) terdeteksi!', 'info');
+            processImageFile(blob);
+            break;
+          }
+        }
+      }
+
+      // Jika user menempel teks berupa link gambar direct url
+      if (!foundImage) {
+        const text = e.clipboardData?.getData('text')?.trim();
+        if (text && /^https?:\/\/.+\.(jpg|jpeg|png|webp|gif|avif)(\?.*)?$/i.test(text)) {
+          setImageUrl(text);
+          onNotify('Link foto dari clipboard berhasil diterapkan!', 'success');
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => {
+      window.removeEventListener('paste', handlePaste);
+    };
+  }, [isOpen, deskripsi, nomor]);
+
+  if (!isOpen) return null;
+
+  // Format input harga agar otomatis rapi
+  const handlePriceChange = (val: string) => {
+    const raw = val.replace(/[^0-9]/g, '');
+    if (!raw) {
+      setPrice('');
+      return;
+    }
+    const formatted = Number(raw).toLocaleString('id-ID');
+    setPrice(formatted);
+  };
+
+  // Upload & Kompres Foto via Input File Picker
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processImageFile(file);
+    // Reset file input value so same file can be re-selected if needed
+    if (e.target) e.target.value = '';
+  };
+
+  // Drag & Drop Handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingOver) setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        onNotify('Foto berhasil di-drop!', 'info');
+        await processImageFile(file);
+      } else {
+        onNotify('File yang di-drop harus berupa gambar (JPG/PNG/WEBP)', 'warning');
+      }
     }
   };
 
@@ -371,36 +449,75 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
             </div>
 
             {/* SEKSI FOTO PRODUK */}
-            <div className="space-y-2 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Foto Produk
-              </label>
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`space-y-2 p-3.5 rounded-xl border transition-all ${
+                isDraggingOver
+                  ? 'bg-indigo-50/80 dark:bg-indigo-950/60 border-indigo-500 border-dashed ring-2 ring-indigo-400'
+                  : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Foto Produk
+                </label>
+                <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60 flex items-center gap-1">
+                  <span>💡 Bisa Drag & Drop atau Tekan</span>
+                  <kbd className="px-1 py-0.2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-[10px] font-mono shadow-2xs font-bold">
+                    Ctrl + V
+                  </kbd>
+                </span>
+              </div>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                {/* Image Preview Box */}
-                <div className="w-24 h-24 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden flex items-center justify-center shrink-0 shadow-2xs relative group">
+                {/* Image Preview Box & Direct Drop Target */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`w-28 h-28 rounded-xl border-2 transition-all bg-white dark:bg-slate-900 overflow-hidden flex items-center justify-center shrink-0 shadow-2xs relative group cursor-pointer ${
+                    isDraggingOver
+                      ? 'border-indigo-500 bg-indigo-50/50 scale-105'
+                      : 'border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400'
+                  }`}
+                  title="Klik untuk memilih foto atau seret/drop gambar langsung ke kotak ini"
+                >
                   {imageUrl ? (
-                    <img
-                      src={imageUrl}
-                      alt="Preview"
-                      className="w-full h-full object-cover object-top"
-                    />
+                    <>
+                      <img
+                        src={imageUrl}
+                        alt="Preview"
+                        className="w-full h-full object-cover object-top"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-medium p-1 text-center">
+                        <Camera className="w-5 h-5 mb-0.5" />
+                        <span>Ganti Foto</span>
+                      </div>
+                    </>
                   ) : (
-                    <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
-                      <ImageIcon className="w-6 h-6 opacity-40 mb-1" />
-                      <span className="text-[10px] leading-tight">Belum ada foto</span>
+                    <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center group-hover:text-indigo-500 transition-colors">
+                      <ImageIcon className="w-7 h-7 opacity-50 mb-1" />
+                      <span className="text-[10px] font-bold leading-tight">Drop / Pilih Foto</span>
                     </div>
                   )}
 
                   {isProcessingImage && (
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs">
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white text-xs gap-1.5 p-2 text-center">
                       <RefreshCw className="w-5 h-5 animate-spin" />
+                      <span className="text-[10px] font-semibold">Mengompres...</span>
+                    </div>
+                  )}
+
+                  {isDraggingOver && (
+                    <div className="absolute inset-0 bg-indigo-600/80 backdrop-blur-xs flex flex-col items-center justify-center text-white text-xs font-bold gap-1 p-2 text-center">
+                      <Upload className="w-6 h-6 animate-bounce" />
+                      <span className="text-[11px] leading-tight">Lepaskan di Sini</span>
                     </div>
                   )}
                 </div>
 
                 {/* Upload Action Buttons */}
-                <div className="space-y-2 flex-1">
+                <div className="space-y-2 flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -458,7 +575,7 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
                   )}
 
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Foto yang diunggah otomatis dikompresi hemat storage dan disimpan di Google Drive Cloud.
+                    Foto yang diunggah otomatis dikompresi hemat kuota/storage dan disimpan di Google Drive Cloud. Mendukung <strong>Drag & Drop</strong> dan <strong>Copy-Paste (Ctrl+V)</strong> langsung dari screenshot atau browser.
                   </p>
                 </div>
               </div>

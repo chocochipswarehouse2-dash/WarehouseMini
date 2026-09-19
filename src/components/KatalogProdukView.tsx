@@ -749,14 +749,11 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   };
 
   // Upload Foto per Kartu Produk (Langsung kompres & upload ke Google Drive)
-  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !targetImageUploadItemId) return;
-
-    const targetItem = allFilteredItems.find((it) => it.id === targetImageUploadItemId);
+  const handleUploadImageFile = async (itemId: string, file: File | Blob) => {
+    const targetItem = allFilteredItems.find((it) => it.id === itemId);
     const itemName = targetItem?.nomor || targetItem?.deskripsi || 'produk-katalog';
 
-    setUploadingImageId(targetImageUploadItemId);
+    setUploadingImageId(itemId);
     try {
       const reader = new FileReader();
       reader.onload = async (ev) => {
@@ -767,7 +764,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           return;
         }
 
-        onNotify('Mengompres dan mengunggah foto ke Google Drive...', 'info');
+        onNotify('Mengompres dan mengunggah foto ke Google Drive Cloud...', 'info');
         const gdriveRes = await uploadKatalogImageToGdrive(base64, itemName);
         const finalImageUrl =
           gdriveRes.success && gdriveRes.url && !gdriveRes.url.startsWith('data:')
@@ -777,7 +774,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         const nextBatches = batches.map((b) => ({
           ...b,
           items: b.items.map((it) =>
-            it.id === targetImageUploadItemId ? { ...it, image_url: finalImageUrl } : it
+            it.id === itemId ? { ...it, image_url: finalImageUrl } : it
           ),
         }));
         await saveBatches(
@@ -795,6 +792,13 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       setUploadingImageId(null);
       setTargetImageUploadItemId(null);
     }
+  };
+
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetImageUploadItemId) return;
+    await handleUploadImageFile(targetImageUploadItemId, file);
+    if (e.target) e.target.value = '';
   };
 
   // Migrasi Otomatis Seluruh Foto Base64 ke Google Drive Cloud & Bersihkan Supabase
@@ -1380,6 +1384,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                           setTargetImageUploadItemId(prod.id);
                           imageInputRef.current?.click();
                         }}
+                        onDropImage={(file) => handleUploadImageFile(prod.id, file)}
                         onEditProduct={() => handleOpenEditProduct(batch, prod)}
                         onDeleteProduct={() => handleDeleteProduct(batch.id, prod.id)}
                         onImageClick={() => handleOpenLightbox(prod)}
@@ -1423,6 +1428,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                   setTargetImageUploadItemId(prod.id);
                   imageInputRef.current?.click();
                 }}
+                onDropImage={(file) => handleUploadImageFile(prod.id, file)}
                 onEditProduct={() => handleOpenEditProduct(parentBatch, prod)}
                 onDeleteProduct={() => handleDeleteProduct(parentBatch.id, prod.id)}
                 onImageClick={() => handleOpenLightbox(prod)}
@@ -1547,6 +1553,7 @@ interface ProductCardItemProps {
   onToggleTable: () => void;
   onPrintBarcode: () => void;
   onUploadPhoto: () => void;
+  onDropImage?: (file: File | Blob) => void;
   onEditProduct: () => void;
   onDeleteProduct: () => void;
   onImageClick: () => void;
@@ -1561,17 +1568,67 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
   onToggleTable,
   onPrintBarcode,
   onUploadPhoto,
+  onDropImage,
   onEditProduct,
   onDeleteProduct,
   onImageClick,
   isUploadingPhoto,
   isAdmin,
 }) => {
+  const [isDraggingOverCard, setIsDraggingOverCard] = useState(false);
   const totalQty = item.variants?.reduce((sum, v) => sum + (v.qty || 0), 0) || 0;
   const uniqueColors = Array.from(new Set(item.variants?.map((v) => v.warna).filter(Boolean)));
 
+  const handleCardDragOver = (e: React.DragEvent) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingOverCard) setIsDraggingOverCard(true);
+  };
+
+  const handleCardDragLeave = (e: React.DragEvent) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverCard(false);
+  };
+
+  const handleCardDrop = (e: React.DragEvent) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverCard(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/') && onDropImage) {
+        onDropImage(file);
+      }
+    }
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
+    <div
+      onDragOver={handleCardDragOver}
+      onDragLeave={handleCardDragLeave}
+      onDrop={handleCardDrop}
+      className={`bg-white dark:bg-slate-850 rounded-2xl border shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group relative ${
+        isDraggingOverCard
+          ? 'border-indigo-500 ring-2 ring-indigo-400 bg-indigo-50/20 scale-[1.01]'
+          : 'border-slate-200/80 dark:border-slate-800'
+      }`}
+    >
+      {/* Overlay Animasi saat Drag Foto ke atas Kartu */}
+      {isDraggingOverCard && (
+        <div className="absolute inset-0 z-30 bg-indigo-600/85 backdrop-blur-xs flex flex-col items-center justify-center text-white p-4 text-center animate-in fade-in duration-150">
+          <Upload className="w-10 h-10 mb-2 animate-bounce" />
+          <h4 className="text-sm font-black tracking-wide">Lepaskan Foto di Sini</h4>
+          <p className="text-xs text-indigo-100 mt-1 max-w-xs">
+            Foto akan otomatis dikompresi dan disimpan untuk <strong>{item.deskripsi}</strong>
+          </p>
+        </div>
+      )}
       {/* Bagian Atas: Header Bar & Gambar Produk Utuh */}
       <div>
         {/* BARIS HEADER KARTU (Rapi, Sejajar, Tidak Berantakan) */}
