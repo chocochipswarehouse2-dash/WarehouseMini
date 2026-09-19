@@ -14,6 +14,9 @@ import {
   Layers,
   Check,
   Image as ImageIcon,
+  Globe,
+  Store,
+  Calendar,
 } from 'lucide-react';
 import { KatalogBatch, KatalogItem, KatalogVariant } from '../../types';
 import { compressImageDataUri } from './katalogStorage';
@@ -49,6 +52,8 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
   const [deskripsi, setDeskripsi] = useState<string>('');
   const [price, setPrice] = useState<string>('');
   const [imageUrl, setImageUrl] = useState<string>('');
+  const [publishOnline, setPublishOnline] = useState<string>('');
+  const [publishOffline, setPublishOffline] = useState<string>('');
   const [variants, setVariants] = useState<KatalogVariant[]>([
     { warna: '', size: 'Default', sku: '', qty: 0 },
   ]);
@@ -72,6 +77,8 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
       setDeskripsi(itemToEdit.deskripsi || '');
       setPrice(String(itemToEdit.price || ''));
       setImageUrl(itemToEdit.image_url || '');
+      setPublishOnline(itemToEdit.publish_online || '');
+      setPublishOffline(itemToEdit.publish_offline || '');
       setVariants(
         itemToEdit.variants && itemToEdit.variants.length > 0
           ? JSON.parse(JSON.stringify(itemToEdit.variants))
@@ -83,6 +90,8 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
       setDeskripsi('');
       setPrice('');
       setImageUrl('');
+      setPublishOnline('');
+      setPublishOffline('');
       setVariants([{ warna: '', size: 'Default', sku: '', qty: 0 }]);
     }
     setShowUrlInput(false);
@@ -300,6 +309,8 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
       variants: cleanVariants,
       catalog_id: selectedBatchId,
       catalog_name: targetCatalogName,
+      publish_online: publishOnline.trim() || undefined,
+      publish_offline: publishOffline.trim() || undefined,
     };
 
     setIsSaving(true);
@@ -446,6 +457,100 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
                   />
                 </div>
               </div>
+            </div>
+
+            {/* JADWAL PUBLISH PRODUK (ONLINE & OFFLINE - OPSIONAL) */}
+            <div className="p-3.5 bg-slate-50/80 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                    Jadwal Rilis / Publish <span className="text-[10px] font-normal lowercase text-slate-500 dark:text-slate-400">(opsional)</span>
+                  </label>
+                </div>
+
+                {/* Status Channel Badge */}
+                <div>
+                  {publishOnline && !publishOffline && (
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      🌐 Online Only
+                    </span>
+                  )}
+                  {!publishOnline && publishOffline && (
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                      🏬 Offline Only
+                    </span>
+                  )}
+                  {publishOnline && publishOffline && (
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      🌐 Online & 🏬 Offline
+                    </span>
+                  )}
+                  {!publishOnline && !publishOffline && (
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-200/80 text-slate-600 dark:bg-slate-750 dark:text-slate-400">
+                      Belum Terjadwal
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Publish Online */}
+                <div>
+                  <label className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <span className="flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                      <span>Publish Online (E-Commerce)</span>
+                    </span>
+                    {publishOnline && (
+                      <button
+                        type="button"
+                        onClick={() => setPublishOnline('')}
+                        className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer"
+                        title="Kosongkan tanggal online"
+                      >
+                        ✕ Kosongkan
+                      </button>
+                    )}
+                  </label>
+                  <input
+                    type="date"
+                    value={publishOnline}
+                    onChange={(e) => setPublishOnline(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+
+                {/* Publish Offline */}
+                <div>
+                  <label className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <span className="flex items-center gap-1.5">
+                      <Store className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>Publish Offline (Store / Butik)</span>
+                    </span>
+                    {publishOffline && (
+                      <button
+                        type="button"
+                        onClick={() => setPublishOffline('')}
+                        className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer"
+                        title="Kosongkan tanggal offline"
+                      >
+                        ✕ Kosongkan
+                      </button>
+                    )}
+                  </label>
+                  <input
+                    type="date"
+                    value={publishOffline}
+                    onChange={(e) => setPublishOffline(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                💡 <em>Tanggal opsional. Boleh dikosongkan jika produk dijual khusus <strong>Online Only</strong> atau <strong>Offline Only</strong>, atau dikosongkan keduanya jika belum ditentukan jadwal rilisnya.</em>
+              </p>
             </div>
 
             {/* SEKSI FOTO PRODUK */}

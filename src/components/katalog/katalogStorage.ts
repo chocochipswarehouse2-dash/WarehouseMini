@@ -61,6 +61,8 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
           catalog_id: it.catalog_id || b.id || `batch-${idx + 1}`,
           catalog_name: it.catalog_name || b.name || `Katalog ${idx + 1}`,
           is_hidden: Boolean(it.is_hidden),
+          publish_online: it.publish_online || '',
+          publish_offline: it.publish_offline || '',
         })),
       }));
     }
@@ -76,6 +78,8 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
         catalog_id: 'batch-325b',
         catalog_name: it.catalog_name || '325 B',
         is_hidden: Boolean(it.is_hidden),
+        publish_online: it.publish_online || '',
+        publish_offline: it.publish_offline || '',
       })),
     };
     return [defaultBatch];
@@ -130,6 +134,8 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
           price: String(it.price || ''),
           variants: it.variants || [],
           image_url: (it.image_url && it.image_url.startsWith('data:image')) ? '' : it.image_url,
+          publish_online: it.publish_online || null,
+          publish_offline: it.publish_offline || null,
           is_hidden: it.is_hidden || false,
         });
       });
@@ -226,7 +232,9 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
           image_url: rowImg,
           catalog_id: batchId,
           catalog_name: batchName,
-          is_hidden: row.is_hidden || false
+          is_hidden: row.is_hidden || false,
+          publish_online: row.publish_online || '',
+          publish_offline: row.publish_offline || '',
         });
       });
       

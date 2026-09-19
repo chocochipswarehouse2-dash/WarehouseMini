@@ -50,6 +50,8 @@ export interface KatalogItem {
   catalog_id?: string;
   catalog_name?: string;
   is_hidden?: boolean;
+  publish_online?: string; // Tanggal Publish Online (YYYY-MM-DD or formatted string, optional)
+  publish_offline?: string; // Tanggal Publish Offline (YYYY-MM-DD or formatted string, optional)
 }
 
 export interface KatalogBatch {

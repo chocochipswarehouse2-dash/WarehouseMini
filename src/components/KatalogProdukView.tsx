@@ -33,6 +33,9 @@ import {
   ExternalLink,
   Cloud,
   ZoomIn,
+  Globe,
+  Store,
+  Calendar,
 } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import JSZip from 'jszip';
@@ -79,6 +82,8 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   sku: ['sku', 'kode', 'barcode', 'kodebarang', 'itemcode', 'kodesku', 'kodeproduk', 'barcodeproduk'],
   qty: ['qty', 'jumlah', 'stok', 'stock', 'quantity', 'total', 'stokfisik', 'qtyorder', 'kuantitas'],
   image_url: ['image', 'imageurl', 'gambar', 'foto', 'photo', 'url', 'linkfoto', 'linkgambar', 'fotoproduk'],
+  publish_online: ['publishonline', 'tglpublishonline', 'tanggalpublishonline', 'onlinepublish', 'tglonline', 'tanggalliveonline', 'launchingonline', 'online'],
+  publish_offline: ['publishoffline', 'tglpublishoffline', 'tanggalpublishoffline', 'offlinepublish', 'tgloffline', 'tanggalliveoffline', 'launchingoffline', 'publishstore', 'offline', 'store'],
 };
 
 // Palet warna badge dinamis per katalog
@@ -100,6 +105,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
   // Filter & Tampilan
   const [searchQuery, setSearchQuery] = useState('');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'online_only' | 'offline_only' | 'both' | 'none'>('all');
   const [hideVariants, setHideVariants] = useState(false);
   const [groupByCatalog, setGroupByCatalog] = useState(true);
   const [cardTableVisible, setCardTableVisible] = useState<Record<string, boolean>>({});
@@ -218,23 +224,36 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       .filter((b) => selectedCatalogIds.includes(b.id))
       .map((b) => {
         const items = b.items;
-        if (!searchQuery.trim()) return { ...b, items };
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.trim().toLowerCase();
         const filteredItems = items.filter((it) => {
+          // Filter Saluran / Channel
+          if (channelFilter === 'online_only') {
+            if (!it.publish_online || Boolean(it.publish_offline)) return false;
+          } else if (channelFilter === 'offline_only') {
+            if (!it.publish_offline || Boolean(it.publish_online)) return false;
+          } else if (channelFilter === 'both') {
+            if (!it.publish_online || !it.publish_offline) return false;
+          } else if (channelFilter === 'none') {
+            if (Boolean(it.publish_online) || Boolean(it.publish_offline)) return false;
+          }
+
+          if (!q) return true;
           const matchName = it.deskripsi.toLowerCase().includes(q);
           const matchNo = it.nomor.toLowerCase().includes(q);
+          const matchOnline = it.publish_online ? it.publish_online.toLowerCase().includes(q) : false;
+          const matchOffline = it.publish_offline ? it.publish_offline.toLowerCase().includes(q) : false;
           const matchVariant = it.variants.some(
             (v) =>
               v.sku.toLowerCase().includes(q) ||
               v.warna.toLowerCase().includes(q) ||
               v.size.toLowerCase().includes(q)
           );
-          return matchName || matchNo || matchVariant;
+          return matchName || matchNo || matchVariant || matchOnline || matchOffline;
         });
         return { ...b, items: filteredItems };
       })
-      .filter((b) => b.items.length > 0 || !searchQuery.trim());
-  }, [batches, selectedCatalogIds, searchQuery]);
+      .filter((b) => b.items.length > 0 || (!searchQuery.trim() && channelFilter === 'all'));
+  }, [batches, selectedCatalogIds, searchQuery, channelFilter]);
 
   const allFilteredItems = useMemo(() => {
     return filteredBatches.flatMap((b) => b.items);
@@ -429,6 +448,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           const sku = getVal(row, 'sku');
           const qtyRaw = getVal(row, 'qty');
           const explicitImg = getVal(row, 'image_url');
+          const pubOnline = getVal(row, 'publish_online');
+          const pubOffline = getVal(row, 'publish_offline');
 
           const foundDrawingImg = rowImages[r] || rowImages[r - 1] || rowImages[r + 1] || explicitImg;
           const qty = parseInt(qtyRaw, 10) || 0;
@@ -459,11 +480,19 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               variants: [],
               image_url: foundDrawingImg || '',
               catalog_name: suggested,
+              publish_online: pubOnline || undefined,
+              publish_offline: pubOffline || undefined,
             };
             lastWarna = '';
           }
 
           if (currentItem) {
+            if (pubOnline && !currentItem.publish_online) {
+              currentItem.publish_online = pubOnline;
+            }
+            if (pubOffline && !currentItem.publish_offline) {
+              currentItem.publish_offline = pubOffline;
+            }
             if (foundDrawingImg && !currentItem.image_url) {
               currentItem.image_url = foundDrawingImg;
             }
@@ -1162,7 +1191,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           </div>
         </div>
 
-        {/* Baris 2: Filter Dropdown Katalog (Scalable untuk ribuan katalog dengan pencarian & multi-select) */}
+        {/* Baris 2: Filter Dropdown Katalog & Filter Saluran Publish */}
         <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <KatalogFilterDropdown
             batches={batches}
@@ -1172,6 +1201,76 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             onSelectOnly={selectOnlyCatalog}
             getBatchPalette={getBatchPalette}
           />
+
+          {/* Filter Channel / Saluran Rilis */}
+          <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5" />
+              <span>Saluran:</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setChannelFilter('all')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                channelFilter === 'all'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Semua
+            </button>
+            <button
+              type="button"
+              onClick={() => setChannelFilter('online_only')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                channelFilter === 'online_only'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                  : 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+              }`}
+              title="Tampilkan hanya produk khusus Online"
+            >
+              <Globe className="w-3 h-3" />
+              <span>Online Only</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setChannelFilter('offline_only')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                channelFilter === 'offline_only'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+              }`}
+              title="Tampilkan hanya produk khusus Offline / Butik"
+            >
+              <Store className="w-3 h-3" />
+              <span>Offline Only</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setChannelFilter('both')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                channelFilter === 'both'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+              }`}
+              title="Tampilkan produk yang dirilis di Online & Offline"
+            >
+              <span>Online & Offline</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setChannelFilter('none')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                channelFilter === 'none'
+                  ? 'bg-slate-700 text-white border-slate-700 shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+              }`}
+              title="Tampilkan produk yang belum ditentukan tanggal rilisnya"
+            >
+              <Calendar className="w-3 h-3" />
+              <span>Belum Ditentukan</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1733,6 +1832,40 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
               <span>Barcode</span>
             </button>
           </div>
+
+          {/* BADGE JADWAL PUBLISH ONLINE / OFFLINE */}
+          {(item.publish_online || item.publish_offline) && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {item.publish_online && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60"
+                  title={`Tanggal Publish Online: ${item.publish_online}`}
+                >
+                  <Globe className="w-3 h-3 text-blue-500 shrink-0" />
+                  <span>Online: {item.publish_online}</span>
+                </span>
+              )}
+              {item.publish_offline && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
+                  title={`Tanggal Publish Offline: ${item.publish_offline}`}
+                >
+                  <Store className="w-3 h-3 text-amber-500 shrink-0" />
+                  <span>Offline: {item.publish_offline}</span>
+                </span>
+              )}
+              {item.publish_online && !item.publish_offline && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-2xs">
+                  Online Only
+                </span>
+              )}
+              {!item.publish_online && item.publish_offline && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-amber-600 text-white shadow-2xs">
+                  Offline Only
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Baris Ringkasan Varian + Tombol Sembunyikan/Tampilkan Varian */}
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
