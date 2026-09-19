@@ -225,10 +225,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'cetak_label' as ActivePage,
-      label: 'Cetak Label A6',
-      shortLabel: 'Label A6',
+      label: 'Cetak Label',
+      shortLabel: 'Cetak Label',
       icon: Printer,
-      description: 'Cetak resi pengiriman manual',
+      description: 'Label Paket & Label Custom (QR Code Rak)',
       access: canCetakLabel,
     },
     {

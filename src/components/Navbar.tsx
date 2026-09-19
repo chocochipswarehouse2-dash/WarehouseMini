@@ -125,7 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'supabase_migration':
         return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
       case 'cetak_label':
-        return { title: 'Cetak Label A6', subtitle: 'Cetak Resi Pengiriman Manual', icon: Printer };
+        return { title: 'Cetak Label', subtitle: 'Label Paket & Label Custom (QR Code Rak)', icon: Printer };
       case 'cetak_barcode':
         return { title: 'Cetak Barcode Produk', subtitle: 'Stiker Thermal 50×20 mm & Import Massal', icon: QrCode };
       
