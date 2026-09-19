@@ -10,6 +10,22 @@
 var SUPABASE_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
 var SUPABASE_ANON_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
 
+// ===================================================
+// DAFTAR GRUP WHATSAPP RESMI (ALLOWED GROUPS)
+// Sesuai aturan baku Config.gs WMS Chocochips
+// ===================================================
+var ALLOWED_GROUPS_MUTASI = [
+  "120363427883208118@g.us",
+  "120363409655838712@g.us"
+];
+
+var ALLOWED_GROUPS_LOG_PRODUCT = [
+  "120363426359702090@g.us",
+  "120363430508883535@g.us",
+  "120363410159735625@g.us",
+  "120363410565626286@g.us"
+];
+
 /**
  * Entry point doPost
  */
@@ -61,8 +77,61 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'Empty message ignored.' });
     }
     
-    // Deduplication check via CacheService (TTL 120s) to block automated gateway retries
-    var dedupKey = 'DEDUP_' + String(sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + message.length + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
+    if (message === 'PING TEST WEBHOOK') {
+      return jsonResponse({ success: true, message: 'PING OK - Webhook Standalone Aktif' });
+    }
+
+    // 1. ATURAN BAKU: Hanya pesan berawalan '#' yang diproses
+    if (!message.startsWith('#')) {
+      return jsonResponse({ success: true, message: 'IGNORED_NO_HASHTAG' });
+    }
+
+    // 2. ATURAN BAKU: Ekstraksi dan Validasi Group ID (@g.us)
+    var groupId = null;
+    var candidates = [
+      payload.sender,
+      payload.pengirim,
+      payload.from,
+      payload.chatId,
+      payload.chat_id,
+      payload.group,
+      payload.group_id,
+      payload.id,
+      payload.target
+    ];
+    for (var g = 0; g < candidates.length; g++) {
+      var cand = String(candidates[g] || '').trim();
+      if (cand.indexOf('@g.us') > -1) {
+        groupId = cand;
+        break;
+      }
+    }
+
+    // Wajib berasal dari grup WhatsApp yang terdaftar
+    if (!groupId) {
+      Logger.log('Pesan WA diabaikan: bukan dari grup WhatsApp (@g.us).');
+      return jsonResponse({ success: true, message: 'IGNORED_NOT_FROM_GROUP' });
+    }
+
+    var isGroupSo = ALLOWED_GROUPS_LOG_PRODUCT.indexOf(groupId) > -1;
+    var isGroupMutasi = ALLOWED_GROUPS_MUTASI.indexOf(groupId) > -1;
+
+    // Tolak jika bukan salah satu grup resmi yang diizinkan
+    if (!isGroupSo && !isGroupMutasi) {
+      Logger.log('Pesan WA diabaikan: groupId=' + groupId + ' tidak terdaftar dalam ALLOWED_GROUPS.');
+      return jsonResponse({ success: true, message: 'IGNORED_UNAUTHORIZED_GROUP' });
+    }
+
+    // 3. ATURAN BAKU: Validasi otorisasi jenis pesan vs grup
+    var upperFirst = message.toUpperCase();
+    var isSoMessage = upperFirst.indexOf('#SO') === 0 || upperFirst.indexOf('#STOCK OPNAME') === 0 || upperFirst.indexOf('#OPNAME') === 0;
+    if (isSoMessage && !isGroupSo) {
+      Logger.log('Pesan SO diabaikan: grup ' + groupId + ' bukan grup Stock Opname.');
+      return jsonResponse({ success: true, message: 'IGNORED_UNAUTHORIZED_GROUP_FOR_SO' });
+    }
+
+    // 4. ATURAN BAKU: Deduplikasi Webhook via CacheService (TTL 120s)
+    var dedupKey = 'DEDUP_' + String(groupId).replace(/[^a-zA-Z0-9]/g, '') + '_' + message.length + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
     try {
       var cache = CacheService.getScriptCache();
       if (cache && dedupKey.length > 8) {
@@ -75,12 +144,8 @@ function handleWhatsAppScan(payload) {
       }
     } catch (eDedup) {}
     
-    var lines = message.split('\n');
-    var currentType = '';
-    var currentDeskripsi = '';
-    var currentLokasi = '';
-    var rawItems = [];
-    var operator = name + ' | ' + sender;
+    var actualSender = payload.member || payload.participant || (sender.indexOf('@g.us') === -1 ? sender : '');
+    var operator = name + ' | ' + (actualSender || sender || groupId);
     
     var TYPE_IN = 'IN';
     var TYPE_OUT = 'OUT';
