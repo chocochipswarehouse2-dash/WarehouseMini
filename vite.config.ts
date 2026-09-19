@@ -58,6 +58,7 @@ export default defineConfig(({ command }) => {
           background_color: '#0f172a',
           display: 'standalone',
           display_override: ['standalone', 'minimal-ui'],
+          orientation: 'portrait',
           scope: './',
           start_url: './',
           lang: 'id',

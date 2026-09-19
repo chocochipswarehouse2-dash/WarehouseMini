@@ -33,6 +33,7 @@ import { ScannedItemsList } from './components/ScannedItemsList';
 import { BottomSaveBar } from './components/BottomSaveBar';
 import { ApkInstallModal } from './components/ApkInstallModal';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
+import { MobileOrientationWarning } from './components/MobileOrientationWarning';
 import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { ThemePickerModal } from './components/ThemePickerModal';
@@ -1843,6 +1844,9 @@ export default function App() {
         onClose={() => setIsApkModalOpen(false)}
         onNotify={showToast}
       />
+
+      {/* Mobile Landscape Orientation Warning & Quick Portrait Lock */}
+      <MobileOrientationWarning />
 
       {/* PWA Background Update Prompt Banner */}
       <PwaUpdatePrompt />

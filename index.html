@@ -32,6 +32,31 @@
       }(window.location))
     </script>
     
+    <!-- Enforce Portrait Orientation on Mobile -->
+    <script>
+      (function() {
+        function lockPortrait() {
+          try {
+            var ori = window.screen && (window.screen.orientation || window.screen.mozOrientation || window.screen.msOrientation);
+            if (ori && typeof ori.lock === 'function') {
+              ori.lock('portrait').catch(function() {});
+            }
+          } catch (e) {}
+        }
+        lockPortrait();
+        window.addEventListener('DOMContentLoaded', lockPortrait);
+        window.addEventListener('touchstart', lockPortrait, { passive: true, once: true });
+        window.addEventListener('click', lockPortrait, { passive: true, once: true });
+        if (window.screen && window.screen.orientation) {
+          window.screen.orientation.addEventListener('change', function() {
+            if (window.screen.orientation.type && window.screen.orientation.type.indexOf('landscape') !== -1) {
+              lockPortrait();
+            }
+          });
+        }
+      })();
+    </script>
+    
 
     <!-- Google Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
