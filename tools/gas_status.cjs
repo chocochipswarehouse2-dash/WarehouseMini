@@ -1,6 +1,7 @@
 const fs = require('fs');
 
-const SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
+const MAIN_SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
+const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsruqmE';
 
 async function getAccessToken() {
   const clasprc = JSON.parse(fs.readFileSync('C:/Users/Chocochips Warehouse/.clasprc.json', 'utf8'));
@@ -32,36 +33,38 @@ async function getAccessToken() {
   return def.access_token;
 }
 
+async function checkProjectStatus(scriptId, label, token) {
+  const headers = { Authorization: 'Bearer ' + token };
+  const depRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, { headers });
+  const depData = await depRes.json();
+  const deployments = depData.deployments || [];
+
+  const activeDep = deployments.find(d => d.deploymentConfig && d.deploymentConfig.versionNumber) || deployments[0];
+  const activeVersion = activeDep?.deploymentConfig?.versionNumber || 'Unknown';
+  const depId = activeDep?.deploymentId || 'Unknown';
+
+  const verRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, { headers });
+  const verData = await verRes.json();
+  const versions = verData.versions || [];
+  const latestVersion = versions.length > 0 ? versions[versions.length - 1].versionNumber : activeVersion;
+
+  console.log(`[GAS STATUS] ${label} (${scriptId})`);
+  console.log(`[GAS STATUS] -> Active Deployment ID: ${depId}`);
+  console.log(`[GAS STATUS] -> Active Version: ${activeVersion} (Latest Created: ${latestVersion})`);
+
+  return { scriptId, label, activeVersion, latestVersion, depId };
+}
+
 async function checkGasStatus() {
   try {
     const token = await getAccessToken();
-    const headers = { Authorization: 'Bearer ' + token };
+    const webhookStatus = await checkProjectStatus(WEBHOOK_SCRIPT_ID, 'Standalone Fonnte Webhook', token);
+    const mainStatus = await checkProjectStatus(MAIN_SCRIPT_ID, 'Main WMS Backend', token);
 
-    // 1. Cek deployments aktif
-    const depRes = await fetch(`https://script.googleapis.com/v1/projects/${SCRIPT_ID}/deployments`, { headers });
-    const depData = await depRes.json();
-    const deployments = depData.deployments || [];
-
-    const activeDep = deployments.find(d => d.deploymentConfig && d.deploymentConfig.versionNumber) || deployments[0];
-    const activeVersion = activeDep?.deploymentConfig?.versionNumber || 'Unknown';
-    const depId = activeDep?.deploymentId || 'Unknown';
-
-    // 2. Cek versi terbaru
-    const verRes = await fetch(`https://script.googleapis.com/v1/projects/${SCRIPT_ID}/versions`, { headers });
-    const verData = await verRes.json();
-    const versions = verData.versions || [];
-    const latestVersion = versions.length > 0 ? versions[versions.length - 1].versionNumber : activeVersion;
-
-    console.log(`[GAS STATUS] Project: ${SCRIPT_ID}`);
-    console.log(`[GAS STATUS] Active Deployment ID: ${depId}`);
-    console.log(`[GAS STATUS] Active Version: ${activeVersion} (Latest Created: ${latestVersion})`);
-    
     return {
       success: true,
-      scriptId: SCRIPT_ID,
-      activeVersion,
-      latestVersion,
-      deploymentId: depId
+      webhook: webhookStatus,
+      main: mainStatus
     };
   } catch (err) {
     console.warn('[GAS STATUS WARNING] Tidak dapat memeriksa status GAS live:', err.message);

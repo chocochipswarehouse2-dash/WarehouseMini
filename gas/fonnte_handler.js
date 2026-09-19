@@ -1,8 +1,12 @@
 /**
  * WMS GAS BACKEND — fonnte_handler.gs
- * ============================
+ * ====================================
  * Menangani request Webhook dari WhatsApp (Fonnte).
  * Format Payload: { sender, name, message }
+ * 
+ * Flow:
+ * 1 Pesan WA = 1 Invoice
+ * Pesan WA -> Webhook -> Tulis ke log_produk Supabase -> Supabase Kalkulasi -> Tulis ke stock_opname_queue
  */
 
 /**
@@ -36,22 +40,6 @@ function supabaseApiFetch(endpoint, method, payload) {
   return text ? JSON.parse(text) : null;
 }
 
-/**
- * Mendapatkan Data Produk dari master_produk (Supabase)
- */
-function cariMetaProdukBySkuSupabase(sku) {
-  try {
-    var skuEncoded = encodeURIComponent(sku);
-    var result = supabaseApiFetch('master_produk?sku=eq.' + skuEncoded + '&select=sku,nama_produk,size', 'GET');
-    if (result && result.length > 0) {
-      return result[0];
-    }
-  } catch (e) {
-    Logger.log('Error cariMetaProdukBySkuSupabase: ' + e.message);
-  }
-  return null;
-}
-
 function getArea(lokasi) {
   var lok = String(lokasi || '').trim().toUpperCase();
   if (!lok) return 'Warehouse';
@@ -72,7 +60,7 @@ function generateInvoice() {
 function handleWhatsAppScan(payload) {
   try {
     var sender = payload.sender || payload.pengirim || payload.from || payload.phone || '';
-    var actualSender = payload.participant || sender; // Participant is the person in a group
+    var actualSender = payload.participant || sender;
     var name = payload.pushname || payload.name || actualSender;
     var message = (payload.message || payload.pesan || payload.text || '').trim();
     
@@ -80,7 +68,7 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'Empty message ignored.' });
     }
     
-    // Deduplication check via CacheService (TTL 120s) to block automated gateway retries
+    // Deduplication check via CacheService (TTL 90s)
     var dedupKey = 'DEDUP_' + String(actualSender || sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
     try {
       var cache = CacheService.getScriptCache();
@@ -90,7 +78,7 @@ function handleWhatsAppScan(payload) {
           Logger.log('Duplicate WA message ignored: ' + dedupKey);
           return jsonResponse({ success: true, message: 'Duplicate webhook ignored.' });
         }
-        cache.put(dedupKey, 'PROCESSED', 120);
+        cache.put(dedupKey, 'PROCESSED', 90);
       }
     } catch (eDedup) {}
     
@@ -98,15 +86,14 @@ function handleWhatsAppScan(payload) {
     var currentType = '';
     var currentDeskripsi = '';
     var currentLokasi = '';
-    var rows = [];
+    var rawItems = [];
     var operator = name + ' | ' + actualSender;
     
     var TYPE_IN = 'IN';
     var TYPE_OUT = 'OUT';
     var TYPE_SO = 'SO';
-    
-    // hitungFisik[lokasi][sku] = qty
-    var hitungFisik = {};
+    var TYPE_ADJ_IN = 'ADJ_IN';
+    var TYPE_ADJ_OUT = 'ADJ_OUT';
     
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
@@ -114,90 +101,248 @@ function handleWhatsAppScan(payload) {
       
       var upper = line.toUpperCase();
       
+      // 1. Deteksi Header Tag
+      if (upper.indexOf('#SO') === 0 || upper.indexOf('#STOCK OPNAME') === 0 || upper.indexOf('#OPNAME') === 0) {
+        currentType = TYPE_SO;
+        var restSo = line.replace(/^#[A-Z0-9_\s]*(SO|STOCK OPNAME|OPNAME)\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        if (restSo) currentLokasi = restSo;
+        currentDeskripsi = 'Stock Opname WA';
+        continue;
+      }
+      
       if (upper.indexOf(' IN') > -1 || upper.indexOf('#IN') === 0) {
         currentType = TYPE_IN;
-        currentDeskripsi = line.replace(/^#[A-Z0-9_\\s]*IN\\b/i, '').trim() || 'IN';
+        var restIn = line.replace(/^#[A-Z0-9_\s]*IN\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        if (restIn && !currentLokasi) currentLokasi = restIn;
+        currentDeskripsi = restIn || 'IN';
         continue;
       }
+      
       if (upper.indexOf(' OUT') > -1 || upper.indexOf('#OUT') === 0) {
         currentType = TYPE_OUT;
-        currentDeskripsi = line.replace(/^#[A-Z0-9_\\s]*OUT\\b/i, '').trim() || 'OUT';
+        var restOut = line.replace(/^#[A-Z0-9_\s]*OUT\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        if (restOut && !currentLokasi) currentLokasi = restOut;
+        currentDeskripsi = restOut || 'OUT';
+        continue;
+      }
+
+      if (upper.indexOf('#ADJ_IN') === 0 || upper.indexOf('#ADJ-IN') === 0) {
+        currentType = TYPE_ADJ_IN;
+        continue;
+      }
+
+      if (upper.indexOf('#ADJ_OUT') === 0 || upper.indexOf('#ADJ-OUT') === 0) {
+        currentType = TYPE_ADJ_OUT;
         continue;
       }
       
+      // 2. Deteksi Lokasi eksplisit (#LOK / #LOKASI)
       if (upper.indexOf('#LOK') === 0) {
-        currentLokasi = line.replace(/#LOK/i, '').trim();
+        currentLokasi = line.replace(/^#LOK[ASI:]*\s*/i, '').trim();
         continue;
       }
       
+      // 3. Deteksi Keterangan (#KET)
       if (upper.indexOf('#KET') === 0) {
-        currentDeskripsi = line.replace(/^#KET/i, '').trim();
+        currentDeskripsi = line.replace(/^#KET[:\s]*/i, '').trim();
         continue;
       }
       
-      if (currentLokasi) {
-        var typeToUse = currentType === '' ? TYPE_SO : currentType;
-        var deskripsiToUse = currentDeskripsi !== '' ? currentDeskripsi : (currentType === '' ? 'Stock Opname WA' : currentType);
-        var area = getArea(currentLokasi);
-        var sku = upper; // Using the original line value as SKU, uppercased
-        
-        rows.push({
-          sku: sku,
-          lokasi: currentLokasi,
-          type: typeToUse,
-          keterangan: deskripsiToUse,
-          area: area
-        });
-        
-        if (typeToUse === TYPE_SO) {
-          if (!hitungFisik[currentLokasi]) hitungFisik[currentLokasi] = {};
-          hitungFisik[currentLokasi][sku] = (hitungFisik[currentLokasi][sku] || 0) + 1;
+      // 4. Deteksi jika baris awal adalah nama lokasi mandiri
+      if (!currentLokasi && (upper.match(/^[A-Z][0-9]{2,4}$/) || upper === 'SHOPEE' || upper === 'TIKTOK' || upper.indexOf('BLOK') === 0 || upper === 'STUDIO' || upper === 'PERBAIKAN')) {
+        currentLokasi = line;
+        continue;
+      }
+      
+      // 5. Baris Item SKU & QTY
+      var itemSku = upper;
+      var itemQty = 1;
+      
+      if (upper.indexOf('|') > -1) {
+        var partsPipe = upper.split('|');
+        itemSku = partsPipe[0].trim();
+        var parsedQtyPipe = parseInt(partsPipe[1].trim(), 10);
+        if (!isNaN(parsedQtyPipe) && parsedQtyPipe > 0) {
+          itemQty = parsedQtyPipe;
+        }
+      } else {
+        var matchQty = upper.match(/^(.*?)\s+(\d+)$/);
+        if (matchQty && matchQty[1] && matchQty[2]) {
+          var qVal = parseInt(matchQty[2], 10);
+          if (qVal > 0 && qVal <= 1000) {
+            itemSku = matchQty[1].trim();
+            itemQty = qVal;
+          }
         }
       }
-    }
-    
-    if (rows.length === 0) {
-      return jsonResponse({ success: true, message: 'No valid data to process.' });
-    }
-    
-    var invoice = generateInvoice();
-    var logEntries = [];
-    
-    for (var j = 0; j < rows.length; j++) {
-      var r = rows[j];
-      var meta = cariMetaProdukBySkuSupabase(r.sku);
-      var nama_produk = meta ? meta.nama_produk : (r.sku === 'KOLI' ? 'Koli Kargo' : 'Produk Baru / Unknown');
-      var size = meta ? (meta.size || '-') : '-';
       
-      logEntries.push({
-        type: r.type,
-        invoice: invoice,
-        sku: r.sku,
-        nama_produk: nama_produk,
-        size: size,
-        area: r.area,
-        lokasi: r.lokasi,
-        qty: 1,
-        operator: operator,
-        keterangan: r.keterangan
+      rawItems.push({
+        sku: itemSku,
+        qty: itemQty
       });
     }
     
-    // 1. TULIS KE log_produk SUPABASE
-    // Catatan: Seluruh kalkulasi stok (IN/OUT maupun SO) sepenuhnya diserahkan ke Supabase (stok_real_fisik).
-    // GAS murni bertindak sebagai webhook pesan yang cepat (< 200ms) tanpa bottleneck.
-    if (logEntries.length > 0) {
-      try {
-        supabaseApiFetch('log_produk', 'POST', logEntries);
-      } catch(err) {
-        Logger.log('Supabase POST log_produk error: ' + err.toString());
+    if (rawItems.length === 0) {
+      return jsonResponse({ success: true, message: 'Tidak ada baris SKU produk yang valid.' });
+    }
+    
+    var lokasiFinal = currentLokasi ? currentLokasi.trim() : 'Warehouse';
+    var typeFinal = currentType ? currentType : TYPE_SO;
+    var deskripsiFinal = currentDeskripsi || (typeFinal === TYPE_SO ? 'Stock Opname WA' : typeFinal);
+    var areaFinal = getArea(lokasiFinal);
+    
+    // 1 PESAN WA = 1 INVOICE
+    var invoice = generateInvoice();
+    var nowIso = new Date().toISOString();
+    
+    // Batch lookup metadata produk
+    var uniqueSkus = [];
+    var skuSeen = {};
+    for (var k = 0; k < rawItems.length; k++) {
+      var s = rawItems[k].sku;
+      if (!skuSeen[s]) {
+        skuSeen[s] = true;
+        uniqueSkus.push(s);
       }
     }
     
-    return jsonResponse({ success: true, message: 'Processed WA scan successfully.', invoice: invoice });
+    var metaMap = {};
+    if (uniqueSkus.length > 0) {
+      try {
+        var inClause = uniqueSkus.map(function(itemSku) { 
+          return '"' + itemSku.replace(/"/g, '""') + '"'; 
+        }).join(',');
+        var metaResults = supabaseApiFetch('master_produk?sku=in.(' + encodeURIComponent(inClause) + ')&select=sku,nama_produk,size', 'GET');
+        if (metaResults && metaResults.length > 0) {
+          for (var m = 0; m < metaResults.length; m++) {
+            var metaRow = metaResults[m];
+            if (metaRow && metaRow.sku) {
+              metaMap[metaRow.sku.toUpperCase()] = metaRow;
+            }
+          }
+        }
+      } catch (eMeta) {
+        Logger.log('Batch meta lookup warning: ' + eMeta.toString());
+      }
+    }
+    
+    var logEntries = [];
+    for (var j = 0; j < rawItems.length; j++) {
+      var it = rawItems[j];
+      var meta = metaMap[it.sku];
+      var nama_produk = meta ? meta.nama_produk : (it.sku === 'KOLI' ? 'Koli Kargo' : it.sku);
+      var size = meta ? (meta.size || '-') : '-';
+      
+      logEntries.push({
+        type: typeFinal,
+        invoice: invoice,
+        sku: it.sku,
+        nama_produk: nama_produk,
+        size: size,
+        area: areaFinal,
+        lokasi: lokasiFinal,
+        qty: it.qty,
+        operator: operator,
+        keterangan: deskripsiFinal,
+        created_at: nowIso
+      });
+    }
+    
+    // Tulis ke log_produk Supabase
+    supabaseApiFetch('log_produk', 'POST', logEntries);
+    Logger.log('Insert log_produk success. Invoice=' + invoice + ', Items=' + logEntries.length);
+    
+    // Jika tipe SO, Supabase kalkulasi hasil hitung dan tulis ke stock_opname_queue
+    var queueCount = 0;
+    if (typeFinal === TYPE_SO) {
+      queueCount = kalkulasiDanTulisSoQueueSupabase(invoice, logEntries, lokasiFinal, areaFinal, operator, nowIso);
+    }
+    
+    return jsonResponse({
+      success: true,
+      message: 'Processed WA scan successfully.',
+      invoice: invoice,
+      type: typeFinal,
+      total_items: logEntries.length,
+      queue_items: queueCount
+    });
     
   } catch (err) {
     Logger.log('Fonnte handler error: ' + err.toString());
     return jsonResponse({ success: false, error: err.toString() });
+  }
+}
+
+function kalkulasiDanTulisSoQueueSupabase(invoice, logEntries, lokasi, area, operator, nowIso) {
+  try {
+    var hitungFisikMap = {};
+    var skuList = [];
+    var metaMap = {};
+    
+    for (var i = 0; i < logEntries.length; i++) {
+      var entry = logEntries[i];
+      var skuUpper = entry.sku.toUpperCase();
+      hitungFisikMap[skuUpper] = (hitungFisikMap[skuUpper] || 0) + (Number(entry.qty) || 0);
+      if (skuList.indexOf(skuUpper) === -1) {
+        skuList.push(skuUpper);
+        metaMap[skuUpper] = {
+          nama_produk: entry.nama_produk,
+          size: entry.size
+        };
+      }
+    }
+    
+    if (skuList.length === 0) return 0;
+    
+    var inClause = skuList.map(function(s) { return '"' + s.replace(/"/g, '""') + '"'; }).join(',');
+    var endpoint = 'stok_real_fisik?sku=in.(' + encodeURIComponent(inClause) + ')&lokasi=eq.' + encodeURIComponent(lokasi) + '&select=sku,lokasi,sisa_stok';
+    var stockRows = supabaseApiFetch(endpoint, 'GET') || [];
+    
+    var stockMap = {};
+    for (var s = 0; s < stockRows.length; s++) {
+      var row = stockRows[s];
+      if (row && row.sku) {
+        stockMap[row.sku.toUpperCase()] = Number(row.sisa_stok) || 0;
+      }
+    }
+    
+    var queueRows = [];
+    for (var k = 0; k < skuList.length; k++) {
+      var targetSku = skuList[k];
+      var qtyFisik = hitungFisikMap[targetSku] || 0;
+      var qtySistem = stockMap[targetSku] || 0;
+      var selisih = qtyFisik - qtySistem;
+      
+      if (selisih !== 0) {
+        var mInfo = metaMap[targetSku] || {};
+        queueRows.push({
+          sesi_id: invoice,
+          tanggal: nowIso,
+          sku: targetSku,
+          nama_produk: mInfo.nama_produk || targetSku,
+          size: mInfo.size || '-',
+          lokasi: lokasi,
+          area: area,
+          qty_sistem: qtySistem,
+          qty_fisik: qtyFisik,
+          selisih: selisih,
+          status: 'PENDING',
+          jenis: 'Opname WA',
+          alasan: 'Selisih Opname (' + (selisih > 0 ? '+' + selisih : selisih) + ')',
+          operator: operator,
+          invoice: invoice
+        });
+      }
+    }
+    
+    if (queueRows.length > 0) {
+      supabaseApiFetch('stock_opname_queue', 'POST', queueRows);
+      Logger.log('Tulis ke stock_opname_queue sukses. Invoice=' + invoice + ', Antrean=' + queueRows.length);
+    }
+    
+    return queueRows.length;
+  } catch (err) {
+    Logger.log('Gagal kalkulasi SO queue: ' + err.toString());
+    return 0;
   }
 }
