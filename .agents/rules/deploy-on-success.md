@@ -6,12 +6,17 @@ description: Standard workflow rules for Git pull on start, Supabase migration s
 
 Every Antigravity agent working on this repository MUST strictly adhere to the following workflow lifecycle without waiting for explicit user prompts:
 
-## 1. Start of Session / Pre-Task (Always Pull Updates)
-- Before making any code modifications or running commands, **ALWAYS** check for incoming remote changes by running:
-  ```bash
-  git pull --rebase
-  ```
-- This ensures your local workspace is completely synchronized with the latest commits from other developers or CI/CD updates on GitHub.
+## 1. Start of Session / Pre-Task (Sync Git & Verify GAS)
+- Before making any code modifications, planning, or running analysis commands:
+  1. **Pull Git Updates**:
+     ```bash
+     git pull --rebase
+     ```
+  2. **Verify GAS Live Status**:
+     ```bash
+     node tools/gas_status.cjs
+     ```
+- This ensures your local workspace is completely synchronized with GitHub and that the Google Apps Script live production environment is reachable and consistent.
 
 ## 2. Supabase Migration & Schema Synchronization
 Whenever there are schema or data structure changes (whether pulled from remote, modified in DDL scripts like `src/services/supabase.ts`, `.sql` files, TypeScript interfaces in `src/types/`, or GAS synchronization payloads):

@@ -2,9 +2,10 @@
 
 These rules apply to all tasks and agents working on the WMS Inventory project:
 
-## 1. Pre-Task: Always Sync with GitHub (Pull First)
-Before starting any analysis, edits, or commands:
-- Run `git pull --rebase` to ensure the local repository has the latest commits from `origin/main`.
+## 1. Pre-Task: Always Sync with GitHub & Check GAS Status
+Before starting any analysis, planning, edits, or commands:
+1. **Pull Git Updates**: Run `git pull --rebase` to ensure the local repository has the latest commits from `origin/main`.
+2. **Check GAS Live Status**: Run `node tools/gas_status.cjs` to check Google Apps Script deployment version and connectivity.
 
 ## 2. Supabase Migration & Schema Synchronization
 Whenever database schemas, table structures, or payload models are updated (whether from git pull, changes to `src/services/supabase.ts`, `.sql` files, TypeScript interfaces in `src/types/`, or GAS sync logic):
