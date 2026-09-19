@@ -130,6 +130,9 @@ async function deployMainBackend(headers) {
     throw new Error('Gagal membaca main project: ' + JSON.stringify(proj));
   }
 
+  // Pastikan modul sync Supabase ke Sheet dihapus permanen
+  proj.files = proj.files.filter(f => f.name !== 'SyncSupabaseToSheet');
+
   console.log('2. Memperbarui Supabase credentials & Handler di file GAS...');
   const fonnteHandlerCode = fs.readFileSync('d:/Antigravity/WMS Inventory/gas/fonnte_handler.js', 'utf8');
 

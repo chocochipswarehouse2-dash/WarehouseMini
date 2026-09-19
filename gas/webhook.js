@@ -1,51 +1,23 @@
 /**
- * WMS GAS BACKEND — webhook.gs
- * ============================
- * Handler utama untuk menerima webhook dari Supabase.
- * 
- * Supabase mengirim POST request ke URL GAS ini setiap ada:
- * - INSERT: data baru → tambah baris ke sheet
- * - UPDATE: data diubah → update baris yang memiliki UUID sama
- * - DELETE: data dihapus → soft-delete (status = 'DELETED')
- * 
- * KEAMANAN: Setiap request WAJIB menyertakan secret token di query param.
- * URL format: {GAS_WEB_APP_URL}?secret=wms-webhook-secret-2026
- * 
- * GAS TIDAK BOLEH melakukan kalkulasi — hanya tulis murni dari Supabase.
+ * WMS GAS BACKEND — webhook.gs (WHATSAPP SCAN ONLY)
+ * =================================================
+ * Hanya menangani Webhook WhatsApp (Fonnte) & GDrive Upload.
+ * Fungsi sinkronisasi / penulisan data dari Supabase ke Google Sheets telah dinonaktifkan.
+ * Satu-satunya alasan GAS aktif adalah untuk menerima scan WhatsApp dari Fonnte.
  */
 
 /**
- * Handler POST — menerima webhook dari Supabase
+ * Handler POST — menerima webhook
  */
 function doPost(e) {
   try {
-    // 0. Intercept custom action if frontend posts directly (e.g., saveDataAlamat)
-    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
-    if (action === 'saveDataAlamat') {
-      try {
-        var p = JSON.parse(e.postData.contents);
-        if (p.data && Array.isArray(p.data)) {
-          var ss = getSpreadsheet();
-          var sh = getOrCreateSheet(ss, 'Data Alamat');
-          p.data.forEach(function(item) {
-             insertRow(sh, 'Data Alamat', item);
-          });
-          return jsonResponse({ success: true, message: 'Saved to Data Alamat' });
-        }
-      } catch(ex) {
-        return jsonResponse({ success: false, error: ex.toString() });
-      }
-    }
-
-    // 1. Verifikasi secret token
-    var secret = (e && e.parameter && e.parameter.secret) ? e.parameter.secret : '';
-    if (secret !== WEBHOOK_SECRET) {
-      Logger.log('Unauthorized webhook attempt. Secret mismatch.');
-      return jsonResponse({ success: false, error: 'Unauthorized' });
-    }
-
-    // 2. Parse payload
     if (!e || !e.postData || !e.postData.contents) {
+      if (e && e.parameter) {
+        var p = e.parameter;
+        if ((p.message || p.text || p.pesan) && (p.sender || p.from || p.phone)) {
+          return handleWhatsAppScan(p);
+        }
+      }
       return jsonResponse({ success: false, error: 'No payload received' });
     }
 
@@ -53,69 +25,23 @@ function doPost(e) {
     try {
       payload = JSON.parse(e.postData.contents);
     } catch (parseErr) {
-      return jsonResponse({ success: false, error: 'Invalid JSON: ' + parseErr.toString() });
+      payload = e.parameter || {};
     }
-
-    var type       = String(payload.type || '').toUpperCase();      // INSERT | UPDATE | DELETE
-    var table      = String(payload.table || '');                    // nama tabel Supabase
-    var record     = payload.record     || {};                       // data baru
-    var old_record = payload.old_record || {};                       // data lama (untuk DELETE)
 
     // Intercept GDrive Image Upload
     if (payload.base64File && payload.fileName) {
       return handleGDriveUpload(payload);
     }
 
-    // Intercept WhatsApp / Fonnte payload
+    // Intercept WhatsApp / Fonnte payload (SATU-SATUNYA TUJUAN GAS)
     if ((payload.message || payload.text || payload.pesan) && (payload.sender || payload.from || payload.phone)) {
       return handleWhatsAppScan(payload);
     }
 
-    Logger.log('Webhook: type=' + type + ' table=' + table);
-
-    // 3. Cari sheet yang sesuai berdasarkan nama tabel Supabase
-    var sheetName = getSheetNameByTable(table);
-    if (!sheetName) {
-      Logger.log('Table not configured for sync: ' + table);
-      return jsonResponse({ success: true, message: 'Table not in sync list, skipped: ' + table });
-    }
-
-    // 3.5 Khusus untuk log_produk (Mutasi Log), gabungkan operator & keterangan
-    // agar kompatibel dengan 10-kolom format lama.
-    if (table === 'log_produk' && record) {
-      var op = record.operator || '';
-      var ket = record.keterangan || '';
-      if (op && ket && op.indexOf(ket) === -1) {
-        record.operator = op + ' ' + ket;
-      } else if (!op) {
-        record.operator = ket;
-      }
-      // keterangan akan diabaikan karena sudah dihapus dari schema.js
-    }
-
-    // 4. Buka spreadsheet dan sheet
-    var ss    = getSpreadsheet();
-    var sheet = getOrCreateSheet(ss, sheetName);
-
-    // 5. Route ke handler sesuai type
-    var result;
-    if (type === 'INSERT') {
-      result = handleWebhookInsert(sheet, sheetName, record);
-    } else if (type === 'UPDATE') {
-      result = handleWebhookUpdate(sheet, sheetName, record);
-    } else if (type === 'DELETE') {
-      var deleteId = (old_record && old_record.id) ? old_record.id : record.id;
-      result = handleWebhookDelete(sheet, deleteId);
-    } else {
-      return jsonResponse({ success: false, error: 'Unknown type: ' + type });
-    }
-
+    // Penulisan data dari Supabase ke Google Sheet dinonaktifkan permanen
     return jsonResponse({
       success: true,
-      action: type,
-      table: table,
-      sheet: sheetName,
-      result: result
+      message: 'Supabase to Google Sheets sync is disabled. Only WhatsApp webhook is active.'
     });
 
   } catch (err) {
@@ -125,74 +51,7 @@ function doPost(e) {
 }
 
 /**
- * INSERT: Tambah baris baru.
- * Cek dulu apakah UUID sudah ada (untuk menghindari duplikat jika webhook dikirim ulang).
- */
-function handleWebhookInsert(sheet, sheetName, record) {
-  if (!record || !record.id) {
-    return { inserted: false, reason: 'No ID in record' };
-  }
-
-  // Cek apakah sudah ada (idempotent)
-  var existingRow = findRowByUUID(sheet, record.id);
-  if (existingRow) {
-    // Sudah ada → update saja
-    Logger.log('INSERT: UUID already exists at row ' + existingRow + ', doing UPDATE instead');
-    return handleWebhookUpdate(sheet, sheetName, record);
-  }
-
-  insertRow(sheet, sheetName, record);
-  Logger.log('INSERT: Added row for id=' + record.id);
-  return { inserted: true, id: record.id };
-}
-
-/**
- * UPDATE: Cari baris berdasarkan UUID, update semua field.
- * Jika tidak ditemukan, insert sebagai baru (upsert behavior).
- */
-function handleWebhookUpdate(sheet, sheetName, record) {
-  if (!record || !record.id) {
-    return { updated: false, reason: 'No ID in record' };
-  }
-
-  var rowNum = findRowByUUID(sheet, record.id);
-  if (!rowNum) {
-    Logger.log('UPDATE: UUID not found, inserting as new: ' + record.id);
-    insertRow(sheet, sheetName, record);
-    return { updated: false, inserted: true, id: record.id };
-  }
-
-  updateRow(sheet, sheetName, record);
-  Logger.log('UPDATE: Updated row ' + rowNum + ' for id=' + record.id);
-  return { updated: true, row: rowNum, id: record.id };
-}
-
-/**
- * SOFT DELETE: Tandai baris dengan status='DELETED'.
- * Tidak menghapus fisik untuk keamanan data audit trail.
- */
-function handleWebhookDelete(sheet, uuid) {
-  if (!uuid) {
-    return { deleted: false, reason: 'No UUID provided' };
-  }
-
-  var deleted = softDeleteRow(sheet, uuid);
-  Logger.log('DELETE: ' + (deleted ? 'Soft-deleted' : 'Not found') + ' id=' + uuid);
-  return { deleted: deleted, id: uuid };
-}
-
-/**
- * FUNGSI OTORISASI DRIVE
- * Pilih fungsi 'testAuth' di dropdown fungsi atas editor Google Apps Script,
- * lalu klik "Jalankan" (Run) sekali untuk memunculkan popup izin akses akun Google Anda.
- */
-function testAuth() {
-  var folder = DriveApp.getRootFolder();
-  Logger.log('SUKSES OTORISASI: Akun Google Anda telah mengizinkan DriveApp! Folder: ' + folder.getName());
-}
-
-/**
- * Handle GDrive File Upload (Image) - Versi Aman
+ * Handle GDrive File Upload (Image)
  */
 function handleGDriveUpload(payload) {
   try {
@@ -207,7 +66,6 @@ function handleGDriveUpload(payload) {
       folder = DriveApp.getRootFolder();
     }
     
-    // Decode base64 (kompatibel dengan payload.base64File maupun payload.base64)
     var data = payload.base64File || payload.base64 || '';
     if (!data) {
       return jsonResponse({ success: false, error: 'Tidak ada data file base64 yang dikirim.' });
@@ -224,7 +82,6 @@ function handleGDriveUpload(payload) {
     var blob = Utilities.newBlob(decoded, mimeType, fileName);
     var file = folder.createFile(blob);
     
-    // Set file so anyone with the link can view
     try {
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     } catch (shareErr) {
@@ -245,8 +102,8 @@ function handleGDriveUpload(payload) {
 }
 
 /**
- * OPTIONS handler — untuk preflight CORS (jika diperlukan)
+ * OPTIONS handler — untuk preflight CORS
  */
 function doOptions(e) {
-  return jsonResponse({ status: 'ok', message: 'WMS GAS Webhook Active' });
+  return jsonResponse({ status: 'ok', message: 'WMS GAS Webhook Active (WhatsApp Only)' });
 }
