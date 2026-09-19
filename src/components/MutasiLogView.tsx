@@ -28,6 +28,7 @@ import {
   User,
   Clock,
   LayoutGrid,
+  ClipboardList,
 } from 'lucide-react';
 import { ProductItem, UserSession, LogProdukItem } from '../types';
 import {
