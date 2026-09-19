@@ -106,7 +106,7 @@ export function LoadingDockView({ session, productCatalog, onShowToast }: any) {
         )}
         {activeTab === 'penerimaan' && (
            <div className="absolute inset-0 overflow-y-auto">
-             <PenerimaanBarangView />
+             <PenerimaanBarangView session={session} onShowToast={onShowToast} />
            </div>
         )}
         {activeTab === 'pengiriman' && (

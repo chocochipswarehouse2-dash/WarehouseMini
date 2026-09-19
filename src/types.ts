@@ -858,3 +858,58 @@ export interface ProjectItem {
   updated_at?: string;
 }
 
+// ==============================================================================
+// MODUL PENERIMAAN BARANG (MUTASI STORE & PENERIMAAN PAKET)
+// ==============================================================================
+export type SatuanMutasiStore = 'Pcs' | 'Koli' | 'Pax';
+
+export interface LocationStamp {
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+  address?: string;
+  timestamp?: string;
+}
+
+export interface PenerimaanMutasiStoreItem {
+  id?: string;
+  tanggal_diterima: string; // YYYY-MM-DD
+  asal_store_id?: string;
+  asal_store_nama: string;
+  deskripsi: string;
+  qty: number;
+  satuan_qty: SatuanMutasiStore;
+  foto_urls: string[];
+  lokasi_stamp?: LocationStamp;
+  pic_nama: string;
+  pic_username: string;
+  timestamp_input?: string;
+  keterangan?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PenerimaanPaketItem {
+  id?: string;
+  tanggal_diterima: string; // YYYY-MM-DD
+  ekspedisi: string;
+  no_resi?: string;
+  qty_paket: number;
+  foto_urls: string[];
+  lokasi_stamp?: LocationStamp;
+  pic_nama: string;
+  pic_username: string;
+  timestamp_input?: string;
+  keterangan?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EkspedisiConfigItem {
+  id?: string;
+  nama: string;
+  is_active?: boolean;
+  created_at?: string;
+}
+
+

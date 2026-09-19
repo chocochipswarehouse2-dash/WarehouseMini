@@ -97,11 +97,14 @@ const ALL_TABLES = [
   'wms_users',
   'master_produk',
   'outlet_config',
+  'ekspedisi_config',
   'address_book',
   // Inventory & Stock
   'log_produk',
   'stock_opname_queue',
   'penerimaan_produksi',
+  'penerimaan_mutasi_store',
+  'penerimaan_paket',
   'picking_list',
   'peminjaman',
   // QC & Perbaikan

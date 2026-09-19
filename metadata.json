@@ -2,7 +2,8 @@
   "name": "Warehouse Mini",
   "description": "Aplikasi Android & Web Scanner Gudang Pintar dengan sinkronisasi Supabase real-time, cetak barcode produk thermal 50x20mm massal Excel, multi-mode scan, modul Peminjaman Sementara (SPS) Live Studio/Shopee/TikTok, dan dark mode",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
