@@ -127,48 +127,78 @@ export const LabelCustomizerPreview: React.FC<LabelCustomizerPreviewProps> = ({
       </div>
 
       {/* 2. ORIENTATION & ROTATION BAR */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-purple-50/60 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl text-xs">
-        <div className="flex items-center gap-1.5">
-          <span className="font-extrabold text-slate-700 dark:text-slate-300">Orientasi:</span>
-          <div className="inline-flex rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 p-0.5">
-            <button
-              type="button"
-              onClick={() => onUpdateSettings({ printOrientation: 'landscape' })}
-              className={`px-2.5 py-1 rounded text-[11px] font-black cursor-pointer transition-all ${
-                printOrientation === 'landscape'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              ↔️ Lanskap (50×20)
-            </button>
-            <button
-              type="button"
-              onClick={() => onUpdateSettings({ printOrientation: 'portrait' })}
-              className={`px-2.5 py-1 rounded text-[11px] font-black cursor-pointer transition-all ${
-                printOrientation === 'portrait'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              ↕️ Portret (20×50)
-            </button>
+      <div className="flex flex-col gap-2 p-2.5 bg-purple-50/60 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-extrabold text-slate-700 dark:text-slate-300">Orientasi:</span>
+            <div className="inline-flex rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 p-0.5">
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ printOrientation: 'landscape' })}
+                className={`px-2.5 py-1 rounded text-[11px] font-black cursor-pointer transition-all ${
+                  printOrientation === 'landscape'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                ↔️ Lanskap (50×20)
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ printOrientation: 'portrait' })}
+                className={`px-2.5 py-1 rounded text-[11px] font-black cursor-pointer transition-all ${
+                  printOrientation === 'portrait'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                ↕️ Portret (20×50)
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span className="font-bold text-slate-600 dark:text-slate-400 text-[11px]">Rotasi:</span>
+            {([0, 90, 180, 270] as const).map((angle) => {
+              const currentAngle = settings.rotationAngle ?? (isRotated180 ? 180 : 0);
+              const isActive = currentAngle === angle;
+              return (
+                <button
+                  key={angle}
+                  type="button"
+                  onClick={() => onUpdateSettings({ rotationAngle: angle, isRotated180: angle === 180 })}
+                  className={`px-2 py-0.5 rounded text-[10.5px] font-bold border cursor-pointer transition-all ${
+                    isActive
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-purple-50'
+                  }`}
+                  title={`Putar ${angle} derajat`}
+                >
+                  {angle}°
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onUpdateSettings({ isRotated180: !isRotated180 })}
-          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 cursor-pointer transition-all ${
-            isRotated180
-              ? 'bg-purple-600 text-white border-purple-600'
-              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
-          }`}
-          title="Putar balik 180 derajat jika stiker terpasang terbalik"
-        >
-          <RotateCw className={`w-3 h-3 ${isRotated180 ? 'rotate-180' : ''}`} />
-          <span>Putar 180°</span>
-        </button>
+        {/* Anti Rotasi Otomatis Chrome Toggle */}
+        <div className="flex items-center justify-between pt-1.5 border-t border-purple-200/60 dark:border-purple-900/40 text-[11px]">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-purple-950 dark:text-purple-200">🛡️ Cegah Rotasi Otomatis Chrome:</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden sm:inline">(Kunci ukuran 50×20mm murni)</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onUpdateSettings({ preventAutoRotate: !(settings.preventAutoRotate ?? true) })}
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black cursor-pointer transition-all border ${
+              (settings.preventAutoRotate ?? true)
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300'
+            }`}
+          >
+            {(settings.preventAutoRotate ?? true) ? 'AKTIF (Direkomendasikan)' : 'NONAKTIF'}
+          </button>
+        </div>
       </div>
 
       {/* 3. REALISTIC THERMAL STICKER BOX (50×20 mm) */}
@@ -178,7 +208,11 @@ export const LabelCustomizerPreview: React.FC<LabelCustomizerPreviewProps> = ({
             printOrientation === 'portrait'
               ? 'w-[140px] h-[260px] flex flex-col items-center justify-center text-center'
               : 'w-[285px] h-[114px] flex flex-row items-center justify-between'
-          } ${isRotated180 ? 'rotate-180' : ''}`}
+          }`}
+          style={{
+            transform: `rotate(${settings.rotationAngle ?? (isRotated180 ? 180 : 0)}deg)`,
+            transformOrigin: 'center center',
+          }}
         >
           {/* QR Code */}
           <div

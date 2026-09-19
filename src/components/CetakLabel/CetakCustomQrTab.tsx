@@ -347,19 +347,19 @@ export const CetakCustomQrTab: React.FC = () => {
       let gridPerSheet = 1;
 
       if (media === 'thermal_100x50') {
-        pageCss = '@page { size: 100mm 50mm landscape; margin: 0; }';
+        pageCss = '@page { size: 100mm 50mm; margin: 0; page-orientation: upright; }';
       } else if (media === 'thermal_80x50') {
-        pageCss = '@page { size: 80mm 50mm landscape; margin: 0; }';
+        pageCss = '@page { size: 80mm 50mm; margin: 0; page-orientation: upright; }';
       } else if (media === 'thermal_70x40') {
-        pageCss = '@page { size: 70mm 40mm landscape; margin: 0; }';
+        pageCss = '@page { size: 70mm 40mm; margin: 0; page-orientation: upright; }';
       } else if (media === 'thermal_50x30') {
-        pageCss = '@page { size: 50mm 30mm landscape; margin: 0; }';
+        pageCss = '@page { size: 50mm 30mm; margin: 0; page-orientation: upright; }';
       } else if (media === 'thermal_50x20') {
-        pageCss = '@page { size: 50mm 20mm landscape; margin: 0; }';
+        pageCss = '@page { size: 50mm 20mm; margin: 0; page-orientation: upright; }';
       } else if (media.startsWith('a6_')) {
         isA6Sheet = true;
         gridPerSheet = parseInt(media.replace('a6_', ''), 10) || 4;
-        pageCss = '@page { size: 105mm 148mm portrait; margin: 4mm; }';
+        pageCss = '@page { size: 105mm 148mm; margin: 4mm; page-orientation: upright; }';
       }
 
       const codePt =

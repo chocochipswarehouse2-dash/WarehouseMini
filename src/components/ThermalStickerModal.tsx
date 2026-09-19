@@ -150,6 +150,8 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
   // Print orientation & rotation settings
   const [printOrientation, setPrintOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [isRotated180, setIsRotated180] = useState<boolean>(false);
+  const [rotationAngle, setRotationAngle] = useState<0 | 90 | 180 | 270>(0);
+  const [preventAutoRotate, setPreventAutoRotate] = useState<boolean>(true);
 
   // Bulk mode state
   const [selectedLocation, setSelectedLocation] = useState<string>(initialLocationFilter || 'ALL');
@@ -395,7 +397,8 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
       const isPortrait = printOrientation === 'portrait';
       const pageW = isPortrait ? '20mm' : '50mm';
       const pageH = isPortrait ? '50mm' : '20mm';
-      const orientMode = isPortrait ? 'portrait' : 'landscape';
+      const pageOrientationKeyword = preventAutoRotate ? '' : (isPortrait ? ' portrait' : ' landscape');
+      const activeAngle = rotationAngle || (isRotated180 ? 180 : 0);
 
       printFrame.style.width = pageW;
       printFrame.style.height = pageH;
@@ -449,8 +452,9 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 color-scheme: light !important;
               }
               @page {
-                size: ${pageW} ${pageH} ${orientMode};
+                size: ${pageW} ${pageH}${pageOrientationKeyword};
                 margin: 0mm !important;
+                ${preventAutoRotate ? 'page-orientation: upright;' : ''}
               }
               *, *::before, *::after {
                 box-sizing: border-box;
@@ -484,7 +488,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
-                ${isRotated180 ? 'transform: rotate(180deg); transform-origin: center center;' : ''}
+                ${activeAngle ? `transform: rotate(${activeAngle}deg); transform-origin: center center;` : ''}
               }
               .thermal-page-inner {
                 width: ${pageW} !important;
@@ -663,8 +667,9 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
             __html: `
             @media print {
               @page {
-                size: ${printOrientation === 'portrait' ? '20mm 50mm portrait' : '50mm 20mm landscape'};
+                size: ${printOrientation === 'portrait' ? '20mm 50mm' : '50mm 20mm'}${preventAutoRotate ? '' : (printOrientation === 'portrait' ? ' portrait' : ' landscape')};
                 margin: 0mm !important;
+                ${preventAutoRotate ? 'page-orientation: upright;' : ''}
               }
               body {
                 margin: 0 !important;
@@ -703,7 +708,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
-                ${isRotated180 ? 'transform: rotate(180deg); transform-origin: center center;' : ''}
+                ${(rotationAngle || (isRotated180 ? 180 : 0)) ? `transform: rotate(${rotationAngle || (isRotated180 ? 180 : 0)}deg); transform-origin: center center;` : ''}
               }
               .thermal-page-inner {
                 width: ${printOrientation === 'portrait' ? '20mm' : '50mm'} !important;
@@ -1114,50 +1119,81 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
           {/* ========================================================= */}
           <div className="space-y-2">
             {/* Control Bar: Orientasi Kertas Cetak & Rotasi */}
-            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/50 rounded-xl text-xs">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-extrabold text-slate-700 dark:text-slate-300">Orientasi Kertas:</span>
-                <div className="inline-flex rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setPrintOrientation('landscape')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
-                      printOrientation === 'landscape'
-                        ? 'bg-purple-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
-                    }`}
-                    title="Orientasi mendatar 50×20 mm (Standar Roll Thermal)"
-                  >
-                    ↔️ Lanskap (50×20 mm)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrintOrientation('portrait')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
-                      printOrientation === 'portrait'
-                        ? 'bg-purple-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
-                    }`}
-                    title="Pilih jika driver printer thermal Anda mewajibkan cetak tegak / vertikal"
-                  >
-                    ↕️ Portret (20×50 mm)
-                  </button>
+            <div className="flex flex-col gap-2 p-2.5 bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/50 rounded-xl text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-extrabold text-slate-700 dark:text-slate-300">Orientasi Kertas:</span>
+                  <div className="inline-flex rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setPrintOrientation('landscape')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                        printOrientation === 'landscape'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
+                      }`}
+                      title="Orientasi mendatar 50×20 mm (Standar Roll Thermal)"
+                    >
+                      ↔️ Lanskap (50×20 mm)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintOrientation('portrait')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                        printOrientation === 'portrait'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
+                      }`}
+                      title="Pilih jika driver printer thermal Anda mewajibkan cetak tegak / vertikal"
+                    >
+                      ↕️ Portret (20×50 mm)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-slate-600 dark:text-slate-400 text-[11px]">Rotasi:</span>
+                  {([0, 90, 180, 270] as const).map((angle) => {
+                    const currentAngle = rotationAngle || (isRotated180 ? 180 : 0);
+                    const isActive = currentAngle === angle;
+                    return (
+                      <button
+                        key={angle}
+                        type="button"
+                        onClick={() => {
+                          setRotationAngle(angle);
+                          setIsRotated180(angle === 180);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10.5px] font-bold border cursor-pointer transition-all ${
+                          isActive
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-purple-50'
+                        }`}
+                        title={`Putar ${angle} derajat`}
+                      >
+                        {angle}°
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              {/* Anti Rotasi Otomatis Chrome Toggle */}
+              <div className="flex items-center justify-between pt-1.5 border-t border-purple-200/60 dark:border-purple-900/40 text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-purple-950 dark:text-purple-200">🛡️ Cegah Rotasi Otomatis Chrome:</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden sm:inline">(Kunci ukuran 50×20mm murni & upright)</span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setIsRotated180((prev) => !prev)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-                    isRotated180
-                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50'
+                  onClick={() => setPreventAutoRotate((prev) => !prev)}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black cursor-pointer transition-all border ${
+                    preventAutoRotate
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300'
                   }`}
-                  title="Putar balik 180 derajat jika label terpasang terbalik pada printer"
                 >
-                  <RotateCw className={`w-3 h-3 transition-transform duration-200 ${isRotated180 ? 'rotate-180' : ''}`} />
-                  <span>{isRotated180 ? 'Rotasi 180° Aktif' : 'Putar 180°'}</span>
+                  {preventAutoRotate ? 'AKTIF (Direkomendasikan)' : 'NONAKTIF'}
                 </button>
               </div>
             </div>
@@ -1196,8 +1232,12 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                       printOrientation === 'portrait'
                         ? 'w-[150px] h-[270px] flex-col items-center justify-center text-center'
                         : 'w-[310px] h-[124px] flex-row items-center justify-between'
-                    } ${isRotated180 ? 'rotate-180' : ''}`}
-                    style={{ fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif" }}
+                    }`}
+                    style={{
+                      fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif",
+                      transform: `rotate(${rotationAngle || (isRotated180 ? 180 : 0)}deg)`,
+                      transformOrigin: 'center center',
+                    }}
                   >
                     <div
                       className={`${
@@ -1424,17 +1464,17 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
         <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl text-[11px] text-amber-900 dark:text-amber-100 space-y-1.5 shrink-0">
           <div className="flex items-center gap-1.5 font-black text-amber-950 dark:text-amber-50">
             <Info className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Panduan Cetak Thermal 50×20 mm (Agar Tidak Miring / Posisi Portret):</span>
+            <span>Panduan Cetak Thermal 50×20 mm (Bebas Rotasi Otomatis):</span>
           </div>
           <ul className="list-disc pl-5 space-y-0.5 text-[10.5px] leading-relaxed text-amber-900/90 dark:text-amber-200">
             <li>
-              <b>Penyebab Cetak Miring/Tegak:</b> Di dialog cetak Chrome/Edge, pilihan <b>"Tata Letak / Layout"</b> bawaan sering kali masih terpilih <i>"Portret"</i>.
+              <b>Cegah Rotasi Otomatis Aktif:</b> Sistem otomatis mengunci ukuran 50×20 mm murni dengan <code>page-orientation: upright</code> agar Chrome/Edge tidak memutar paksa orientasi stiker.
             </li>
             <li>
-              <b>Cara Atasi di Dialog Cetak:</b> Pastikan pilih <b>Tata Letak: Lanskap (Landscape)</b>, <b>Ukuran: 50×20 mm</b>, <b>Margin: None</b>, dan <b>Skala: 100%</b>.
+              <b>Pilihan Rotasi Sudut (0° / 90° / 180° / 270°):</b> Jika roll atau driver printer Anda memasang label terbalik atau menyamping, gunakan tombol rotasi di atas untuk menyesuaikan orientasi stiker.
             </li>
             <li>
-              <b>Jika Roll Printer Anda Berjalan Tegak:</b> Anda dapat langsung klik tombol <b>"↕️ Portret"</b> di atas sebelum menekan Cetak.
+              <b>Setelan Dialog Cetak Chrome:</b> Pilih <b>Ukuran: 50×20 mm</b> (atau User Defined 50×20), <b>Margin: None</b>, dan <b>Skala: 100%</b>.
             </li>
           </ul>
         </div>

@@ -309,9 +309,11 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
 
       // 2. Derive Layout and Sizing Variables
       const isLandscape = settings.printOrientation === 'landscape';
-      const pageOrientation = isLandscape ? 'landscape' : 'portrait';
+      const preventAutoRotate = settings.preventAutoRotate !== false;
+      const pageOrientationKeyword = preventAutoRotate ? '' : (isLandscape ? ' landscape' : ' portrait');
       const stickerW = isLandscape ? '50mm' : '20mm';
       const stickerH = isLandscape ? '20mm' : '50mm';
+      const rotationAngle = settings.rotationAngle ?? (settings.isRotated180 ? 180 : 0);
 
       const qrMmSize =
         settings.qrSizePreset === 'small'
@@ -462,8 +464,9 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               color-scheme: light !important;
             }
             @page {
-              size: ${stickerW} ${stickerH} ${pageOrientation};
+              size: ${stickerW} ${stickerH}${pageOrientationKeyword};
               margin: 0 !important;
+              ${preventAutoRotate ? 'page-orientation: upright;' : ''}
             }
             * {
               box-sizing: border-box;
@@ -490,6 +493,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               display: flex;
               align-items: center;
               box-sizing: border-box;
+              ${rotationAngle ? `transform: rotate(${rotationAngle}deg); transform-origin: center center;` : ''}
             }
             .sticker-card.mode-landscape {
               flex-direction: row;
@@ -501,9 +505,6 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               justify-content: center;
               text-align: center;
               padding: 1.5mm 1mm;
-            }
-            .sticker-card.rotated-180 {
-              transform: rotate(180deg);
             }
             .qr-box {
               width: ${qrMmSize};

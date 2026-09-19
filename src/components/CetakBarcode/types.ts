@@ -22,6 +22,8 @@ export type PriceFontWeight = '600' | '700' | '800' | '900';
 export interface BarcodeCustomizerSettings {
   printOrientation: 'landscape' | 'portrait';
   isRotated180: boolean;
+  rotationAngle?: 0 | 90 | 180 | 270;
+  preventAutoRotate?: boolean;
   showProductName: boolean;
   showSize: boolean;
   showPrice: boolean;
@@ -39,6 +41,8 @@ export interface BarcodeCustomizerSettings {
 export const DEFAULT_BARCODE_SETTINGS: BarcodeCustomizerSettings = {
   printOrientation: 'landscape',
   isRotated180: false,
+  rotationAngle: 0,
+  preventAutoRotate: true,
   showProductName: true,
   showSize: true,
   showPrice: true,
