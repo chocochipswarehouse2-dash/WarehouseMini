@@ -1589,26 +1589,17 @@ export default function App() {
         hasNewPickingAlert={!!newPickingTaskAlert}
       />
 
-      {/* Main App Container (Navbar + Page Content) */}
+      {/* Main App Container (Page Content) */}
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
-        {/* Navigation Header with Hamburger Toggle & Quick Actions */}
-        <Navbar
-          session={session}
-          activePage={activePage}
-          onSelectPage={handleSelectPage}
-          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
-          onToggleSidebarCollapse={toggleSidebarCollapse}
-          isSidebarCollapsed={isSidebarCollapsed}
-          onOpenThemePicker={() => setIsThemePickerOpen(true)}
-          notificationPermission={notificationPermission}
-          onRequestNotification={handleRequestNotification}
-          isRealtimeConnected={isRealtimeConnected}
-          onOpenSettings={handleOpenSettings}
-          onOpenApkModal={() => setIsApkModalOpen(true)}
-          onLogout={handleLogout}
-          totalScannedCount={scannedData.length}
-          hasNewPickingAlert={!!newPickingTaskAlert}
-        />
+        {/* Floating Mobile Sidebar Toggle */}
+        <button
+          type="button"
+          onClick={() => setIsMobileSidebarOpen(true)}
+          className="lg:hidden fixed bottom-6 right-6 z-40 p-3.5 bg-primary-500 text-white rounded-full shadow-lg shadow-primary-500/40 hover:bg-primary-600 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          title="Buka Menu Navigasi"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
         <main className="flex-1 pb-16 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-7xl mx-auto">
