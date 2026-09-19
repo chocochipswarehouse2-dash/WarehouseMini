@@ -117,8 +117,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [barcodeTargetItem, setBarcodeTargetItem] = useState<KatalogItem | null>(null);
   const [barcodeTargetItems, setBarcodeTargetItems] = useState<KatalogItem[] | null>(null);
   const [a4ModalOpen, setA4ModalOpen] = useState(false);
-  const [a4TargetItems, setA4TargetItems] = useState<KatalogItem[] | null>(null);
-  const [a4TargetCatalogNames, setA4TargetCatalogNames] = useState<string[]>([]);
+  const [a4TargetBatchIds, setA4TargetBatchIds] = useState<string[]>([]);
 
   // Lightbox Fullscreen Foto
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -854,7 +853,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                 <span>Katalog Produk WMS</span>
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Katalog model pakaian & rincian varian multi-koleksi, cetak barcode thermal dan format A4.
+                Katalog model pakaian & rincian varian multi-koleksi, cetak barcode thermal dan cetak katalog produk.
               </p>
             </div>
           </div>
@@ -896,20 +895,19 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             <span>Cetak Barcode ({allFilteredItems.length})</span>
           </button>
 
-          {/* Tombol Cetak A4 */}
+          {/* Tombol Cetak Katalog */}
           <button
             type="button"
             onClick={() => {
-              setA4TargetItems(allFilteredItems);
-              setA4TargetCatalogNames(filteredBatches.map((b) => b.name));
+              setA4TargetBatchIds(selectedCatalogIds.length > 0 ? selectedCatalogIds : batches.map((b) => b.id));
               setA4ModalOpen(true);
             }}
-            disabled={allFilteredItems.length === 0}
+            disabled={batches.length === 0}
             className="px-3 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-blue-200 dark:border-blue-800 shadow-2xs disabled:opacity-50"
-            title="Cetak katalog rapi dalam format dokumen A4"
+            title="Pilih dan cetak katalog produk dalam format dokumen A4 / PDF"
           >
             <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span>Format A4</span>
+            <span>Cetak Katalog</span>
           </button>
 
           {/* Tombol Upload Excel */}
@@ -1180,15 +1178,14 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                     <button
                       type="button"
                       onClick={() => {
-                        setA4TargetItems(batch.items);
-                        setA4TargetCatalogNames([batch.name]);
+                        setA4TargetBatchIds([batch.id]);
                         setA4ModalOpen(true);
                       }}
                       className="px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                      title="Cetak format A4 untuk katalog ini saja"
+                      title="Cetak katalog untuk koleksi ini (bisa tambah katalog lain di dalam dialog)"
                     >
                       <FileText className="w-3.5 h-3.5" />
-                      <span>Cetak A4</span>
+                      <span>Cetak Katalog</span>
                     </button>
 
                     {/* Admin Kontrol: Edit, Replace, Hapus */}
@@ -1324,12 +1321,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         onNotify={onNotify}
       />
 
-      {/* MODAL CETAK FORMAT A4 */}
+      {/* MODAL CETAK KATALOG */}
       <KatalogA4PrintModal
         isOpen={a4ModalOpen}
         onClose={() => setA4ModalOpen(false)}
-        items={a4TargetItems || allFilteredItems}
-        catalogNames={a4TargetCatalogNames.length > 0 ? a4TargetCatalogNames : filteredBatches.map((b) => b.name)}
+        batches={batches}
+        initialSelectedBatchIds={a4TargetBatchIds.length > 0 ? a4TargetBatchIds : selectedCatalogIds}
       />
 
       {/* FULLSCREEN IMAGE LIGHTBOX POPUP */}
