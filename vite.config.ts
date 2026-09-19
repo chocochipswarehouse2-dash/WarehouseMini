@@ -25,7 +25,7 @@ export default defineConfig(({ command }) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        injectRegister: process.env.NODE_ENV === 'production' ? 'auto' : null,
+        injectRegister: 'auto',
         manifestFilename: 'manifest.json',
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
@@ -66,13 +66,13 @@ export default defineConfig(({ command }) => {
           categories: ['business', 'productivity', 'utilities'],
           iarc_rating_id: 'e-84b0d5f2-7ce9-4b8a-9a91-4d32e9d2ab82',
           prefer_related_applications: false,
-          related_applications: [
+          related_applications: isGithubPages ? [
             {
               platform: 'webapp',
               url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
             }
-          ],
-          scope_extensions: [{ origin: 'https://chocochipswarehouse2-dash.github.io' }],
+          ] : [],
+          scope_extensions: isGithubPages ? [{ origin: 'https://chocochipswarehouse2-dash.github.io' }] : [],
           note_taking: {
             new_note_url: './'
           },
@@ -91,9 +91,9 @@ export default defineConfig(({ command }) => {
               type: 'application/json',
               icons: [
                 {
-                  src: 'icon-192.svg',
+                  src: 'icon-192.png',
                   sizes: '192x192',
-                  type: 'image/svg+xml'
+                  type: 'image/png'
                 }
               ]
             }
@@ -127,42 +127,54 @@ export default defineConfig(({ command }) => {
           ],
           icons: [
             {
+              src: 'icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: 'icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'maskable'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
+            },
+            {
               src: 'icon-192.svg',
               sizes: '192x192',
               type: 'image/svg+xml',
               purpose: 'any'
             },
             {
-              src: 'icon-192.svg',
-              sizes: '192x192',
-              type: 'image/svg+xml',
-              purpose: 'maskable'
-            },
-            {
               src: 'icon-512.svg',
               sizes: '512x512',
               type: 'image/svg+xml',
               purpose: 'any'
-            },
-            {
-              src: 'icon-512.svg',
-              sizes: '512x512',
-              type: 'image/svg+xml',
-              purpose: 'maskable'
             }
           ],
           screenshots: [
             {
-              src: 'icon-512.svg',
+              src: 'icon-512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               form_factor: 'wide',
               label: 'Warehouse Mini Dashboard'
             },
             {
-              src: 'icon-512.svg',
+              src: 'icon-512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               form_factor: 'narrow',
               label: 'Warehouse Mini Mobile Scanner'
             }
@@ -173,7 +185,7 @@ export default defineConfig(({ command }) => {
               short_name: 'Scan',
               description: 'Buka pemindai',
               url: './',
-              icons: [{ src: 'icon-192.svg', sizes: '192x192' }]
+              icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }]
             }
           ]
         } as any

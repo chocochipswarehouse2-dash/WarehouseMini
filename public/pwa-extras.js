@@ -15,8 +15,8 @@ self.addEventListener('push', (event) => {
   const title = 'Warehouse Mini';
   const options = {
     body: event.data ? event.data.text() : 'Update baru tersedia!',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png'
+    icon: 'icon-192.png',
+    badge: 'icon-192.png'
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

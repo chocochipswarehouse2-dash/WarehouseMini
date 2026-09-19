@@ -32,11 +32,14 @@ export function showPushNotification(title: string, options?: { body?: string; i
 
   if (Notification.permission === 'granted') {
     try {
+      const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+      const defaultIcon = `${baseUrl}/icon-192.png`;
+
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
         navigator.serviceWorker.ready.then((registration) => {
           registration.showNotification(title, {
             body: options?.body || 'Aktivitas WMS Scanner baru',
-            icon: options?.icon || '/WarehouseMini/icon-192.png',
+            icon: options?.icon || defaultIcon,
             tag: options?.tag || 'wms-notification',
             vibrate: [200, 100, 200]
           } as NotificationOptions);
@@ -44,7 +47,7 @@ export function showPushNotification(title: string, options?: { body?: string; i
       } else {
         new Notification(title, {
           body: options?.body,
-          icon: options?.icon,
+          icon: options?.icon || defaultIcon,
           tag: options?.tag
         });
       }
