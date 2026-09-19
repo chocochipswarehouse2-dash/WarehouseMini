@@ -1,36 +1,87 @@
 /************************************************
  * FILE WEBHOOK.GS
  *
- * REVISI (fix race condition kehilangan pesan WA):
- * Versi SEBELUMNYA memanggil lock.waitLock(30000) DI LUAR
- * blok try/catch/finally. Akibatnya, kalau lock GAGAL didapat
- * dalam 30 detik (misal karena rebuildStock() dari pesan WA
- * lain, atau proses approval Adjustment, sedang berjalan lama
- * dan memegang lock yang sama), waitLock() melempar exception
- * yang TIDAK TERTANGKAP sama sekali -- doPost() langsung crash
- * dan PESAN WA YANG MASUK SAAT ITU TIDAK PERNAH DIPROSES SAMA
- * SEKALI -- tidak ada log, tidak ada percobaan ulang otomatis,
- * datanya hilang begitu saja. Ini sangat mungkin jadi penyebab
- * "hasil scan WA tidak masuk ke sheet" yang dilaporkan.
- *
- * FIX:
- * 1. lock.waitLock(30000) sekarang dibungkus try/catch sendiri.
- *    Kalau gagal dapat lock, doPost() balik "BUSY" dengan aman
- *    (pola yang sama persis dgn yang sudah dipakai di
- *    prosesKeluarMasuk / Log Product.gs), bukan crash.
- * 2. Pesan mentah yang masuk dicatat ke "Debug Log" (lewat
- *    debugLog() yang sudah ada di Stockopname.gs) SEBELUM
- *    mencoba ambil lock -- supaya walau lock gagal / proses
- *    gagal di tengah jalan, tetap ada jejak pesan ini pernah
- *    diterima (buat investigasi/rekonsiliasi manual).
- * 3. Saat BUSY atau ERROR, dicatat juga ke Debug Log supaya
- *    kelihatan jelas kapan & seberapa sering lock timeout
- *    terjadi.
- *
- * TIDAK ADA perubahan pada logika ROUTING (#LAPORQC, #PRODUKSI,
- * #LOK/#IN/#OUT, prefix Mutasi, CCTV) -- semua persis sama
- * seperti sebelumnya.
+ * REVISI:
+ * 1. Menambahkan fungsi deduplikasi webhook berbasis CacheService (getWebhookDedupKey,
+ *    isDuplicateWebhook, saveWebhookHistory) untuk mencegah retry otomatis gateway WA/Fonnte
+ *    membuat duplikat data.
+ * 2. Menambahkan fallback debugLog yang aman.
  ************************************************/
+
+/**
+ * Menghasilkan unique deduplication key untuk webhook masuk
+ */
+function getWebhookDedupKey(json) {
+  if (!json) return null;
+  // 1. Jika ada inboxid / message_id / id dari gateway (Fonnte, WPPConnect, UltraMsg, dll)
+  const msgId = json.inboxid || json.id || json.message_id || json.msgId || (json.key && json.key.id);
+  if (msgId) {
+    return "DEDUP_ID_" + String(msgId).trim();
+  }
+  
+  // 2. Fallback: Hash dari sender + pesan (jendela 60-120 detik)
+  const sender = String(json.sender || json.pengirim || json.from || "").trim();
+  const message = String(json.message || json.pesan || json.text || "").trim();
+  if (sender && message) {
+    const normMsg = message.replace(/\s+/g, " ").trim().toUpperCase();
+    try {
+      const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, sender + "_" + normMsg);
+      let hashStr = "";
+      for (let i = 0; i < rawHash.length; i++) {
+        let byteVal = rawHash[i];
+        if (byteVal < 0) byteVal += 256;
+        let hexVal = byteVal.toString(16);
+        if (hexVal.length === 1) hexVal = "0" + hexVal;
+        hashStr += hexVal;
+      }
+      return "DEDUP_MSG_" + hashStr;
+    } catch (eHash) {
+      return "DEDUP_MSG_" + sender + "_" + normMsg.substring(0, 30);
+    }
+  }
+  return null;
+}
+
+/**
+ * Cek apakah webhook ini duplikat (sudah pernah diterima dalam 120 detik terakhir)
+ */
+function isDuplicateWebhook(dedupKey) {
+  if (!dedupKey) return false;
+  try {
+    const cache = CacheService.getScriptCache();
+    if (!cache) return false;
+    const existing = cache.get(dedupKey);
+    return existing !== null;
+  } catch (e) {
+    Logger.log("isDuplicateWebhook error: " + e.message);
+    return false;
+  }
+}
+
+/**
+ * Simpan dedupKey ke ScriptCache (TTL: 120 detik)
+ */
+function saveWebhookHistory(dedupKey) {
+  if (!dedupKey) return;
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      cache.put(dedupKey, "PROCESSED", 120);
+    }
+  } catch (e) {
+    Logger.log("saveWebhookHistory error: " + e.message);
+  }
+}
+
+/**
+ * Safe logger for webhook events
+ */
+function debugLog(action, msg) {
+  try {
+    Logger.log("[" + action + "] " + msg);
+  } catch (e) {}
+}
+
 function doPost(e) {
 
   // 1. PARSE JSON / URL-ENCODED FORM DULU
