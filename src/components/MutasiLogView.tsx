@@ -82,7 +82,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearch = useDeferredValue(searchQuery);
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT' | 'SO'>('ALL');
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
   const [displayLimit, setDisplayLimit] = useState(30);
 
@@ -235,6 +235,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         if (typeFilter === 'OUT' && log.type !== 'OUT') return false;
         if (typeFilter === 'ADJ_IN' && log.type !== 'ADJ_IN') return false;
         if (typeFilter === 'ADJ_OUT' && log.type !== 'ADJ_OUT') return false;
+        if (typeFilter === 'SO' && log.type !== 'SO') return false;
       }
 
       // Area Filter
@@ -764,6 +765,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               <option value="OUT">Hanya Keluar (OUT)</option>
               <option value="ADJ_IN">Penyesuaian Masuk (ADJ_IN)</option>
               <option value="ADJ_OUT">Penyesuaian Keluar (ADJ_OUT)</option>
+              <option value="SO">Stock Opname (SO)</option>
             </select>
           </div>
 
@@ -895,10 +897,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                                   ? 'bg-primary-500/10 text-primary-700 dark:text-primary-400 border border-primary-500/20'
                                   : item.type === 'ADJ_IN'
                                   ? 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20'
-                                  : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
+                                  : item.type === 'ADJ_OUT'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
+                                  : 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20'
                               }`}
                             >
-                              {isTypeIn ? (
+                              {item.type === 'SO' ? (
+                                <ClipboardList className="w-3 h-3 shrink-0" />
+                              ) : isTypeIn ? (
                                 <ArrowDownLeft className="w-3 h-3 shrink-0" />
                               ) : (
                                 <ArrowUpRight className="w-3 h-3 shrink-0" />
@@ -1089,10 +1095,16 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                                     : item.type === 'OUT'
                                     ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400 border border-primary-500/20'
-                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                    : item.type === 'ADJ_IN'
+                                    ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20'
+                                    : item.type === 'ADJ_OUT'
+                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                    : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
                                 }`}
                               >
-                                {isTypeIn ? (
+                                {item.type === 'SO' ? (
+                                  <ClipboardList className="w-3 h-3" />
+                                ) : isTypeIn ? (
                                   <ArrowDownLeft className="w-3 h-3" />
                                 ) : (
                                   <ArrowUpRight className="w-3 h-3" />
