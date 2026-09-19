@@ -57,6 +57,9 @@ export interface KatalogItem {
 export interface KatalogBatch {
   id: string;
   name: string;
+  description?: string;
+  publish_online?: string;
+  publish_offline?: string;
   created_at: string;
   updated_at?: string;
   items: KatalogItem[];

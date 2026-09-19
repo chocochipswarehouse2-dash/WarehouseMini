@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { X, FolderPlus, Sparkles, Package, Save, RefreshCw } from 'lucide-react';
+import { X, FolderPlus, Sparkles, Package, Save, RefreshCw, Globe, Store, Calendar } from 'lucide-react';
 import { KatalogBatch } from '../../types';
 
 interface KatalogCreateModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingBatches: KatalogBatch[];
-  onCreateBatch: (batchName: string) => Promise<void>;
+  onCreateBatch: (
+    batchName: string,
+    description?: string,
+    publishOnline?: string,
+    publishOffline?: string
+  ) => Promise<void>;
   onNotify: (msg: string, type: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
@@ -18,11 +23,17 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
   onNotify,
 }) => {
   const [catalogName, setCatalogName] = useState('');
+  const [description, setDescription] = useState('');
+  const [publishOnline, setPublishOnline] = useState('');
+  const [publishOffline, setPublishOffline] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setCatalogName('');
+      setDescription('');
+      setPublishOnline('');
+      setPublishOffline('');
     }
   }, [isOpen]);
 
@@ -47,7 +58,12 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      await onCreateBatch(cleanName);
+      await onCreateBatch(
+        cleanName,
+        description.trim() || undefined,
+        publishOnline.trim() || undefined,
+        publishOffline.trim() || undefined
+      );
       onClose();
     } catch (err: any) {
       console.error('Error creating catalog batch:', err);
@@ -59,7 +75,7 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
@@ -71,7 +87,7 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
                 Buat Katalog Baru Manual
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Tanpa perlu import file Excel
+                Buat koleksi/katalog baru dan atur jadwal rilis
               </p>
             </div>
           </div>
@@ -79,7 +95,7 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -99,15 +115,54 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
               required
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
             />
-            <p className="text-[11px] text-slate-400 mt-1.5">
-              Setelah dibuat, Anda dapat langsung menambahkan produk satu per satu dengan tombol <strong>"+ Tambah Produk"</strong>.
-            </p>
           </div>
 
-          <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-xl border border-indigo-100 dark:border-indigo-900/40 flex items-start gap-2.5">
-            <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-indigo-900 dark:text-indigo-300 leading-relaxed">
-              Katalog baru akan langsung tersimpan secara permanen ke Supabase Cloud dan siap digunakan untuk cetak barcode maupun cetak katalog A4.
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Deskripsi / Keterangan <span className="text-[10px] font-normal text-slate-400">(opsional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Catatan mengenai katalog atau deskripsi koleksi..."
+              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+            />
+          </div>
+
+          {/* Jadwal Publish Default */}
+          <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-xl border border-indigo-100 dark:border-indigo-900/40 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Jadwal Rilis Default Katalog (Opsional)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  🌐 Publish Online:
+                </label>
+                <input
+                  type="date"
+                  value={publishOnline}
+                  onChange={(e) => setPublishOnline(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  🏬 Publish Offline (Store):
+                </label>
+                <input
+                  type="date"
+                  value={publishOffline}
+                  onChange={(e) => setPublishOffline(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
             </div>
           </div>
 
@@ -116,7 +171,7 @@ export const KatalogCreateModal: React.FC<KatalogCreateModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
             >
               Batal
             </button>

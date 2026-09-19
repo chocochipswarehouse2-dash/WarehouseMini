@@ -60,6 +60,7 @@ import { KatalogImageLightbox } from './katalog/KatalogImageLightbox';
 import { KatalogFilterDropdown } from './katalog/KatalogFilterDropdown';
 import { KatalogProductModal } from './katalog/KatalogProductModal';
 import { KatalogCreateModal } from './katalog/KatalogCreateModal';
+import { KatalogBatchEditModal, BatchEditPayload } from './katalog/KatalogBatchEditModal';
 
 interface KatalogProdukViewProps {
   session?: UserSession | null;
@@ -142,10 +143,9 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxItem, setLightboxItem] = useState<KatalogItem | null>(null);
 
-  // Admin Rename Modal
-  const [renameModalOpen, setRenameModalOpen] = useState(false);
-  const [renameBatchId, setRenameBatchId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
+  // Admin Batch Edit Modal
+  const [batchEditModalOpen, setBatchEditModalOpen] = useState(false);
+  const [batchToEdit, setBatchToEdit] = useState<KatalogBatch | null>(null);
 
   // Ref Upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -651,22 +651,63 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
     await saveBatches(nextBatches, `Katalog "${batchName}" berhasil dihapus.`);
   };
 
-  // Admin Aksi: Rename Nama Katalog
-  const handleRenameBatch = async () => {
-    if (!renameBatchId || !renameValue.trim()) return;
+  // Admin Aksi: Buka Modal Edit Katalog & Atur Massal Produk
+  const handleOpenEditBatch = (batch: KatalogBatch) => {
+    setBatchToEdit(batch);
+    setBatchEditModalOpen(true);
+  };
+
+  // Admin Aksi: Simpan Perubahan Katalog & Mass Update Produk
+  const handleSaveBatchEdit = async (batchId: string, payload: BatchEditPayload) => {
+    let affectedCount = 0;
     const nextBatches = batches.map((b) => {
-      if (b.id === renameBatchId) {
-        const newName = renameValue.trim();
+      if (b.id === batchId) {
+        const newName = payload.name.trim();
+        const updatedItems = b.items.map((it) => {
+          const updatedItem = { ...it, catalog_name: newName };
+
+          if (payload.applyMode === 'all') {
+            updatedItem.publish_online = payload.publish_online || '';
+            updatedItem.publish_offline = payload.publish_offline || '';
+            affectedCount++;
+          } else if (payload.applyMode === 'empty_only') {
+            let changed = false;
+            if (!updatedItem.publish_online && payload.publish_online) {
+              updatedItem.publish_online = payload.publish_online;
+              changed = true;
+            }
+            if (!updatedItem.publish_offline && payload.publish_offline) {
+              updatedItem.publish_offline = payload.publish_offline;
+              changed = true;
+            }
+            if (changed) affectedCount++;
+          }
+
+          if (payload.applyDescriptionToProducts && payload.description) {
+            updatedItem.deskripsi = payload.description;
+          }
+
+          return updatedItem;
+        });
+
         return {
           ...b,
           name: newName,
-          items: b.items.map((it) => ({ ...it, catalog_name: newName })),
+          description: payload.description,
+          publish_online: payload.publish_online,
+          publish_offline: payload.publish_offline,
+          items: updatedItems,
         };
       }
       return b;
     });
-    setRenameModalOpen(false);
-    await saveBatches(nextBatches, `Nama katalog berhasil diubah menjadi "${renameValue.trim()}"`);
+
+    await saveBatches(
+      nextBatches,
+      payload.applyMode !== 'none' && affectedCount > 0
+        ? `Katalog "${payload.name}" dan ${affectedCount} produk berhasil diperbarui!`
+        : `Katalog "${payload.name}" berhasil diperbarui!`
+    );
   };
 
   // Admin Aksi: Replace batch langsung via klik tombol "Replace" di header katalog
@@ -691,11 +732,19 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   };
 
   // Buat Katalog Baru Manual Tanpa Excel
-  const handleCreateBatch = async (batchName: string) => {
+  const handleCreateBatch = async (
+    batchName: string,
+    description?: string,
+    publishOnline?: string,
+    publishOffline?: string
+  ) => {
     const newBatchId = `batch-${Date.now()}`;
     const newBatch: KatalogBatch = {
       id: newBatchId,
       name: batchName.trim(),
+      description,
+      publish_online: publishOnline,
+      publish_offline: publishOffline,
       created_at: new Date().toISOString(),
       items: [],
     };
@@ -1349,15 +1398,39 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               <div key={batch.id} className="space-y-4">
                 {/* Header Tiap Katalog */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border bg-slate-50 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-800">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span
-                      className={`px-3 py-1 rounded-xl text-xs font-black tracking-wider uppercase border shadow-xs ${palette.bg} ${palette.text} ${palette.border}`}
-                    >
-                      Katalog {batch.name}
-                    </span>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      <strong>{batch.items.length}</strong> Model Produk • <strong>{batchVariants}</strong> Varian • Total <strong>{batchQty}</strong> pcs
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span
+                        className={`px-3 py-1 rounded-xl text-xs font-black tracking-wider uppercase border shadow-xs ${palette.bg} ${palette.text} ${palette.border}`}
+                      >
+                        Katalog {batch.name}
+                      </span>
+
+                      {/* Badge Jadwal Publish Batch jika ada */}
+                      {batch.publish_online && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60">
+                          <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                          <span>Online: {batch.publish_online}</span>
+                        </span>
+                      )}
+                      {batch.publish_offline && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                          <Store className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          <span>Offline: {batch.publish_offline}</span>
+                        </span>
+                      )}
+
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        <strong>{batch.items.length}</strong> Model Produk • <strong>{batchVariants}</strong> Varian • Total <strong>{batchQty}</strong> pcs
+                      </div>
                     </div>
+
+                    {/* Deskripsi Katalog jika ada */}
+                    {batch.description && (
+                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-1 italic">
+                        "{batch.description}"
+                      </p>
+                    )}
                   </div>
 
                   {/* Aksi Per-Katalog */}
@@ -1409,13 +1482,9 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                       <div className="flex items-center gap-1 ml-auto sm:ml-1 pl-2 border-l border-slate-300 dark:border-slate-700 shrink-0">
                         <button
                           type="button"
-                          onClick={() => {
-                            setRenameBatchId(batch.id);
-                            setRenameValue(batch.name);
-                            setRenameModalOpen(true);
-                          }}
-                          className="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                          title="Ubah nama katalog"
+                          onClick={() => handleOpenEditBatch(batch)}
+                          className="p-1.5 text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-lg transition-colors cursor-pointer"
+                          title="Edit nama, deskripsi & atur massal tanggal publish produk di katalog ini"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -1607,39 +1676,18 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         onSelectPrev={handleSelectPrevLightbox}
       />
 
-      {/* MODAL RENAME NAMA KATALOG */}
-      {renameModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Ubah Nama Katalog</h3>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Nama Baru:</label>
-              <input
-                type="text"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                className="w-full mt-1 px-3.5 py-2 text-sm font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-              />
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setRenameModalOpen(false)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleRenameBatch}
-                className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
-              >
-                Simpan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL EDIT KATALOG & MASS UPDATE PRODUK */}
+      <KatalogBatchEditModal
+        isOpen={batchEditModalOpen}
+        onClose={() => {
+          setBatchEditModalOpen(false);
+          setBatchToEdit(null);
+        }}
+        batch={batchToEdit}
+        existingBatches={batches}
+        onSave={handleSaveBatchEdit}
+        onNotify={onNotify}
+      />
     </div>
   );
 };

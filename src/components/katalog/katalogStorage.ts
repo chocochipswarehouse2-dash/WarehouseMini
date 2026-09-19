@@ -53,6 +53,9 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
       return parsed.map((b: any, idx: number) => ({
         id: b.id || `batch-${idx + 1}`,
         name: b.name || `Katalog ${idx + 1}`,
+        description: b.description || '',
+        publish_online: b.publish_online || '',
+        publish_offline: b.publish_offline || '',
         created_at: b.created_at || new Date().toISOString(),
         updated_at: b.updated_at,
         is_hidden: Boolean(b.is_hidden),
