@@ -1,25 +1,26 @@
 import React, { useState } from 'react';
-import { Package, QrCode, Printer, Layers, Info } from 'lucide-react';
+import { Package, QrCode, Printer, MapPin, Zap } from 'lucide-react';
 import { LabelPaketTab, LabelItem, generatePackageId, createQrDataUrl, QrCodeImage } from './CetakLabel/LabelPaketTab';
-import { LabelCustomTab } from './CetakLabel/LabelCustomTab';
+import { CetakLokasiRakTab } from './CetakLabel/CetakLokasiRakTab';
+import { CetakCustomQrTab } from './CetakLabel/CetakCustomQrTab';
 
 // Re-export shared types & helpers for backward compatibility
 export type { LabelItem };
 export { generatePackageId, createQrDataUrl, QrCodeImage };
 
 export const CetakLabelView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'paket' | 'custom'>(() => {
+  const [activeTab, setActiveTab] = useState<'lokasi_rak' | 'custom_qr' | 'paket'>(() => {
     try {
-      const saved = localStorage.getItem('wms_cetak_label_active_tab');
-      if (saved === 'paket' || saved === 'custom') return saved;
+      const saved = localStorage.getItem('wms_cetak_label_active_tab_v2');
+      if (saved === 'lokasi_rak' || saved === 'custom_qr' || saved === 'paket') return saved;
     } catch {}
-    return 'paket';
+    return 'lokasi_rak';
   });
 
-  const handleSelectTab = (tab: 'paket' | 'custom') => {
+  const handleSelectTab = (tab: 'lokasi_rak' | 'custom_qr' | 'paket') => {
     setActiveTab(tab);
     try {
-      localStorage.setItem('wms_cetak_label_active_tab', tab);
+      localStorage.setItem('wms_cetak_label_active_tab_v2', tab);
     } catch {}
   };
 
@@ -33,48 +34,62 @@ export const CetakLabelView: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl shadow-xs border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
         <div>
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-xl">
+            <div className="p-2 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-xl">
               <Printer className="w-5 h-5" />
             </div>
             <div>
               <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                Cetak Label
+                Cetak Label &amp; Barcode Lokasi
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Cetak label pengiriman paket & label QR code custom penomoran rak/bin A6
+                QR code lokasi rak range custom, prefix aksi WMS (#IN, #OUT), serta label pengiriman paket
               </p>
             </div>
           </div>
         </div>
 
         {/* Tab Switcher */}
-        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 sm:p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center gap-1 w-full sm:w-auto">
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 sm:p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center gap-1 w-full sm:w-auto flex-wrap">
           <button
             type="button"
-            id="tab-label-paket"
-            onClick={() => handleSelectTab('paket')}
-            className={`flex-1 sm:flex-none py-2 px-3.5 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none ${
-              activeTab === 'paket'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
-            }`}
-          >
-            <Package className="w-4 h-4 shrink-0" />
-            <span>Label Paket</span>
-          </button>
-
-          <button
-            type="button"
-            id="tab-label-custom"
-            onClick={() => handleSelectTab('custom')}
-            className={`flex-1 sm:flex-none py-2 px-3.5 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer select-none ${
-              activeTab === 'custom'
+            id="tab-label-lokasi"
+            onClick={() => handleSelectTab('lokasi_rak')}
+            className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+              activeTab === 'lokasi_rak'
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                 : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
             }`}
           >
-            <QrCode className="w-4 h-4 shrink-0" />
-            <span>Label Custom (Rak & QR)</span>
+            <MapPin className="w-4 h-4 shrink-0" />
+            <span>QR Lokasi Rak</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-label-custom-qr"
+            onClick={() => handleSelectTab('custom_qr')}
+            className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+              activeTab === 'custom_qr'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
+            }`}
+          >
+            <Zap className="w-4 h-4 shrink-0" />
+            <span>QR Custom / Prefix (#IN, #OUT)</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-label-paket"
+            onClick={() => handleSelectTab('paket')}
+            className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+              activeTab === 'paket'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
+            }`}
+          >
+            <Package className="w-4 h-4 shrink-0" />
+            <span>Label Pengiriman Paket</span>
           </button>
         </div>
       </div>
@@ -84,8 +99,9 @@ export const CetakLabelView: React.FC = () => {
         TAB CONTENT
         ========================================================
       */}
+      {activeTab === 'lokasi_rak' && <CetakLokasiRakTab />}
+      {activeTab === 'custom_qr' && <CetakCustomQrTab />}
       {activeTab === 'paket' && <LabelPaketTab />}
-      {activeTab === 'custom' && <LabelCustomTab />}
     </div>
   );
 };
