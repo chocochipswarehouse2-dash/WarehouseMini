@@ -1381,12 +1381,248 @@ export async function deleteLogProdukByDateRange(
 }
 
 /**
+ * Automatically reconciles and calculates stock_opname_queue from raw log_produk scans (type = 'SO').
+ * Offloads all calculation logic from GAS to Supabase / WMS.
+ * Aggregates physical scans per (invoice, sku, lokasi), prevents gateway retry duplicates,
+ * batch-fetches live system stock from stok_real_fisik, and enqueues discrepant items (selisih !== 0).
+ */
+export async function syncPendingStockOpnameFromLogProduk(
+  lookbackDays = 7
+): Promise<{ success: boolean; processedInvoices: number; newQueueItemsCount: number; error?: string }> {
+  try {
+    const sinceDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Fetch recent SO scan logs
+    const soLogs = await supabaseFetch<LogProdukItem[]>(
+      'log_produk',
+      'GET',
+      null,
+      `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc&limit=2000`
+    );
+
+    if (!soLogs || !soLogs.length) {
+      return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
+    }
+
+    // 2. Identify and drop duplicate retry invoices (same operator, similar count, within 120s)
+    const invoiceMeta = new Map<string, { operator: string; timestamp: number; count: number; items: LogProdukItem[] }>();
+    for (const log of soLogs) {
+      if (!log.invoice || !log.sku) continue;
+      const inv = log.invoice.trim();
+      if (!invoiceMeta.has(inv)) {
+        invoiceMeta.set(inv, {
+          operator: log.operator || '',
+          timestamp: new Date(log.created_at || 0).getTime(),
+          count: 0,
+          items: [],
+        });
+      }
+      const meta = invoiceMeta.get(inv)!;
+      meta.count++;
+      meta.items.push(log);
+    }
+
+    // Deduplicate invoice retries:
+    const validInvoices: string[] = [];
+    const sortedInvoices = Array.from(invoiceMeta.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+    const seenBatches: { operator: string; count: number; time: number }[] = [];
+
+    for (const [inv, meta] of sortedInvoices) {
+      const isRetry = seenBatches.some(
+        (b) =>
+          b.operator === meta.operator &&
+          b.count === meta.count &&
+          Math.abs(b.time - meta.timestamp) < 120 * 1000
+      );
+      if (!isRetry) {
+        seenBatches.push({ operator: meta.operator, count: meta.count, time: meta.timestamp });
+        validInvoices.push(inv);
+      }
+    }
+
+    if (!validInvoices.length) {
+      return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
+    }
+
+    // 3. Aggregate physical counts by (invoice, sku, lokasi)
+    const aggregatedMap = new Map<string, {
+      invoice: string;
+      sku: string;
+      lokasi: string;
+      area: string;
+      nama_produk: string;
+      size: string;
+      qty_fisik: number;
+      operator: string;
+      tanggal: string;
+    }>();
+
+    for (const inv of validInvoices) {
+      const meta = invoiceMeta.get(inv);
+      if (!meta) continue;
+      for (const log of meta.items) {
+        const sku = (log.sku || '').trim().toUpperCase();
+        const lokasi = (log.lokasi || 'Warehouse').trim();
+        const key = `${inv}__${sku}__${lokasi.toUpperCase()}`;
+
+        if (!aggregatedMap.has(key)) {
+          aggregatedMap.set(key, {
+            invoice: inv,
+            sku,
+            lokasi,
+            area: log.area || getAreaFromLokasi(lokasi),
+            nama_produk: log.nama_produk || sku,
+            size: log.size || '-',
+            qty_fisik: 0,
+            operator: log.operator || 'Operator WA',
+            tanggal: log.created_at || new Date().toISOString(),
+          });
+        }
+        aggregatedMap.get(key)!.qty_fisik += Number(log.qty) || 0;
+      }
+    }
+
+    // 4. Query existing items in stock_opname_queue to avoid re-inserting
+    const existingKeys = new Set<string>();
+    const invChunkSize = 25;
+    for (let i = 0; i < validInvoices.length; i += invChunkSize) {
+      const chunk = validInvoices.slice(i, i + invChunkSize);
+      const inClause = chunk.map((inv) => `"${inv}"`).join(',');
+      const existingRows = await supabaseFetch<StockOpnameQueueItem[]>(
+        'stock_opname_queue',
+        'GET',
+        null,
+        `invoice=in.(${encodeURIComponent(inClause)})&select=invoice,sku,lokasi`
+      );
+      if (existingRows && Array.isArray(existingRows)) {
+        for (const row of existingRows) {
+          const k = `${(row.invoice || '').trim()}__${(row.sku || '').trim().toUpperCase()}__${(row.lokasi || '').trim().toUpperCase()}`;
+          existingKeys.add(k);
+        }
+      }
+    }
+
+    // 5. Filter for entries that have not been queued yet
+    const unqueuedEntries = Array.from(aggregatedMap.entries())
+      .filter(([k]) => !existingKeys.has(k))
+      .map(([, entry]) => entry);
+
+    if (!unqueuedEntries.length) {
+      return { success: true, processedInvoices: validInvoices.length, newQueueItemsCount: 0 };
+    }
+
+    // 6. Batch fetch live system stock from stok_real_fisik
+    const distinctSkus = Array.from(new Set(unqueuedEntries.map((e) => e.sku)));
+    const stockMap = new Map<string, number>();
+    const skuChunkSize = 100;
+    for (let i = 0; i < distinctSkus.length; i += skuChunkSize) {
+      const chunk = distinctSkus.slice(i, i + skuChunkSize);
+      const inClause = chunk.map((s) => `"${s}"`).join(',');
+      const stockRows = await supabaseFetch<any[]>(
+        'stok_real_fisik',
+        'GET',
+        null,
+        `sku=in.(${encodeURIComponent(inClause)})&select=sku,lokasi,sisa_stok`
+      );
+      if (stockRows && Array.isArray(stockRows)) {
+        for (const s of stockRows) {
+          const k = `${(s.sku || '').trim().toUpperCase()}__${(s.lokasi || '').trim().toUpperCase()}`;
+          stockMap.set(k, Number(s.sisa_stok) || 0);
+        }
+      }
+    }
+
+    // 7. Batch fetch master_produk for authoritative product name & size
+    const masterMap = new Map<string, { nama_produk: string; size: string }>();
+    for (let i = 0; i < distinctSkus.length; i += skuChunkSize) {
+      const chunk = distinctSkus.slice(i, i + skuChunkSize);
+      const inClause = chunk.map((s) => `"${s}"`).join(',');
+      const masterRows = await supabaseFetch<any[]>(
+        'master_produk',
+        'GET',
+        null,
+        `sku=in.(${encodeURIComponent(inClause)})&select=sku,nama_produk,size`
+      );
+      if (masterRows && Array.isArray(masterRows)) {
+        for (const m of masterRows) {
+          masterMap.set((m.sku || '').trim().toUpperCase(), {
+            nama_produk: m.nama_produk || '',
+            size: m.size || '',
+          });
+        }
+      }
+    }
+
+    // 8. Calculate selisih and assemble queue entries
+    const queueToInsert: any[] = [];
+    for (const entry of unqueuedEntries) {
+      const stockKey = `${entry.sku}__${entry.lokasi.toUpperCase()}`;
+      const qty_sistem = stockMap.has(stockKey) ? stockMap.get(stockKey)! : 0;
+      const selisih = entry.qty_fisik - qty_sistem;
+
+      // Skip matching items (selisih === 0)
+      if (selisih === 0) continue;
+
+      const master = masterMap.get(entry.sku);
+      const namaProduk = master?.nama_produk || entry.nama_produk || entry.sku;
+      const size = master?.size || entry.size || '-';
+
+      queueToInsert.push({
+        id: generateUUID(),
+        sesi_id: entry.invoice,
+        tanggal: entry.tanggal,
+        sku: entry.sku,
+        nama_produk: namaProduk,
+        size,
+        lokasi: entry.lokasi,
+        area: entry.area || getAreaFromLokasi(entry.lokasi),
+        qty_sistem,
+        qty_fisik: entry.qty_fisik,
+        selisih,
+        status: 'PENDING',
+        jenis: 'Opname WA',
+        alasan: `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
+        operator: entry.operator,
+        invoice: entry.invoice,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    // 9. Batch insert to stock_opname_queue
+    if (queueToInsert.length > 0) {
+      const insertChunkSize = 100;
+      for (let i = 0; i < queueToInsert.length; i += insertChunkSize) {
+        const chunk = queueToInsert.slice(i, i + insertChunkSize);
+        await supabaseFetch('stock_opname_queue', 'POST', chunk);
+      }
+    }
+
+    return {
+      success: true,
+      processedInvoices: validInvoices.length,
+      newQueueItemsCount: queueToInsert.length,
+    };
+  } catch (err: any) {
+    console.error('Error syncing SO from log_produk:', err);
+    return { success: false, processedInvoices: 0, newQueueItemsCount: 0, error: err.message };
+  }
+}
+
+/**
  * Fetch stock opname queue items directly from Supabase with status filter
  */
 export async function fetchStockOpnameQueue(
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' = 'ALL',
   limit = 2000
 ): Promise<StockOpnameQueueItem[]> {
+  // Sync raw SO scans from log_produk to ensure all pending opnames are calculated & queued
+  try {
+    await syncPendingStockOpnameFromLogProduk();
+  } catch (syncErr) {
+    console.warn('Auto-sync pending SO warning:', syncErr);
+  }
+
   try {
     const statusQuery = status !== 'ALL' ? `status=eq.${encodeURIComponent(status)}&` : '';
     const data = await supabaseFetch<StockOpnameQueueItem[]>(

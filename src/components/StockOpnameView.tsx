@@ -25,6 +25,7 @@ import {
   rejectStockOpnameQueueItems,
   deleteStockOpnameQueueItems,
   resyncStockOpnameQueueItems,
+  syncPendingStockOpnameFromLogProduk,
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
@@ -390,13 +391,18 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   // Sinkronkan ulang stok sistem secara realtime dari Supabase stok_real_fisik
   const handleResyncStock = async () => {
     setIsActionLoading(true);
-    showGlobalLoading('Menyinkronkan stok sistem dengan Supabase...');
+    showGlobalLoading('Menyinkronkan scan SO baru dan stok sistem...');
     try {
+      // 1. Rekonsiliasi scan SO baru dari log_produk ke stock_opname_queue
+      const syncResult = await syncPendingStockOpnameFromLogProduk();
+
+      // 2. Sinkronkan ulang perhitungan sisa stok fisik untuk antrean PENDING
       const res = await resyncStockOpnameQueueItems(selectedSoIds.length > 0 ? selectedSoIds : undefined);
       if (res.success) {
         if (onNotify) {
+          const newMsg = syncResult.newQueueItemsCount > 0 ? ` (${syncResult.newQueueItemsCount} item baru masuk antrean)` : '';
           onNotify(
-            `Sinkronisasi berhasil! ${res.updatedCount} item diperbarui. ${res.matchingCount} item sesuai (selisih 0).`,
+            `Sinkronisasi berhasil! ${res.updatedCount} item diperbarui, ${res.matchingCount} sesuai${newMsg}.`,
             'success'
           );
         }

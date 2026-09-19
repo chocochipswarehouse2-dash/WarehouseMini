@@ -58,6 +58,20 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'Empty message ignored.' });
     }
     
+    // Deduplication check via CacheService (TTL 120s) to block automated gateway retries
+    var dedupKey = 'DEDUP_' + String(sender || '').replace(/[^a-zA-Z0-9]/g, '') + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
+    try {
+      var cache = CacheService.getScriptCache();
+      if (cache && dedupKey.length > 8) {
+        var existing = cache.get(dedupKey);
+        if (existing) {
+          Logger.log('Duplicate WA message ignored: ' + dedupKey);
+          return jsonResponse({ success: true, message: 'Duplicate webhook ignored.' });
+        }
+        cache.put(dedupKey, 'PROCESSED', 120);
+      }
+    } catch (eDedup) {}
+    
     var lines = message.split('\n');
     var currentType = '';
     var currentDeskripsi = '';
@@ -148,72 +162,13 @@ function handleWhatsAppScan(payload) {
     }
     
     // 1. TULIS KE log_produk SUPABASE
+    // Catatan: Seluruh kalkulasi stok (IN/OUT maupun SO) sepenuhnya diserahkan ke Supabase (stok_real_fisik).
+    // GAS murni bertindak sebagai webhook pesan yang cepat (< 200ms) tanpa bottleneck.
     if (logEntries.length > 0) {
       try {
         supabaseApiFetch('log_produk', 'POST', logEntries);
       } catch(err) {
         Logger.log('Supabase POST log_produk error: ' + err.toString());
-      }
-    }
-    
-    // 2. TULIS KE stock_opname_queue SUPABASE (Jika SO)
-    var soKeys = Object.keys(hitungFisik);
-    if (soKeys.length > 0) {
-      var sessionId = 'SO-' + new Date().getTime();
-      var soEntries = [];
-      
-      for (var l = 0; l < soKeys.length; l++) {
-        var loka = soKeys[l];
-        for (var fSku in hitungFisik[loka]) {
-          var qty_fisik = hitungFisik[loka][fSku];
-          var meta2 = cariMetaProdukBySkuSupabase(fSku);
-          var nama = meta2 ? meta2.nama_produk : fSku;
-          var sz = meta2 ? (meta2.size || '-') : '-';
-          
-          soEntries.push({
-            sesi_id: sessionId,
-            sku: fSku,
-            nama_produk: nama,
-            size: sz,
-            lokasi: loka,
-            area: getArea(loka),
-            qty_sistem: 0,
-            qty_fisik: qty_fisik,
-            selisih: qty_fisik,
-            status: 'PENDING',
-            jenis: 'Opname WA',
-            operator: operator,
-            invoice: invoice
-          });
-        }
-      }
-      
-      var validSoEntries = [];
-      for (var p = 0; p < soEntries.length; p++) {
-         var curSO = soEntries[p];
-         try {
-           var encSku = encodeURIComponent(curSO.sku);
-           var encLok = encodeURIComponent(curSO.lokasi);
-           var encArea = encodeURIComponent(curSO.area);
-           var resStok = supabaseApiFetch('stok_real_fisik?sku=eq.' + encSku + '&lokasi=eq.' + encLok + '&area=eq.' + encArea + '&select=sisa_stok', 'GET');
-           
-           if (resStok && resStok.length > 0) {
-              curSO.qty_sistem = resStok[0].sisa_stok || 0;
-              curSO.selisih = curSO.qty_fisik - curSO.qty_sistem;
-           }
-         } catch(e) {}
-         
-         if (curSO.selisih !== 0) {
-            validSoEntries.push(curSO);
-         }
-      }
-
-      if (validSoEntries.length > 0) {
-          try {
-            supabaseApiFetch('stock_opname_queue', 'POST', validSoEntries);
-          } catch(e) {
-            Logger.log('Supabase POST SO error: ' + e.toString());
-          }
       }
     }
     

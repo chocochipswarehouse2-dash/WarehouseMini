@@ -54,8 +54,10 @@ async function runPushAndDeploy() {
   let authUpdated = false;
   let updateDbUpdated = false;
 
-  const NEW_URL = 'https://atdedxyiielpmzjlnriv.supabase.co';
-  const NEW_KEY = 'sb_publishable_ZoVorqMTbLr9Fj3jif5M3Q_lnuzi0bb';
+  const NEW_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
+  const NEW_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
+
+  let stockOpnameUpdated = false;
 
   for (const file of proj.files) {
     if (file.name === 'SupabaseBridge') {
@@ -83,11 +85,22 @@ async function runPushAndDeploy() {
       );
       updateDbUpdated = true;
     }
+    if (file.name === 'Stockopname') {
+      // Hilangkan pemanggilan simpanSesiOpnameInternal agar GAS tidak melakukan kalkulasi stok atau query lambat
+      if (file.source.includes('simpanSesiOpnameInternal(itemsOpnameFisik, operator, true)')) {
+        file.source = file.source.replace(
+          /const hasilOpname = simpanSesiOpnameInternal\(itemsOpnameFisik, operator, true\);[\s\S]*?debugLog\("prosesStockOpname", "invoice=" \+ invoice \+ " hasil simpanSesiOpnameInternal=" \+ JSON\.stringify\(hasilOpname\)\);/,
+          '// Kalkulasi Stock Opname sepenuhnya didelegasikan ke Supabase (stok_real_fisik)\n      debugLog("prosesStockOpname", "invoice=" + invoice + " log_produk berhasil dicatat ke Supabase. Kalkulasi didelegasikan ke Supabase.");'
+        );
+        stockOpnameUpdated = true;
+      }
+    }
   }
 
   console.log(`- SupabaseBridge updated: ${bridgeUpdated}`);
   console.log(`- WmsAuth updated: ${authUpdated}`);
   console.log(`- Wmsupdatedatabase updated: ${updateDbUpdated}`);
+  console.log(`- Stockopname calculation removed: ${stockOpnameUpdated}`);
 
   // 3. Push file-file yang telah diperbarui ke cloud
   console.log('\n3. Mengunggah (PUSH) pembaruan kode ke Google Apps Script...');

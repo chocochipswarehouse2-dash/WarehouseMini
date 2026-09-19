@@ -128,6 +128,7 @@ import {
   invalidatePenerimaanProduksiCache,
   invalidateQcReportsCache,
   invalidateStokFisikCache,
+  syncPendingStockOpnameFromLogProduk,
 } from './services/supabase';
 import { WmsUser } from './types';
 import {
@@ -797,6 +798,12 @@ export default function App() {
                     return p;
                   });
                 });
+              }
+            }
+            if (payload.eventType === 'INSERT') {
+              const newRow = payload.new as any;
+              if (newRow && newRow.type === 'SO') {
+                syncPendingStockOpnameFromLogProduk().catch(() => {});
               }
             }
             globalRealtimeStore.notify('log_produk', payload);
