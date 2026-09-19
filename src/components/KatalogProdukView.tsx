@@ -55,6 +55,8 @@ import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { KatalogA4PrintModal } from './katalog/KatalogA4PrintModal';
 import { KatalogImageLightbox } from './katalog/KatalogImageLightbox';
 import { KatalogFilterDropdown } from './katalog/KatalogFilterDropdown';
+import { KatalogProductModal } from './katalog/KatalogProductModal';
+import { KatalogCreateModal } from './katalog/KatalogCreateModal';
 
 interface KatalogProdukViewProps {
   session?: UserSession | null;
@@ -119,6 +121,16 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [barcodeTargetItems, setBarcodeTargetItems] = useState<KatalogItem[] | null>(null);
   const [a4ModalOpen, setA4ModalOpen] = useState(false);
   const [a4TargetBatchIds, setA4TargetBatchIds] = useState<string[]>([]);
+
+  // Modal Buat Katalog Baru Manual
+  const [createBatchModalOpen, setCreateBatchModalOpen] = useState(false);
+
+  // Modal Tambah / Edit Isi Produk
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [productModalMode, setProductModalMode] = useState<'add' | 'edit'>('add');
+  const [productModalBatchId, setProductModalBatchId] = useState<string>('');
+  const [productModalBatchName, setProductModalBatchName] = useState<string>('');
+  const [productModalItemToEdit, setProductModalItemToEdit] = useState<KatalogItem | null>(null);
 
   // Lightbox Fullscreen Foto
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -634,7 +646,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
     fileInputRef.current?.click();
   };
 
-  // Hapus 1 Produk dalam katalog
+  // Admin Aksi: Hapus 1 Produk dalam katalog
   const handleDeleteProduct = async (batchId: string, itemId: string) => {
     if (!window.confirm('Hapus produk ini dari katalog?')) return;
     const nextBatches = batches.map((b) => {
@@ -647,6 +659,93 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       return b;
     });
     await saveBatches(nextBatches, 'Produk dihapus dari katalog');
+  };
+
+  // Buat Katalog Baru Manual Tanpa Excel
+  const handleCreateBatch = async (batchName: string) => {
+    const newBatchId = `batch-${Date.now()}`;
+    const newBatch: KatalogBatch = {
+      id: newBatchId,
+      name: batchName.trim(),
+      created_at: new Date().toISOString(),
+      items: [],
+    };
+    const nextBatches = [...batches, newBatch];
+    setSelectedCatalogIds((prev) => [...prev, newBatchId]);
+    await saveBatches(nextBatches, `Katalog "${batchName.trim()}" berhasil dibuat!`);
+  };
+
+  // Buka Modal Tambah Produk Baru
+  const handleOpenAddProduct = (batchId?: string) => {
+    const targetBatch = batches.find((b) => b.id === batchId) || batches[0];
+    if (!targetBatch) {
+      onNotify('Belum ada katalog. Silakan buat katalog baru terlebih dahulu.', 'warning');
+      setCreateBatchModalOpen(true);
+      return;
+    }
+    setProductModalMode('add');
+    setProductModalBatchId(targetBatch.id);
+    setProductModalBatchName(targetBatch.name);
+    setProductModalItemToEdit(null);
+    setProductModalOpen(true);
+  };
+
+  // Buka Modal Edit Produk
+  const handleOpenEditProduct = (batch: KatalogBatch, item: KatalogItem) => {
+    setProductModalMode('edit');
+    setProductModalBatchId(batch.id);
+    setProductModalBatchName(batch.name);
+    setProductModalItemToEdit(item);
+    setProductModalOpen(true);
+  };
+
+  // Simpan Produk (Tambah Baru atau Update Hasil Edit)
+  const handleSaveProduct = async (targetBatchId: string, item: KatalogItem) => {
+    let nextBatches = [...batches];
+    const targetBatch = nextBatches.find((b) => b.id === targetBatchId);
+    if (!targetBatch) {
+      throw new Error('Katalog target tidak ditemukan');
+    }
+
+    if (productModalMode === 'edit' && productModalItemToEdit) {
+      const oldBatchId = productModalBatchId;
+      if (oldBatchId !== targetBatchId) {
+        // Jika dipindah ke katalog lain
+        nextBatches = nextBatches.map((b) => {
+          if (b.id === oldBatchId) {
+            return { ...b, items: b.items.filter((it) => it.id !== item.id) };
+          }
+          if (b.id === targetBatchId) {
+            return { ...b, items: [...b.items, item] };
+          }
+          return b;
+        });
+      } else {
+        // Update dalam batch yang sama
+        nextBatches = nextBatches.map((b) => {
+          if (b.id === targetBatchId) {
+            return {
+              ...b,
+              items: b.items.map((it) => (it.id === item.id ? item : it)),
+            };
+          }
+          return b;
+        });
+      }
+      await saveBatches(nextBatches, `Produk "${item.deskripsi}" berhasil diperbarui!`);
+    } else {
+      // Tambah baru ke targetBatch
+      nextBatches = nextBatches.map((b) => {
+        if (b.id === targetBatchId) {
+          return {
+            ...b,
+            items: [...b.items, item],
+          };
+        }
+        return b;
+      });
+      await saveBatches(nextBatches, `Produk "${item.deskripsi}" berhasil ditambahkan ke Katalog ${targetBatch.name}!`);
+    }
   };
 
   // Upload Foto per Kartu Produk (Langsung kompres & upload ke Google Drive)
@@ -911,6 +1010,32 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             <span>Cetak Katalog</span>
           </button>
 
+          {/* Tombol Buat Katalog Baru Manual */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setCreateBatchModalOpen(true)}
+              className="px-3.5 py-2 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-indigo-200 dark:border-indigo-800 shadow-2xs"
+              title="Buat katalog baru secara manual tanpa perlu upload Excel"
+            >
+              <FolderPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span>+ Buat Katalog</span>
+            </button>
+          )}
+
+          {/* Tombol Tambah Produk Manual */}
+          {isAdmin && batches.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handleOpenAddProduct()}
+              className="px-3.5 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-emerald-200 dark:border-emerald-800 shadow-2xs"
+              title="Tambah produk baru ke dalam katalog"
+            >
+              <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>+ Tambah Produk</span>
+            </button>
+          )}
+
           {/* Tombol Upload Excel */}
           <button
             type="button"
@@ -1134,6 +1259,19 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
                   {/* Aksi Per-Katalog */}
                   <div className="flex items-center gap-2">
+                    {/* Tambah Produk ke Katalog ini */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddProduct(batch.id)}
+                        className="px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        title="Tambah produk baru ke dalam katalog ini"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Produk</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -1141,7 +1279,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                         setBarcodeTargetItems(batch.items);
                         setBarcodeModalOpen(true);
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      disabled={batch.items.length === 0}
+                      className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                       title="Cetak barcode seluruh produk di katalog ini"
                     >
                       <QrCode className="w-3.5 h-3.5" />
@@ -1154,7 +1293,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                         setA4TargetBatchIds([batch.id]);
                         setA4ModalOpen(true);
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      disabled={batch.items.length === 0}
+                      className="px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                       title="Cetak katalog untuk koleksi ini (bisa tambah katalog lain di dalam dialog)"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -1197,35 +1337,58 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                   </div>
                 </div>
 
-                {/* Grid Produk Dalam Katalog Ini */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {batch.items.map((prod) => (
-                    <ProductCardItem
-                      key={prod.id}
-                      item={prod}
-                      batch={batch}
-                      isTableVisible={
-                        cardTableVisible[prod.id] !== undefined
-                          ? cardTableVisible[prod.id]
-                          : !hideVariants
-                      }
-                      onToggleTable={() => handleToggleCardTable(prod.id)}
-                      onPrintBarcode={() => {
-                        setBarcodeTargetItem(prod);
-                        setBarcodeTargetItems(null);
-                        setBarcodeModalOpen(true);
-                      }}
-                      onUploadPhoto={() => {
-                        setTargetImageUploadItemId(prod.id);
-                        imageInputRef.current?.click();
-                      }}
-                      onDeleteProduct={() => handleDeleteProduct(batch.id, prod.id)}
-                      onImageClick={() => handleOpenLightbox(prod)}
-                      isUploadingPhoto={uploadingImageId === prod.id}
-                      isAdmin={isAdmin}
-                    />
-                  ))}
-                </div>
+                {/* Grid Produk Dalam Katalog Ini / Tampilan Kosong */}
+                {batch.items.length === 0 ? (
+                  <div className="p-8 text-center bg-white dark:bg-slate-850 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 space-y-3">
+                    <Package className="w-10 h-10 text-slate-400 mx-auto opacity-50" />
+                    <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                      Katalog "{batch.name}" Belum Memiliki Produk
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Mulai isi katalog dengan menambahkan model pakaian, nama produk, harga jual, foto, dan varian warna/size.
+                    </p>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddProduct(batch.id)}
+                        className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs inline-flex items-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Tambah Produk Pertama</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {batch.items.map((prod) => (
+                      <ProductCardItem
+                        key={prod.id}
+                        item={prod}
+                        batch={batch}
+                        isTableVisible={
+                          cardTableVisible[prod.id] !== undefined
+                            ? cardTableVisible[prod.id]
+                            : !hideVariants
+                        }
+                        onToggleTable={() => handleToggleCardTable(prod.id)}
+                        onPrintBarcode={() => {
+                          setBarcodeTargetItem(prod);
+                          setBarcodeTargetItems(null);
+                          setBarcodeModalOpen(true);
+                        }}
+                        onUploadPhoto={() => {
+                          setTargetImageUploadItemId(prod.id);
+                          imageInputRef.current?.click();
+                        }}
+                        onEditProduct={() => handleOpenEditProduct(batch, prod)}
+                        onDeleteProduct={() => handleDeleteProduct(batch.id, prod.id)}
+                        onImageClick={() => handleOpenLightbox(prod)}
+                        isUploadingPhoto={uploadingImageId === prod.id}
+                        isAdmin={isAdmin}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1260,6 +1423,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                   setTargetImageUploadItemId(prod.id);
                   imageInputRef.current?.click();
                 }}
+                onEditProduct={() => handleOpenEditProduct(parentBatch, prod)}
                 onDeleteProduct={() => handleDeleteProduct(parentBatch.id, prod.id)}
                 onImageClick={() => handleOpenLightbox(prod)}
                 isUploadingPhoto={uploadingImageId === prod.id}
@@ -1300,6 +1464,29 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         onClose={() => setA4ModalOpen(false)}
         batches={batches}
         initialSelectedBatchIds={a4TargetBatchIds.length > 0 ? a4TargetBatchIds : selectedCatalogIds}
+      />
+
+      {/* MODAL BUAT KATALOG BARU MANUAL */}
+      <KatalogCreateModal
+        isOpen={createBatchModalOpen}
+        onClose={() => setCreateBatchModalOpen(false)}
+        existingBatches={batches}
+        onCreateBatch={handleCreateBatch}
+        onNotify={onNotify}
+      />
+
+      {/* MODAL TAMBAH & EDIT PRODUK KATALOG */}
+      <KatalogProductModal
+        isOpen={productModalOpen}
+        mode={productModalMode}
+        batchId={productModalBatchId}
+        batchName={productModalBatchName}
+        availableBatches={batches}
+        itemToEdit={productModalItemToEdit}
+        onClose={() => setProductModalOpen(false)}
+        onSave={handleSaveProduct}
+        onDelete={handleDeleteProduct}
+        onNotify={onNotify}
       />
 
       {/* FULLSCREEN IMAGE LIGHTBOX POPUP */}
@@ -1360,6 +1547,7 @@ interface ProductCardItemProps {
   onToggleTable: () => void;
   onPrintBarcode: () => void;
   onUploadPhoto: () => void;
+  onEditProduct: () => void;
   onDeleteProduct: () => void;
   onImageClick: () => void;
   isUploadingPhoto: boolean;
@@ -1373,6 +1561,7 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
   onToggleTable,
   onPrintBarcode,
   onUploadPhoto,
+  onEditProduct,
   onDeleteProduct,
   onImageClick,
   isUploadingPhoto,
@@ -1398,9 +1587,21 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
             )}
           </div>
 
-          {/* Tombol Aksi di Baris Atas: Upload Foto */}
+          {/* Tombol Aksi di Baris Atas: Edit & Upload Foto */}
           {isAdmin && (
             <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditProduct();
+                }}
+                className="px-2 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                title="Edit nama, harga, foto, atau varian produk ini"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
               <button
                 type="button"
                 onClick={(e) => {
@@ -1408,7 +1609,7 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
                   onUploadPhoto();
                 }}
                 disabled={isUploadingPhoto}
-                className="px-2 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                className="px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                 title="Unggah atau ganti foto produk"
               >
                 {isUploadingPhoto ? (
@@ -1559,17 +1760,24 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
         </div>
       </div>
 
-      {/* Bagian Bawah: Aksi Hapus Produk (Admin) */}
+      {/* Bagian Bawah: Aksi Edit & Hapus Produk (Admin) */}
       {isAdmin && (
         <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-          <span>Katalog {item.catalog_name || batch.name}</span>
+          <button
+            type="button"
+            onClick={onEditProduct}
+            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <Edit2 className="w-3 h-3" />
+            <span>Edit Produk</span>
+          </button>
           <button
             type="button"
             onClick={onDeleteProduct}
             className="text-rose-500 hover:text-rose-700 font-medium flex items-center gap-1 cursor-pointer transition-colors"
           >
             <Trash2 className="w-3 h-3" />
-            <span>Hapus Produk</span>
+            <span>Hapus</span>
           </button>
         </div>
       )}

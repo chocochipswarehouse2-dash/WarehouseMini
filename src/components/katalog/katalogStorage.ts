@@ -136,9 +136,27 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
     });
 
     if (rowsToUpsert.length > 0) {
-      // Upsert ke wms_katalog (update on conflict UUID)
+      // Upsert ke wms_katalog (update on conflict ID)
       const { error } = await client.from('wms_katalog').upsert(rowsToUpsert, { onConflict: 'id' });
       if (error) throw error;
+
+      // Bersihkan row yang sudah dihapus dari Supabase
+      const activeIds = rowsToUpsert.map((r) => r.id);
+      const { data: existingRows } = await client.from('wms_katalog').select('id');
+      if (existingRows && existingRows.length > 0) {
+        const idsToDelete = existingRows
+          .map((r: any) => r.id)
+          .filter((id: string) => !activeIds.includes(id));
+        if (idsToDelete.length > 0) {
+          for (let i = 0; i < idsToDelete.length; i += 50) {
+            const chunk = idsToDelete.slice(i, i + 50);
+            await client.from('wms_katalog').delete().in('id', chunk);
+          }
+        }
+      }
+    } else {
+      // Jika semua item dihapus
+      await client.from('wms_katalog').delete().neq('id', 'dummy-never-exists');
     }
     return true;
   } catch (cloudErr) {
@@ -149,6 +167,13 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
 
 // Ambil list batches dari Cloud atau LocalStorage
 export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
+  // Ambil data lokal terlebih dahulu untuk sinkronisasi batch kosong
+  let localBatches: KatalogBatch[] = [];
+  const localStr = localStorage.getItem(KATALOG_STORAGE_KEY);
+  if (localStr) {
+    localBatches = parseStoredKatalogBatches(localStr);
+  }
+
   try {
     const client = getSupabaseClient();
     const { data, error } = await client.from('wms_katalog').select('*').order('created_at', { ascending: true });
@@ -156,6 +181,18 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
     if (!error && data && data.length > 0) {
       // Transform rows back to batches
       const batchMap = new Map<string, KatalogBatch>();
+
+      // Masukkan kerangka batch dari local storage jika ada (misal batch kosong)
+      localBatches.forEach((lb) => {
+        batchMap.set(lb.id, {
+          id: lb.id,
+          name: lb.name,
+          created_at: lb.created_at,
+          updated_at: lb.updated_at,
+          is_hidden: lb.is_hidden,
+          items: [],
+        });
+      });
       
       data.forEach((row: any) => {
         const batchId = row.catalog_id || 'batch-325b';
@@ -170,13 +207,23 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
           });
         }
         
+        // Ambil image_url lokal jika di cloud kosong tapi di lokal ada
+        let rowImg = row.image_url || '';
+        if (!rowImg) {
+          const matchedLocalBatch = localBatches.find((b) => b.id === batchId);
+          const matchedLocalItem = matchedLocalBatch?.items.find((it) => it.id === row.id);
+          if (matchedLocalItem?.image_url) {
+            rowImg = matchedLocalItem.image_url;
+          }
+        }
+
         batchMap.get(batchId)!.items.push({
           id: row.id,
           nomor: row.nomor || '',
           deskripsi: row.deskripsi || '',
           price: row.price || '',
           variants: row.variants || [],
-          image_url: row.image_url || '',
+          image_url: rowImg,
           catalog_id: batchId,
           catalog_name: batchName,
           is_hidden: row.is_hidden || false
@@ -196,12 +243,8 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
   }
 
   // Fallback LocalStorage
-  const localStr = localStorage.getItem(KATALOG_STORAGE_KEY);
-  if (localStr) {
-    const fromLocal = parseStoredKatalogBatches(localStr);
-    if (fromLocal.length > 0) {
-      return fromLocal;
-    }
+  if (localBatches.length > 0) {
+    return localBatches;
   }
 
   // Fallback Default: data 325B
