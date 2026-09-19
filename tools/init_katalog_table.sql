@@ -8,15 +8,27 @@ CREATE TABLE IF NOT EXISTS public.wms_katalog (
     id TEXT PRIMARY KEY,
     catalog_id TEXT NOT NULL,
     catalog_name TEXT NOT NULL,
+    catalog_description TEXT,
+    catalog_publish_online TEXT,
+    catalog_publish_offline TEXT,
     nomor TEXT,
     deskripsi TEXT,
     price TEXT,
     variants JSONB DEFAULT '[]'::jsonb,
     image_url TEXT,
+    publish_online TEXT,
+    publish_offline TEXT,
     is_hidden BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Pastikan kolom baru tersedia jika tabel sudah pernah dibuat sebelumnya
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_description TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_publish_online TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_publish_offline TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS publish_online TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS publish_offline TEXT;
 
 -- =====================================================================================
 -- MENGAKTIFKAN RLS (ROW LEVEL SECURITY)

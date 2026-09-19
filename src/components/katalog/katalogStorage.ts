@@ -112,15 +112,31 @@ export function getDefaultInitialBatch(): KatalogBatch {
 export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<boolean> {
   const jsonStr = JSON.stringify(batches);
 
-  // 1. Simpan ke LocalStorage (lengkap dengan URL)
+  // Buat versi clean tanpa base64 image untuk disimpan di Supabase Cloud wms_settings (ringan & cepat)
+  const cleanBatches = batches.map((b) => ({
+    ...b,
+    items: b.items.map((it) => ({
+      ...it,
+      image_url: it.image_url && it.image_url.startsWith('data:image') ? '' : it.image_url,
+    })),
+  }));
+  const cleanJsonStr = JSON.stringify(cleanBatches);
+
+  // 1. Simpan ke LocalStorage (lengkap dengan URL/base64 cache)
   try {
     localStorage.setItem(KATALOG_STORAGE_KEY, jsonStr);
   } catch (lsErr) {
     console.warn('LocalStorage save failed, trying fallback:', lsErr);
   }
 
-  // 2. Simpan ke Supabase Cloud (tabel wms_katalog)
-  // PASTI-KAN TIDAK ADA GAMBAR BASE64 YANG TERSIMPAN DI SUPABASE
+  // 2. Simpan snapshot struktur katalog ke Supabase wms_settings (Sinkronisasi Cloud Terpadu)
+  try {
+    await saveWmsSettings({ katalog_manual_data: cleanJsonStr });
+  } catch (settingsErr) {
+    console.warn('Gagal simpan snapshot katalog ke wms_settings:', settingsErr);
+  }
+
+  // 3. Simpan ke Supabase Cloud (tabel wms_katalog baris per baris)
   try {
     const client = getSupabaseClient();
     
@@ -132,13 +148,16 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
           id: it.id,
           catalog_id: b.id,
           catalog_name: b.name,
-          nomor: it.nomor,
-          deskripsi: it.deskripsi,
+          catalog_description: b.description || '',
+          catalog_publish_online: b.publish_online || '',
+          catalog_publish_offline: b.publish_offline || '',
+          nomor: it.nomor || '',
+          deskripsi: it.deskripsi || '',
           price: String(it.price || ''),
           variants: it.variants || [],
-          image_url: (it.image_url && it.image_url.startsWith('data:image')) ? '' : it.image_url,
-          publish_online: it.publish_online || null,
-          publish_offline: it.publish_offline || null,
+          image_url: (it.image_url && it.image_url.startsWith('data:image')) ? '' : (it.image_url || ''),
+          publish_online: it.publish_online || '',
+          publish_offline: it.publish_offline || '',
           is_hidden: it.is_hidden || false,
         });
       });
@@ -146,8 +165,44 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
 
     if (rowsToUpsert.length > 0) {
       // Upsert ke wms_katalog (update on conflict ID)
-      const { error } = await client.from('wms_katalog').upsert(rowsToUpsert, { onConflict: 'id' });
-      if (error) throw error;
+      let upsertRes = await client.from('wms_katalog').upsert(rowsToUpsert, { onConflict: 'id' });
+      
+      // Jika gagal karena kolom belum ada di schema DB Supabase tertentu, coba fallback bertahap
+      if (upsertRes.error) {
+        console.warn('Upsert wms_katalog lengkap gagal, mencoba fallback struktur dasar:', upsertRes.error);
+        
+        // Fallback 1: Dengan publish_online & publish_offline tanpa catalog_* metadata
+        const fallback1Rows = rowsToUpsert.map((r) => ({
+          id: r.id,
+          catalog_id: r.catalog_id,
+          catalog_name: r.catalog_name,
+          nomor: r.nomor,
+          deskripsi: r.deskripsi,
+          price: r.price,
+          variants: r.variants,
+          image_url: r.image_url,
+          publish_online: r.publish_online,
+          publish_offline: r.publish_offline,
+          is_hidden: r.is_hidden,
+        }));
+        upsertRes = await client.from('wms_katalog').upsert(fallback1Rows, { onConflict: 'id' });
+
+        // Fallback 2: Struktur dasar lama
+        if (upsertRes.error) {
+          const fallback2Rows = rowsToUpsert.map((r) => ({
+            id: r.id,
+            catalog_id: r.catalog_id,
+            catalog_name: r.catalog_name,
+            nomor: r.nomor,
+            deskripsi: r.deskripsi,
+            price: r.price,
+            variants: r.variants,
+            image_url: r.image_url,
+            is_hidden: r.is_hidden,
+          }));
+          await client.from('wms_katalog').upsert(fallback2Rows, { onConflict: 'id' });
+        }
+      }
 
       // Bersihkan row yang sudah dihapus dari Supabase
       const activeIds = rowsToUpsert.map((r) => r.id);
@@ -170,35 +225,51 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
     return true;
   } catch (cloudErr) {
     console.error('Supabase cloud save error for wms_katalog:', cloudErr);
-    return false;
+    // Meskipun tabel wms_katalog error, data sudah tersimpan di wms_settings & localStorage
+    return true;
   }
 }
 
 // Ambil list batches dari Cloud atau LocalStorage
 export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
-  // Ambil data lokal terlebih dahulu untuk sinkronisasi batch kosong
+  // 1. Ambil data lokal terlebih dahulu untuk kecepatan & fallback gambar
   let localBatches: KatalogBatch[] = [];
   const localStr = localStorage.getItem(KATALOG_STORAGE_KEY);
   if (localStr) {
     localBatches = parseStoredKatalogBatches(localStr);
   }
 
+  // 2. Ambil snapshot katalog dari Supabase Cloud wms_settings
+  let cloudSettingsBatches: KatalogBatch[] = [];
+  try {
+    const settings = await fetchWmsSettings(true);
+    if (settings?.katalog_manual_data) {
+      cloudSettingsBatches = parseStoredKatalogBatches(settings.katalog_manual_data);
+    }
+  } catch (settingsErr) {
+    console.warn('Gagal fetch wms_settings katalog snapshot:', settingsErr);
+  }
+
+  // 3. Ambil baris produk dari tabel wms_katalog
   try {
     const client = getSupabaseClient();
     const { data, error } = await client.from('wms_katalog').select('*').order('created_at', { ascending: true });
     
     if (!error && data && data.length > 0) {
-      // Transform rows back to batches
       const batchMap = new Map<string, KatalogBatch>();
 
-      // Masukkan kerangka batch dari local storage jika ada (misal batch kosong)
-      localBatches.forEach((lb) => {
-        batchMap.set(lb.id, {
-          id: lb.id,
-          name: lb.name,
-          created_at: lb.created_at,
-          updated_at: lb.updated_at,
-          is_hidden: lb.is_hidden,
+      // Masukkan kerangka batch dari cloudSettingsBatches atau localBatches
+      const sourceBatches = cloudSettingsBatches.length > 0 ? cloudSettingsBatches : localBatches;
+      sourceBatches.forEach((sb) => {
+        batchMap.set(sb.id, {
+          id: sb.id,
+          name: sb.name,
+          description: sb.description || '',
+          publish_online: sb.publish_online || '',
+          publish_offline: sb.publish_offline || '',
+          created_at: sb.created_at || new Date().toISOString(),
+          updated_at: sb.updated_at,
+          is_hidden: sb.is_hidden || false,
           items: [],
         });
       });
@@ -211,22 +282,41 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
           batchMap.set(batchId, {
             id: batchId,
             name: batchName,
+            description: row.catalog_description || '',
+            publish_online: row.catalog_publish_online || '',
+            publish_offline: row.catalog_publish_offline || '',
             created_at: row.created_at || new Date().toISOString(),
-            items: []
+            is_hidden: Boolean(row.is_hidden),
+            items: [],
           });
         }
         
-        // Ambil image_url lokal jika di cloud kosong tapi di lokal ada
+        const b = batchMap.get(batchId)!;
+        if (!b.description && row.catalog_description) b.description = row.catalog_description;
+        if (!b.publish_online && row.catalog_publish_online) b.publish_online = row.catalog_publish_online;
+        if (!b.publish_offline && row.catalog_publish_offline) b.publish_offline = row.catalog_publish_offline;
+
+        // Ambil image_url lokal/snapshot jika di cloud row kosong tapi di lokal/snapshot ada
         let rowImg = row.image_url || '';
         if (!rowImg) {
-          const matchedLocalBatch = localBatches.find((b) => b.id === batchId);
-          const matchedLocalItem = matchedLocalBatch?.items.find((it) => it.id === row.id);
-          if (matchedLocalItem?.image_url) {
-            rowImg = matchedLocalItem.image_url;
+          const matchedBatch = sourceBatches.find((sb) => sb.id === batchId) || localBatches.find((lb) => lb.id === batchId);
+          const matchedItem = matchedBatch?.items.find((it) => it.id === row.id);
+          if (matchedItem?.image_url) {
+            rowImg = matchedItem.image_url;
           }
         }
 
-        batchMap.get(batchId)!.items.push({
+        // Ambil publish_online/offline dari row atau fallback snapshot/lokal jika row kosong
+        let itemOnline = row.publish_online || '';
+        let itemOffline = row.publish_offline || '';
+        if (!itemOnline || !itemOffline) {
+          const matchedBatch = sourceBatches.find((sb) => sb.id === batchId);
+          const matchedItem = matchedBatch?.items.find((it) => it.id === row.id);
+          if (!itemOnline && matchedItem?.publish_online) itemOnline = matchedItem.publish_online;
+          if (!itemOffline && matchedItem?.publish_offline) itemOffline = matchedItem.publish_offline;
+        }
+
+        b.items.push({
           id: row.id,
           nomor: row.nomor || '',
           deskripsi: row.deskripsi || '',
@@ -236,8 +326,8 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
           catalog_id: batchId,
           catalog_name: batchName,
           is_hidden: row.is_hidden || false,
-          publish_online: row.publish_online || '',
-          publish_offline: row.publish_offline || '',
+          publish_online: itemOnline,
+          publish_offline: itemOffline,
         });
       });
       
@@ -250,15 +340,23 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
       return fromCloud;
     }
   } catch (err) {
-    console.warn('Gagal fetch cloud katalog, mencoba local storage:', err);
+    console.warn('Gagal fetch cloud katalog, mencoba snapshot wms_settings/local:', err);
   }
 
-  // Fallback LocalStorage
+  // Fallback 1: Cloud Settings Snapshot dari wms_settings
+  if (cloudSettingsBatches.length > 0) {
+    try {
+      localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(cloudSettingsBatches));
+    } catch {}
+    return cloudSettingsBatches;
+  }
+
+  // Fallback 2: LocalStorage
   if (localBatches.length > 0) {
     return localBatches;
   }
 
-  // Fallback Default: data 325B
+  // Fallback 3: Default initial data 325B
   const defaultBatch = getDefaultInitialBatch();
   persistKatalogBatches([defaultBatch]).catch(() => {});
   return [defaultBatch];

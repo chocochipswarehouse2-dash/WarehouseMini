@@ -465,8 +465,37 @@ CREATE TABLE IF NOT EXISTS public.wms_settings (
   gdrive_folder_url TEXT DEFAULT '',
   roles JSONB DEFAULT '{}'::jsonb,
   agenda_categories JSONB DEFAULT '[]'::jsonb,
+  katalog_manual_data TEXT DEFAULT '',
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 18B. TABEL KATALOG PRODUK FOTO & JADWAL PUBLISH (wms_katalog)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.wms_katalog (
+  id TEXT PRIMARY KEY,
+  catalog_id TEXT NOT NULL,
+  catalog_name TEXT NOT NULL,
+  catalog_description TEXT DEFAULT '',
+  catalog_publish_online TEXT DEFAULT '',
+  catalog_publish_offline TEXT DEFAULT '',
+  nomor TEXT DEFAULT '',
+  deskripsi TEXT DEFAULT '',
+  price TEXT DEFAULT '',
+  variants JSONB DEFAULT '[]'::jsonb,
+  image_url TEXT DEFAULT '',
+  publish_online TEXT DEFAULT '',
+  publish_offline TEXT DEFAULT '',
+  is_hidden BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_description TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_publish_online TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_publish_offline TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS publish_online TEXT;
+ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS publish_offline TEXT;
 
 -- ──────────────────────────────────────────────────────────────────────────────
 -- 19. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
@@ -566,7 +595,7 @@ DECLARE
     'penerimaan_produksi', 'picking_list', 'peminjaman', 'perbaikan_tickets',
     'qc_reports', 'manual_shipment', 'pengecekan_sj', 'address_book',
     'karyawan', 'master_shift', 'roster_shift', 'presensi', 'lembur', 'perijinan_cuti',
-    'wms_projects', 'wms_agenda', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings'
+    'wms_projects', 'wms_agenda', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings', 'wms_katalog'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
