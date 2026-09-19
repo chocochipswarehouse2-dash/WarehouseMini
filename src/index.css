@@ -22,6 +22,46 @@
   code, kbd, samp, pre {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Standardized Font Scale Hierarchy */
+  html[data-theme-font-size="compact"],
+  html[data-theme-font-size="compact"] body {
+    font-size: 13.5px;
+  }
+  html[data-theme-font-size="normal"],
+  html[data-theme-font-size="normal"] body,
+  html:not([data-theme-font-size]) body {
+    font-size: 15px;
+  }
+  html[data-theme-font-size="large"],
+  html[data-theme-font-size="large"] body {
+    font-size: 16.5px;
+  }
+
+  @media (min-width: 640px) {
+    html[data-theme-font-size="compact"],
+    html[data-theme-font-size="compact"] body {
+      font-size: 14.5px;
+    }
+    html[data-theme-font-size="normal"],
+    html[data-theme-font-size="normal"] body,
+    html:not([data-theme-font-size]) body {
+      font-size: 16px;
+    }
+    html[data-theme-font-size="large"],
+    html[data-theme-font-size="large"] body {
+      font-size: 17.5px;
+    }
+  }
+
+  /* Mobile PWA Safe Area Padding & Viewport Locking */
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 /* Icon Pack Style */

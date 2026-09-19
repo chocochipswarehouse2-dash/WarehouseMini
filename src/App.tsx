@@ -20,6 +20,7 @@ import {
 } from './types';
 import RoadmapView from "./components/RoadmapView";
 import { Sidebar } from './components/Sidebar';
+import { Navbar } from './components/Navbar';
 import { KatalogProdukView } from './components/KatalogProdukView';
 import { OperasiStokView } from './components/OperasiStokView';
 import { ImportStokModal, ImportRow } from './components/ImportStokModal';
@@ -293,6 +294,7 @@ export default function App() {
   // Dark / Light Theme Mode
   const [themeColor, setThemeColor] = useState<string>(() => localStorage.getItem("wms_theme_color") || "rose");
   const [themeFont, setThemeFont] = useState<string>(() => localStorage.getItem("wms_theme_font") || "sans");
+  const [themeFontSize, setThemeFontSize] = useState<string>(() => localStorage.getItem("wms_theme_font_size") || "normal");
   const [themeIconStyle, setThemeIconStyle] = useState<string>(() => localStorage.getItem("wms_theme_icon") || "regular");
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -602,6 +604,8 @@ export default function App() {
     localStorage.setItem('wms_theme_color', themeColor);
     document.documentElement.setAttribute('data-theme-font', themeFont);
     localStorage.setItem('wms_theme_font', themeFont);
+    document.documentElement.setAttribute('data-theme-font-size', themeFontSize);
+    localStorage.setItem('wms_theme_font_size', themeFontSize);
     
     // Remove previous font classes
     document.documentElement.classList.remove('font-sans', 'font-inter', 'font-mono', 'font-serif', 'font-rounded');
@@ -609,7 +613,7 @@ export default function App() {
     
     document.documentElement.setAttribute('data-theme-icon', themeIconStyle);
     localStorage.setItem('wms_theme_icon', themeIconStyle);
-  }, [darkMode, themeColor, themeFont, themeIconStyle]);
+  }, [darkMode, themeColor, themeFont, themeFontSize, themeIconStyle]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => !prev);
@@ -1588,10 +1592,26 @@ export default function App() {
       {/* Main App Container (Navbar + Page Content) */}
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Navigation Header with Hamburger Toggle & Quick Actions */}
-        
+        <Navbar
+          session={session}
+          activePage={activePage}
+          onSelectPage={handleSelectPage}
+          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+          onToggleSidebarCollapse={toggleSidebarCollapse}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onOpenThemePicker={() => setIsThemePickerOpen(true)}
+          notificationPermission={notificationPermission}
+          onRequestNotification={handleRequestNotification}
+          isRealtimeConnected={isRealtimeConnected}
+          onOpenSettings={handleOpenSettings}
+          onOpenApkModal={() => setIsApkModalOpen(true)}
+          onLogout={handleLogout}
+          totalScannedCount={scannedData.length}
+          hasNewPickingAlert={!!newPickingTaskAlert}
+        />
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
-        <main className="flex-1 pb-6 p-1.5 sm:p-4">
+        <main className="flex-1 pb-16 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-7xl mx-auto">
           {session && !canAccessPage(session, activePage) ? (
             <div className="min-h-[60vh] flex items-center justify-center p-4">
               <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">
@@ -1856,6 +1876,8 @@ export default function App() {
         setThemeColor={setThemeColor}
         themeFont={themeFont}
         setThemeFont={setThemeFont}
+        themeFontSize={themeFontSize}
+        setThemeFontSize={setThemeFontSize}
         themeIconStyle={themeIconStyle}
         setThemeIconStyle={setThemeIconStyle}
       />

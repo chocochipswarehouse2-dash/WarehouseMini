@@ -10,6 +10,8 @@ interface ThemePickerModalProps {
   setThemeColor: (color: string) => void;
   themeFont?: string;
   setThemeFont?: (font: string) => void;
+  themeFontSize?: string;
+  setThemeFontSize?: (size: string) => void;
   themeIconStyle?: string;
   setThemeIconStyle?: (style: string) => void;
 }
@@ -23,6 +25,8 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
   setThemeColor,
   themeFont = 'sans',
   setThemeFont = () => {},
+  themeFontSize = 'normal',
+  setThemeFontSize = () => {},
   themeIconStyle = 'regular',
   setThemeIconStyle = () => {},
 }) => {
@@ -149,6 +153,35 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${themeFont === font.id ? 'bg-primary-500' : 'bg-transparent'}`}></span>
                   <span className="truncate">{font.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Font Size & UI Scale Selection */}
+          <div>
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
+              Ukuran Teks & Skala Halaman
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'compact', label: 'Ringkas', desc: 'PDA / Padat', iconClass: 'text-[11px]' },
+                { id: 'normal', label: 'Standar', desc: 'Default WMS', iconClass: 'text-xs' },
+                { id: 'large', label: 'Besar', desc: 'Nyaman / Lega', iconClass: 'text-sm' },
+              ].map((sizeOpt) => (
+                <button
+                  key={sizeOpt.id}
+                  type="button"
+                  onClick={() => setThemeFontSize(sizeOpt.id)}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl text-xs border cursor-pointer transition-all ${
+                    themeFontSize === sizeOpt.id
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold shadow-sm'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                  }`}
+                >
+                  <span className={`font-black uppercase tracking-wider mb-0.5 ${sizeOpt.iconClass}`}>Aa</span>
+                  <span className="font-bold text-[11px]">{sizeOpt.label}</span>
+                  <span className="text-[9px] text-slate-400 font-normal">{sizeOpt.desc}</span>
                 </button>
               ))}
             </div>
