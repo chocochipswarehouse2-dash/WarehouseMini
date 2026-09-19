@@ -785,7 +785,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
       {/* Main Content Body */}
       {activeTab === 'calendar' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-24 sm:pb-8">
           
           {/* Left Sidebar Panel (Desktop: permanent 3 cols; Mobile: expandable drawer or toggle) */}
           <div className={`lg:col-span-3 space-y-2 ${mobileFilterOpen ? 'block' : 'hidden lg:block'}`}>
@@ -1233,63 +1233,153 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
 
             {/* 2. MONTH VIEW */}
             {calendarView === 'month' && (
-              <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center text-xs font-black text-slate-500 py-3">
-                  {DAYS_NAME.map(d => <div key={d}>{d}</div>)}
-                </div>
-                <div className="grid grid-cols-7 auto-rows-[90px] sm:auto-rows-[120px] divide-x divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {miniCalendarDays.map((item, i) => {
-                    const dStr = formatIsoDate(item.date);
-                    const dayEvents = eventsByDate.get(dStr) || [];
-                    const isTod = isToday(item.date);
-                    const isSel = isSameDay(item.date, selectedDate);
+              <div className="space-y-4">
+                <div className="bg-white dark:bg-[#1a2332] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center text-xs font-black text-slate-500 py-2.5 sm:py-3">
+                    {DAYS_NAME.map(d => <div key={d}>{d}</div>)}
+                  </div>
+                  <div className="grid grid-cols-7 auto-rows-[64px] sm:auto-rows-[120px] divide-x divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {miniCalendarDays.map((item, i) => {
+                      const dStr = formatIsoDate(item.date);
+                      const dayEvents = eventsByDate.get(dStr) || [];
+                      const isTod = isToday(item.date);
+                      const isSel = isSameDay(item.date, selectedDate);
 
-                    return (
-                      <div
-                        key={i}
-                        onClick={() => {
-                          setSelectedDate(item.date);
-                          handleOpenAddEvent(dStr);
-                        }}
-                        className={`p-1.5 sm:p-2 relative flex flex-col justify-between hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition-colors ${
-                          !item.currentMonth ? 'opacity-40 bg-slate-50/50 dark:bg-slate-900/20' : ''
-                        } ${isSel ? 'ring-2 ring-primary-500 ring-inset' : ''}`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className={`text-xs font-black w-6 h-6 rounded-full flex items-center justify-center ${
-                            isTod ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300'
-                          }`}>
-                            {item.date.getDate()}
-                          </span>
-                          {dayEvents.length > 0 && (
-                            <span className="text-[10px] font-bold text-slate-400">
-                              {dayEvents.length} acara
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => {
+                            setSelectedDate(item.date);
+                            setCurrentDate(item.date);
+                          }}
+                          className={`p-1 sm:p-2 relative flex flex-col justify-between hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition-colors ${
+                            !item.currentMonth ? 'opacity-40 bg-slate-50/50 dark:bg-slate-900/20' : ''
+                          } ${isSel ? 'ring-2 ring-primary-500 ring-inset bg-primary-50/30 dark:bg-primary-950/20' : ''}`}
+                        >
+                          {/* Header Tanggal & Badge Acara (Rapi, Tidak Tumpang Tindih) */}
+                          <div className="flex justify-between items-start gap-0.5">
+                            <span className={`text-[11px] sm:text-xs font-black w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                              isTod
+                                ? 'bg-primary-500 text-white shadow-xs'
+                                : isSel
+                                ? 'bg-primary-600 text-white font-bold'
+                                : 'text-slate-600 dark:text-slate-300'
+                            }`}>
+                              {item.date.getDate()}
                             </span>
-                          )}
-                        </div>
-
-                        <div className="space-y-1 mt-1 overflow-hidden">
-                          {dayEvents.slice(0, 2).map(evt => {
-                            const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
-                            return (
-                              <div
-                                key={evt.id}
-                                onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
-                                className={`text-[10px] font-bold p-1 rounded-md truncate border ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
-                              >
-                                {evt.is_all_day ? '☀️ ' : `${evt.start_time || ''} `}{evt.title}
+                            {dayEvents.length > 0 && (
+                              <div className="shrink-0">
+                                <span className="hidden sm:inline-block text-[10px] font-bold text-slate-400">
+                                  {dayEvents.length} acara
+                                </span>
+                                <span className="sm:hidden text-[9px] font-black px-1.5 py-0.2 rounded-full bg-primary-100 dark:bg-primary-950/80 text-primary-700 dark:text-primary-300">
+                                  {dayEvents.length}
+                                </span>
                               </div>
-                            );
-                          })}
-                          {dayEvents.length > 2 && (
-                            <div className="text-[9px] font-bold text-slate-400 text-right">
-                              +{dayEvents.length - 2} lagi
-                            </div>
-                          )}
+                            )}
+                          </div>
+
+                          {/* Tampilan Event di Desktop (Chip Teks Lengkap) */}
+                          <div className="hidden sm:block space-y-1 mt-1 overflow-hidden">
+                            {dayEvents.slice(0, 2).map(evt => {
+                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white', dot: 'bg-slate-500' };
+                              return (
+                                <div
+                                  key={evt.id}
+                                  onClick={(e) => { e.stopPropagation(); setDetailEvent(evt); }}
+                                  className={`text-[10px] font-bold p-1 rounded-md truncate border shadow-2xs ${cfg.badgeBg} ${cfg.badgeText} ${cfg.border}`}
+                                >
+                                  {evt.is_all_day ? '☀️ ' : `${evt.start_time || ''} `}{evt.title}
+                                </div>
+                              );
+                            })}
+                            {dayEvents.length > 2 && (
+                              <div className="text-[9px] font-bold text-slate-400 text-right">
+                                +{dayEvents.length - 2} lagi
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Tampilan Event di Mobile (Dot Indikator Rapi Berwarna) */}
+                          <div className="sm:hidden flex flex-wrap gap-1 mt-1 justify-center items-center">
+                            {dayEvents.slice(0, 3).map((evt, eIdx) => {
+                              const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { dot: 'bg-primary-500' };
+                              return (
+                                <span
+                                  key={eIdx}
+                                  className={`w-1.5 h-1.5 rounded-full ${cfg.dot || 'bg-primary-500'}`}
+                                  title={evt.title}
+                                />
+                              );
+                            })}
+                            {dayEvents.length > 3 && (
+                              <span className="text-[8px] font-black text-slate-400">+{dayEvents.length - 3}</span>
+                            )}
+                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Panel Rincian Agenda Hari Terpilih di Layar Mobile */}
+                <div className="block lg:hidden bg-white dark:bg-[#1a2332] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-primary-500"></div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                        {DAYS_FULL_NAME[selectedDate.getDay()]}, {selectedDate.getDate()} {MONTHS_ID[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+                      </h4>
+                    </div>
+                    <button
+                      onClick={() => handleOpenAddEvent(formatIsoDate(selectedDate))}
+                      className="text-[11px] font-bold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Tambah
+                    </button>
+                  </div>
+                  
+                  {(() => {
+                    const selDateStr = formatIsoDate(selectedDate);
+                    const selEvents = eventsByDate.get(selDateStr) || [];
+                    if (selEvents.length === 0) {
+                      return (
+                        <p className="text-xs text-slate-400 italic text-center py-2">
+                          Tidak ada agenda dijadwalkan pada hari ini
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {selEvents.map(evt => {
+                          const cfg = categoryConfig[evt.category] || Object.values(categoryConfig)[0] || { label: evt.category, badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', border: 'border-slate-300', cardBg: 'bg-white' };
+                          return (
+                            <div
+                              key={evt.id}
+                              onClick={() => setDetailEvent(evt)}
+                              className={`p-3 rounded-xl border ${cfg.cardBg} ${cfg.border} border-l-4 cursor-pointer hover:shadow-xs transition-all`}
+                            >
+                              <div className="flex justify-between items-start gap-2">
+                                <h5 className="text-xs font-black text-slate-800 dark:text-slate-100">{evt.title}</h5>
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${cfg.badgeBg} ${cfg.badgeText} shrink-0`}>
+                                  {cfg.label}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                {evt.is_all_day ? (
+                                  <span className="text-amber-600 font-bold">☀️ Sepanjang Hari</span>
+                                ) : (
+                                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {evt.start_time} - {evt.end_time || ''}</span>
+                                )}
+                                {evt.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {evt.location}</span>}
+                                {evt.pic && <span className="flex items-center gap-1"><User className="w-3 h-3" /> {evt.pic}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
-                  })}
+                  })()}
                 </div>
               </div>
             )}
