@@ -2224,7 +2224,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               </div>
             </div>
 
-            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-850">
+            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
@@ -2549,7 +2549,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-850">
+            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => handleConfirmDeleteBatch(editingBatch.orig_no_surat_jalan)}

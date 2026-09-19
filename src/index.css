@@ -2,6 +2,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+  --color-slate-850: #151f32;
+}
+
 @layer base {
   html.font-sans, html.font-sans body {
     font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;

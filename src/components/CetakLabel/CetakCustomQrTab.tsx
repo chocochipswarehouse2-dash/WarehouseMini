@@ -1041,7 +1041,7 @@ export const CetakCustomQrTab: React.FC = () => {
         {/* Right Column: Live Preview & Settings (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-850/50">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/50">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-indigo-600" />
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
@@ -1288,7 +1288,7 @@ export const CetakCustomQrTab: React.FC = () => {
       {/* 3. DAFTAR ANTREAN CETAK QR CUSTOM                         */}
       {/* ========================================================= */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-850/50">
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-800/50">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-black text-slate-900 dark:text-white">
               Daftar Antrean Cetak QR Custom

@@ -357,7 +357,7 @@ export const TabImportCsv: React.FC<TabImportCsvProps> = ({
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsImportModalOpen(false)}

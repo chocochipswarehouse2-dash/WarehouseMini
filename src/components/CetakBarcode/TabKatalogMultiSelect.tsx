@@ -488,7 +488,7 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
 
               {/* Outlet Multi-Select Popover */}
               {outletDropdownOpen && (
-                <div className="absolute top-full right-0 mt-2 z-40 w-72 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2">
+                <div className="absolute top-full right-0 mt-2 z-40 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
                     <span className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
                       <Store className="w-4 h-4 text-purple-600" />

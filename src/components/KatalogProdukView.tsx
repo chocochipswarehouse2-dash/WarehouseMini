@@ -1067,7 +1067,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       />
 
       {/* HEADER UTAMA & STATUS STORAGE */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-850 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl shrink-0">
@@ -1222,7 +1222,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       )}
 
       {/* FILTER & KONTROL TAMPILAN (RAPI, 2 BARIS TERATUR) */}
-      <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         {/* Baris 1: Pencarian & Kontrol Tampilan Sejajar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Input Pencarian */}
@@ -1446,7 +1446,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Memuat data katalog...</p>
         </div>
       ) : filteredBatches.length === 0 ? (
-        <div className="bg-white dark:bg-slate-850 p-12 text-center rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="bg-white dark:bg-slate-900 p-12 text-center rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
           <BookOpen className="w-12 h-12 text-slate-400 mx-auto" />
           <div>
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">Tidak Ada Produk Ditemukan</h3>
@@ -1599,7 +1599,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
                 {/* Grid Produk Dalam Katalog Ini / Tampilan Kosong */}
                 {batch.items.length === 0 ? (
-                  <div className="p-8 text-center bg-white dark:bg-slate-850 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 space-y-3">
+                  <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 space-y-3">
                     <Package className="w-10 h-10 text-slate-400 mx-auto opacity-50" />
                     <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">
                       Katalog "{batch.name}" Belum Memiliki Produk
@@ -1848,7 +1848,7 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
       onDragOver={handleCardDragOver}
       onDragLeave={handleCardDragLeave}
       onDrop={handleCardDrop}
-      className={`bg-white dark:bg-slate-850 rounded-2xl border shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group relative ${
+      className={`bg-white dark:bg-slate-900 rounded-2xl border shadow-xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group relative ${
         isDraggingOverCard
           ? 'border-indigo-500 ring-2 ring-indigo-400 bg-indigo-50/20 scale-[1.01]'
           : 'border-slate-200/80 dark:border-slate-800'

@@ -165,7 +165,7 @@ export const TabInputManual: React.FC<TabInputManualProps> = ({
 
         {/* Dropdown Suggestion */}
         {isSearchDropdownOpen && filteredCatalog.length > 0 && (
-          <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl divide-y divide-slate-100 dark:divide-slate-800">
+          <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl divide-y divide-slate-100 dark:divide-slate-800">
             {filteredCatalog.map((prod, idx) => (
               <div
                 key={idx}

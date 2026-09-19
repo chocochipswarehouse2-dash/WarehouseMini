@@ -174,7 +174,7 @@ export const KatalogFilterDropdown: React.FC<KatalogFilterDropdownProps> = ({
       {isOpen && (
         <div className="absolute left-0 top-full mt-2 w-full sm:w-[380px] md:w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col">
           {/* Header Popover with Search */}
-          <div className="p-3.5 bg-slate-50 dark:bg-slate-850/80 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
                 <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -308,7 +308,7 @@ export const KatalogFilterDropdown: React.FC<KatalogFilterDropdownProps> = ({
           </div>
 
           {/* Footer Popover */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-850/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
             <span className="text-[11px] text-slate-500 dark:text-slate-400">
               Total <strong>{totalProductsSelected}</strong> dari <strong>{totalAllProducts}</strong> model
             </span>

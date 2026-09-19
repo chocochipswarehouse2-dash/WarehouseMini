@@ -3161,7 +3161,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             </div>
 
             <div className="p-5 space-y-2 text-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl space-y-1">
+              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl space-y-1">
                 <div className="font-mono font-bold text-primary-500">
                   #{sortirModalTicket.ticket_no} • {sortirModalTicket.sku}
                 </div>
@@ -3307,7 +3307,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
             </div>
 
             <div className="p-5 space-y-2 text-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl space-y-1">
+              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl space-y-1">
                 <div className="font-mono font-bold text-primary-500">
                   #{progressModalTicket.ticket_no} • {progressModalTicket.sku}
                 </div>

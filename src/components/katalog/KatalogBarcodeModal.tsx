@@ -381,7 +381,7 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
 
         {/* Isi Daftar SKU & Pengaturan Copies */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-850">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
             {entries.map((ent, idx) => (
               <div key={idx} className="p-3.5 flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                 <div className="flex items-center gap-3 min-w-0">

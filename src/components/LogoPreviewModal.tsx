@@ -125,7 +125,7 @@ export const LogoPreviewModal: React.FC<LogoPreviewModalProps> = ({
                     className={`relative rounded-2xl border p-4 sm:p-5 transition-all flex flex-col justify-between ${
                       isSelected
                         ? 'border-amber-500 dark:border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20 dark:bg-amber-950/10 shadow-md'
-                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 hover:border-slate-300 dark:hover:border-slate-700'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                     }`}
                   >
                     <div>
