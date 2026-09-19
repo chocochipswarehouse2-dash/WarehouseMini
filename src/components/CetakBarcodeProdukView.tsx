@@ -439,14 +439,18 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       doc.open();
       doc.write(`
         <!DOCTYPE html>
-        <html>
+        <html lang="id">
         <head>
           <meta charset="utf-8" />
+          <meta name="color-scheme" content="light" />
           <title>Cetak Barcode Produk</title>
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
           <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
           <style>
+            :root {
+              color-scheme: light !important;
+            }
             @page {
               size: ${stickerW} ${stickerH} ${pageOrientation};
               margin: 0 !important;
@@ -461,8 +465,9 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
             html, body {
               width: 100%;
               height: 100%;
-              background: #fff;
-              color: #000;
+              background: #ffffff !important;
+              color: #000000 !important;
+              color-scheme: light !important;
               font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
             .sticker-card {
@@ -661,7 +666,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         <div className="lg:col-span-7 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
             {/* Input Navigation Tabs */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/50 p-1.5 gap-1">
+            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-1.5 gap-1">
               <button
                 type="button"
                 onClick={() => setActiveTab('catalog_multi')}
@@ -765,7 +770,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       {/* ========================================================= */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
         {/* Table Action Bar */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-850/50">
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-800/50">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-black text-slate-900 dark:text-white">
               Daftar Antrean Cetak

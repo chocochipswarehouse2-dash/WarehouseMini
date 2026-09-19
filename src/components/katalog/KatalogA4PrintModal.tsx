@@ -233,11 +233,15 @@ export const KatalogA4PrintModal: React.FC<KatalogA4PrintModalProps> = ({
 
     const fullHtml = `
       <!DOCTYPE html>
-      <html>
+      <html lang="id">
         <head>
           <meta charset="utf-8">
+          <meta name="color-scheme" content="light">
           <title>Cetak Katalog Produk WMS</title>
           <style>
+            :root {
+              color-scheme: light !important;
+            }
             @page {
               size: A4 portrait;
               margin: 10mm !important;
@@ -247,10 +251,11 @@ export const KatalogA4PrintModal: React.FC<KatalogA4PrintModalProps> = ({
               margin: 0;
               padding: 0;
             }
-            body {
+            html, body {
               font-family: Arial, Helvetica, sans-serif !important;
               color: #000000 !important;
               background: #ffffff !important;
+              color-scheme: light !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }

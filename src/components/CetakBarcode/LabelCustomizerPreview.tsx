@@ -397,7 +397,7 @@ export const LabelCustomizerPreview: React.FC<LabelCustomizerPreviewProps> = ({
               <select
                 value={titleFontSizePreset}
                 onChange={(e) => onUpdateSettings({ titleFontSizePreset: e.target.value as TitleFontSizePreset })}
-                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold"
+                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
               >
                 <option value="small">Kecil (7.5pt)</option>
                 <option value="normal">Standar (8.8pt)</option>
@@ -411,7 +411,7 @@ export const LabelCustomizerPreview: React.FC<LabelCustomizerPreviewProps> = ({
               <select
                 value={titleFontWeight}
                 onChange={(e) => onUpdateSettings({ titleFontWeight: e.target.value as TitleFontWeight })}
-                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold"
+                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
               >
                 <option value="500">Medium (500)</option>
                 <option value="600">Semi-Bold (600)</option>
@@ -434,7 +434,7 @@ export const LabelCustomizerPreview: React.FC<LabelCustomizerPreviewProps> = ({
               <select
                 value={priceFontSizePreset}
                 onChange={(e) => onUpdateSettings({ priceFontSizePreset: e.target.value as PriceFontSizePreset })}
-                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold"
+                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
               >
                 <option value="small">Kecil (9.5pt)</option>
                 <option value="normal">Standar (11.5pt)</option>
@@ -448,7 +448,7 @@ export const LabelCustomizerPreview: React.FC<LabelCustomizerPreviewProps> = ({
               <select
                 value={priceFontWeight}
                 onChange={(e) => onUpdateSettings({ priceFontWeight: e.target.value as PriceFontWeight })}
-                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold"
+                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
               >
                 <option value="600">Semi-Bold (600)</option>
                 <option value="700">Bold (700)</option>

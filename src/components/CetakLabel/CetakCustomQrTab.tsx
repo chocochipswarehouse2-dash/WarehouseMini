@@ -452,14 +452,18 @@ export const CetakCustomQrTab: React.FC = () => {
       doc.open();
       doc.write(`
         <!DOCTYPE html>
-        <html>
+        <html lang="id">
         <head>
           <meta charset="utf-8" />
+          <meta name="color-scheme" content="light" />
           <title>Cetak QR Code Custom & Prefix WMS</title>
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
           <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=JetBrains+Mono:wght@700;800;900&display=swap" rel="stylesheet">
           <style>
+            :root {
+              color-scheme: light !important;
+            }
             ${pageCss}
             * {
               box-sizing: border-box;
@@ -471,8 +475,9 @@ export const CetakCustomQrTab: React.FC = () => {
             html, body {
               width: 100%;
               height: 100%;
-              background: #fff;
-              color: #000;
+              background: #ffffff !important;
+              color: #000000 !important;
+              color-scheme: light !important;
               font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
             .thermal-card {
@@ -751,7 +756,7 @@ export const CetakCustomQrTab: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         <div className="lg:col-span-7 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/50 p-1.5 gap-1">
+            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-1.5 gap-1">
               <button
                 type="button"
                 onClick={() => setActiveTab('quick_wms')}

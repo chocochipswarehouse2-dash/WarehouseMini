@@ -436,14 +436,18 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
 
         const fullHtml = `
           <!DOCTYPE html>
-          <html>
+          <html lang="id">
           <head>
             <meta charset="utf-8" />
+            <meta name="color-scheme" content="light" />
             <title>Cetak Label Barcode 50x20mm</title>
             <link rel="preconnect" href="https://fonts.googleapis.com">
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
             <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&family=Quicksand:wght@500;600;700;800&display=swap" rel="stylesheet">
             <style>
+              :root {
+                color-scheme: light !important;
+              }
               @page {
                 size: ${pageW} ${pageH} ${orientMode};
                 margin: 0mm !important;
@@ -460,6 +464,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
                 padding: 0 !important;
                 background: #ffffff !important;
                 color: #000000 !important;
+                color-scheme: light !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;

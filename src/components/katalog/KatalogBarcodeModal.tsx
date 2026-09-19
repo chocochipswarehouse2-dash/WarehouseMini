@@ -160,14 +160,18 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
 
     const fullHtml = `
       <!DOCTYPE html>
-      <html>
+      <html lang="id">
         <head>
           <meta charset="utf-8">
+          <meta name="color-scheme" content="light">
           <title>Cetak Barcode Produk 50x20mm</title>
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
           <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
           <style>
+            :root {
+              color-scheme: light !important;
+            }
             @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
             @page {
               size: 50mm 20mm landscape;
@@ -185,6 +189,7 @@ export const KatalogBarcodeModal: React.FC<KatalogBarcodeModalProps> = ({
               padding: 0 !important;
               background: #ffffff !important;
               color: #000000 !important;
+              color-scheme: light !important;
               font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;

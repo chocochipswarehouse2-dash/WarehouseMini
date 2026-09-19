@@ -627,10 +627,15 @@ export const LabelPaketTab: React.FC = () => {
       */}
       <style>{`
         @media print {
+          :root {
+            color-scheme: light !important;
+          }
           html, body {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
+            color: #000000 !important;
+            color-scheme: light !important;
             width: 105mm !important;
             height: 148mm !important;
             overflow: visible !important;

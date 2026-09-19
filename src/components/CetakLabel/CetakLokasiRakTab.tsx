@@ -519,14 +519,18 @@ export const CetakLokasiRakTab: React.FC = () => {
       doc.open();
       doc.write(`
         <!DOCTYPE html>
-        <html>
+        <html lang="id">
         <head>
           <meta charset="utf-8" />
+          <meta name="color-scheme" content="light" />
           <title>Cetak QR Barcode Lokasi Rak</title>
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
           <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=JetBrains+Mono:wght@700;800;900&display=swap" rel="stylesheet">
           <style>
+            :root {
+              color-scheme: light !important;
+            }
             ${pageCss}
             * {
               box-sizing: border-box;
@@ -538,8 +542,9 @@ export const CetakLokasiRakTab: React.FC = () => {
             html, body {
               width: 100%;
               height: 100%;
-              background: #fff;
-              color: #000;
+              background: #ffffff !important;
+              color: #000000 !important;
+              color-scheme: light !important;
               font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
             .thermal-card {
@@ -833,7 +838,7 @@ export const CetakLokasiRakTab: React.FC = () => {
         <div className="lg:col-span-7 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
             {/* Input Navigation Tabs */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/50 p-1.5 gap-1">
+            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-1.5 gap-1">
               <button
                 type="button"
                 onClick={() => setInputMode('range')}
@@ -1174,7 +1179,7 @@ export const CetakLokasiRakTab: React.FC = () => {
         {/* Right Column: Realistic Live Preview & Visual Customizer (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-850/50">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/50">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
@@ -1189,7 +1194,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                     onClick={() =>
                       setPreviewIndex((prev) => (prev > 0 ? prev - 1 : selectedItems.length - 1))
                     }
-                    className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded font-bold hover:bg-slate-100"
+                    className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded font-bold hover:bg-slate-100 text-slate-900 dark:text-white"
                   >
                     &lt;
                   </button>
@@ -1201,7 +1206,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                     onClick={() =>
                       setPreviewIndex((prev) => (prev < selectedItems.length - 1 ? prev + 1 : 0))
                     }
-                    className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded font-bold hover:bg-slate-100"
+                    className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded font-bold hover:bg-slate-100 text-slate-900 dark:text-white"
                   >
                     &gt;
                   </button>
@@ -1336,7 +1341,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                 <select
                   value={settings.media}
                   onChange={(e) => updateSettings({ media: e.target.value as LocationPrintMedia })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-white"
                 >
                   <option value="thermal_100x50">Thermal 100 × 50 mm (Rekomendasi Rak Lorong)</option>
                   <option value="thermal_80x50">Thermal 80 × 50 mm</option>
@@ -1358,7 +1363,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                   <select
                     value={settings.codeFontSize}
                     onChange={(e) => updateSettings({ codeFontSize: e.target.value as any })}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-slate-900 dark:text-white"
                   >
                     <option value="normal">Normal (20pt)</option>
                     <option value="large">Besar (26pt)</option>
@@ -1374,7 +1379,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                   <select
                     value={settings.qrSize}
                     onChange={(e) => updateSettings({ qrSize: e.target.value as any })}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-slate-900 dark:text-white"
                   >
                     <option value="small">Sedang (22mm)</option>
                     <option value="normal">Standar (28mm)</option>
@@ -1393,7 +1398,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                   <select
                     value={settings.layout}
                     onChange={(e) => updateSettings({ layout: e.target.value as any })}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-slate-900 dark:text-white"
                   >
                     <option value="stacked">Tumpuk (Kode Atas - QR - Zona)</option>
                     <option value="side-by-side">Berdampingan (QR Kiri - Teks Kanan)</option>
@@ -1455,7 +1460,7 @@ export const CetakLokasiRakTab: React.FC = () => {
       {/* 3. DAFTAR ANTREAN CETAK LOKASI RAK                        */}
       {/* ========================================================= */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-850/50">
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-800/50">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-black text-slate-900 dark:text-white">
               Daftar Antrean Cetak Lokasi
