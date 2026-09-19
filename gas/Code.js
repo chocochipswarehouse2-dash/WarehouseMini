@@ -81,57 +81,46 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'PING OK - Webhook Standalone Aktif' });
     }
 
-    // 1. ATURAN BAKU: Hanya pesan berawalan '#' yang diproses
-    if (!message.startsWith('#')) {
-      return jsonResponse({ success: true, message: 'IGNORED_NO_HASHTAG' });
-    }
-
-    // 2. ATURAN BAKU: Ekstraksi dan Validasi Group ID (@g.us)
+    // 1. Ekstraksi dan Validasi Group ID (@g.us)
     var groupId = null;
     var candidates = [
-      payload.sender,
-      payload.pengirim,
-      payload.from,
-      payload.chatId,
-      payload.chat_id,
       payload.group,
       payload.group_id,
-      payload.id,
-      payload.target
+      payload.chatId,
+      payload.chat_id,
+      payload.target,
+      payload.sender,
+      payload.pengirim,
+      payload.from
     ];
     for (var g = 0; g < candidates.length; g++) {
       var cand = String(candidates[g] || '').trim();
+      if (!cand) continue;
       if (cand.indexOf('@g.us') > -1) {
         groupId = cand;
         break;
       }
+      if (cand.length >= 15 && /^\d+$/.test(cand)) {
+        var withSuffix = cand + '@g.us';
+        if (ALLOWED_GROUPS_LOG_PRODUCT.indexOf(withSuffix) > -1 || ALLOWED_GROUPS_MUTASI.indexOf(withSuffix) > -1) {
+          groupId = withSuffix;
+          break;
+        }
+      }
     }
 
-    // Wajib berasal dari grup WhatsApp yang terdaftar
-    if (!groupId) {
-      Logger.log('Pesan WA diabaikan: bukan dari grup WhatsApp (@g.us).');
-      return jsonResponse({ success: true, message: 'IGNORED_NOT_FROM_GROUP' });
-    }
-
+    // Wajib berasal dari grup WhatsApp resmi yang terdaftar
     var isGroupSo = ALLOWED_GROUPS_LOG_PRODUCT.indexOf(groupId) > -1;
     var isGroupMutasi = ALLOWED_GROUPS_MUTASI.indexOf(groupId) > -1;
 
-    // Tolak jika bukan salah satu grup resmi yang diizinkan
-    if (!isGroupSo && !isGroupMutasi) {
-      Logger.log('Pesan WA diabaikan: groupId=' + groupId + ' tidak terdaftar dalam ALLOWED_GROUPS.');
+    if (!groupId || (!isGroupSo && !isGroupMutasi)) {
+      Logger.log('Pesan WA diabaikan: groupId=' + groupId + ' tidak terdaftar dalam grup resmi.');
       return jsonResponse({ success: true, message: 'IGNORED_UNAUTHORIZED_GROUP' });
     }
 
-    // 3. ATURAN BAKU: Validasi otorisasi jenis pesan vs grup
-    var upperFirst = message.toUpperCase();
-    var isSoMessage = upperFirst.indexOf('#SO') === 0 || upperFirst.indexOf('#STOCK OPNAME') === 0 || upperFirst.indexOf('#OPNAME') === 0;
-    if (isSoMessage && !isGroupSo) {
-      Logger.log('Pesan SO diabaikan: grup ' + groupId + ' bukan grup Stock Opname.');
-      return jsonResponse({ success: true, message: 'IGNORED_UNAUTHORIZED_GROUP_FOR_SO' });
-    }
-
-    // 4. ATURAN BAKU: Deduplikasi Webhook via CacheService (TTL 120s)
-    var dedupKey = 'DEDUP_' + String(groupId).replace(/[^a-zA-Z0-9]/g, '') + '_' + message.length + '_' + String(message || '').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '');
+    // 2. Deduplikasi Webhook via CacheService (TTL 120s)
+    var msgId = payload.id || payload.message_id || '';
+    var dedupKey = msgId ? ('DEDUP_ID_' + msgId) : ('DEDUP_MSG_' + String(groupId).replace(/[^a-zA-Z0-9]/g, '') + '_' + message.length + '_' + encodeURIComponent(message.slice(0, 30)));
     try {
       var cache = CacheService.getScriptCache();
       if (cache && dedupKey.length > 8) {
@@ -147,6 +136,12 @@ function handleWhatsAppScan(payload) {
     var actualSender = payload.member || payload.participant || (sender.indexOf('@g.us') === -1 ? sender : '');
     var operator = name + ' | ' + (actualSender || sender || groupId);
     
+    var lines = message.split('\n');
+    var currentType = '';
+    var currentDeskripsi = '';
+    var currentLokasi = '';
+    var rawItems = [];
+    
     var TYPE_IN = 'IN';
     var TYPE_OUT = 'OUT';
     var TYPE_SO = 'SO';
@@ -160,49 +155,49 @@ function handleWhatsAppScan(payload) {
       var upper = line.toUpperCase();
       
       // 1. Deteksi Header Tag
-      if (upper.indexOf('#SO') === 0 || upper.indexOf('#STOCK OPNAME') === 0 || upper.indexOf('#OPNAME') === 0) {
+      if (upper.indexOf('#SO') === 0 || upper.indexOf('#STOCK OPNAME') === 0 || upper.indexOf('#OPNAME') === 0 || upper.indexOf('SO ') === 0 || upper === 'SO' || upper.indexOf('STOCK OPNAME') === 0 || upper.indexOf('OPNAME') === 0) {
         currentType = TYPE_SO;
-        var restSo = line.replace(/^#[A-Z0-9_\s]*(SO|STOCK OPNAME|OPNAME)\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        var restSo = line.replace(/^#?[A-Z0-9_\s]*(SO|STOCK OPNAME|OPNAME)\b/i, '').replace(/^[:\-\s]+/, '').trim();
         if (restSo) currentLokasi = restSo;
         currentDeskripsi = 'Stock Opname WA';
         continue;
       }
       
-      if (upper.indexOf(' IN') > -1 || upper.indexOf('#IN') === 0) {
+      if (upper.indexOf(' IN') > -1 || upper.indexOf('#IN') === 0 || upper.indexOf('IN ') === 0 || upper === 'IN') {
         currentType = TYPE_IN;
-        var restIn = line.replace(/^#[A-Z0-9_\s]*IN\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        var restIn = line.replace(/^#?[A-Z0-9_\s]*IN\b/i, '').replace(/^[:\-\s]+/, '').trim();
         if (restIn && !currentLokasi) currentLokasi = restIn;
         currentDeskripsi = restIn || 'IN';
         continue;
       }
       
-      if (upper.indexOf(' OUT') > -1 || upper.indexOf('#OUT') === 0) {
+      if (upper.indexOf(' OUT') > -1 || upper.indexOf('#OUT') === 0 || upper.indexOf('OUT ') === 0 || upper === 'OUT') {
         currentType = TYPE_OUT;
-        var restOut = line.replace(/^#[A-Z0-9_\s]*OUT\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        var restOut = line.replace(/^#?[A-Z0-9_\s]*OUT\b/i, '').replace(/^[:\-\s]+/, '').trim();
         if (restOut && !currentLokasi) currentLokasi = restOut;
         currentDeskripsi = restOut || 'OUT';
         continue;
       }
 
-      if (upper.indexOf('#ADJ_IN') === 0 || upper.indexOf('#ADJ-IN') === 0) {
+      if (upper.indexOf('#ADJ_IN') === 0 || upper.indexOf('#ADJ-IN') === 0 || upper.indexOf('ADJ_IN') === 0 || upper.indexOf('ADJ-IN') === 0) {
         currentType = TYPE_ADJ_IN;
         continue;
       }
 
-      if (upper.indexOf('#ADJ_OUT') === 0 || upper.indexOf('#ADJ-OUT') === 0) {
+      if (upper.indexOf('#ADJ_OUT') === 0 || upper.indexOf('#ADJ-OUT') === 0 || upper.indexOf('ADJ_OUT') === 0 || upper.indexOf('ADJ-OUT') === 0) {
         currentType = TYPE_ADJ_OUT;
         continue;
       }
       
-      // 2. Deteksi Lokasi eksplisit (#LOK / #LOKASI)
-      if (upper.indexOf('#LOK') === 0) {
-        currentLokasi = line.replace(/^#LOK[ASI:]*\s*/i, '').trim();
+      // 2. Deteksi Lokasi eksplisit (#LOK / #LOKASI / LOKASI / LOK)
+      if (upper.indexOf('#LOK') === 0 || upper.indexOf('LOKASI') === 0 || upper.indexOf('#LOKASI') === 0 || upper.indexOf('LOK:') === 0) {
+        currentLokasi = line.replace(/^#?LOK[ASI:]*\s*/i, '').trim();
         continue;
       }
       
-      // 3. Deteksi Keterangan (#KET)
-      if (upper.indexOf('#KET') === 0) {
-        currentDeskripsi = line.replace(/^#KET[:\s]*/i, '').trim();
+      // 3. Deteksi Keterangan (#KET / KET)
+      if (upper.indexOf('#KET') === 0 || upper.indexOf('KET:') === 0) {
+        currentDeskripsi = line.replace(/^#?KET[:\s]*/i, '').trim();
         continue;
       }
       
@@ -238,6 +233,13 @@ function handleWhatsAppScan(payload) {
         sku: itemSku,
         qty: itemQty
       });
+    }
+    
+    // Jika tidak ada tipe transaksi maupun lokasi valid yang terdeteksi,
+    // abaikan pesan karena merupakan obrolan biasa di grup
+    if (!currentType && !currentLokasi) {
+      Logger.log('Pesan WA diabaikan: obrolan grup biasa (bukan format scan WMS).');
+      return jsonResponse({ success: true, message: 'IGNORED_NON_SCAN_MESSAGE' });
     }
     
     if (rawItems.length === 0) {
