@@ -1125,12 +1125,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           </div>
 
           {/* Tombol Kontrol: Hide/Unhide Tabel Varian & Grup per Katalog */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             {/* Toggle Sembunyikan / Tampilkan Tabel Varian */}
             <button
               type="button"
               onClick={handleToggleGlobalHideVariants}
-              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`flex-1 sm:flex-none px-3 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 hideVariants
                   ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-700 shadow-2xs'
                   : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
@@ -1139,12 +1139,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             >
               {hideVariants ? (
                 <>
-                  <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+                  <EyeOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                   <span>Tabel Varian: Ditutup</span>
                 </>
               ) : (
                 <>
-                  <Eye className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+                  <Eye className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
                   <span>Tabel Varian: Dibuka</span>
                 </>
               )}
@@ -1154,9 +1154,9 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             <button
               type="button"
               onClick={() => setGroupByCatalog(!groupByCatalog)}
-              className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="flex-1 sm:flex-none px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
             >
-              <Package className="w-3.5 h-3.5 text-indigo-500" />
+              <Package className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
               <span>{groupByCatalog ? 'Per Katalog' : 'Semua Grid'}</span>
             </button>
           </div>
@@ -1176,26 +1176,26 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       </div>
 
       {/* STATISTIK RINGKASAN AKTIF */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 px-1">
-        <div className="flex items-center gap-4">
-          <span>
-            Menampilkan: <strong className="text-slate-800 dark:text-slate-200">{filteredBatches.length}</strong> Katalog
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-600 dark:text-slate-400 px-1">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+          <span className="inline-flex items-center gap-1">
+            Menampilkan: <strong className="text-slate-900 dark:text-slate-100 font-bold">{filteredBatches.length}</strong> Katalog
           </span>
-          <span>•</span>
-          <span>
-            Total Produk: <strong className="text-slate-800 dark:text-slate-200">{allFilteredItems.length}</strong> Item
+          <span className="text-slate-300 dark:text-slate-600 hidden xs:inline">•</span>
+          <span className="inline-flex items-center gap-1">
+            Total Produk: <strong className="text-slate-900 dark:text-slate-100 font-bold">{allFilteredItems.length}</strong> Item
           </span>
-          <span>•</span>
-          <span>
-            Total Varian: <strong className="text-slate-800 dark:text-slate-200">{totalFilteredVariants}</strong>
+          <span className="text-slate-300 dark:text-slate-600 hidden xs:inline">•</span>
+          <span className="inline-flex items-center gap-1">
+            Total Varian: <strong className="text-slate-900 dark:text-slate-100 font-bold">{totalFilteredVariants}</strong>
           </span>
-          <span>•</span>
-          <span>
-            Stok Fisik: <strong className="text-slate-800 dark:text-slate-200">{totalFilteredQty}</strong> pcs
+          <span className="text-slate-300 dark:text-slate-600 hidden xs:inline">•</span>
+          <span className="inline-flex items-center gap-1">
+            Stok Fisik: <strong className="text-slate-900 dark:text-slate-100 font-bold">{totalFilteredQty}</strong> pcs
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
             Tersimpan Permanen di Cloud & Lokal
@@ -1262,17 +1262,17 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                   </div>
 
                   {/* Aksi Per-Katalog */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     {/* Tambah Produk ke Katalog ini */}
                     {isAdmin && (
                       <button
                         type="button"
                         onClick={() => handleOpenAddProduct(batch.id)}
-                        className="px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        className="px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
                         title="Tambah produk baru ke dalam katalog ini"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        <span>+ Produk</span>
+                        <span>Tambah Produk</span>
                       </button>
                     )}
 
@@ -1284,7 +1284,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                         setBarcodeModalOpen(true);
                       }}
                       disabled={batch.items.length === 0}
-                      className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                      className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0"
                       title="Cetak barcode seluruh produk di katalog ini"
                     >
                       <QrCode className="w-3.5 h-3.5" />
@@ -1298,7 +1298,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                         setA4ModalOpen(true);
                       }}
                       disabled={batch.items.length === 0}
-                      className="px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                      className="px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0"
                       title="Cetak katalog untuk koleksi ini (bisa tambah katalog lain di dalam dialog)"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -1307,7 +1307,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
                     {/* Admin Kontrol: Edit, Replace, Hapus */}
                     {isAdmin && (
-                      <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-300 dark:border-slate-700">
+                      <div className="flex items-center gap-1 ml-auto sm:ml-1 pl-2 border-l border-slate-300 dark:border-slate-700 shrink-0">
                         <button
                           type="button"
                           onClick={() => {

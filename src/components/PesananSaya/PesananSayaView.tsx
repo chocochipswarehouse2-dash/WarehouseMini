@@ -69,7 +69,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   );
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0b1324] space-y-2 sm:space-y-3 p-2 sm:p-4">
+    <div className="flex flex-col space-y-3 pb-8">
       {/* Header & Tabs Style Quality Control - Hemat Area Kerja & Rapi di HP */}
       <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0">
         <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
@@ -111,9 +111,9 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
       </div>
 
       {/* Tab Content Area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="w-full">
         {tabs.length === 0 && (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center py-12">
             <div className="text-center p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm max-w-sm w-full mx-auto">
               <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
                 <Globe className="w-8 h-8" />
@@ -127,7 +127,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
         )}
         
         {tabs.length > 0 && activeTab === 'dashboard' && (
-          <div className="h-full overflow-y-auto p-2 sm:p-3">
+          <div className="py-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Dummy Dashboard Content as requested */}
               <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -166,26 +166,26 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
         )}
 
         {activeTab === 'manual_shipment' && (
-          <div className="h-full overflow-y-auto">
+          <div>
              <ManualShipmentTab session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
           </div>
         )}
 
         {activeTab === 'distribusi' && (
-          <div className="h-full overflow-hidden flex flex-col">
+          <div>
              <DistribusiStoreTab session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
           </div>
         )}
 
         {activeTab === 'shopee' && (
-          <div className="h-full overflow-hidden flex flex-col">
+          <div>
             <ShopeeTab onShowToast={onShowToast} />
           </div>
         )}
-        {activeTab === 'tiktok' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('Tiktok')}</div>}
-        {activeTab === 'website' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('Website')}</div>}
-        {activeTab === 'woocommerce' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('WooCommerce')}</div>}
-        {activeTab === 'lazada' && <div className="h-full overflow-y-auto p-2 sm:p-3">{renderDummyTab('Lazada')}</div>}
+        {activeTab === 'tiktok' && <div className="py-2">{renderDummyTab('Tiktok')}</div>}
+        {activeTab === 'website' && <div className="py-2">{renderDummyTab('Website')}</div>}
+        {activeTab === 'woocommerce' && <div className="py-2">{renderDummyTab('WooCommerce')}</div>}
+        {activeTab === 'lazada' && <div className="py-2">{renderDummyTab('Lazada')}</div>}
       </div>
     </div>
   );

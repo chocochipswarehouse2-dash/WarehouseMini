@@ -1714,16 +1714,6 @@ export default function App() {
                   }
                 />
               )}
-          
-              {/* Floating Mobile Sidebar Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsMobileSidebarOpen(true)}
-                className="lg:hidden fixed bottom-6 right-6 z-40 p-3.5 bg-primary-500 text-white rounded-full shadow-lg shadow-primary-500/40 hover:bg-primary-600 hover:scale-105 active:scale-95 transition-all"
-                title="Buka Menu Navigasi"
-              >
-                <Menu className="w-6 h-6" />
-              </button>
 
           <ErrorBoundary fallbackTitle="Kendala Memuat Halaman" onReset={() => window.location.reload()}>
             <React.Suspense fallback={<div className="flex justify-center p-8"><span className="animate-spin text-3xl">⏳</span></div>}>
