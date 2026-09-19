@@ -11,9 +11,20 @@ Whenever database schemas, table structures, or payload models are updated (whet
 - Immediately review and update Supabase migration modules (e.g., `migrate.js`, `tools/migrate-supabase.cjs`, and `test-webhook.ts`).
 - Ensure all column mappings, field names, and payload structures match the latest schema specifications.
 
-## 3. Post-Task: Build & Auto-Deploy (Commit & Push)
-Whenever modifications are completed:
-- Run `npm run build` to verify that there are no compilation or bundling errors.
-- Stage changes and commit with a concise conventional commit message.
-- Push to GitHub (`git push origin main`), which triggers automatic deployment via GitHub Actions / Vercel.
-- Inform the user of the push and deploy status.
+## 3. Post-Task: Build, Auto-Deploy & Proactive Status Reporting
+Whenever modifications are completed, execute the full deployment lifecycle without waiting for user prompts:
+1. **Validate Build**: Run `npm run build` to verify that there are no compilation or bundling errors.
+2. **Deploy Google Apps Script (GAS)**: If any file under `gas/` or GAS deployment scripts was touched, run:
+   ```bash
+   node tools/gas_deploy.cjs
+   ```
+   Confirm new project version and active deployment update.
+3. **Commit & Push (Vercel)**: Stage changes, commit with a concise conventional commit message, and push to GitHub:
+   ```bash
+   git push origin main
+   ```
+4. **Mandatory Proactive Deployment Status**: ALWAYS include a dedicated `### 🚀 Deployment Status` table in the response detailing:
+   - Git Commit Hash & Message
+   - GitHub / Vercel auto-deploy status
+   - Google Apps Script version & deployment status
+   The user must never need to ask whether changes are deployed.
