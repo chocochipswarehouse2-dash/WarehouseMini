@@ -1584,8 +1584,6 @@ export async function syncPendingStockOpnameFromLogProduk(
         alasan: `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
         operator: entry.operator,
         invoice: entry.invoice,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       });
     }
 
