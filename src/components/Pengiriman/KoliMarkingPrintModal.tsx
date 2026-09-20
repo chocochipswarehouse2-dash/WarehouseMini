@@ -45,7 +45,8 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
       const qrs: Record<string, string> = {};
       for (const label of labels) {
         try {
-          const url = await QRCode.toDataURL(label.marking_code, {
+          const qrContent = label.qr_data_string || label.marking_code;
+          const url = await QRCode.toDataURL(qrContent, {
             width: 140,
             margin: 1,
             color: { dark: '#000000', light: '#ffffff' },

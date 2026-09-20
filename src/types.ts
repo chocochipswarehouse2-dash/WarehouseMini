@@ -932,6 +932,7 @@ export type StatusPengirimanStore = 'dispatched' | 'sent' | 'cancelled';
 
 export interface PengirimanStoreItem {
   id: string;
+  store_tujuan?: string; // Store tujuan spesifik per baris barang
   no_surat_jalan: string; // default "Tidak ada no surat jalan" jika kosong
   deskripsi: string;
   qty: number;
@@ -940,11 +941,22 @@ export interface PengirimanStoreItem {
   keterangan?: string;
 }
 
+export interface PengirimanAuditLog {
+  id: string;
+  timestamp: string;
+  user_nama: string;
+  user_username?: string;
+  action: 'kirim' | 'edit' | 'cancel' | 'delete';
+  keterangan: string;
+  previous_data?: Record<string, any>;
+  new_data?: Record<string, any>;
+}
+
 export interface PengirimanStoreReport {
   id: string; // code e.g. DSP-YYMMDD-XXXX
   store_tujuan_id?: string;
   store_tujuan: string;
-  tanggal_laporan: string; // YYYY-MM-DD
+  tanggal_laporan: string; // Timestamp ISO / string saat submit
   items: PengirimanStoreItem[];
   total_item_count: number;
   total_koli: number;
@@ -960,6 +972,12 @@ export interface PengirimanStoreReport {
   armada?: string;
   no_polisi?: string;
   catatan_kirim?: string;
+
+  // Edit / Cancel & Audit Trail
+  cancel_reason?: string;
+  cancelled_at?: string;
+  cancelled_by?: string;
+  audit_logs?: PengirimanAuditLog[];
   
   created_at: string;
   updated_at: string;
@@ -976,6 +994,11 @@ export interface PengirimanStoreTrip {
   armada?: string;
   no_polisi?: string;
   catatan?: string;
+  status?: 'active' | 'cancelled';
+  cancel_reason?: string;
+  cancelled_at?: string;
+  cancelled_by?: string;
+  audit_logs?: PengirimanAuditLog[];
   created_by_nama: string;
   created_by_username: string;
   created_at: string;
@@ -993,6 +1016,8 @@ export interface KoliMarkingLabel {
   qty_display: string;
   tanggal: string;
   pic_nama: string;
+  qr_data_string?: string;
+  barcode_data_string?: string;
 }
 
 
