@@ -322,13 +322,8 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     if (!file) return;
     handleUpdateRow(index, 'isCompressingPhoto', true);
     try {
-      const compressed = await compressImage(file, {
-        maxWidth: 1200,
-        maxHeight: 1200,
-        quality: 0.75,
-        maxSizeMB: 0.4,
-      });
-      handleUpdateRow(index, 'fotoBarang', compressed);
+      const result = await compressImage(file, 1200, 0.75);
+      handleUpdateRow(index, 'fotoBarang', result.dataUrl);
       onShowToast(`Foto barang #${index + 1} berhasil diambil`, 'success');
     } catch (err: any) {
       console.error('Compress photo failed:', err);
@@ -357,13 +352,8 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       const newCompressedPhotos: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const compressed = await compressImage(file, {
-          maxWidth: 1200,
-          maxHeight: 1200,
-          quality: 0.75,
-          maxSizeMB: 0.4,
-        });
-        newCompressedPhotos.push(compressed);
+        const result = await compressImage(file, 1200, 0.75);
+        newCompressedPhotos.push(result.dataUrl);
       }
       setOverallPhotos((prev) => [...prev, ...newCompressedPhotos]);
       onShowToast(`${newCompressedPhotos.length} foto dokumentasi berhasil ditambahkan`, 'success');
@@ -416,8 +406,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         const photoDataUrls = rowsWithPhotos.map((r) => r.foto);
         const uploadResult = await uploadMultipleImagesToGdrive(
           photoDataUrls,
-          'WMS_Dokumentasi_Barang_Store',
-          `barang_${Date.now()}`
+          'WMS_Barang_Store'
         );
         uploadResult.forEach((url, i) => {
           if (url) {
@@ -435,8 +424,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         onShowToast(`Mengunggah ${overallDataUrls.length} foto koli/packing ke Google Drive...`, 'info');
         const uploadOverallRes = await uploadMultipleImagesToGdrive(
           overallDataUrls,
-          'WMS_Dokumentasi_Kirim_Store',
-          `packing_${Date.now()}`
+          'WMS_Packing_Store'
         );
         const validUploaded = uploadOverallRes.filter((u) => Boolean(u));
         finalOverallPhotoUrls = [...existingOverallUrls, ...validUploaded];

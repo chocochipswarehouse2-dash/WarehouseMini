@@ -52,6 +52,7 @@ import {
   updateKategoriMutasi,
   DEFAULT_KATEGORI_MUTASI_STORE,
 } from '../../services/penerimaanBarang';
+import { savePengirimanStoreBatch } from '../../services/pengirimanStore';
 import { CameraWatermarkModal } from './CameraWatermarkModal';
 
 export interface DraftMutasiItem {
@@ -535,7 +536,47 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
 
       const res = await saveMutasiStoreBulk(payloads);
       if (res.success) {
-        onShowToast(`Sukses! ${res.count} laporan mutasi store berhasil disimpan.`, 'success');
+        // Khusus Kategori Produk 'Mutasi Antar Store': Otomatis masukkan ke Antrean Dispatched Pengiriman Store
+        const mutasiAntarStoreItems = itemsToSubmit.filter(
+          (item) => item.kategoriProduk === 'Mutasi Antar Store'
+        );
+
+        if (mutasiAntarStoreItems.length > 0) {
+          try {
+            const allPhotos = mutasiAntarStoreItems.flatMap((item) => item.fotoUrls || []);
+            const dispatchItems = mutasiAntarStoreItems.map((item) => ({
+              store_tujuan: item.upTujuan?.trim() || 'Store Tujuan',
+              no_surat_jalan: item.noSuratJalan?.trim() || 'No Surat Jalan Mutasi',
+              deskripsi: item.deskripsi?.trim() || 'Barang Mutasi Antar Store',
+              qty: item.qty,
+              satuan: (item.satuanQty === 'Koli' ? 'Koli' : 'Pcs') as 'Pcs' | 'Koli',
+              keterangan: `[Penerimaan Mutasi Antar Store dari ${selectedStore}] ${item.keterangan || ''}`.trim(),
+              foto_barang: item.fotoUrls && item.fotoUrls.length > 0 ? item.fotoUrls[0] : '',
+            }));
+
+            const dispatchRes = await savePengirimanStoreBatch({
+              items: dispatchItems,
+              foto_urls: allPhotos,
+              pic_nama: picNama,
+              pic_username: picUsername,
+            });
+
+            if (dispatchRes.success) {
+              onShowToast(
+                `Sukses! ${res.count} laporan penerimaan disimpan & otomatis masuk ke antrean Dispatched Pengiriman Store.`,
+                'success'
+              );
+            } else {
+              onShowToast(`Penerimaan tersimpan (${res.count} item), namun antrean pengiriman tertunda: ${dispatchRes.message}`, 'warning');
+            }
+          } catch (dispatchErr: any) {
+            console.warn('Gagal otomatis memasukkan mutasi ke antrean pengiriman:', dispatchErr);
+            onShowToast(`Penerimaan tersimpan. Antrean pengiriman gagal otomatis disinkron.`, 'warning');
+          }
+        } else {
+          onShowToast(`Sukses! ${res.count} laporan mutasi store berhasil disimpan.`, 'success');
+        }
+
         setDraftItems([]);
         resetActiveItemForm();
         setDefaultNoSuratJalan('');
