@@ -129,6 +129,8 @@ export async function fetchPengirimanStoreReports(): Promise<PengirimanStoreRepo
         pic_nama: d.pic_nama || 'Petugas Gudang',
         pic_username: d.pic_username || 'operator',
         status: d.status || 'dispatched',
+        foto_urls: typeof d.foto_urls === 'string' ? JSON.parse(d.foto_urls) : (d.foto_urls || []),
+        gdrive_folder_url: d.gdrive_folder_url,
         trip_id: d.trip_id,
         tanggal_kirim: d.tanggal_kirim,
         waktu_kirim: d.waktu_kirim,
@@ -136,6 +138,7 @@ export async function fetchPengirimanStoreReports(): Promise<PengirimanStoreRepo
         armada: d.armada,
         no_polisi: d.no_polisi,
         catatan_kirim: d.catatan_kirim,
+        audit_logs: typeof d.audit_logs === 'string' ? JSON.parse(d.audit_logs) : (d.audit_logs || []),
         created_at: d.created_at || new Date().toISOString(),
         updated_at: d.updated_at || new Date().toISOString(),
       }));
@@ -183,6 +186,7 @@ export async function savePengirimanStoreReport(
       items: sanitizedItems,
       total_item_count: sanitizedItems.length,
       total_koli: totalKoli,
+      foto_urls: reportData.foto_urls || [],
       status: 'dispatched',
       created_at: nowIso,
       updated_at: nowIso,
@@ -209,6 +213,7 @@ export async function savePengirimanStoreReport(
           pic_nama: newReport.pic_nama,
           pic_username: newReport.pic_username,
           status: 'dispatched',
+          foto_urls: JSON.stringify(newReport.foto_urls || []),
           created_at: newReport.created_at,
           updated_at: newReport.updated_at,
         }]
@@ -242,7 +247,9 @@ export async function savePengirimanStoreBatch(payload: {
     qty: number | '';
     satuan: 'Pcs' | 'Koli';
     keterangan?: string;
+    foto_barang?: string;
   }>;
+  foto_urls?: string[];
   pic_nama: string;
   pic_username: string;
 }): Promise<{ success: boolean; reports: PengirimanStoreReport[]; message: string }> {
@@ -276,6 +283,7 @@ export async function savePengirimanStoreBatch(payload: {
         satuan: item.satuan || 'Pcs',
         hitung_koli: hitungKoli,
         keterangan: item.keterangan || '',
+        foto_barang: item.foto_barang || '',
       });
     });
 
@@ -294,6 +302,7 @@ export async function savePengirimanStoreBatch(payload: {
         items: itemsForStore,
         total_item_count: itemsForStore.length,
         total_koli: totalKoli,
+        foto_urls: payload.foto_urls || [],
         pic_nama: payload.pic_nama,
         pic_username: payload.pic_username,
         status: 'dispatched',
@@ -322,6 +331,7 @@ export async function savePengirimanStoreBatch(payload: {
         pic_nama: r.pic_nama,
         pic_username: r.pic_username,
         status: 'dispatched',
+        foto_urls: JSON.stringify(r.foto_urls || []),
         created_at: r.created_at,
         updated_at: r.updated_at,
       }));

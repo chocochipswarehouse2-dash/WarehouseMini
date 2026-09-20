@@ -113,6 +113,8 @@ const ALL_TABLES = [
   // Pengiriman
   'manual_shipment',
   'pengecekan_sj',
+  'pengiriman_store_reports',
+  'pengiriman_store_trips',
   // HR — karyawan HARUS sebelum tabel yang ber-FK ke nik
   'karyawan',
   'master_shift',

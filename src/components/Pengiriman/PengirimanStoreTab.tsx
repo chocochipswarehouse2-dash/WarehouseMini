@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Store,
   Calendar,
@@ -25,6 +25,11 @@ import {
   History,
   AlertTriangle,
   Info,
+  Camera,
+  Image as ImageIcon,
+  Eye,
+  Loader2,
+  UploadCloud,
 } from 'lucide-react';
 import {
   UserSession,
@@ -47,6 +52,8 @@ import {
   getCurrentTimeString,
 } from '../../services/pengirimanStore';
 import { fetchOutlets, DEFAULT_OUTLETS } from '../../services/gasManualShipment';
+import { uploadMultipleImagesToGdrive } from '../../services/gdriveUpload';
+import { compressImage } from '../../utils/imageCompressor';
 import { KoliMarkingPrintModal } from './KoliMarkingPrintModal';
 import { SuratJalanPrintModal } from './SuratJalanPrintModal';
 
@@ -65,6 +72,8 @@ interface ItemInputRow {
   qty: number | '';
   satuan: SatuanPengirimanStore;
   keterangan: string;
+  fotoBarang?: string;
+  isCompressingPhoto?: boolean;
 }
 
 export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
@@ -95,8 +104,18 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       qty: 1,
       satuan: 'Koli',
       keterangan: '',
+      fotoBarang: '',
     },
   ]);
+
+  // Overall shipment photos (Opsi B: Foto Pengiriman Keseluruhan / Koli / Packing)
+  const [overallPhotos, setOverallPhotos] = useState<string[]>([]);
+  const [isCompressingOverall, setIsCompressingOverall] = useState<boolean>(false);
+  const overallFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Modal Preview Foto
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const [previewPhotoTitle, setPreviewPhotoTitle] = useState<string>('Preview Dokumentasi Foto');
 
   // --------------------------------------------------------------------------
   // 2. DISPATCHED TAB STATE
@@ -298,6 +317,71 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     });
   };
 
+  // Handler Foto Per Baris (Opsi A)
+  const handleItemPhotoUpload = async (index: number, file: File) => {
+    if (!file) return;
+    handleUpdateRow(index, 'isCompressingPhoto', true);
+    try {
+      const compressed = await compressImage(file, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 0.75,
+        maxSizeMB: 0.4,
+      });
+      handleUpdateRow(index, 'fotoBarang', compressed);
+      onShowToast(`Foto barang #${index + 1} berhasil diambil`, 'success');
+    } catch (err: any) {
+      console.error('Compress photo failed:', err);
+      onShowToast('Gagal memproses foto barang: ' + (err.message || ''), 'error');
+    } finally {
+      handleUpdateRow(index, 'isCompressingPhoto', false);
+    }
+  };
+
+  const handleRemoveItemPhoto = (index: number) => {
+    handleUpdateRow(index, 'fotoBarang', '');
+  };
+
+  // Handler Foto Keseluruhan / Koli / Packing (Opsi B)
+  const handleOverallPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (overallPhotos.length + files.length > 8) {
+      onShowToast('Maksimal 8 foto dokumentasi pengiriman', 'warning');
+      return;
+    }
+
+    setIsCompressingOverall(true);
+    try {
+      const newCompressedPhotos: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const compressed = await compressImage(file, {
+          maxWidth: 1200,
+          maxHeight: 1200,
+          quality: 0.75,
+          maxSizeMB: 0.4,
+        });
+        newCompressedPhotos.push(compressed);
+      }
+      setOverallPhotos((prev) => [...prev, ...newCompressedPhotos]);
+      onShowToast(`${newCompressedPhotos.length} foto dokumentasi berhasil ditambahkan`, 'success');
+    } catch (err: any) {
+      console.error('Compress overall photos failed:', err);
+      onShowToast('Gagal memproses foto dokumentasi: ' + (err.message || ''), 'error');
+    } finally {
+      setIsCompressingOverall(false);
+      if (overallFileInputRef.current) {
+        overallFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveOverallPhoto = (photoIdx: number) => {
+    setOverallPhotos((prev) => prev.filter((_, idx) => idx !== photoIdx));
+  };
+
   const formCalculatedKoli = useMemo(() => {
     return itemRows.reduce((acc, row) => {
       const q = Math.max(1, Number(row.qty) || 1);
@@ -321,19 +405,60 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
     setIsSubmittingReport(true);
     try {
-      const payloadItems = itemRows.map((r) => ({
+      // 1. Upload foto barang per baris ke Google Drive jika ada
+      const uploadedRowPhotos: { [key: number]: string } = {};
+      const rowsWithPhotos = itemRows
+        .map((r, idx) => ({ idx, foto: r.fotoBarang }))
+        .filter((r): r is { idx: number; foto: string } => Boolean(r.foto && r.foto.startsWith('data:image/')));
+
+      if (rowsWithPhotos.length > 0) {
+        onShowToast(`Mengunggah ${rowsWithPhotos.length} foto barang ke Google Drive...`, 'info');
+        const photoDataUrls = rowsWithPhotos.map((r) => r.foto);
+        const uploadResult = await uploadMultipleImagesToGdrive(
+          photoDataUrls,
+          'WMS_Dokumentasi_Barang_Store',
+          `barang_${Date.now()}`
+        );
+        uploadResult.forEach((url, i) => {
+          if (url) {
+            uploadedRowPhotos[rowsWithPhotos[i].idx] = url;
+          }
+        });
+      }
+
+      // 2. Upload foto keseluruhan / koli / packing ke Google Drive jika ada
+      let finalOverallPhotoUrls: string[] = [];
+      const overallDataUrls = overallPhotos.filter((p) => p.startsWith('data:image/'));
+      const existingOverallUrls = overallPhotos.filter((p) => !p.startsWith('data:image/'));
+
+      if (overallDataUrls.length > 0) {
+        onShowToast(`Mengunggah ${overallDataUrls.length} foto koli/packing ke Google Drive...`, 'info');
+        const uploadOverallRes = await uploadMultipleImagesToGdrive(
+          overallDataUrls,
+          'WMS_Dokumentasi_Kirim_Store',
+          `packing_${Date.now()}`
+        );
+        const validUploaded = uploadOverallRes.filter((u) => Boolean(u));
+        finalOverallPhotoUrls = [...existingOverallUrls, ...validUploaded];
+      } else {
+        finalOverallPhotoUrls = existingOverallUrls;
+      }
+
+      const payloadItems = itemRows.map((r, idx) => ({
         store_tujuan: r.isCustomStore ? r.customStoreInput?.trim() || 'Store' : r.storeTujuan,
         no_surat_jalan: r.noSuratJalan.trim() || 'Tidak ada no surat jalan',
         deskripsi: r.deskripsi.trim(),
         qty: r.qty,
         satuan: r.satuan,
         keterangan: r.keterangan.trim(),
+        foto_barang: uploadedRowPhotos[idx] || r.fotoBarang || '',
       }));
 
       const res = await savePengirimanStoreBatch({
         items: payloadItems,
         pic_nama: session?.name || 'Petugas Gudang',
         pic_username: session?.username || 'operator',
+        foto_urls: finalOverallPhotoUrls,
       });
 
       if (res.success && res.reports.length > 0) {
@@ -362,8 +487,10 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             qty: 1,
             satuan: 'Koli',
             keterangan: '',
+            fotoBarang: '',
           },
         ]);
+        setOverallPhotos([]);
 
         setActiveSubTab('dispatched');
       } else {
@@ -947,6 +1074,86 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
                         />
                       </div>
+
+                      {/* Dokumentasi Foto Barang (Opsi A) */}
+                      <div className="sm:col-span-12 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <Camera className="w-3.5 h-3.5 text-indigo-500" />
+                              Foto Barang #{index + 1} (Opsional):
+                            </span>
+
+                            {row.fotoBarang ? (
+                              <div className="flex items-center gap-2">
+                                <div
+                                  onClick={() => {
+                                    setPreviewPhotoUrl(row.fotoBarang || null);
+                                    setPreviewPhotoTitle(`Foto Barang: ${row.deskripsi || 'Baris #' + (index + 1)}`);
+                                  }}
+                                  className="relative group cursor-pointer w-10 h-10 rounded-lg border border-indigo-200 dark:border-indigo-800 overflow-hidden shrink-0 bg-slate-100"
+                                >
+                                  <img
+                                    src={row.fotoBarang}
+                                    alt="Foto Barang"
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewPhotoUrl(row.fotoBarang || null);
+                                    setPreviewPhotoTitle(`Foto Barang: ${row.deskripsi || 'Baris #' + (index + 1)}`);
+                                  }}
+                                  className="text-[11px] text-indigo-600 hover:text-indigo-700 font-bold cursor-pointer"
+                                >
+                                  Lihat Foto
+                                </button>
+                                <span className="text-slate-300 dark:text-slate-700">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveItemPhoto(index)}
+                                  className="text-[11px] text-rose-500 hover:text-rose-700 font-bold cursor-pointer"
+                                >
+                                  Hapus Foto
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold hover:bg-indigo-100/60 cursor-pointer transition-colors">
+                                {row.isCompressingPhoto ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Memproses Foto...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Camera className="w-3.5 h-3.5" />
+                                    <span>Upload / Ambil Foto</span>
+                                  </>
+                                )}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  className="hidden"
+                                  disabled={row.isCompressingPhoto}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleItemPhotoUpload(index, file);
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            Format otomatis dikompresi & disimpan ke Google Drive saat submit
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -961,6 +1168,111 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               <Plus className="w-4 h-4" />
               <span>Tambah Baris Barang Lagi</span>
             </button>
+
+            {/* DOKUMENTASI PENGIRIMAN KESELURUHAN (OPSI B: FOTO KOLI / PACKING / BUKTI KIRIM) */}
+            <div className="mt-5 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/60 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-emerald-600" />
+                    Dokumentasi Pengiriman Keseluruhan (Foto Koli / Packing / Bukti Fisik)
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Foto tumpukan koli, karung, kardus bersegel, atau kondisi fisik sebelum dikirim (Maks 8 foto).
+                  </p>
+                </div>
+
+                <div>
+                  <input
+                    ref={overallFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture="environment"
+                    className="hidden"
+                    disabled={isCompressingOverall}
+                    onChange={handleOverallPhotoUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => overallFileInputRef.current?.click()}
+                    disabled={isCompressingOverall || overallPhotos.length >= 8}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isCompressingOverall ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Memproses Foto...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>+ Tambah Foto Koli / Packing</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {overallPhotos.length === 0 ? (
+                <div
+                  onClick={() => overallFileInputRef.current?.click()}
+                  className="p-6 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white/60 dark:bg-slate-900/40 text-center space-y-1.5 cursor-pointer hover:bg-slate-100/70 transition-colors"
+                >
+                  <UploadCloud className="w-8 h-8 text-slate-400 mx-auto" />
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                    Klik untuk upload foto packing keseluruhan (opsional)
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    Bisa ambil langsung dari kamera HP atau pilih dari galeri
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 pt-1">
+                  {overallPhotos.map((photo, pIdx) => (
+                    <div
+                      key={pIdx}
+                      className="group relative rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 aspect-square shadow-2xs"
+                    >
+                      <img
+                        src={photo}
+                        alt={`Foto Packing ${pIdx + 1}`}
+                        className="w-full h-full object-cover cursor-pointer"
+                        referrerPolicy="no-referrer"
+                        onClick={() => {
+                          setPreviewPhotoUrl(photo);
+                          setPreviewPhotoTitle(`Dokumentasi Pengiriman #${pIdx + 1}`);
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewPhotoUrl(photo);
+                            setPreviewPhotoTitle(`Dokumentasi Pengiriman #${pIdx + 1}`);
+                          }}
+                          className="p-1 rounded-md bg-white/90 text-slate-800 hover:bg-white cursor-pointer"
+                          title="Lihat Foto"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOverallPhoto(pIdx)}
+                          className="p-1 rounded-md bg-rose-600/90 text-white hover:bg-rose-700 cursor-pointer"
+                          title="Hapus Foto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                        #{pIdx + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -1111,11 +1423,26 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                       <div className="divide-y divide-slate-200/60 dark:divide-slate-700/60 text-xs">
                         {rep.items.map((it, itIdx) => (
                           <div key={it.id || itIdx} className="py-1 flex justify-between items-center gap-2">
-                            <div className="truncate">
+                            <div className="truncate flex items-center gap-1">
                               <span className="font-mono text-[10px] text-slate-400 mr-1.5">
                                 [{it.no_surat_jalan}]
                               </span>
                               <span className="font-bold">{it.deskripsi}</span>
+                              {it.foto_barang && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewPhotoUrl(it.foto_barang || null);
+                                    setPreviewPhotoTitle(`Foto Barang: ${it.deskripsi}`);
+                                  }}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 text-[10px] font-bold hover:bg-indigo-100 cursor-pointer shrink-0 ml-1"
+                                  title="Lihat Foto Dokumentasi Barang"
+                                >
+                                  <Camera className="w-3 h-3 text-indigo-500" />
+                                  <span>Foto</span>
+                                </button>
+                              )}
                             </div>
                             <div className="shrink-0 font-semibold">
                               {it.qty} {it.satuan} ({it.hitung_koli} Koli)
@@ -1124,6 +1451,37 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                         ))}
                       </div>
                     </div>
+
+                    {/* Foto Dokumentasi Pengiriman Keseluruhan (Jika Ada) */}
+                    {rep.foto_urls && rep.foto_urls.length > 0 && (
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                          <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
+                          Dokumentasi Koli ({rep.foto_urls.length}):
+                        </span>
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                          {rep.foto_urls.map((photoUrl, pIdx) => (
+                            <div
+                              key={pIdx}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewPhotoUrl(photoUrl);
+                                setPreviewPhotoTitle(`Dokumentasi Pengiriman ${rep.store_tujuan} #${pIdx + 1}`);
+                              }}
+                              className="w-7 h-7 rounded-md border border-slate-300 dark:border-slate-700 overflow-hidden shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-100"
+                              title="Klik untuk memperbesar"
+                            >
+                              <img
+                                src={photoUrl}
+                                alt="Dokumentasi"
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex items-center justify-between pt-1">
@@ -1506,7 +1864,23 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               <Store className="w-3.5 h-3.5 text-indigo-500" />
                               {rep.store_tujuan}
                             </div>
-                            <div className="text-[10px] text-slate-400">{rep.items.length} Macam Barang</div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                              <span>{rep.items.length} Macam Barang</span>
+                              {rep.foto_urls && rep.foto_urls.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewPhotoUrl(rep.foto_urls![0]);
+                                    setPreviewPhotoTitle(`Dokumentasi Pengiriman ${rep.store_tujuan}`);
+                                  }}
+                                  className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer"
+                                  title="Lihat Foto Dokumentasi Pengiriman"
+                                >
+                                  <ImageIcon className="w-3 h-3" />
+                                  <span>{rep.foto_urls.length} Foto</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
 
                           {/* Dikirim Oleh */}
@@ -1832,6 +2206,69 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL: PREVIEW DOKUMENTASI FOTO (ZOOM / FULL VIEW)                   */}
+      {/* ==================================================================== */}
+      {previewPhotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setPreviewPhotoUrl(null)}
+        >
+          <div
+            className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 max-w-2xl w-full overflow-hidden shadow-2xl space-y-3 p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+              <h3 className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-indigo-500" />
+                <span>{previewPhotoTitle}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPreviewPhotoUrl(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="relative rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center max-h-[70vh]">
+              <img
+                src={previewPhotoUrl}
+                alt="Preview"
+                className="max-h-[68vh] w-auto object-contain"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1 text-xs">
+              <span className="text-[11px] text-slate-400">
+                Tersimpan di cloud / Google Drive
+              </span>
+              <div className="flex items-center gap-2">
+                {previewPhotoUrl.startsWith('http') && (
+                  <a
+                    href={previewPhotoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                  >
+                    Buka di Tab Baru
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhotoUrl(null)}
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           </div>
         </div>

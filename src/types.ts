@@ -939,6 +939,7 @@ export interface PengirimanStoreItem {
   satuan: SatuanPengirimanStore;
   hitung_koli: number; // jika satuan 'Pcs' -> 1 koli; jika 'Koli' -> qty koli
   keterangan?: string;
+  foto_barang?: string; // URL / GDrive Link foto dokumentasi per baris barang (Opsi A)
 }
 
 export interface PengirimanAuditLog {
@@ -964,6 +965,10 @@ export interface PengirimanStoreReport {
   pic_username: string;
   status: StatusPengirimanStore; // 'dispatched' | 'sent' | 'cancelled'
   
+  // Foto Dokumentasi Pengiriman Keseluruhan (Opsi B - GDrive link)
+  foto_urls?: string[]; // Daftar URL foto koli/tumpukan barang siap kirim
+  gdrive_folder_url?: string; // Link folder GDrive arsip (opsional)
+
   // Trip Pengiriman info (diisi saat proses Kirim)
   trip_id?: string;
   tanggal_kirim?: string; // YYYY-MM-DD

@@ -217,7 +217,14 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
                               {it.no_surat_jalan}
                             </td>
                             <td className="border border-black px-1.5 py-1 font-bold text-black">
-                              {it.deskripsi}
+                              <div className="flex items-center justify-between gap-1">
+                                <span>{it.deskripsi}</span>
+                                {it.foto_barang && (
+                                  <span className="text-[7.5px] font-normal text-slate-500 italic shrink-0">
+                                    [+Foto]
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="border border-black px-1.5 py-1 text-center font-bold">
                               {it.qty} {it.satuan}
