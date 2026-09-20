@@ -33,6 +33,7 @@ export const DEFAULT_KATEGORI_MUTASI_STORE: string[] = [
   'Complementary',
   'Dokumen / Laporan',
   'Mutasi Antar Store',
+  'Lainnya (Manual)',
 ];
 
 const LOCAL_STORAGE_MUTASI_STORE = 'wms_penerimaan_mutasi_store_cache';
@@ -214,6 +215,67 @@ export async function saveMutasiStore(
       return { success: true, message: 'Tersimpan secara lokal (offline fallback).', data: newRecord };
     } catch (e: any) {
       return { success: false, message: e.message || 'Gagal menyimpan data.' };
+    }
+  }
+}
+
+export async function saveMutasiStoreBulk(
+  payloads: PenerimaanMutasiStoreItem[]
+): Promise<{ success: boolean; count: number; message: string }> {
+  if (!payloads || payloads.length === 0) {
+    return { success: false, count: 0, message: 'Tidak ada item yang disimpan.' };
+  }
+
+  const recordsToSave = payloads.map((payload) => {
+    const cleanSuratJalan =
+      payload.no_surat_jalan && payload.no_surat_jalan.trim()
+        ? payload.no_surat_jalan.trim()
+        : 'Tidak ada surat jalan';
+
+    return {
+      ...payload,
+      id: payload.id || undefined,
+      tanggal_diterima: payload.tanggal_diterima || new Date().toISOString().split('T')[0],
+      no_surat_jalan: cleanSuratJalan,
+      kategori_produk: payload.kategori_produk || 'Mutasi Antar Store',
+      up_tujuan: payload.up_tujuan || 'Warehouse',
+      qty: Number(payload.qty || 1),
+      satuan_qty: payload.satuan_qty || 'Pcs',
+      foto_urls: payload.foto_urls || [],
+      lokasi_stamp: payload.lokasi_stamp || {},
+      timestamp_input: payload.timestamp_input || new Date().toISOString(),
+      created_at: payload.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  try {
+    await supabaseFetch('penerimaan_mutasi_store', 'POST', recordsToSave);
+    await fetchMutasiStoreList(); // Refresh cache
+    return {
+      success: true,
+      count: recordsToSave.length,
+      message: `${recordsToSave.length} laporan mutasi store berhasil disimpan!`,
+    };
+  } catch (err: any) {
+    console.warn('Bulk save to Supabase error, updating local cache:', err);
+    try {
+      const localList: PenerimaanMutasiStoreItem[] = JSON.parse(
+        localStorage.getItem(LOCAL_STORAGE_MUTASI_STORE) || '[]'
+      );
+      const withIds = recordsToSave.map((rec, i) => ({
+        ...rec,
+        id: rec.id || `local_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 5)}`,
+      }));
+      localList.unshift(...withIds);
+      localStorage.setItem(LOCAL_STORAGE_MUTASI_STORE, JSON.stringify(localList));
+      return {
+        success: true,
+        count: withIds.length,
+        message: `${withIds.length} laporan tersimpan secara lokal (offline fallback).`,
+      };
+    } catch (e: any) {
+      return { success: false, count: 0, message: e.message || 'Gagal menyimpan data.' };
     }
   }
 }
