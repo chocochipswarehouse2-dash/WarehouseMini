@@ -25,12 +25,78 @@ export const DEFAULT_EKSPEDISI: string[] = [
   'Kurir Toko / Internal',
 ];
 
+// Default List Kategori Produk Mutasi Store
+export const DEFAULT_KATEGORI_MUTASI_STORE: string[] = [
+  'Tarikan MD',
+  'Retur Reject',
+  'Request',
+  'Complementary',
+  'Dokumen / Laporan',
+  'Mutasi Antar Store',
+];
+
 const LOCAL_STORAGE_MUTASI_STORE = 'wms_penerimaan_mutasi_store_cache';
 const LOCAL_STORAGE_PAKET = 'wms_penerimaan_paket_cache';
 const LOCAL_STORAGE_EKSPEDISI = 'wms_ekspedisi_list_cache';
+const LOCAL_STORAGE_KATEGORI_MUTASI = 'wms_kategori_mutasi_store_cache';
 
 // ==============================================================================
-// 1. MUTASI STORE (PENERIMAAN DARI STORE)
+// 1. KATEGORI MUTASI STORE MANAGEMENT (CRUD)
+// ==============================================================================
+
+export function fetchKategoriMutasiList(): string[] {
+  try {
+    const cached = localStorage.getItem(LOCAL_STORAGE_KATEGORI_MUTASI);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Gagal membaca cache kategori mutasi:', e);
+  }
+  return [...DEFAULT_KATEGORI_MUTASI_STORE];
+}
+
+export function saveKategoriMutasiList(categories: string[]): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KATEGORI_MUTASI, JSON.stringify(categories));
+  } catch (e) {
+    console.warn('Gagal menyimpan kategori mutasi ke cache:', e);
+  }
+}
+
+export function addKategoriMutasi(newCategory: string): string[] {
+  const clean = newCategory.trim();
+  if (!clean) return fetchKategoriMutasiList();
+  const current = fetchKategoriMutasiList();
+  if (!current.some((c) => c.toLowerCase() === clean.toLowerCase())) {
+    const updated = [...current, clean];
+    saveKategoriMutasiList(updated);
+    return updated;
+  }
+  return current;
+}
+
+export function deleteKategoriMutasi(category: string): string[] {
+  const current = fetchKategoriMutasiList();
+  const updated = current.filter((c) => c !== category);
+  saveKategoriMutasiList(updated.length > 0 ? updated : DEFAULT_KATEGORI_MUTASI_STORE);
+  return updated.length > 0 ? updated : DEFAULT_KATEGORI_MUTASI_STORE;
+}
+
+export function updateKategoriMutasi(oldCategory: string, newCategory: string): string[] {
+  const clean = newCategory.trim();
+  if (!clean) return fetchKategoriMutasiList();
+  const current = fetchKategoriMutasiList();
+  const updated = current.map((c) => (c === oldCategory ? clean : c));
+  saveKategoriMutasiList(updated);
+  return updated;
+}
+
+// ==============================================================================
+// 2. MUTASI STORE (PENERIMAAN DARI STORE)
 // ==============================================================================
 
 export async function fetchMutasiStoreList(): Promise<PenerimaanMutasiStoreItem[]> {
@@ -47,6 +113,9 @@ export async function fetchMutasiStoreList(): Promise<PenerimaanMutasiStoreItem[
         tanggal_diterima: item.tanggal_diterima || new Date().toISOString().split('T')[0],
         asal_store_id: item.asal_store_id || '',
         asal_store_nama: item.asal_store_nama || 'Store',
+        no_surat_jalan: item.no_surat_jalan || 'Tidak ada surat jalan',
+        kategori_produk: item.kategori_produk || 'Mutasi Antar Store',
+        up_tujuan: item.up_tujuan || 'Warehouse',
         deskripsi: item.deskripsi || '',
         qty: Number(item.qty || 0),
         satuan_qty: item.satuan_qty || 'Pcs',
@@ -90,10 +159,18 @@ export async function fetchMutasiStoreList(): Promise<PenerimaanMutasiStoreItem[
 export async function saveMutasiStore(
   payload: PenerimaanMutasiStoreItem
 ): Promise<{ success: boolean; data?: PenerimaanMutasiStoreItem; message: string }> {
+  const cleanSuratJalan =
+    payload.no_surat_jalan && payload.no_surat_jalan.trim()
+      ? payload.no_surat_jalan.trim()
+      : 'Tidak ada surat jalan';
+
   const recordToSave = {
     ...payload,
     id: payload.id || undefined,
     tanggal_diterima: payload.tanggal_diterima || new Date().toISOString().split('T')[0],
+    no_surat_jalan: cleanSuratJalan,
+    kategori_produk: payload.kategori_produk || 'Mutasi Antar Store',
+    up_tujuan: payload.up_tujuan || 'Warehouse',
     qty: Number(payload.qty || 1),
     satuan_qty: payload.satuan_qty || 'Pcs',
     foto_urls: payload.foto_urls || [],
@@ -363,6 +440,9 @@ export interface WatermarkOptions {
   picName: string;
   picUsername?: string;
   entityName?: string; // Nama Store atau Nama Ekspedisi
+  kategori?: string;
+  noSuratJalan?: string;
+  upTujuan?: string;
   qtyInfo?: string;
 }
 
@@ -402,12 +482,13 @@ export async function applyPhotoWatermark(
       // Draw base image
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Calculate scale factor relative to standard 1080p
-      const scale = Math.max(0.6, Math.min(1.8, width / 1000));
-      const padding = 20 * scale;
-      const fontSizeTitle = Math.round(20 * scale);
-      const fontSizeBody = Math.round(15 * scale);
-      const lineHeight = Math.round(24 * scale);
+      // Calculate scale factor relative to reference width (designed to be very readable even on mobile)
+      const scale = Math.max(0.85, Math.min(2.2, width / 900));
+      const padding = Math.round(24 * scale);
+      const fontSizeTitle = Math.round(28 * scale);
+      const fontSizeHeading = Math.round(22 * scale);
+      const fontSizeBody = Math.round(18 * scale);
+      const lineHeight = Math.round(30 * scale);
 
       // Date format
       const dateNow = new Date();
@@ -427,53 +508,85 @@ export async function applyPhotoWatermark(
         const acc = options.location.accuracy ? ` (±${Math.round(options.location.accuracy)}m)` : '';
         locationText = `📍 GPS: ${lat}, ${lng}${acc}`;
       } else {
-        locationText = '📍 Lokasi: WMS Loading Dock Warehouse';
+        locationText = '📍 Lokasi: WMS Loading Dock Gudang';
       }
 
-      // Prepare text lines
-      const line1 = `📦 ${options.title.toUpperCase()} ${options.entityName ? `• ${options.entityName}` : ''}`;
-      const line2 = `📅 ${dateFormatted} | 👤 PIC: ${options.picName || 'Operator'} (${options.picUsername || 'user'})`;
-      const line3 = `${locationText} ${options.qtyInfo ? `| Qty: ${options.qtyInfo}` : ''}`;
+      // Prepare text lines for crisp display
+      const lines: { text: string; font: string; color: string; isPill?: boolean }[] = [];
 
-      const lines = [line1, line2, line3];
+      // Line 1: Header (Title & Store / Ekspedisi)
+      const titleEntity = `📦 ${options.title.toUpperCase()}${options.entityName ? ` : ${options.entityName}` : ''}`;
+      lines.push({
+        text: titleEntity,
+        font: `bold ${fontSizeTitle}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
+        color: '#38bdf8', // Bright Cyan
+      });
+
+      // Line 2: No Surat Jalan / Resi & Kategori
+      const detailParts: string[] = [];
+      if (options.noSuratJalan) {
+        detailParts.push(`📄 SJ: ${options.noSuratJalan}`);
+      }
+      if (options.kategori) {
+        detailParts.push(`🏷️ Kategori: ${options.kategori}`);
+      }
+      if (options.upTujuan) {
+        detailParts.push(`🎯 UP: ${options.upTujuan}`);
+      }
+      if (options.qtyInfo) {
+        detailParts.push(`🔢 Qty: ${options.qtyInfo}`);
+      }
+
+      if (detailParts.length > 0) {
+        lines.push({
+          text: detailParts.join('  |  '),
+          font: `bold ${fontSizeHeading}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
+          color: '#fbbf24', // Amber/Gold accent for high visibility
+        });
+      }
+
+      // Line 3: Timestamp & PIC
+      lines.push({
+        text: `📅 ${dateFormatted}  |  👤 PIC: ${options.picName || 'Petugas'} (@${options.picUsername || 'operator'})`,
+        font: `600 ${fontSizeBody}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
+        color: '#f8fafc', // Pure Crisp White
+      });
+
+      // Line 4: Location
+      lines.push({
+        text: locationText,
+        font: `600 ${fontSizeBody}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
+        color: '#4ade80', // Emerald Green
+      });
 
       // Draw bottom backdrop card with rounded top corners
-      const cardHeight = lines.length * lineHeight + padding * 2.2;
+      const cardHeight = lines.length * lineHeight + padding * 2;
       const cardY = height - cardHeight;
 
-      // Dark translucent gradient background
+      // Dark solid gradient background for guaranteed 100% legibility
       const gradient = ctx.createLinearGradient(0, cardY, 0, height);
-      gradient.addColorStop(0, 'rgba(15, 23, 42, 0.88)');
-      gradient.addColorStop(1, 'rgba(15, 23, 42, 0.98)');
+      gradient.addColorStop(0, 'rgba(10, 15, 29, 0.94)');
+      gradient.addColorStop(1, 'rgba(5, 8, 16, 0.98)');
 
       ctx.fillStyle = gradient;
       ctx.fillRect(0, cardY, width, cardHeight);
 
       // Top highlight border on watermark bar
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'; // Brand blue accent
-      ctx.fillRect(0, cardY, width, 3 * scale);
+      ctx.fillStyle = '#0284c7'; // Primary blue bar
+      ctx.fillRect(0, cardY, width, Math.max(4, Math.round(4 * scale)));
 
-      // Render Text
+      // Render Text lines
       ctx.textBaseline = 'top';
+      let currentY = cardY + padding * 0.7;
 
-      // Line 1: Title (Bold Cyan/White)
-      ctx.font = `bold ${fontSizeTitle}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-      ctx.fillStyle = '#38bdf8'; // Cyan accent
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-      ctx.shadowBlur = 4;
-      ctx.fillText(line1, padding, cardY + padding * 0.8);
-
-      // Line 2: Timestamp & PIC (Bright White)
-      ctx.font = `600 ${fontSizeBody}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-      ctx.fillStyle = '#f8fafc';
-      ctx.shadowBlur = 3;
-      ctx.fillText(line2, padding, cardY + padding * 0.8 + lineHeight * 1.1);
-
-      // Line 3: Location (Emerald / Slate)
-      ctx.font = `500 ${fontSizeBody}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-      ctx.fillStyle = '#4ade80'; // Emerald accent for GPS
-      ctx.shadowBlur = 3;
-      ctx.fillText(line3, padding, cardY + padding * 0.8 + lineHeight * 2.1);
+      lines.forEach((line) => {
+        ctx.font = line.font;
+        ctx.fillStyle = line.color;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 6 * scale;
+        ctx.fillText(line.text, padding, currentY);
+        currentY += lineHeight;
+      });
 
       // Convert back to JPEG data URL
       try {

@@ -881,6 +881,9 @@ export interface PenerimaanMutasiStoreItem {
   tanggal_diterima: string; // YYYY-MM-DD
   asal_store_id?: string;
   asal_store_nama: string;
+  no_surat_jalan?: string; // Opsional, default: "Tidak ada surat jalan"
+  kategori_produk?: string; // Wajib: Tarikan MD, Retur Reject, Request, Complementary, Dokumen / Laporan, Mutasi Antar Store
+  up_tujuan?: string; // UP Tujuan: Warehouse, GA (General Affair), Finance / Accounting, Store Tujuan, atau lainnya
   deskripsi: string;
   qty: number;
   satuan_qty: SatuanMutasiStore;

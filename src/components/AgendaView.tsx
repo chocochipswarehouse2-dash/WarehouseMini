@@ -716,85 +716,100 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   return (
     <div className="w-full max-w-[1600px] mx-auto space-y-3 pb-16 text-slate-900 dark:text-slate-100">
       
-      {/* Top Header & Tab Switcher */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white dark:bg-[#1a2332] p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-primary-500 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-primary-500/25">
-            {activeTab === 'calendar' ? <Calendar className="w-6 h-6" /> : activeTab === 'project' ? <Briefcase className="w-6 h-6" /> : <StickyNote className="w-6 h-6" />}
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2">
-              Agenda & Project
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Cloud Sync
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Jadwal operasional gudang, meeting, dan inisiatif milestone proyek.
-            </p>
-          </div>
-        </div>
-
-        {/* Tab switcher & Action Button */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-          <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl w-full sm:w-auto border border-slate-200/60 dark:border-slate-700/60">
-            <button
-              onClick={() => setActiveTab('calendar')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
-                activeTab === 'calendar'
-                  ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              <span>Kalender Kerja</span>
-              <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold">
-                {filteredEvents.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('project')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
-                activeTab === 'project'
-                  ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <Briefcase className="w-4 h-4" />
-              <span>Project & Task</span>
-              <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold">
-                {filteredProjects.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('notes')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
-                activeTab === 'notes'
-                  ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <StickyNote className="w-4 h-4" />
-              <span>Catatan</span>
-              <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full font-bold">
-                {filteredNotes.length}
-              </span>
-            </button>
+      {/* Top Header & Tab Navigation */}
+      <div className="bg-white dark:bg-[#1a2332] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        {/* Row 1: Brand & Action Button */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-primary-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-primary-500/20 shrink-0">
+              {activeTab === 'calendar' ? <Calendar className="w-5 h-5 sm:w-6 sm:h-6" /> : activeTab === 'project' ? <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" /> : <StickyNote className="w-5 h-5 sm:w-6 sm:h-6" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                  Agenda & Project
+                </h1>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Cloud Sync
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                Jadwal operasional gudang, meeting, dan inisiatif milestone proyek.
+              </p>
+            </div>
           </div>
 
+          {/* Primary Action Button (Cleanly positioned on right side / full-width on mobile) */}
           <button
             onClick={() => {
               if (activeTab === 'calendar') handleOpenAddEvent();
               else if (activeTab === 'notes') handleOpenAddNote();
               else handleOpenAddProject();
             }}
-            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-primary-500 to-amber-500 hover:from-primary-600 hover:to-amber-600 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+            className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-primary-500 via-rose-500 to-amber-500 hover:opacity-95 text-white rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-primary-500/20 active:scale-98 transition-all shrink-0 cursor-pointer"
             title={activeTab === 'calendar' ? 'Tambah Agenda Baru' : activeTab === 'notes' ? 'Tambah Catatan Baru' : 'Tambah Project Baru'}
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>
               {activeTab === 'calendar' ? 'Tambah Agenda' : activeTab === 'notes' ? 'Tambah Catatan' : 'Tambah Project'}
+            </span>
+          </button>
+        </div>
+
+        {/* Row 2: Segmented Tabs (Evenly distributed, zero overlap) */}
+        <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 gap-1">
+          <button
+            onClick={() => setActiveTab('calendar')}
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'calendar'
+                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-xs font-black'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="truncate">
+              <span className="hidden sm:inline">Kalender Kerja</span>
+              <span className="sm:hidden">Kalender</span>
+            </span>
+            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+              {filteredEvents.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('project')}
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'project'
+                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-xs font-black'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="truncate">
+              <span className="hidden sm:inline">Project & Task</span>
+              <span className="sm:hidden">Project</span>
+            </span>
+            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+              {filteredProjects.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('notes')}
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'notes'
+                ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-xs font-black'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <StickyNote className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="truncate">
+              <span className="hidden sm:inline">Catatan</span>
+              <span className="sm:hidden">Catatan</span>
+            </span>
+            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+              {filteredNotes.length}
             </span>
           </button>
         </div>
@@ -1056,7 +1071,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                   </button>
                   <button
                     onClick={() => setCalendarView('month')}
-                    className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                       calendarView === 'month'
                         ? 'bg-white dark:bg-[#101726] text-primary-600 dark:text-primary-400 shadow-sm'
                         : 'text-slate-500 hover:text-slate-700'
@@ -1082,7 +1097,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                         : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    Jadwal List
+                    <span className="hidden sm:inline">Jadwal List</span>
+                    <span className="sm:hidden">Jadwal</span>
                   </button>
                 </div>
               </div>
