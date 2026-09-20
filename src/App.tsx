@@ -92,6 +92,7 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
 
 // Lazy load large components with resilient retry
 const DashboardView = lazyWithRetry(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
+const ProduksiView = lazyWithRetry(() => import('./components/ProduksiView').then(m => ({ default: m.ProduksiView })));
 const LoadingDockView = lazyWithRetry(() => import('./components/LoadingDockView').then(m => ({ default: m.LoadingDockView })));
 const PackingView = lazyWithRetry(() => import('./components/PackingView').then(m => ({ default: m.PackingView })));
 const AgendaView = lazyWithRetry(() => import('./components/AgendaView').then(m => ({ default: m.AgendaView })));
@@ -161,6 +162,7 @@ import { getStoredGasEndpoint, fetchWmsSettings } from './services/settings';
 // URL Path mapping untuk mendukung Deep-linking dan sinkronisasi address bar browser
 const PAGE_TO_PATH: Record<ActivePage, string> = {
   dashboard: 'dashboard',
+  produksi: 'produksi',
   operasi_stok: 'operasi-stok',
   katalog_produk: 'katalog-produk',
   agenda: 'agenda',
@@ -206,6 +208,7 @@ const PATH_TO_PAGE: Record<string, ActivePage> = {
   'resolusi': 'pusat_resolusi',
   'cs': 'pusat_resolusi',
   'loading-dock': 'loading_dock',
+  'produksi': 'produksi',
   'quality-control': 'perbaikan',
   'qc': 'perbaikan',
   'perbaikan': 'perbaikan',
@@ -1718,6 +1721,13 @@ export default function App() {
               {activePage === 'agenda' && (
                   <AgendaView 
                     session={session}
+                    onShowToast={showToast}
+                  />
+              )}
+              {activePage === 'produksi' && (
+                  <ProduksiView
+                    session={session}
+                    productCatalog={productDatabase}
                     onShowToast={showToast}
                   />
               )}

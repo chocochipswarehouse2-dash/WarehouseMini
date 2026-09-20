@@ -74,15 +74,24 @@ export const PERMISSION_GROUPS = [
     ]
   },
   {
+    id: 'g_ops_produksi',
+    title: 'Produksi',
+    badge: '🏭',
+    description: 'Penerimaan barang hasil produksi / CMT',
+    permissions: [
+      { key: 'menu_ops_produksi', label: 'Menu Produksi', description: 'Akses halaman Produksi', isSuperadminOnly: false },
+      { key: 'tab_ops_loading_produksi', label: 'Tab Penerimaan Produksi', description: 'Terima dari CMT', isSuperadminOnly: false },
+    ]
+  },
+  {
     id: 'g_ops_loading',
     title: 'Loading Dock',
     badge: '🚚',
     description: 'Penerimaan & Pengiriman',
     permissions: [
       { key: 'menu_ops_loading_dock', label: 'Menu Loading Dock', description: 'Akses halaman Loading Dock', isSuperadminOnly: false },
-      { key: 'tab_ops_loading_produksi', label: 'Tab Penerimaan Produksi', description: 'Terima dari CMT', isSuperadminOnly: false },
-      { key: 'tab_ops_loading_penerimaan', label: 'Tab Penerimaan Barang', description: 'Terima dari Supplier', isSuperadminOnly: false },
-      { key: 'tab_ops_loading_pengiriman', label: 'Tab Pengiriman Barang', description: 'Handover ekpedisi', isSuperadminOnly: false },
+      { key: 'tab_ops_loading_penerimaan', label: 'Tab Penerimaan', description: 'Penerimaan Store & Paket', isSuperadminOnly: false },
+      { key: 'tab_ops_loading_pengiriman', label: 'Tab Pengiriman', description: 'Pengiriman Store & Paket', isSuperadminOnly: false },
     ]
   },
   {
@@ -246,7 +255,8 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
 
   switch (page) {
     case 'dashboard': return hasPermission(session, 'menu_ops_dashboard');
-    case 'loading_dock': return hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_produksi') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman');
+    case 'produksi': return hasPermission(session, 'menu_ops_produksi') || hasPermission(session, 'tab_ops_loading_produksi');
+    case 'loading_dock': return hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman');
     case 'penerimaan_barang': return hasPermission(session, 'tab_ops_loading_penerimaan');
     case 'packing': return hasPermission(session, 'tab_ops_loading_pengiriman');
     case 'pengiriman': return hasPermission(session, 'tab_ops_loading_pengiriman');
@@ -312,6 +322,8 @@ export const getDefaultPageForSession = (session: UserSession | null): ActivePag
 };
 
 // Aliases for specific component checks
+export const canProduksi = (session: UserSession | null) =>
+  hasPermission(session, 'menu_ops_produksi') || hasPermission(session, 'tab_ops_loading_produksi') || isSuperadmin(session);
 export const canPenerimaanBarang = (session: UserSession | null) =>
   hasPermission(session, 'tab_ops_loading_penerimaan') || isSuperadmin(session);
 export const canPacking = (session: UserSession | null) =>

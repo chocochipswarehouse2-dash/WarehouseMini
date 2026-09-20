@@ -36,6 +36,7 @@ import {
   Send,
   Map,
   ShieldAlert,
+  Factory,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -107,8 +108,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_resolusi_gagal') ||
     hasPermission(session, 'tab_ops_resolusi_komplain') ||
     hasPermission(session, 'tab_ops_resolusi_rating');
+  const canProduksi = userIsAdmin || hasPermission(session, 'menu_ops_produksi') ||
+    hasPermission(session, 'tab_ops_loading_produksi');
   const canLoadingDock = userIsAdmin || hasPermission(session, 'menu_ops_loading_dock') ||
-    hasPermission(session, 'tab_ops_loading_produksi') ||
     hasPermission(session, 'tab_ops_loading_penerimaan') ||
     hasPermission(session, 'tab_ops_loading_pengiriman');
   const canMutasi = userIsAdmin || hasPermission(session, 'menu_ops_mutasi') ||
@@ -166,6 +168,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ShieldAlert,
       description: 'Layanan CS, Retur & Kendala',
       access: canResolusi,
+    },
+    {
+      id: 'produksi' as ActivePage,
+      label: 'Produksi',
+      shortLabel: 'Produksi',
+      icon: Factory,
+      description: 'Penerimaan Hasil Produksi CMT',
+      access: canProduksi,
     },
     {
       id: 'loading_dock' as ActivePage,
