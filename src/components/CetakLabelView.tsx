@@ -1,26 +1,25 @@
 import React, { useState } from 'react';
-import { Package, QrCode, Printer, MapPin, Zap } from 'lucide-react';
+import { Package, QrCode, Printer } from 'lucide-react';
 import { LabelPaketTab, LabelItem, generatePackageId, createQrDataUrl, QrCodeImage } from './CetakLabel/LabelPaketTab';
 import { CetakLokasiRakTab } from './CetakLabel/CetakLokasiRakTab';
-import { CetakCustomQrTab } from './CetakLabel/CetakCustomQrTab';
 
 // Re-export shared types & helpers for backward compatibility
 export type { LabelItem };
 export { generatePackageId, createQrDataUrl, QrCodeImage };
 
 export const CetakLabelView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'lokasi_rak' | 'custom_qr' | 'paket'>(() => {
+  const [activeTab, setActiveTab] = useState<'qr_prefix' | 'paket'>(() => {
     try {
-      const saved = localStorage.getItem('wms_cetak_label_active_tab_v2');
-      if (saved === 'lokasi_rak' || saved === 'custom_qr' || saved === 'paket') return saved;
+      const saved = localStorage.getItem('wms_cetak_label_active_tab_v3');
+      if (saved === 'qr_prefix' || saved === 'paket') return saved;
     } catch {}
-    return 'lokasi_rak';
+    return 'qr_prefix';
   });
 
-  const handleSelectTab = (tab: 'lokasi_rak' | 'custom_qr' | 'paket') => {
+  const handleSelectTab = (tab: 'qr_prefix' | 'paket') => {
     setActiveTab(tab);
     try {
-      localStorage.setItem('wms_cetak_label_active_tab_v2', tab);
+      localStorage.setItem('wms_cetak_label_active_tab_v3', tab);
     } catch {}
   };
 
@@ -39,50 +38,36 @@ export const CetakLabelView: React.FC = () => {
             </div>
             <div>
               <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                Cetak Label &amp; Barcode Lokasi
+                Cetak Label &amp; Barcode WMS
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                QR code lokasi rak range custom, prefix aksi WMS (#IN, #OUT), serta label pengiriman paket
+                QR prefix lokasi (#LOK), prefix action (#IN, #OUT, #SO), QR custom, serta label pengiriman paket
               </p>
             </div>
           </div>
         </div>
 
         {/* Tab Switcher */}
-        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 sm:p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center gap-1 w-full sm:w-auto flex-wrap">
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 sm:p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center gap-1 w-full sm:w-auto">
           <button
             type="button"
-            id="tab-label-lokasi"
-            onClick={() => handleSelectTab('lokasi_rak')}
-            className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
-              activeTab === 'lokasi_rak'
+            id="tab-label-qr-prefix"
+            onClick={() => handleSelectTab('qr_prefix')}
+            className={`flex-1 sm:flex-none py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+              activeTab === 'qr_prefix'
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                 : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
             }`}
           >
-            <MapPin className="w-4 h-4 shrink-0" />
-            <span>QR Lokasi Rak</span>
-          </button>
-
-          <button
-            type="button"
-            id="tab-label-custom-qr"
-            onClick={() => handleSelectTab('custom_qr')}
-            className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
-              activeTab === 'custom_qr'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
-            }`}
-          >
-            <Zap className="w-4 h-4 shrink-0" />
-            <span>QR Custom / Prefix (#IN, #OUT)</span>
+            <QrCode className="w-4 h-4 shrink-0" />
+            <span>QR Prefix</span>
           </button>
 
           <button
             type="button"
             id="tab-label-paket"
             onClick={() => handleSelectTab('paket')}
-            className={`flex-1 sm:flex-none py-2 px-3 sm:px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+            className={`flex-1 sm:flex-none py-2 px-4 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
               activeTab === 'paket'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
                 : 'bg-white/60 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900'
@@ -99,8 +84,7 @@ export const CetakLabelView: React.FC = () => {
         TAB CONTENT
         ========================================================
       */}
-      {activeTab === 'lokasi_rak' && <CetakLokasiRakTab />}
-      {activeTab === 'custom_qr' && <CetakCustomQrTab />}
+      {activeTab === 'qr_prefix' && <CetakLokasiRakTab />}
       {activeTab === 'paket' && <LabelPaketTab />}
     </div>
   );

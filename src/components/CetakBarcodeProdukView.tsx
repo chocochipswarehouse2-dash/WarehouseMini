@@ -281,26 +281,34 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
   };
 
   const handleClearQueue = () => {
-    if (window.confirm('Kosongkan semua item dalam antrean cetak?')) {
-      setQueue([]);
-      onShowToast?.('Antrean cetak telah dikosongkan.', 'info');
-    }
+    setQueue([]);
+    setPreviewIndex(0);
+    try {
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify([]));
+    } catch {}
+    onShowToast?.('Antrean cetak telah dikosongkan.', 'info');
   };
 
   // Print Execution Engine
   const handlePrintBarcodes = async () => {
-    if (selectedItems.length === 0) {
-      onShowToast?.('Pilih minimal 1 item untuk dicetak.', 'warning');
-      return;
+    let itemsToPrint = selectedItems;
+    if (itemsToPrint.length === 0) {
+      if (queue.length > 0) {
+        itemsToPrint = queue;
+        setQueue((prev) => prev.map((item) => ({ ...item, selected: true })));
+      } else {
+        onShowToast?.('Antrean cetak kosong. Silakan tambahkan item terlebih dahulu.', 'warning');
+        return;
+      }
     }
 
     setIsPrinting(true);
-    onShowToast?.(`Mempersiapkan ${totalSelectedCopies} lembar stiker barcode...`, 'info');
+    onShowToast?.(`Mempersiapkan ${itemsToPrint.reduce((a, b) => a + (b.copies || 1), 0)} lembar stiker barcode...`, 'info');
 
     try {
       // 1. Ensure all QR images are ready
       const qrDataMap: Record<string, string> = { ...qrCache };
-      for (const item of selectedItems) {
+      for (const item of itemsToPrint) {
         if (!qrDataMap[item.sku]) {
           qrDataMap[item.sku] = await generateQrDataUrl(item.sku);
         }
@@ -357,7 +365,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
       // 3. Build HTML for Printable Labels
       const stickerHtmlList: string[] = [];
 
-      selectedItems.forEach((item) => {
+      itemsToPrint.forEach((item) => {
         const qrUrl = qrDataMap[item.sku] || '';
         const copies = Math.max(1, item.copies || 1);
 
@@ -431,7 +439,49 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         }
       });
 
-      // 4. Create Hidden IFrame
+      // 4. Main Document Print Container Fallback
+      let printContainer = document.getElementById('wms-print-container-barcode');
+      if (!printContainer) {
+        printContainer = document.createElement('div');
+        printContainer.id = 'wms-print-container-barcode';
+        document.body.appendChild(printContainer);
+      }
+
+      let printStyleTag = document.getElementById('wms-print-style-barcode');
+      if (!printStyleTag) {
+        printStyleTag = document.createElement('style');
+        printStyleTag.id = 'wms-print-style-barcode';
+        document.head.appendChild(printStyleTag);
+      }
+      printStyleTag.innerHTML = `
+        @media print {
+          body > *:not(#wms-print-container-barcode) {
+            display: none !important;
+          }
+          #wms-print-container-barcode {
+            display: block !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
+          @page {
+            size: ${stickerW} ${stickerH}${pageOrientationKeyword};
+            margin: 0 !important;
+            ${preventAutoRotate ? 'page-orientation: upright;' : ''}
+          }
+        }
+        @media screen {
+          #wms-print-container-barcode {
+            display: none !important;
+          }
+        }
+      `;
+      printContainer.innerHTML = stickerHtmlList.join('');
+
+      // 5. Create Hidden IFrame
       let iframe = document.getElementById('barcode-thermal-print-iframe') as HTMLIFrameElement;
       if (!iframe) {
         iframe = document.createElement('iframe');
@@ -439,164 +489,181 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
         iframe.style.position = 'fixed';
         iframe.style.right = '0';
         iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
+        iframe.style.width = '1px';
+        iframe.style.height = '1px';
+        iframe.style.opacity = '0.01';
+        iframe.style.pointerEvents = 'none';
         document.body.appendChild(iframe);
       }
 
       const doc = iframe.contentWindow?.document || iframe.contentDocument;
-      if (!doc) throw new Error('Could not access print frame document');
-
-      doc.open();
-      doc.write(`
-        <!DOCTYPE html>
-        <html lang="id">
-        <head>
-          <meta charset="utf-8" />
-          <meta name="color-scheme" content="light" />
-          <title>Cetak Barcode Produk</title>
-          <link rel="preconnect" href="https://fonts.googleapis.com">
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
-          <style>
-            :root {
-              color-scheme: light !important;
-            }
-            @page {
-              size: ${stickerW} ${stickerH}${pageOrientationKeyword};
-              margin: 0 !important;
-              ${preventAutoRotate ? 'page-orientation: upright;' : ''}
-            }
-            * {
-              box-sizing: border-box;
-              margin: 0;
-              padding: 0;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            html, body {
-              width: 100%;
-              height: 100%;
-              background: #ffffff !important;
-              color: #000000 !important;
-              color-scheme: light !important;
-              font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            }
-            .sticker-card {
-              width: ${stickerW};
-              height: ${stickerH};
-              page-break-after: always;
-              break-after: page;
-              overflow: hidden;
-              background: #fff;
-              display: flex;
-              align-items: center;
-              box-sizing: border-box;
-              ${rotationAngle ? `transform: rotate(${rotationAngle}deg); transform-origin: center center;` : ''}
-            }
-            .sticker-card.mode-landscape {
-              flex-direction: row;
-              justify-content: flex-start;
-              padding: 1mm 1.5mm 1mm 1.5mm;
-            }
-            .sticker-card.mode-portrait {
-              flex-direction: column;
-              justify-content: center;
-              text-align: center;
-              padding: 1.5mm 1mm;
-            }
-            .qr-box {
-              width: ${qrMmSize};
-              height: ${qrMmSize};
-              flex-shrink: 0;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .mode-landscape .qr-box {
-              margin-right: 1.5mm;
-            }
-            .mode-portrait .qr-box {
-              margin-bottom: 1.5mm;
-            }
-            .qr-img {
-              width: 100%;
-              height: 100%;
-              object-fit: contain;
-              image-rendering: pixelated;
-            }
-            .info-box {
-              flex: 1;
-              min-width: 0;
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-              overflow: hidden;
-            }
-            .mode-landscape .info-box {
-              text-align: left;
-            }
-            .mode-portrait .info-box {
-              text-align: center;
-            }
-            .title-text {
-              color: #000;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              line-height: 1.15;
-              letter-spacing: -0.01em;
-            }
-            .variant-text {
-              color: #111;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              line-height: 1.15;
-              margin-top: 0.2mm;
-              letter-spacing: -0.01em;
-            }
-            .sku-text {
-              font-family: 'JetBrains Mono', monospace;
-              font-size: 6.8pt;
-              font-weight: 700;
-              color: #333;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              line-height: 1.1;
-              margin: 0.3mm 0;
-            }
-            .location-tag {
-              font-size: 6pt;
-              font-weight: 800;
-              color: #555;
-              margin-left: 0.5mm;
-            }
-            .price-text {
-              color: #000;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              line-height: 1.1;
-              letter-spacing: -0.01em;
-              margin-top: 0.2mm;
-            }
-          </style>
-        </head>
-        <body>
-          ${stickerHtmlList.join('')}
-        </body>
-        </html>
-      `);
-      doc.close();
+      if (doc) {
+        doc.open();
+        doc.write(`
+          <!DOCTYPE html>
+          <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="color-scheme" content="light" />
+            <title>Cetak Barcode Produk</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+            <style>
+              :root {
+                color-scheme: light !important;
+              }
+              @page {
+                size: ${stickerW} ${stickerH}${pageOrientationKeyword};
+                margin: 0 !important;
+                ${preventAutoRotate ? 'page-orientation: upright;' : ''}
+              }
+              * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              html, body {
+                width: 100%;
+                height: 100%;
+                background: #ffffff !important;
+                color: #000000 !important;
+                color-scheme: light !important;
+                font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              }
+              .sticker-card {
+                width: ${stickerW};
+                height: ${stickerH};
+                page-break-after: always;
+                break-after: page;
+                overflow: hidden;
+                background: #fff;
+                display: flex;
+                align-items: center;
+                box-sizing: border-box;
+                ${rotationAngle ? `transform: rotate(${rotationAngle}deg); transform-origin: center center;` : ''}
+              }
+              .sticker-card.mode-landscape {
+                flex-direction: row;
+                justify-content: flex-start;
+                padding: 1mm 1.5mm 1mm 1.5mm;
+              }
+              .sticker-card.mode-portrait {
+                flex-direction: column;
+                justify-content: center;
+                text-align: center;
+                padding: 1.5mm 1mm;
+              }
+              .qr-box {
+                width: ${qrMmSize};
+                height: ${qrMmSize};
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+              .mode-landscape .qr-box {
+                margin-right: 1.5mm;
+              }
+              .mode-portrait .qr-box {
+                margin-bottom: 1.5mm;
+              }
+              .qr-img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                image-rendering: pixelated;
+              }
+              .info-box {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                overflow: hidden;
+              }
+              .mode-landscape .info-box {
+                text-align: left;
+              }
+              .mode-portrait .info-box {
+                text-align: center;
+              }
+              .title-text {
+                color: #000;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                line-height: 1.15;
+                letter-spacing: -0.01em;
+              }
+              .variant-text {
+                color: #111;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                line-height: 1.15;
+                margin-top: 0.2mm;
+                letter-spacing: -0.01em;
+              }
+              .sku-text {
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 6.8pt;
+                font-weight: 700;
+                color: #333;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                line-height: 1.1;
+                margin: 0.3mm 0;
+              }
+              .location-tag {
+                font-size: 6pt;
+                font-weight: 800;
+                color: #555;
+                margin-left: 0.5mm;
+              }
+              .price-text {
+                color: #000;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                line-height: 1.1;
+                letter-spacing: -0.01em;
+                margin-top: 0.2mm;
+              }
+            </style>
+          </head>
+          <body>
+            ${stickerHtmlList.join('')}
+          </body>
+          </html>
+        `);
+        doc.close();
+      }
 
       setTimeout(() => {
         setIsPrinting(false);
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      }, 500);
+        let printAttempted = false;
+        try {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            printAttempted = true;
+          }
+        } catch (err) {
+          console.warn('Iframe print failed:', err);
+        }
+
+        if (!printAttempted) {
+          try {
+            window.print();
+          } catch (err) {
+            console.warn('Window print failed:', err);
+          }
+        }
+      }, 300);
     } catch (err) {
       console.error('Print execution failed:', err);
       setIsPrinting(false);
@@ -659,11 +726,15 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
             <button
               type="button"
               onClick={handlePrintBarcodes}
-              disabled={selectedItems.length === 0 || isPrinting}
+              disabled={queue.length === 0 || isPrinting}
               className="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
             >
               <Printer className="w-4 h-4" />
-              <span>{isPrinting ? 'Menyiapkan...' : `Cetak ${totalSelectedCopies} Stiker`}</span>
+              <span>
+                {isPrinting
+                  ? 'Menyiapkan...'
+                  : `Cetak ${totalSelectedCopies > 0 ? totalSelectedCopies : totalAllCopies} Stiker`}
+              </span>
             </button>
           </div>
         </div>

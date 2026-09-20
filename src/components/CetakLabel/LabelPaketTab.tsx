@@ -1154,9 +1154,7 @@ export const LabelPaketTab: React.FC = () => {
                 {labels.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (confirm('Kosongkan semua antrean cetak?')) setLabels([]);
-                    }}
+                    onClick={() => setLabels([])}
                     className="text-xs text-rose-500 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

@@ -51,7 +51,7 @@ export interface LocationLabelSettings {
 }
 
 export const DEFAULT_LOCATION_SETTINGS: LocationLabelSettings = {
-  media: 'thermal_100x50',
+  media: 'a6_4',
   codeFontSize: 'xlarge',
   codeFontWeight: '900',
   qrSize: 'large',
@@ -59,7 +59,7 @@ export const DEFAULT_LOCATION_SETTINGS: LocationLabelSettings = {
   showZoneDesc: true,
   showTagBadge: true,
   showQrPayloadText: true,
-  showCutLines: false,
+  showCutLines: true,
   borderStyle: 'bold',
   headerColor: 'dark',
   isRotated180: false,

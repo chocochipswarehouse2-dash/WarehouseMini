@@ -963,9 +963,7 @@ export const LabelCustomTab: React.FC = () => {
                 {items.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (confirm('Kosongkan semua label custom?')) setItems([]);
-                    }}
+                    onClick={() => setItems([])}
                     className="px-2.5 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
                     Hapus Semua

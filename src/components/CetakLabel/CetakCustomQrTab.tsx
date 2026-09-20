@@ -85,9 +85,9 @@ export const CetakCustomQrTab: React.FC = () => {
   const [queue, setQueue] = useState<CustomQrLabelItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_QUEUE_KEY);
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {}
     return DEFAULT_SAMPLE_ITEMS;
@@ -316,25 +316,33 @@ export const CetakCustomQrTab: React.FC = () => {
   };
 
   const handleClearQueue = () => {
-    if (window.confirm('Kosongkan semua item dalam antrean cetak QR custom?')) {
-      setQueue([]);
-    }
+    setQueue([]);
+    setPreviewIndex(0);
+    try {
+      localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify([]));
+    } catch {}
   };
 
   // ==========================================
   // PRINT EXECUTION ENGINE
   // ==========================================
   const handlePrint = async () => {
-    if (selectedItems.length === 0) {
-      alert('Pilih minimal 1 item untuk dicetak.');
-      return;
+    let itemsToPrint = selectedItems;
+    if (itemsToPrint.length === 0) {
+      if (queue.length > 0) {
+        itemsToPrint = queue;
+        setQueue((prev) => prev.map((item) => ({ ...item, selected: true })));
+      } else {
+        alert('Antrean cetak kosong. Silakan tambahkan label terlebih dahulu.');
+        return;
+      }
     }
 
     setIsPrinting(true);
 
     try {
       const qrDataMap: Record<string, string> = { ...qrCache };
-      for (const item of selectedItems) {
+      for (const item of itemsToPrint) {
         if (!qrDataMap[item.qrPayload]) {
           qrDataMap[item.qrPayload] = await generateQr(item.qrPayload);
         }
@@ -383,7 +391,7 @@ export const CetakCustomQrTab: React.FC = () => {
           : '34mm';
 
       const flattenedItems: CustomQrLabelItem[] = [];
-      selectedItems.forEach((it) => {
+      itemsToPrint.forEach((it) => {
         const c = Math.max(1, it.copies || 1);
         for (let i = 0; i < c; i++) {
           flattenedItems.push(it);
