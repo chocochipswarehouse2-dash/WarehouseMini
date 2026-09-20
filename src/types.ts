@@ -922,4 +922,77 @@ export interface EkspedisiConfigItem {
   created_at?: string;
 }
 
+// ------------------------------------------------------------
+// MODUL PENGIRIMAN (STORE & PAKET)
+// ------------------------------------------------------------
+
+export type SatuanPengirimanStore = 'Pcs' | 'Koli';
+
+export type StatusPengirimanStore = 'dispatched' | 'sent' | 'cancelled';
+
+export interface PengirimanStoreItem {
+  id: string;
+  no_surat_jalan: string; // default "Tidak ada no surat jalan" jika kosong
+  deskripsi: string;
+  qty: number;
+  satuan: SatuanPengirimanStore;
+  hitung_koli: number; // jika satuan 'Pcs' -> 1 koli; jika 'Koli' -> qty koli
+  keterangan?: string;
+}
+
+export interface PengirimanStoreReport {
+  id: string; // code e.g. DSP-YYMMDD-XXXX
+  store_tujuan_id?: string;
+  store_tujuan: string;
+  tanggal_laporan: string; // YYYY-MM-DD
+  items: PengirimanStoreItem[];
+  total_item_count: number;
+  total_koli: number;
+  pic_nama: string;
+  pic_username: string;
+  status: StatusPengirimanStore; // 'dispatched' | 'sent' | 'cancelled'
+  
+  // Trip Pengiriman info (diisi saat proses Kirim)
+  trip_id?: string;
+  tanggal_kirim?: string; // YYYY-MM-DD
+  waktu_kirim?: string; // HH:mm
+  dikirim_oleh?: string; // Nama pengirim/driver
+  armada?: string;
+  no_polisi?: string;
+  catatan_kirim?: string;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PengirimanStoreTrip {
+  id: string;
+  tanggal_kirim: string;
+  waktu_kirim: string;
+  dikirim_oleh: string;
+  store_tujuan_list: string[];
+  report_ids: string[];
+  total_koli: number;
+  armada?: string;
+  no_polisi?: string;
+  catatan?: string;
+  created_by_nama: string;
+  created_by_username: string;
+  created_at: string;
+}
+
+export interface KoliMarkingLabel {
+  id: string;
+  marking_code: string;
+  store_tujuan: string;
+  no_surat_jalan: string;
+  deskripsi: string;
+  koli_index: number;
+  total_koli_item: number;
+  total_koli_report: number;
+  qty_display: string;
+  tanggal: string;
+  pic_nama: string;
+}
+
 
