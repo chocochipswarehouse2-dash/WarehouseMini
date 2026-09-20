@@ -1788,32 +1788,8 @@ export async function rejectStockOpnameQueueItems(
       }
     }
 
-    // 2. Create ADJ_OUT in log_produk as per WMS flow
-    const logsToInsert: LogProdukItem[] = [];
-    for (const item of items) {
-      const diff = Number(item.selisih) || 0;
-      if (diff === 0) continue;
-
-      const loc = item.lokasi || 'Warehouse';
-      const ketReason = item.alasan ? ` - ${item.alasan}` : ` (Sesi: ${item.sesi_id || '-'})`;
-      logsToInsert.push({
-        type: 'ADJ_OUT',
-        invoice: item.invoice || `REJ-SO-${Date.now()}`,
-        sku: item.sku,
-        nama_produk: item.nama_produk || item.sku,
-        size: item.size || '-',
-        area: item.area || getAreaFromLokasi(loc),
-        lokasi: loc,
-        qty: Math.abs(diff),
-        operator: `${rejectedBy || 'Admin'} (Reject SO)`,
-        keterangan: `Adjustment SO (Rejected)${ketReason}`.trim(),
-        created_at: nowIso,
-      });
-    }
-
-    if (logsToInsert.length > 0) {
-      await insertLogProduk(logsToInsert);
-    }
+    // 2. Rejecting SO queue item means NOT modifying log_produk (no stock adjustment)
+    // System stock remains unchanged as the opname adjustment proposal was rejected.
 
     return { success: true, count: items.length };
   } catch (err: any) {
