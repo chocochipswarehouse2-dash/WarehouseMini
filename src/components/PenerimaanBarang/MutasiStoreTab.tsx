@@ -592,21 +592,32 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
     }
   };
 
-  // Delete Riwayat
-  const handleDeleteRiwayat = async (id?: string) => {
+  // Delete Riwayat Modal State
+  const [deletingRiwayatId, setDeletingRiwayatId] = useState<string | null>(null);
+  const [isDeletingRiwayat, setIsDeletingRiwayat] = useState<boolean>(false);
+
+  const handleDeleteRiwayat = (id?: string) => {
     if (!id) return;
-    if (!window.confirm('Apakah Anda yakin ingin menghapus laporan mutasi ini?')) return;
+    setDeletingRiwayatId(id);
+  };
+
+  const handleConfirmDeleteRiwayat = async () => {
+    if (!deletingRiwayatId) return;
+    setIsDeletingRiwayat(true);
     try {
-      const res = await deleteMutasiStore(id);
+      const res = await deleteMutasiStore(deletingRiwayatId);
       if (res.success) {
         onShowToast(res.message, 'success');
+        setDeletingRiwayatId(null);
         await loadRiwayat();
-        if (selectedItemDetail?.id === id) setSelectedItemDetail(null);
+        if (selectedItemDetail?.id === deletingRiwayatId) setSelectedItemDetail(null);
       } else {
         onShowToast(res.message, 'error');
       }
     } catch (err: any) {
       onShowToast(err.message || 'Gagal menghapus data', 'error');
+    } finally {
+      setIsDeletingRiwayat(false);
     }
   };
 
@@ -1789,6 +1800,47 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
         picUsername={picUsername}
         qtyInfo={qty ? `${qty} ${satuanQty}` : undefined}
       />
+
+      {/* MODAL KONFIRMASI HAPUS RIWAYAT */}
+      {deletingRiwayatId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Hapus Laporan Penerimaan</h3>
+                <p className="text-xs text-slate-500">Aksi ini tidak dapat dibatalkan</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Apakah Anda yakin ingin menghapus data laporan penerimaan mutasi ini secara permanen dari Supabase & memori lokal?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeletingRiwayatId(null)}
+                disabled={isDeletingRiwayat}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRiwayat}
+                disabled={isDeletingRiwayat}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingRiwayat ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Hapus Permanen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
