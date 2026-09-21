@@ -20,6 +20,8 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Sparkles,
   ArrowUpDown,
   Eye,
@@ -30,6 +32,9 @@ import {
   Printer,
   LayoutGrid,
   List,
+  Image as ImageIcon,
+  Cloud,
+  ZoomIn,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -76,6 +81,45 @@ export interface SuratJalanGroup {
 
 const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'ALL SIZE', 'FREE SIZE', 'Default'];
 
+export interface ProductModelGroup {
+  key: string;
+  kode_produksi: string;
+  warna: string;
+  foto_url?: string;
+  items: PenerimaanProduksiItem[];
+  totalQty: number;
+}
+
+export function groupItemsByProductModel(items: PenerimaanProduksiItem[]): ProductModelGroup[] {
+  const map = new Map<string, ProductModelGroup>();
+
+  (items || []).forEach((it) => {
+    const kode = (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase();
+    const warna = (it.warna || 'DEFAULT').trim().toUpperCase();
+    const key = `${kode}___${warna}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        kode_produksi: it.kode_produksi || 'Tanpa Kode',
+        warna: it.warna || '-',
+        foto_url: it.foto_url || '',
+        items: [],
+        totalQty: 0,
+      });
+    }
+
+    const group = map.get(key)!;
+    if (!group.foto_url && it.foto_url) {
+      group.foto_url = it.foto_url;
+    }
+    group.items.push(it);
+    group.totalQty += Number(it.qty) || 0;
+  });
+
+  return Array.from(map.values());
+}
+
 export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   session,
   productCatalog = [],
@@ -95,6 +139,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   });
   const [cardPage, setCardPage] = useState<number>(1);
   const cardsPerPage = 8;
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
   // Print PDF Surat Jalan State (1 no surat jalan full)
   const [printSJData, setPrintSJData] = useState<SuratJalanGroup | null>(null);
@@ -151,7 +196,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     kategori: string;
     tanggal: string;
     keterangan: string;
-    items: (PenerimaanProduksiItem & { tempId: string | number })[];
+    items: PenerimaanProduksiItem[];
   } | null>(null);
   const [isUpdatingBatch, setIsUpdatingBatch] = useState<boolean>(false);
 
@@ -1428,30 +1473,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               {getNextSize(block.variants[block.variants.length - 1]?.size || 'S')})
                             </span>
                           </button>
-          </div>
-          
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </button>
-          </div>
-        </div>
-      </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1505,8 +1529,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       {activeTab === 'riwayat' && (
         <div className="space-y-3 sm:space-y-3">
           {/* Filter Toolbar - Clean & space-efficient */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 shadow-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3 items-center">
               {/* Search Bar */}
               <div className="lg:col-span-3 relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1538,41 +1562,31 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 </select>
               </div>
 
-              {/* Date Start & Date End (2-column layout on mobile) */}
+              {/* Date Start & Date End */}
               <div className="col-span-1 sm:col-span-2 lg:col-span-4 grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5 sm:hidden">
-                    Dari Tanggal:
-                  </label>
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => {
-                      setFilterStartDate(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="w-full px-2.5 py-1.5 sm:py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    title="Dari Tanggal"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5 sm:hidden">
-                    Sampai Tanggal:
-                  </label>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => {
-                      setFilterEndDate(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="w-full px-2.5 py-1.5 sm:py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    title="Sampai Tanggal"
-                  />
-                </div>
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => {
+                    setFilterStartDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-2.5 py-1.5 sm:py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  title="Dari Tanggal"
+                />
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => {
+                    setFilterEndDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-2.5 py-1.5 sm:py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  title="Sampai Tanggal"
+                />
               </div>
 
-              {/* Action Buttons: Reset & Sync Offline side-by-side on mobile */}
+              {/* Action Buttons: Reset & Sync */}
               <div className="col-span-1 sm:col-span-2 lg:col-span-2 grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -1593,7 +1607,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   onClick={handleSyncOffline}
                   disabled={isSyncing}
                   className="w-full py-1.5 sm:py-2 px-2.5 rounded-lg sm:rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition flex justify-center items-center gap-1 disabled:opacity-50 cursor-pointer"
-                  title="Sinkronisasi Data Offline yang belum masuk ke database"
+                  title="Sinkronisasi Data Offline"
                 >
                   {isSyncing ? (
                     <span className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
@@ -1602,30 +1616,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   )}
                   <span className="truncate">Sync</span>
                 </button>
+              </div>
+            </div>
           </div>
-          
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
           {/* View Mode Switcher: Kartu (1 SJ = 1 Kartu) vs Tabel */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-2 sm:py-3 shadow-xs">
@@ -1680,7 +1673,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           {/* Conditional View: Card vs Table */}
           {viewMode === 'card' ? (
             /* Card View Layout (1 Kartu = 1 No. Surat Jalan) */
-            <div className="space-y-2">
+            <div className="space-y-4">
               {isLoading ? (
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 shadow-xs">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
@@ -1696,194 +1689,284 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                  {paginatedCards.map((group) => (
-                    <div
-                      key={group.no_surat_jalan}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-3 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-700/60 transition flex flex-col justify-between group"
-                    >
-                      <div>
-                        {/* Top Meta Bar */}
-                        <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-slate-100 dark:border-slate-800 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black ${
-                                group.kategori === 'Lokal CMT'
-                                  ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                                  : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                              }`}
-                            >
-                              <span>{group.kategori === 'Lokal CMT' ? '🏭' : '🚚'}</span>
-                              <span>{group.kategori}</span>
-                            </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+                  {paginatedCards.map((group) => {
+                    const heroPhoto = group.items.find((i) => i.foto_url)?.foto_url;
+                    const isExpanded = expandedCards[group.no_surat_jalan] !== false;
 
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{group.tanggal_penerimaan}</span>
-                            </span>
-
-                            {group.operator && (
-                              <span className="text-[11px] text-slate-400 truncate max-w-[120px]">
-                                Op: {group.operator}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Total Pcs in SJ */}
-                          <span className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-black text-xs sm:text-sm border border-emerald-200 dark:border-emerald-800 shrink-0">
-                            {group.totalPcs.toLocaleString()} pcs
-                          </span>
-                        </div>
-
-                        {/* No Surat Jalan & Actions */}
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
-                            <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                              No. Surat Jalan
-                            </span>
-                            <h3 className="text-base sm:text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight break-all">
-                              {group.no_surat_jalan}
-                            </h3>
-                          </div>
-
-                          {/* Action buttons */}
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handlePrintSJ(group)}
-                              disabled={isGeneratingPdf}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition cursor-pointer"
-                              title="Cetak PDF Surat Jalan Lengkap"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Cetak PDF</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenShare(group.no_surat_jalan)}
-                              className="p-1.5 rounded-xl text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 transition cursor-pointer"
-                              title="Bagikan Surat Jalan Ini"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditBatch(group.no_surat_jalan)}
-                              className="p-1.5 rounded-xl text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 transition cursor-pointer"
-                              title="Edit Surat Jalan Ini"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmDeleteBatch(group.no_surat_jalan)}
-                              className="p-1.5 rounded-xl text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 transition cursor-pointer"
-                              title="Hapus Seluruh Surat Jalan Ini"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Catatan SJ if any */}
-                        {group.keterangan && (
-                          <div className="mb-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
-                            <span className="font-bold text-slate-500 block text-[10px] uppercase">Catatan:</span>
-                            <span className="italic">{group.keterangan}</span>
-                          </div>
-                        )}
-
-                        {/* Items Sub-table inside Card */}
-                        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-800/30">
-                          <div className="px-3 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                            <span>Daftar Produk ({group.uniqueKodeCount} Model • {group.items.length} Baris)</span>
-                            <span>Qty</span>
-                          </div>
-                          <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-64 overflow-y-auto">
-                            {group.items.map((item, idx) => (
-                              <div
-                                key={item.id || idx}
-                                className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-white dark:hover:bg-slate-800/50 transition text-xs"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {item.foto_url ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setLightboxImage({
-                                          url: item.foto_url!,
-                                          title: item.kode_produksi,
-                                          subtitle: `${item.warna} - Size ${item.size} (${item.qty} pcs) • SJ: ${item.no_surat_jalan}`,
-                                        })
-                                      }
-                                      className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 hover:ring-2 hover:ring-emerald-500 transition cursor-pointer"
-                                    >
-                                      <img src={item.foto_url} alt="Foto" className="w-full h-full object-cover" />
-                                    </button>
+                    return (
+                      <div
+                        key={group.no_surat_jalan}
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700/60 transition duration-150 flex flex-col justify-between group"
+                      >
+                        <div>
+                          {/* Card Media Header / Photo Banner */}
+                          <div className="relative h-44 sm:h-48 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden group/img">
+                            {heroPhoto ? (
+                              <>
+                                <img
+                                  src={heroPhoto}
+                                  alt={group.no_surat_jalan}
+                                  className="w-full h-full object-cover group-hover/img:scale-105 transition duration-300"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setLightboxImage({
+                                      url: heroPhoto,
+                                      title: `Surat Jalan: ${group.no_surat_jalan}`,
+                                      subtitle: `${group.kategori} • ${group.tanggal_penerimaan} • Total ${group.totalPcs} pcs`,
+                                    })
+                                  }
+                                  className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition backdrop-blur-xs cursor-pointer opacity-90"
+                                  title="Lihat Foto Utama"
+                                >
+                                  <ZoomIn className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-800/80 text-slate-400 p-4">
+                                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-700/80 shadow-xs flex items-center justify-center mb-1 text-slate-400">
+                                  {group.kategori === 'Lokal CMT' ? (
+                                    <Truck className="w-6 h-6 text-blue-500" />
                                   ) : (
-                                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 text-[10px] shrink-0">
-                                      <Package className="w-3.5 h-3.5" />
-                                    </div>
+                                    <Package className="w-6 h-6 text-amber-500" />
                                   )}
-                                  <div className="min-w-0">
-                                    <div className="font-mono font-bold text-slate-900 dark:text-white truncate">
-                                      {item.kode_produksi}
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
-                                      <span>{item.warna || '-'}</span>
-                                      <span>•</span>
-                                      <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                                        Size {item.size || 'Default'}
-                                      </span>
-                                      {item.keterangan && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="italic truncate max-w-[120px]">{item.keterangan}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
                                 </div>
-
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="font-black text-xs text-emerald-600 dark:text-emerald-400">
-                                    {(Number(item.qty) || 0).toLocaleString()} pcs
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConfirmDeleteSingle(item)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
-                                    title="Hapus baris ini"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                  {group.kategori}
+                                </span>
                               </div>
-                            ))}
+                            )}
+
+                            {/* Category Badge Top Left */}
+                            <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide shadow-xs ${
+                                  group.kategori === 'Lokal CMT'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-amber-600 text-white'
+                                }`}
+                              >
+                                <span>{group.kategori === 'Lokal CMT' ? '🏭' : '🚚'}</span>
+                                <span>{group.kategori}</span>
+                              </span>
+                            </div>
+
+                            {/* Total Pcs Badge Top Right */}
+                            <div className="absolute top-2.5 right-2.5 z-10">
+                              <span className="px-3 py-1 rounded-full bg-emerald-600 text-white font-black text-xs shadow-xs border border-emerald-400/30">
+                                {group.totalPcs.toLocaleString()} pcs
+                              </span>
+                            </div>
+
+                            {/* Date Badge Bottom Left over Image */}
+                            <div className="absolute bottom-2.5 left-2.5 z-10 text-white drop-shadow-md">
+                              <div className="flex items-center gap-1 text-[11px] font-bold">
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span>{group.tanggal_penerimaan}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Card Info Content */}
+                          <div className="p-3.5 space-y-3">
+                            {/* No Surat Jalan Header & Quick Actions */}
+                            <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                              <div>
+                                <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                                  No. Surat Jalan
+                                </span>
+                                <h3 className="text-base font-mono font-black text-slate-900 dark:text-white tracking-tight">
+                                  {group.no_surat_jalan}
+                                </h3>
+                                {group.operator && (
+                                  <span className="text-[11px] text-slate-400">
+                                    Op: <span className="font-semibold text-slate-600 dark:text-slate-300">{group.operator}</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintSJ(group)}
+                                  disabled={isGeneratingPdf}
+                                  className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition cursor-pointer"
+                                  title="Cetak PDF Surat Jalan"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenShare(group.no_surat_jalan)}
+                                  className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition cursor-pointer"
+                                  title="Bagikan Surat Jalan"
+                                >
+                                  <Share2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditBatch(group.no_surat_jalan)}
+                                  className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition cursor-pointer"
+                                  title="Edit Surat Jalan"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmDeleteBatch(group.no_surat_jalan)}
+                                  className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition cursor-pointer"
+                                  title="Hapus Surat Jalan"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Global Notes if any */}
+                            {group.keterangan && (
+                              <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
+                                <span className="font-bold text-slate-400 text-[10px] uppercase block">Catatan SJ:</span>
+                                <span className="italic">{group.keterangan}</span>
+                              </div>
+                            )}
+
+                            {/* Items Section (Collapsible) */}
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-800/30">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedCards((prev) => ({
+                                    ...prev,
+                                    [group.no_surat_jalan]: !isExpanded,
+                                  }))
+                                }
+                                className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition cursor-pointer"
+                              >
+                                <span>
+                                  Daftar Barang ({group.uniqueKodeCount} Model • {group.items.length} Baris)
+                                </span>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                                )}
+                              </button>
+
+                              {isExpanded && (
+                                <div className="p-2.5 space-y-2.5 max-h-72 overflow-y-auto">
+                                  {groupItemsByProductModel(group.items).map((prod) => (
+                                    <div
+                                      key={prod.key}
+                                      className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-2xs hover:border-emerald-300 dark:hover:border-emerald-700/60 transition"
+                                    >
+                                      {/* Product Header inside Batch */}
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          {prod.foto_url ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setLightboxImage({
+                                                  url: prod.foto_url!,
+                                                  title: `Kode: ${prod.kode_produksi}`,
+                                                  subtitle: `Warna: ${prod.warna} • Total ${prod.totalQty} pcs • SJ: ${group.no_surat_jalan}`,
+                                                })
+                                              }
+                                              className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 hover:ring-2 hover:ring-emerald-500 transition cursor-pointer shadow-2xs"
+                                              title="Lihat Foto Produk"
+                                            >
+                                              <img
+                                                src={prod.foto_url}
+                                                alt={prod.kode_produksi}
+                                                className="w-full h-full object-cover"
+                                              />
+                                            </button>
+                                          ) : (
+                                            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
+                                              <Package className="w-4 h-4 text-slate-400" />
+                                            </div>
+                                          )}
+
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="font-mono font-black text-xs text-slate-900 dark:text-white uppercase tracking-tight">
+                                                {prod.kode_produksi}
+                                              </span>
+                                              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700">
+                                                {prod.warna || '-'}
+                                              </span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 block font-medium">
+                                              {prod.items.length} Size Variant
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800 shrink-0">
+                                          {prod.totalQty.toLocaleString()} pcs
+                                        </span>
+                                      </div>
+
+                                      {/* Size Variant Badges Matrix */}
+                                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
+                                        {prod.items.map((it, idx) => (
+                                          <div
+                                            key={it.id || idx}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/80 text-[11px] font-bold"
+                                          >
+                                            <span className="text-indigo-600 dark:text-indigo-400">
+                                              {it.size || 'S'}
+                                            </span>
+                                            <span className="text-slate-300 dark:text-slate-600">:</span>
+                                            <span className="text-slate-900 dark:text-white font-black">
+                                              {it.qty} pcs
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleConfirmDeleteSingle(it)}
+                                              className="ml-0.5 text-slate-300 hover:text-rose-500 transition cursor-pointer"
+                                              title="Hapus varian ini"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Card Footer */}
-                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-                        <span>Total {group.items.length} varian</span>
-                        <button
-                          type="button"
-                          onClick={() => handlePrintSJ(group)}
-                          className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <Printer className="w-3 h-3" />
-                          <span>Cetak Dokumen Surat Jalan</span>
-                        </button>
+                        {/* Card Footer */}
+                        <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400 font-medium">
+                            {group.uniqueKodeCount} Model • {group.items.length} Baris
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintSJ(group)}
+                            className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Printer className="w-3 h-3" />
+                            <span>Cetak PDF</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
               {/* Pagination Cards */}
-              <div className="px-2 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs">
-                <span className="text-slate-500">
+              <div className="px-3 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs">
+                <span className="text-slate-500 font-medium">
                   Menampilkan {suratJalanGroups.length === 0 ? 0 : (cardPage - 1) * cardsPerPage + 1} -{' '}
                   {Math.min(cardPage * cardsPerPage, suratJalanGroups.length)} dari {suratJalanGroups.length} Surat Jalan
                 </span>
@@ -1908,30 +1991,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
-          </div>
-          
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </button>
-          </div>
-        </div>
-      </div>
+                </div>
+              </div>
+            </div>
           ) : (
             /* Unified Table */
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
@@ -2239,134 +2301,207 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               >
                 Kirim
               </button>
-          </div>
-          
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </button>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* ========================================================
-          MODAL 1: EDIT SURAT JALAN (BATCH EDIT)
+          MODAL 1: EDIT SURAT JALAN (KATALOG SPLIT-SCREEN STYLE)
           ======================================================== */}
       {editingBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Edit className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                  <Edit className="w-5 h-5" />
+                </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-white">
                     Edit Penerimaan Surat Jalan
                   </h3>
-                  <p className="text-xs text-slate-500 font-mono">
-                    SJ: {editingBatch.orig_no_surat_jalan}
+                  <p className="text-xs text-slate-500 font-mono font-medium">
+                    No. SJ: <span className="font-bold text-slate-700 dark:text-slate-300">{editingBatch.orig_no_surat_jalan}</span>
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingBatch(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                className="p-2 rounded-2xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Scrollable Content */}
-            <div className="p-2 sm:p-3 overflow-y-auto space-y-5">
-              {/* Header Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Kategori
-                  </label>
-                  <select
-                    value={editingBatch.kategori}
-                    onChange={(e) => setEditingBatch({ ...editingBatch, kategori: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
-                  >
-                    <option value="Lokal CMT">Lokal CMT</option>
-                    <option value="Kargo">Kargo</option>
-                  </select>
+            {/* Modal Content - Scrollable Split Layout */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-6">
+              {/* Top Split Layout: Left Media Preview & Upload, Right Metadata Form */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* Left Column: Primary Media Preview */}
+                <div className="lg:col-span-5 flex flex-col gap-3">
+                  <span className="block text-xs font-black text-slate-700 dark:text-slate-300">
+                    Foto Utama Surat Jalan / Sampel Produk
+                  </span>
+                  <div className="relative aspect-square w-full rounded-2xl bg-slate-100 dark:bg-slate-800/80 border-2 border-dashed border-slate-300 dark:border-slate-700 overflow-hidden flex flex-col items-center justify-center group/hero">
+                    {editingBatch.items.find((i) => i.foto_url)?.foto_url ? (
+                      <>
+                        <img
+                          src={editingBatch.items.find((i) => i.foto_url)?.foto_url}
+                          alt="Foto Utama"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/hero:opacity-100 transition flex items-center justify-center gap-2">
+                          <label className="px-3 py-1.5 rounded-xl bg-white text-slate-900 text-xs font-bold shadow-md hover:bg-slate-100 cursor-pointer flex items-center gap-1.5">
+                            <Camera className="w-4 h-4" />
+                            <span>Ganti Foto</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  const res = await compressImage(e.target.files[0], 1024, 0.75);
+                                  const updated = [...editingBatch.items];
+                                  if (updated.length > 0) {
+                                    updated[0].foto_url = res.dataUrl;
+                                    setEditingBatch({ ...editingBatch, items: updated });
+                                  }
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center p-4">
+                        <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center mx-auto mb-2 text-slate-400">
+                          <ImageIcon className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                          Belum ada foto utama
+                        </p>
+                        <p className="text-[11px] text-slate-400 mb-3">
+                          Upload foto nota/surat jalan atau sampel produk
+                        </p>
+                        <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700 cursor-pointer transition">
+                          <Upload className="w-4 h-4" />
+                          <span>Pilih Foto</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                const res = await compressImage(e.target.files[0], 1024, 0.75);
+                                const updated = [...editingBatch.items];
+                                if (updated.length > 0) {
+                                  updated[0].foto_url = res.dataUrl;
+                                  setEditingBatch({ ...editingBatch, items: updated });
+                                }
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-300">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <Cloud className="w-3.5 h-3.5" /> GDrive Sync Ready
+                    </span>
+                    <span className="font-bold">Otomatis Terkompresi</span>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Tanggal
-                  </label>
-                  <input
-                    type="date"
-                    value={editingBatch.tanggal}
-                    onChange={(e) => setEditingBatch({ ...editingBatch, tanggal: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white"
-                  />
-                </div>
+                {/* Right Column: Metadata Forms */}
+                <div className="lg:col-span-7 space-y-4">
+                  <span className="block text-xs font-black text-slate-700 dark:text-slate-300">
+                    Informasi Surat Jalan &amp; Dokumen
+                  </span>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    No. Surat Jalan
-                  </label>
-                  <input
-                    type="text"
-                    value={editingBatch.no_surat_jalan}
-                    onChange={(e) =>
-                      setEditingBatch({ ...editingBatch, no_surat_jalan: e.target.value.toUpperCase() })
-                    }
-                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white uppercase"
-                  />
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        Kategori Penerimaan
+                      </label>
+                      <select
+                        value={editingBatch.kategori}
+                        onChange={(e) => setEditingBatch({ ...editingBatch, kategori: e.target.value })}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="Lokal CMT">🏭 Lokal CMT</option>
+                        <option value="Kargo">🚚 Kargo</option>
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                    Catatan Global
-                  </label>
-                  <input
-                    type="text"
-                    value={editingBatch.keterangan}
-                    onChange={(e) => setEditingBatch({ ...editingBatch, keterangan: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white"
-                  />
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        Tanggal Penerimaan
+                      </label>
+                      <input
+                        type="date"
+                        value={editingBatch.tanggal}
+                        onChange={(e) => setEditingBatch({ ...editingBatch, tanggal: e.target.value })}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        No. Surat Jalan (Nomor Dokumen)
+                      </label>
+                      <input
+                        type="text"
+                        value={editingBatch.no_surat_jalan}
+                        onChange={(e) =>
+                          setEditingBatch({ ...editingBatch, no_surat_jalan: e.target.value.toUpperCase() })
+                        }
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                        Catatan Global Surat Jalan
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={editingBatch.keterangan}
+                        onChange={(e) => setEditingBatch({ ...editingBatch, keterangan: e.target.value })}
+                        placeholder="Contoh: Barang datang via expedisi Indah Cargo..."
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Items Table */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-black text-slate-900 dark:text-white">
-                    Daftar Baris Barang ({editingBatch.items.length} Baris)
-                  </span>
+              {/* Bottom Section: Variant & Item Matrix Grouped by Product Model */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-slate-900 dark:text-white">
+                      Daftar Produk Dalam Surat Jalan ({groupItemsByProductModel(editingBatch.items).length} Model Produk)
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+                      Total: {editingBatch.items.reduce((a, b) => a + (Number(b.qty) || 0), 0).toLocaleString()} pcs
+                    </span>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
                       const updated = [...editingBatch.items];
                       updated.push({
-                        tempId: Date.now(),
+                        id: `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                         tanggal_penerimaan: editingBatch.tanggal,
                         kategori: editingBatch.kategori,
                         no_surat_jalan: editingBatch.no_surat_jalan,
-                        kode_produksi: '',
-                        warna: '',
+                        kode_produksi: `PROD-${groupItemsByProductModel(editingBatch.items).length + 1}`,
+                        warna: 'BLACK',
                         size: 'S',
                         qty: 1,
                         foto_url: '',
@@ -2375,188 +2510,269 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                       });
                       setEditingBatch({ ...editingBatch, items: updated });
                     }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Tambah Baris</span>
+                    <Plus className="w-4 h-4" />
+                    <span>Tambah Produk Model Baru</span>
                   </button>
                 </div>
 
-                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold">
-                        <th className="py-2 px-2 text-center">Foto</th>
-                        <th className="py-2 px-3">Kode Produksi</th>
-                        <th className="py-2 px-3">Warna</th>
-                        <th className="py-2 px-2.5 text-center">Size</th>
-                        <th className="py-2 px-2 text-right">Qty</th>
-                        <th className="py-2 px-3">Catatan</th>
-                        <th className="py-2 px-2 text-center">Hapus</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {editingBatch.items.map((it, idx) => (
-                        <tr key={it.tempId || idx}>
-                          {/* Foto */}
-                          <td className="py-2 px-2 text-center">
-                            {it.foto_url ? (
-                              <div className="relative inline-block w-8 h-8 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                                <img
-                                  src={it.foto_url}
-                                  alt="Foto"
-                                  className="w-full h-full object-cover"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = [...editingBatch.items];
-                                    updated[idx].foto_url = '';
-                                    setEditingBatch({ ...editingBatch, items: updated });
-                                  }}
-                                  className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition text-[9px]"
-                                  title="Hapus Foto"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ) : (
-                              <label className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer text-slate-400 hover:text-slate-700 transition">
-                                <Camera className="w-4 h-4" />
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      const res = await compressImage(e.target.files[0], 1024, 0.75);
-                                      const updated = [...editingBatch.items];
-                                      updated[idx].foto_url = res.dataUrl;
-                                      setEditingBatch({ ...editingBatch, items: updated });
-                                    }
-                                  }}
-                                />
-                              </label>
-                            )}
-                          </td>
+                <div className="space-y-3">
+                  {groupItemsByProductModel(editingBatch.items).map((prod, pIdx) => (
+                    <div
+                      key={prod.key}
+                      className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3"
+                    >
+                      {/* Product Model Header */}
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/80">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-black">
+                            {pIdx + 1}
+                          </span>
+                          <span className="text-xs font-black uppercase text-slate-900 dark:text-white">
+                            Produk Model: {prod.kode_produksi} ({prod.warna})
+                          </span>
+                        </div>
 
-                          {/* Kode Produksi */}
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={it.kode_produksi}
-                              onChange={(e) => {
-                                const updated = [...editingBatch.items];
-                                updated[idx].kode_produksi = e.target.value.toUpperCase();
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300">
+                            {prod.totalQty} pcs
+                          </span>
+                          {editingBatch.items.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = editingBatch.items.filter(
+                                  (it) =>
+                                    !(
+                                      (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                      (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                    )
+                                );
                                 setEditingBatch({ ...editingBatch, items: updated });
                               }}
-                              className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase"
-                            />
-                          </td>
-
-                          {/* Warna */}
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={it.warna}
-                              onChange={(e) => {
-                                const updated = [...editingBatch.items];
-                                updated[idx].warna = e.target.value.toUpperCase();
-                                setEditingBatch({ ...editingBatch, items: updated });
-                              }}
-                              className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs uppercase"
-                            />
-                          </td>
-
-                          {/* Size */}
-                          <td className="py-2 px-2.5 text-center">
-                            <select
-                              value={it.size}
-                              onChange={(e) => {
-                                const updated = [...editingBatch.items];
-                                updated[idx].size = e.target.value;
-                                setEditingBatch({ ...editingBatch, items: updated });
-                              }}
-                              className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold"
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/50 rounded-lg transition cursor-pointer"
+                              title="Hapus Model Produk Ini"
                             >
-                              {STANDARD_SIZES.map((s) => (
-                                <option key={s} value={s}>
-                                  {s}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
 
-                          {/* Qty */}
-                          <td className="py-2 px-2 text-right">
-                            <input
-                              type="number"
-                              min={1}
-                              value={it.qty ?? ''}
-                              onFocus={(e) => e.target.select()}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                const updated = [...editingBatch.items];
-                                updated[idx].qty = val === '' ? ('' as any) : Math.max(0, parseInt(val, 10) || 0);
-                                setEditingBatch({ ...editingBatch, items: updated });
-                              }}
-                              onBlur={() => {
-                                if ((it.qty as any) === '' || Number(it.qty) < 1) {
-                                  const updated = [...editingBatch.items];
-                                  updated[idx].qty = 1;
-                                  setEditingBatch({ ...editingBatch, items: updated });
-                                }
-                              }}
-                              className="w-16 px-2 py-1 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-black"
-                            />
-                          </td>
-
-                          {/* Catatan */}
-                          <td className="py-2 px-3">
-                            <input
-                              type="text"
-                              value={it.keterangan || ''}
-                              onChange={(e) => {
-                                const updated = [...editingBatch.items];
-                                updated[idx].keterangan = e.target.value;
-                                setEditingBatch({ ...editingBatch, items: updated });
-                              }}
-                              className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs"
-                            />
-                          </td>
-
-                          {/* Hapus */}
-                          <td className="py-2 px-2 text-center">
-                            {editingBatch.items.length > 1 && (
+                      {/* Main Form Fields for Product Model */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                        {/* Photo Upload Thumbnail */}
+                        <div className="md:col-span-3 flex flex-col items-center">
+                          {prod.foto_url ? (
+                            <div className="relative w-full h-28 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group/prodimg">
+                              <img src={prod.foto_url} alt={prod.kode_produksi} className="w-full h-full object-cover" />
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const updated = editingBatch.items.filter((_, i) => i !== idx);
+                                  const updated = editingBatch.items.map((it) => {
+                                    if (
+                                      (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                      (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                    ) {
+                                      return { ...it, foto_url: '' };
+                                    }
+                                    return it;
+                                  });
                                   setEditingBatch({ ...editingBatch, items: updated });
                                 }}
-                                className="p-1 text-primary-500 hover:text-primary-700 hover:bg-primary-50 rounded"
+                                className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover/prodimg:opacity-100 transition text-xs font-bold cursor-pointer"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                Hapus Foto
                               </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            </div>
+                          ) : (
+                            <label className="w-full h-28 rounded-xl bg-white dark:bg-slate-900 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 flex flex-col items-center justify-center cursor-pointer p-2 text-center transition">
+                              <Camera className="w-5 h-5 text-slate-400 mb-1" />
+                              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">Upload Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const res = await compressImage(e.target.files[0], 1024, 0.75);
+                                    const updated = editingBatch.items.map((it) => {
+                                      if (
+                                        (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                        (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                      ) {
+                                        return { ...it, foto_url: res.dataUrl };
+                                      }
+                                      return it;
+                                    });
+                                    setEditingBatch({ ...editingBatch, items: updated });
+                                  }
+                                }}
+                              />
+                            </label>
+                          )}
+                        </div>
+
+                        {/* Kode Produksi, Warna, and Variants */}
+                        <div className="md:col-span-9 space-y-2.5">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                Kode Produksi
+                              </label>
+                              <input
+                                type="text"
+                                value={prod.kode_produksi}
+                                onChange={(e) => {
+                                  const newKode = e.target.value.toUpperCase();
+                                  const updated = editingBatch.items.map((it) => {
+                                    if (
+                                      (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                      (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                    ) {
+                                      return { ...it, kode_produksi: newKode };
+                                    }
+                                    return it;
+                                  });
+                                  setEditingBatch({ ...editingBatch, items: updated });
+                                }}
+                                className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                Warna
+                              </label>
+                              <input
+                                type="text"
+                                value={prod.warna}
+                                onChange={(e) => {
+                                  const newWarna = e.target.value.toUpperCase();
+                                  const updated = editingBatch.items.map((it) => {
+                                    if (
+                                      (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                      (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                    ) {
+                                      return { ...it, warna: newWarna };
+                                    }
+                                    return it;
+                                  });
+                                  setEditingBatch({ ...editingBatch, items: updated });
+                                }}
+                                className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Size & Quantity Variants Grid */}
+                          <div className="space-y-1.5">
+                            <span className="block text-[10px] font-bold uppercase text-slate-500">
+                              Varian Size &amp; Kuantitas:
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {prod.items.map((vItem, vIdx) => (
+                                <div
+                                  key={vItem.id || `v_${vIdx}`}
+                                  className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between gap-1"
+                                >
+                                  <select
+                                    value={vItem.size}
+                                    onChange={(e) => {
+                                      const newSize = e.target.value;
+                                      const updated = editingBatch.items.map((it) =>
+                                        it === vItem ? { ...it, size: newSize } : it
+                                      );
+                                      setEditingBatch({ ...editingBatch, items: updated });
+                                    }}
+                                    className="bg-transparent text-xs font-bold text-indigo-600 dark:text-indigo-400 focus:outline-none"
+                                  >
+                                    {STANDARD_SIZES.map((sz) => (
+                                      <option key={sz} value={sz}>
+                                        {sz}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={vItem.qty ?? ''}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        const newQty = val === '' ? ('' as any) : Math.max(0, parseInt(val, 10) || 0);
+                                        const updated = editingBatch.items.map((it) =>
+                                          it === vItem ? { ...it, qty: newQty } : it
+                                        );
+                                        setEditingBatch({ ...editingBatch, items: updated });
+                                      }}
+                                      className="w-14 px-1.5 py-1 text-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-black text-slate-900 dark:text-white"
+                                    />
+                                    {prod.items.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = editingBatch.items.filter((it) => it !== vItem);
+                                          setEditingBatch({ ...editingBatch, items: updated });
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-rose-500 rounded transition cursor-pointer"
+                                        title="Hapus size ini"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Button Tambah Varian Size */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const existingSizes = prod.items.map((it) => it.size);
+                                const nextSize = getNextSize(existingSizes[existingSizes.length - 1] || 'S');
+                                const newItem: PenerimaanProduksiItem = {
+                                  id: `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                                  tanggal_penerimaan: editingBatch.tanggal,
+                                  kategori: editingBatch.kategori,
+                                  no_surat_jalan: editingBatch.no_surat_jalan,
+                                  kode_produksi: prod.kode_produksi,
+                                  warna: prod.warna,
+                                  size: nextSize,
+                                  qty: 1,
+                                  foto_url: prod.foto_url || '',
+                                  keterangan: editingBatch.keterangan || '',
+                                  operator: session?.name || 'Operator',
+                                };
+                                setEditingBatch({ ...editingBatch, items: [...editingBatch.items, newItem] });
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline pt-1 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Tambah Varian Size</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900">
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => handleConfirmDeleteBatch(editingBatch.orig_no_surat_jalan)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 transition"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 transition cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Hapus Seluruh Surat Jalan Ini</span>
+                <span>Hapus Seluruh Surat Jalan</span>
               </button>
 
               <div className="flex items-center gap-2">
@@ -2564,7 +2780,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   type="button"
                   onClick={() => setEditingBatch(null)}
                   disabled={isUpdatingBatch}
-                  className="px-2 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Batal
                 </button>
@@ -2572,44 +2788,23 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   type="button"
                   onClick={handleSaveBatchEdit}
                   disabled={isUpdatingBatch}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition disabled:opacity-50 cursor-pointer"
                 >
                   {isUpdatingBatch ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <RefreshCw className="w-4 h-4 animate-spin" />
                       <span>Menyimpan...</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Simpan Seluruh Penerimaan</span>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Simpan Perubahan</span>
                     </>
                   )}
                 </button>
+              </div>
+            </div>
           </div>
-          
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </button>
-          </div>
-        </div>
-      </div>
         </div>
       )}
 
