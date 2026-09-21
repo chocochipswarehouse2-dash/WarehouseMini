@@ -2,6 +2,7 @@ import { KatalogBatch, KatalogItem } from '../../types';
 import { saveWmsSettings, fetchWmsSettings } from '../../services/settings';
 import initial325bData from '../../data/initialKatalog325b.json';
 import { getSupabaseClient } from '../../services/supabase';
+import { syncAndMigrateKatalogImagesToGdrive } from '../../services/katalogGdrive';
 
 
 export const KATALOG_STORAGE_KEY = 'wms_katalog_manual_data';
@@ -110,39 +111,47 @@ export function getDefaultInitialBatch(): KatalogBatch {
 
 // Simpan list batches ke Supabase Cloud dan LocalStorage
 export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<boolean> {
-  const jsonStr = JSON.stringify(batches);
+  let activeBatches = batches;
 
-  // Buat versi clean tanpa base64 image untuk disimpan di Supabase Cloud wms_settings (ringan & cepat)
-  const cleanBatches = batches.map((b) => ({
-    ...b,
-    items: b.items.map((it) => ({
-      ...it,
-      image_url: it.image_url && it.image_url.startsWith('data:image') ? '' : it.image_url,
-    })),
-  }));
-  const cleanJsonStr = JSON.stringify(cleanBatches);
+  // 1. Otomatis upload semua gambar base64 ke Google Drive terlebih dahulu
+  const hasBase64 = activeBatches.some((b) =>
+    b.items.some((it) => it.image_url && it.image_url.startsWith('data:image'))
+  );
 
-  // 1. Simpan ke LocalStorage (lengkap dengan URL/base64 cache)
+  if (hasBase64) {
+    try {
+      const gdriveRes = await syncAndMigrateKatalogImagesToGdrive(activeBatches);
+      if (gdriveRes && gdriveRes.updatedBatches) {
+        activeBatches = gdriveRes.updatedBatches;
+      }
+    } catch (gdriveErr) {
+      console.warn('Otomatis upload foto ke Google Drive gagal, melanjutkan dengan URL/base64 cache:', gdriveErr);
+    }
+  }
+
+  const jsonStr = JSON.stringify(activeBatches);
+
+  // 2. Simpan ke LocalStorage
   try {
     localStorage.setItem(KATALOG_STORAGE_KEY, jsonStr);
   } catch (lsErr) {
     console.warn('LocalStorage save failed, trying fallback:', lsErr);
   }
 
-  // 2. Simpan snapshot struktur katalog ke Supabase wms_settings (Sinkronisasi Cloud Terpadu)
+  // 3. Simpan snapshot struktur katalog ke Supabase wms_settings (Sinkronisasi Cloud Terpadu)
   try {
-    await saveWmsSettings({ katalog_manual_data: cleanJsonStr });
+    await saveWmsSettings({ katalog_manual_data: jsonStr });
   } catch (settingsErr) {
     console.warn('Gagal simpan snapshot katalog ke wms_settings:', settingsErr);
   }
 
-  // 3. Simpan ke Supabase Cloud (tabel wms_katalog baris per baris)
+  // 4. Simpan ke Supabase Cloud (tabel wms_katalog baris per baris)
   try {
     const client = getSupabaseClient();
     
     // Transform batches to rows
     const rowsToUpsert: any[] = [];
-    batches.forEach((b) => {
+    activeBatches.forEach((b) => {
       b.items.forEach((it) => {
         rowsToUpsert.push({
           id: it.id,
@@ -155,7 +164,7 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
           deskripsi: it.deskripsi || '',
           price: String(it.price || ''),
           variants: it.variants || [],
-          image_url: (it.image_url && it.image_url.startsWith('data:image')) ? '' : (it.image_url || ''),
+          image_url: it.image_url || '',
           publish_online: it.publish_online || '',
           publish_offline: it.publish_offline || '',
           is_hidden: it.is_hidden || false,
@@ -225,122 +234,120 @@ export async function persistKatalogBatches(batches: KatalogBatch[]): Promise<bo
     return true;
   } catch (cloudErr) {
     console.error('Supabase cloud save error for wms_katalog:', cloudErr);
-    // Meskipun tabel wms_katalog error, data sudah tersimpan di wms_settings & localStorage
     return true;
   }
 }
 
 // Ambil list batches dari Cloud atau LocalStorage
 export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
-  // 1. Ambil data lokal terlebih dahulu untuk kecepatan & fallback gambar
+  // 1. Ambil data lokal terlebih dahulu sebagai fallback instan
   let localBatches: KatalogBatch[] = [];
   const localStr = localStorage.getItem(KATALOG_STORAGE_KEY);
   if (localStr) {
     localBatches = parseStoredKatalogBatches(localStr);
   }
 
-  // 2. Ambil snapshot katalog dari Supabase Cloud wms_settings
+  // 2. Query Supabase secara PARALEL untuk kecepatan maksimum
   let cloudSettingsBatches: KatalogBatch[] = [];
-  try {
-    const settings = await fetchWmsSettings(true);
-    if (settings?.katalog_manual_data) {
-      cloudSettingsBatches = parseStoredKatalogBatches(settings.katalog_manual_data);
-    }
-  } catch (settingsErr) {
-    console.warn('Gagal fetch wms_settings katalog snapshot:', settingsErr);
-  }
+  let tableRows: any[] | null = null;
 
-  // 3. Ambil baris produk dari tabel wms_katalog
   try {
     const client = getSupabaseClient();
-    const { data, error } = await client.from('wms_katalog').select('*').order('created_at', { ascending: true });
-    
-    if (!error && data && data.length > 0) {
-      const batchMap = new Map<string, KatalogBatch>();
+    const [settingsRes, catalogRes] = await Promise.allSettled([
+      fetchWmsSettings(true),
+      client.from('wms_katalog').select('*').order('created_at', { ascending: true }),
+    ]);
 
-      // Masukkan kerangka batch dari cloudSettingsBatches atau localBatches
-      const sourceBatches = cloudSettingsBatches.length > 0 ? cloudSettingsBatches : localBatches;
-      sourceBatches.forEach((sb) => {
-        batchMap.set(sb.id, {
-          id: sb.id,
-          name: sb.name,
-          description: sb.description || '',
-          publish_online: sb.publish_online || '',
-          publish_offline: sb.publish_offline || '',
-          created_at: sb.created_at || new Date().toISOString(),
-          updated_at: sb.updated_at,
-          is_hidden: sb.is_hidden || false,
-          items: [],
-        });
-      });
-      
-      data.forEach((row: any) => {
-        const batchId = row.catalog_id || 'batch-325b';
-        const batchName = row.catalog_name || 'Katalog';
-        
-        if (!batchMap.has(batchId)) {
-          batchMap.set(batchId, {
-            id: batchId,
-            name: batchName,
-            description: row.catalog_description || '',
-            publish_online: row.catalog_publish_online || '',
-            publish_offline: row.catalog_publish_offline || '',
-            created_at: row.created_at || new Date().toISOString(),
-            is_hidden: Boolean(row.is_hidden),
-            items: [],
-          });
-        }
-        
-        const b = batchMap.get(batchId)!;
-        if (!b.description && row.catalog_description) b.description = row.catalog_description;
-        if (!b.publish_online && row.catalog_publish_online) b.publish_online = row.catalog_publish_online;
-        if (!b.publish_offline && row.catalog_publish_offline) b.publish_offline = row.catalog_publish_offline;
+    if (settingsRes.status === 'fulfilled' && settingsRes.value?.katalog_manual_data) {
+      cloudSettingsBatches = parseStoredKatalogBatches(settingsRes.value.katalog_manual_data);
+    }
 
-        // Ambil image_url lokal/snapshot jika di cloud row kosong tapi di lokal/snapshot ada
-        let rowImg = row.image_url || '';
-        if (!rowImg) {
-          const matchedBatch = sourceBatches.find((sb) => sb.id === batchId) || localBatches.find((lb) => lb.id === batchId);
-          const matchedItem = matchedBatch?.items.find((it) => it.id === row.id);
-          if (matchedItem?.image_url) {
-            rowImg = matchedItem.image_url;
-          }
-        }
-
-        // Ambil publish_online/offline dari row atau fallback snapshot/lokal jika row kosong
-        let itemOnline = row.publish_online || '';
-        let itemOffline = row.publish_offline || '';
-        if (!itemOnline || !itemOffline) {
-          const matchedBatch = sourceBatches.find((sb) => sb.id === batchId);
-          const matchedItem = matchedBatch?.items.find((it) => it.id === row.id);
-          if (!itemOnline && matchedItem?.publish_online) itemOnline = matchedItem.publish_online;
-          if (!itemOffline && matchedItem?.publish_offline) itemOffline = matchedItem.publish_offline;
-        }
-
-        b.items.push({
-          id: row.id,
-          nomor: row.nomor || '',
-          deskripsi: row.deskripsi || '',
-          price: row.price || '',
-          variants: row.variants || [],
-          image_url: rowImg,
-          catalog_id: batchId,
-          catalog_name: batchName,
-          is_hidden: row.is_hidden || false,
-          publish_online: itemOnline,
-          publish_offline: itemOffline,
-        });
-      });
-      
-      const fromCloud = Array.from(batchMap.values());
-      
-      // Simpan mirror ke local storage
-      try {
-        localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(fromCloud));
-      } catch {}
-      return fromCloud;
+    if (catalogRes.status === 'fulfilled' && !catalogRes.value.error && catalogRes.value.data) {
+      tableRows = catalogRes.value.data;
     }
   } catch (err) {
-    console.warn('Gagal fetch cloud katalog, mencoba snapshot wms_settings/local:', err);
+    console.warn('Fetch Supabase paralel gagal:', err);
+  }
+
+  // 3. Jika data tabel wms_katalog ada dari Supabase, rakit batch
+  if (tableRows && tableRows.length > 0) {
+    const batchMap = new Map<string, KatalogBatch>();
+    const sourceBatches = cloudSettingsBatches.length > 0 ? cloudSettingsBatches : localBatches;
+
+    sourceBatches.forEach((sb) => {
+      batchMap.set(sb.id, {
+        id: sb.id,
+        name: sb.name,
+        description: sb.description || '',
+        publish_online: sb.publish_online || '',
+        publish_offline: sb.publish_offline || '',
+        created_at: sb.created_at || new Date().toISOString(),
+        updated_at: sb.updated_at,
+        is_hidden: sb.is_hidden || false,
+        items: [],
+      });
+    });
+
+    tableRows.forEach((row: any) => {
+      const batchId = row.catalog_id || 'batch-325b';
+      const batchName = row.catalog_name || 'Katalog';
+
+      if (!batchMap.has(batchId)) {
+        batchMap.set(batchId, {
+          id: batchId,
+          name: batchName,
+          description: row.catalog_description || '',
+          publish_online: row.catalog_publish_online || '',
+          publish_offline: row.catalog_publish_offline || '',
+          created_at: row.created_at || new Date().toISOString(),
+          is_hidden: Boolean(row.is_hidden),
+          items: [],
+        });
+      }
+
+      const b = batchMap.get(batchId)!;
+      if (!b.description && row.catalog_description) b.description = row.catalog_description;
+      if (!b.publish_online && row.catalog_publish_online) b.publish_online = row.catalog_publish_online;
+      if (!b.publish_offline && row.catalog_publish_offline) b.publish_offline = row.catalog_publish_offline;
+
+      let rowImg = row.image_url || '';
+      if (!rowImg) {
+        const matchedBatch = sourceBatches.find((sb) => sb.id === batchId) || localBatches.find((lb) => lb.id === batchId);
+        const matchedItem = matchedBatch?.items.find((it) => it.id === row.id);
+        if (matchedItem?.image_url) {
+          rowImg = matchedItem.image_url;
+        }
+      }
+
+      let itemOnline = row.publish_online || '';
+      let itemOffline = row.publish_offline || '';
+      if (!itemOnline || !itemOffline) {
+        const matchedBatch = sourceBatches.find((sb) => sb.id === batchId);
+        const matchedItem = matchedBatch?.items.find((it) => it.id === row.id);
+        if (!itemOnline && matchedItem?.publish_online) itemOnline = matchedItem.publish_online;
+        if (!itemOffline && matchedItem?.publish_offline) itemOffline = matchedItem.publish_offline;
+      }
+
+      b.items.push({
+        id: row.id,
+        nomor: row.nomor || '',
+        deskripsi: row.deskripsi || '',
+        price: row.price || '',
+        variants: row.variants || [],
+        image_url: rowImg,
+        catalog_id: batchId,
+        catalog_name: batchName,
+        is_hidden: row.is_hidden || false,
+        publish_online: itemOnline,
+        publish_offline: itemOffline,
+      });
+    });
+
+    const fromCloud = Array.from(batchMap.values());
+    try {
+      localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(fromCloud));
+    } catch {}
+    return fromCloud;
   }
 
   // Fallback 1: Cloud Settings Snapshot dari wms_settings

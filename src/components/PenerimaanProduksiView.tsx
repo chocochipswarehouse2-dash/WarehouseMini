@@ -35,6 +35,7 @@ import {
   Image as ImageIcon,
   Cloud,
   ZoomIn,
+  Copy,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -112,6 +113,51 @@ export function groupItemsByProductModel(items: PenerimaanProduksiItem[]): Produ
     const group = map.get(key)!;
     if (!group.foto_url && it.foto_url) {
       group.foto_url = it.foto_url;
+    }
+    group.items.push(it);
+    group.totalQty += Number(it.qty) || 0;
+  });
+
+  return Array.from(map.values());
+}
+
+// 1 Surat Jalan berisi beberapa Kartu Produk (1 Produk = 1 Kode Produk yang sama)
+export interface ProductCardGroup {
+  kode_produksi: string;
+  foto_url?: string;
+  warnas: string[];
+  keterangan?: string;
+  items: PenerimaanProduksiItem[];
+  totalQty: number;
+}
+
+export function groupItemsByProductCode(items: PenerimaanProduksiItem[]): ProductCardGroup[] {
+  const map = new Map<string, ProductCardGroup>();
+
+  (items || []).forEach((it) => {
+    const kode = (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase();
+
+    if (!map.has(kode)) {
+      map.set(kode, {
+        kode_produksi: it.kode_produksi || 'Tanpa Kode',
+        foto_url: it.foto_url || '',
+        warnas: [],
+        keterangan: it.keterangan || '',
+        items: [],
+        totalQty: 0,
+      });
+    }
+
+    const group = map.get(kode)!;
+    if (!group.foto_url && it.foto_url) {
+      group.foto_url = it.foto_url;
+    }
+    const w = (it.warna || '').trim();
+    if (w && !group.warnas.includes(w)) {
+      group.warnas.push(w);
+    }
+    if (!group.keterangan && it.keterangan) {
+      group.keterangan = it.keterangan;
     }
     group.items.push(it);
     group.totalQty += Number(it.qty) || 0;
@@ -1620,8 +1666,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           </div>
 
-          {/* View Mode Switcher: Kartu (1 SJ = 1 Kartu) vs Tabel */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-2 sm:py-3 shadow-xs">
+          {/* View Mode Switcher: Kartu Produk per Surat Jalan vs Tabel */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Mode Tampilan:
@@ -1640,7 +1686,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   }`}
                 >
                   <LayoutGrid className="w-3.5 h-3.5" />
-                  <span>Kartu ({suratJalanGroups.length} SJ)</span>
+                  <span>Kartu Produk ({suratJalanGroups.length} SJ)</span>
                 </button>
                 <button
                   type="button"
@@ -1664,7 +1710,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
               <span className="hidden sm:inline">Format:</span>
               <span className="font-semibold text-slate-700 dark:text-slate-300">
                 {viewMode === 'card'
-                  ? '1 Kartu = 1 No. Surat Jalan (Ringkasan Lengkap)'
+                  ? '1 Surat Jalan berisi Kartu-Kartu Produk (1 Produk = 1 Kartu)'
                   : '1 Baris = 1 Varian Produk (Tabel Detail)'}
               </span>
             </div>
@@ -1672,8 +1718,43 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
           {/* Conditional View: Card vs Table */}
           {viewMode === 'card' ? (
-            /* Card View Layout (1 Kartu = 1 No. Surat Jalan) */
+            /* Card View Layout: 1 Surat Jalan Container = Kumpulan Kartu Produk (1 Produk = 1 Kode Produk) */
             <div className="space-y-4">
+              {/* Quick Toolbar for SJ Cards */}
+              {suratJalanGroups.length > 0 && !isLoading && (
+                <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+                  <span>
+                    Menampilkan <strong className="text-slate-700 dark:text-slate-200">{paginatedCards.length}</strong> dari{' '}
+                    <strong className="text-slate-700 dark:text-slate-200">{suratJalanGroups.length}</strong> Surat Jalan
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next: Record<string, boolean> = {};
+                        paginatedCards.forEach((g) => { next[g.no_surat_jalan] = true; });
+                        setExpandedCards(next);
+                      }}
+                      className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      Buka Semua SJ
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next: Record<string, boolean> = {};
+                        paginatedCards.forEach((g) => { next[g.no_surat_jalan] = false; });
+                        setExpandedCards(next);
+                      }}
+                      className="text-xs font-bold text-slate-500 hover:underline cursor-pointer"
+                    >
+                      Tutup Semua SJ
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {isLoading ? (
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 shadow-xs">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
@@ -1689,153 +1770,112 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+                <div className="space-y-5">
                   {paginatedCards.map((group) => {
-                    const heroPhoto = group.items.find((i) => i.foto_url)?.foto_url;
+                    const productCards = groupItemsByProductCode(group.items);
                     const isExpanded = expandedCards[group.no_surat_jalan] !== false;
 
                     return (
                       <div
                         key={group.no_surat_jalan}
-                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700/60 transition duration-150 flex flex-col justify-between group"
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4 hover:border-emerald-300 dark:hover:border-emerald-700/60 transition"
                       >
-                        <div>
-                          {/* Card Media Header / Photo Banner */}
-                          <div className="relative h-44 sm:h-48 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden group/img">
-                            {heroPhoto ? (
-                              <>
-                                <img
-                                  src={heroPhoto}
-                                  alt={group.no_surat_jalan}
-                                  className="w-full h-full object-cover group-hover/img:scale-105 transition duration-300"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setLightboxImage({
-                                      url: heroPhoto,
-                                      title: `Surat Jalan: ${group.no_surat_jalan}`,
-                                      subtitle: `${group.kategori} • ${group.tanggal_penerimaan} • Total ${group.totalPcs} pcs`,
-                                    })
-                                  }
-                                  className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition backdrop-blur-xs cursor-pointer opacity-90"
-                                  title="Lihat Foto Utama"
-                                >
-                                  <ZoomIn className="w-4 h-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-800/80 text-slate-400 p-4">
-                                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-700/80 shadow-xs flex items-center justify-center mb-1 text-slate-400">
-                                  {group.kategori === 'Lokal CMT' ? (
-                                    <Truck className="w-6 h-6 text-blue-500" />
-                                  ) : (
-                                    <Package className="w-6 h-6 text-amber-500" />
-                                  )}
-                                </div>
-                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                  {group.kategori}
-                                </span>
-                              </div>
-                            )}
+                        {/* Surat Jalan Master Header Banner */}
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-slate-200/80 dark:border-slate-800">
+                          <div className="flex items-start sm:items-center gap-3 flex-wrap">
+                            {/* Kategori Badge */}
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black shadow-xs ${
+                                group.kategori === 'Lokal CMT'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-amber-600 text-white'
+                              }`}
+                            >
+                              <span>{group.kategori === 'Lokal CMT' ? '🏭' : '🚚'}</span>
+                              <span>{group.kategori}</span>
+                            </span>
 
-                            {/* Category Badge Top Left */}
-                            <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5">
-                              <span
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide shadow-xs ${
-                                  group.kategori === 'Lokal CMT'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-amber-600 text-white'
-                                }`}
+                            {/* No Surat Jalan */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">No. Surat Jalan:</span>
+                              <h3 className="text-base sm:text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight">
+                                {group.no_surat_jalan}
+                              </h3>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(group.no_surat_jalan);
+                                  onShowToast(`Disalin: ${group.no_surat_jalan}`, 'info');
+                                }}
+                                className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                title="Salin No. Surat Jalan"
                               >
-                                <span>{group.kategori === 'Lokal CMT' ? '🏭' : '🚚'}</span>
-                                <span>{group.kategori}</span>
-                              </span>
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
                             </div>
 
-                            {/* Total Pcs Badge Top Right */}
-                            <div className="absolute top-2.5 right-2.5 z-10">
-                              <span className="px-3 py-1 rounded-full bg-emerald-600 text-white font-black text-xs shadow-xs border border-emerald-400/30">
-                                {group.totalPcs.toLocaleString()} pcs
+                            {/* Date & Operator */}
+                            <div className="flex items-center gap-2.5 text-xs text-slate-500 flex-wrap">
+                              <span className="inline-flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-300">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                {group.tanggal_penerimaan}
                               </span>
+                              {group.operator && (
+                                <span className="inline-flex items-center gap-1 text-slate-500">
+                                  • Op: <span className="font-semibold text-slate-700 dark:text-slate-300">{group.operator}</span>
+                                </span>
+                              )}
                             </div>
 
-                            {/* Date Badge Bottom Left over Image */}
-                            <div className="absolute bottom-2.5 left-2.5 z-10 text-white drop-shadow-md">
-                              <div className="flex items-center gap-1 text-[11px] font-bold">
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>{group.tanggal_penerimaan}</span>
-                              </div>
-                            </div>
+                            {/* Catatan SJ if any */}
+                            {group.keterangan && (
+                              <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg italic">
+                                "{group.keterangan}"
+                              </span>
+                            )}
                           </div>
 
-                          {/* Card Info Content */}
-                          <div className="p-3.5 space-y-3">
-                            {/* No Surat Jalan Header & Quick Actions */}
-                            <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
-                              <div>
-                                <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                                  No. Surat Jalan
-                                </span>
-                                <h3 className="text-base font-mono font-black text-slate-900 dark:text-white tracking-tight">
-                                  {group.no_surat_jalan}
-                                </h3>
-                                {group.operator && (
-                                  <span className="text-[11px] text-slate-400">
-                                    Op: <span className="font-semibold text-slate-600 dark:text-slate-300">{group.operator}</span>
-                                  </span>
-                                )}
-                              </div>
+                          {/* Right side: Summary Stats & Actions */}
+                          <div className="flex items-center gap-2 self-end lg:self-auto flex-wrap">
+                            <span className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-xs font-black">
+                              {productCards.length} Produk • {group.totalPcs.toLocaleString()} Pcs
+                            </span>
 
-                              {/* Action Buttons */}
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => handlePrintSJ(group)}
-                                  disabled={isGeneratingPdf}
-                                  className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition cursor-pointer"
-                                  title="Cetak PDF Surat Jalan"
-                                >
-                                  <Printer className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenShare(group.no_surat_jalan)}
-                                  className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition cursor-pointer"
-                                  title="Bagikan Surat Jalan"
-                                >
-                                  <Share2 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditBatch(group.no_surat_jalan)}
-                                  className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition cursor-pointer"
-                                  title="Edit Surat Jalan"
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleConfirmDeleteBatch(group.no_surat_jalan)}
-                                  className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition cursor-pointer"
-                                  title="Hapus Surat Jalan"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Global Notes if any */}
-                            {group.keterangan && (
-                              <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
-                                <span className="font-bold text-slate-400 text-[10px] uppercase block">Catatan SJ:</span>
-                                <span className="italic">{group.keterangan}</span>
-                              </div>
-                            )}
-
-                            {/* Items Section (Collapsible) */}
-                            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-800/30">
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handlePrintSJ(group)}
+                                disabled={isGeneratingPdf}
+                                className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition cursor-pointer"
+                                title="Cetak PDF Surat Jalan"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenShare(group.no_surat_jalan)}
+                                className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition cursor-pointer"
+                                title="Bagikan Surat Jalan"
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditBatch(group.no_surat_jalan)}
+                                className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition cursor-pointer"
+                                title="Edit Surat Jalan"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmDeleteBatch(group.no_surat_jalan)}
+                                className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition cursor-pointer"
+                                title="Hapus Surat Jalan"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1844,91 +1884,126 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                     [group.no_surat_jalan]: !isExpanded,
                                   }))
                                 }
-                                className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition cursor-pointer"
+                                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                                title={isExpanded ? 'Sembunyikan Kartu Produk' : 'Tampilkan Kartu Produk'}
                               >
-                                <span>
-                                  Daftar Barang ({group.uniqueKodeCount} Model • {group.items.length} Baris)
-                                </span>
-                                {isExpanded ? (
-                                  <ChevronUp className="w-4 h-4 text-slate-400" />
-                                ) : (
-                                  <ChevronDown className="w-4 h-4 text-slate-400" />
-                                )}
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                               </button>
+                            </div>
+                          </div>
+                        </div>
 
-                              {isExpanded && (
-                                <div className="p-2.5 space-y-2.5 max-h-72 overflow-y-auto">
-                                  {groupItemsByProductModel(group.items).map((prod) => (
-                                    <div
-                                      key={prod.key}
-                                      className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-2xs hover:border-emerald-300 dark:hover:border-emerald-700/60 transition"
-                                    >
-                                      {/* Product Header inside Batch */}
-                                      <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                          {prod.foto_url ? (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setLightboxImage({
-                                                  url: prod.foto_url!,
-                                                  title: `Kode: ${prod.kode_produksi}`,
-                                                  subtitle: `Warna: ${prod.warna} • Total ${prod.totalQty} pcs • SJ: ${group.no_surat_jalan}`,
-                                                })
-                                              }
-                                              className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 hover:ring-2 hover:ring-emerald-500 transition cursor-pointer shadow-2xs"
-                                              title="Lihat Foto Produk"
-                                            >
-                                              <img
-                                                src={prod.foto_url}
-                                                alt={prod.kode_produksi}
-                                                className="w-full h-full object-cover"
-                                              />
-                                            </button>
-                                          ) : (
-                                            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
-                                              <Package className="w-4 h-4 text-slate-400" />
-                                            </div>
-                                          )}
-
-                                          <div className="min-w-0">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="font-mono font-black text-xs text-slate-900 dark:text-white uppercase tracking-tight">
-                                                {prod.kode_produksi}
-                                              </span>
-                                              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700">
-                                                {prod.warna || '-'}
-                                              </span>
-                                            </div>
-                                            <span className="text-[10px] text-slate-400 block font-medium">
-                                              {prod.items.length} Size Variant
-                                            </span>
-                                          </div>
+                        {/* KARTU-KARTU PRODUK (1 Produk = 1 Kode Produk yang sama) */}
+                        {isExpanded && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4 pt-1">
+                            {productCards.map((prod) => (
+                              <div
+                                key={prod.kode_produksi}
+                                className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-md hover:border-emerald-400 dark:hover:border-emerald-600 transition flex flex-col justify-between"
+                              >
+                                <div>
+                                  {/* Foto Produk Header */}
+                                  <div className="relative h-40 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden group/pimg">
+                                    {prod.foto_url ? (
+                                      <>
+                                        <img
+                                          src={prod.foto_url}
+                                          alt={prod.kode_produksi}
+                                          className="w-full h-full object-cover group-hover/pimg:scale-105 transition duration-300"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setLightboxImage({
+                                              url: prod.foto_url!,
+                                              title: `Kode: ${prod.kode_produksi}`,
+                                              subtitle: `${prod.warnas.join(', ')} • ${prod.totalQty} pcs • SJ: ${group.no_surat_jalan}`,
+                                            })
+                                          }
+                                          className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition backdrop-blur-xs cursor-pointer opacity-90"
+                                          title="Perbesar Foto Produk"
+                                        >
+                                          <ZoomIn className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-4">
+                                        <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-700 shadow-xs flex items-center justify-center mb-1 text-slate-400">
+                                          <Package className="w-5 h-5" />
                                         </div>
-
-                                        <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800 shrink-0">
-                                          {prod.totalQty.toLocaleString()} pcs
-                                        </span>
+                                        <span className="text-[10px] font-bold text-slate-400">Belum Ada Foto</span>
                                       </div>
+                                    )}
 
-                                      {/* Size Variant Badges Matrix */}
-                                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
-                                        {prod.items.map((it, idx) => (
+                                    {/* Total Qty Badge Top Right */}
+                                    <div className="absolute top-2.5 right-2.5 z-10">
+                                      <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-black text-xs shadow-xs border border-emerald-400/30">
+                                        {prod.totalQty.toLocaleString()} pcs
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Info Produk Body */}
+                                  <div className="p-3.5 space-y-2.5">
+                                    {/* Kode Produk Title */}
+                                    <div>
+                                      <span className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider">
+                                        Kode Produk
+                                      </span>
+                                      <h4 className="text-sm font-mono font-black text-slate-900 dark:text-white uppercase tracking-tight break-all">
+                                        {prod.kode_produksi}
+                                      </h4>
+                                    </div>
+
+                                    {/* Warna Badges */}
+                                    {prod.warnas.length > 0 && (
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {prod.warnas.map((w) => (
+                                          <span
+                                            key={w}
+                                            className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-2xs"
+                                          >
+                                            {w}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Catatan khusus produk if any */}
+                                    {prod.keterangan && (
+                                      <p className="text-[11px] text-slate-500 italic bg-white dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                                        "{prod.keterangan}"
+                                      </p>
+                                    )}
+
+                                    {/* Matrix Varian Ukuran & Qty */}
+                                    <div className="space-y-1.5 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70">
+                                      <span className="block text-[10px] font-bold text-slate-500 uppercase">
+                                        Varian Size &amp; Qty:
+                                      </span>
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        {prod.items.map((it, vIdx) => (
                                           <div
-                                            key={it.id || idx}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/80 text-[11px] font-bold"
+                                            key={it.id || vIdx}
+                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold shadow-2xs"
                                           >
                                             <span className="text-indigo-600 dark:text-indigo-400">
                                               {it.size || 'S'}
                                             </span>
+                                            {prod.warnas.length > 1 && (
+                                              <span className="text-[10px] text-slate-400 font-normal">
+                                                ({it.warna})
+                                              </span>
+                                            )}
                                             <span className="text-slate-300 dark:text-slate-600">:</span>
                                             <span className="text-slate-900 dark:text-white font-black">
-                                              {it.qty} pcs
+                                              {it.qty}
                                             </span>
                                             <button
                                               type="button"
                                               onClick={() => handleConfirmDeleteSingle(it)}
-                                              className="ml-0.5 text-slate-300 hover:text-rose-500 transition cursor-pointer"
+                                              className="ml-1 text-slate-300 hover:text-rose-500 transition cursor-pointer"
                                               title="Hapus varian ini"
                                             >
                                               <Trash2 className="w-3 h-3" />
@@ -1937,27 +2012,22 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                         ))}
                                       </div>
                                     </div>
-                                  ))}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* Card Footer */}
-                        <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-400 font-medium">
-                            {group.uniqueKodeCount} Model • {group.items.length} Baris
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handlePrintSJ(group)}
-                            className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                          >
-                            <Printer className="w-3 h-3" />
-                            <span>Cetak PDF</span>
-                          </button>
-                        </div>
+                                {/* Footer Kartu Produk */}
+                                <div className="px-3.5 py-2 bg-white dark:bg-slate-900/80 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-400 font-medium">
+                                    {prod.items.length} Baris Varian
+                                  </span>
+                                  <span className="font-black text-emerald-600 dark:text-emerald-400">
+                                    Total {prod.totalQty} pcs
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
