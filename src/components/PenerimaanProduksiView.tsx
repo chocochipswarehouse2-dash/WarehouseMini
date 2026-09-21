@@ -36,6 +36,8 @@ import {
   Cloud,
   ZoomIn,
   Copy,
+  QrCode,
+  EyeOff,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -45,7 +47,10 @@ import {
   PenerimaanProdukBlock,
   PenerimaanVariantItem,
   SimpanPenerimaanPayload,
+  KatalogItem,
 } from '../types';
+import { PenerimaanProductCardItem } from './penerimaan/PenerimaanProductCardItem';
+import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { globalRealtimeStore } from '../services/store';
 import {
   fetchPenerimaanProduksiFromSupabase,
@@ -248,14 +253,21 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
   // Delete Confirm Modal
   const [deletingTarget, setDeletingTarget] = useState<{
-    type: 'single' | 'batch';
+    type: 'single' | 'batch' | 'product';
     id?: string | number;
     no_surat_jalan: string;
     kode_produksi?: string;
+    items?: PenerimaanProduksiItem[];
     totalRows?: number;
     totalQty?: number;
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Barcode Print Modal Target
+  const [barcodeModalTarget, setBarcodeModalTarget] = useState<KatalogItem | null>(null);
+
+  // Toggle Tabel Varian per Kartu Produk (Key: `${no_surat_jalan}___${kode_produksi}`)
+  const [cardTableVisible, setCardTableVisible] = useState<Record<string, boolean>>({});
 
   // Share Modal
   const [shareModal, setShareModal] = useState<{
@@ -1000,6 +1012,62 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     });
   };
 
+  // Konfirmasi hapus seluruh varian dari satu kartu produk
+  const handleConfirmDeleteProduct = (group: SuratJalanGroup, prod: ProductCardGroup) => {
+    setDeletingTarget({
+      type: 'product',
+      no_surat_jalan: group.no_surat_jalan,
+      kode_produksi: prod.kode_produksi,
+      items: prod.items,
+      totalRows: prod.items.length,
+      totalQty: prod.totalQty,
+    });
+  };
+
+  // Cetak Barcode Thermal untuk 1 kartu produk (seperti di Katalog)
+  const handlePrintProductBarcode = (group: SuratJalanGroup, prod: ProductCardGroup) => {
+    const cleanCode = prod.kode_produksi.trim().toUpperCase();
+    const matched = (productCatalog || []).find((p) => {
+      const pSku = typeof p.k === 'string' ? p.k : typeof p.sku === 'string' ? (p.sku as string) : '';
+      const pCode = typeof p.kode_produksi === 'string' ? (p.kode_produksi as string) : '';
+      return (
+        (pCode && pCode.trim().toUpperCase() === cleanCode) ||
+        (pSku && pSku.trim().toUpperCase() === cleanCode)
+      );
+    });
+
+    const pName: string =
+      matched && typeof matched.nama_produk === 'string'
+        ? matched.nama_produk
+        : matched && typeof matched.n === 'string'
+        ? matched.n
+        : prod.kode_produksi;
+
+    const pPrice: string =
+      matched && (typeof matched.harga_jual === 'number' || typeof matched.harga_jual === 'string')
+        ? String(matched.harga_jual)
+        : matched && (typeof matched.price === 'number' || typeof matched.price === 'string')
+        ? String(matched.price)
+        : '';
+
+    const barcodeItem: KatalogItem = {
+      id: `PROD-${prod.kode_produksi}`,
+      nomor: prod.kode_produksi,
+      deskripsi: pName,
+      price: pPrice,
+      catalog_name: group.no_surat_jalan,
+      image_url: prod.foto_url || '',
+      variants: prod.items.map((it) => ({
+        warna: it.warna || '-',
+        size: it.size || 'Default',
+        sku: `${prod.kode_produksi}-${(it.warna || 'DEF').slice(0, 3).toUpperCase()}-${it.size || 'S'}`,
+        qty: it.qty || 1,
+      })),
+    };
+
+    setBarcodeModalTarget(barcodeItem);
+  };
+
   // Execute Delete
   const handleExecuteDelete = async () => {
     if (!deletingTarget) return;
@@ -1008,6 +1076,18 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     const prevList = [...dataList];
     if (deletingTarget.type === 'single' && deletingTarget.id) {
       setDataList((prev) => prev.filter((it) => it.id !== deletingTarget.id));
+    } else if (deletingTarget.type === 'product' && deletingTarget.kode_produksi) {
+      const cleanSJ = (deletingTarget.no_surat_jalan || '').trim().toUpperCase();
+      const cleanKode = (deletingTarget.kode_produksi || '').trim().toUpperCase();
+      setDataList((prev) =>
+        prev.filter(
+          (it) =>
+            !(
+              (it.no_surat_jalan || '').trim().toUpperCase() === cleanSJ &&
+              (it.kode_produksi || '').trim().toUpperCase() === cleanKode
+            )
+        )
+      );
     } else if (deletingTarget.type === 'batch') {
       setDataList((prev) => prev.filter((it) => it.no_surat_jalan !== deletingTarget.no_surat_jalan));
     }
@@ -1016,6 +1096,16 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       if (deletingTarget.type === 'single' && deletingTarget.id) {
         await hapusPenerimaanProduksiSingleRowFromSupabase(deletingTarget.id);
         onShowToast('1 baris item penerimaan berhasil dihapus.', 'success');
+      } else if (deletingTarget.type === 'product' && deletingTarget.items) {
+        for (const it of deletingTarget.items) {
+          if (it.id) {
+            await hapusPenerimaanProduksiSingleRowFromSupabase(it.id);
+          }
+        }
+        onShowToast(
+          `Seluruh varian produk ${deletingTarget.kode_produksi} (${deletingTarget.totalQty} pcs) berhasil dihapus!`,
+          'success'
+        );
       } else if (deletingTarget.type === 'batch') {
         await hapusBatchPenerimaanProduksiFromSupabase(deletingTarget.no_surat_jalan);
         onShowToast(
@@ -1893,139 +1983,45 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           </div>
                         </div>
 
-                        {/* KARTU-KARTU PRODUK (1 Produk = 1 Kode Produk yang sama) */}
+                        {/* KARTU-KARTU PRODUK (1 Surat Jalan = beberapa kartu produk, standar tinggi & scrollable) */}
                         {isExpanded && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4 pt-1">
-                            {productCards.map((prod) => (
-                              <div
-                                key={prod.kode_produksi}
-                                className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-md hover:border-emerald-400 dark:hover:border-emerald-600 transition flex flex-col justify-between"
-                              >
-                                <div>
-                                  {/* Foto Produk Header */}
-                                  <div className="relative h-40 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden group/pimg">
-                                    {prod.foto_url ? (
-                                      <>
-                                        <img
-                                          src={prod.foto_url}
-                                          alt={prod.kode_produksi}
-                                          className="w-full h-full object-cover group-hover/pimg:scale-105 transition duration-300"
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setLightboxImage({
-                                              url: prod.foto_url!,
-                                              title: `Kode: ${prod.kode_produksi}`,
-                                              subtitle: `${prod.warnas.join(', ')} • ${prod.totalQty} pcs • SJ: ${group.no_surat_jalan}`,
-                                            })
-                                          }
-                                          className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition backdrop-blur-xs cursor-pointer opacity-90"
-                                          title="Perbesar Foto Produk"
-                                        >
-                                          <ZoomIn className="w-3.5 h-3.5" />
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-4">
-                                        <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-700 shadow-xs flex items-center justify-center mb-1 text-slate-400">
-                                          <Package className="w-5 h-5" />
-                                        </div>
-                                        <span className="text-[10px] font-bold text-slate-400">Belum Ada Foto</span>
-                                      </div>
-                                    )}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 pt-2">
+                            {productCards.map((prod) => {
+                              const cardKey = `${group.no_surat_jalan}___${prod.kode_produksi}`;
+                              const isTableVisible =
+                                cardTableVisible[cardKey] !== undefined ? cardTableVisible[cardKey] : true;
 
-                                    {/* Total Qty Badge Top Right */}
-                                    <div className="absolute top-2.5 right-2.5 z-10">
-                                      <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-black text-xs shadow-xs border border-emerald-400/30">
-                                        {prod.totalQty.toLocaleString()} pcs
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  {/* Info Produk Body */}
-                                  <div className="p-3.5 space-y-2.5">
-                                    {/* Kode Produk Title */}
-                                    <div>
-                                      <span className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider">
-                                        Kode Produk
-                                      </span>
-                                      <h4 className="text-sm font-mono font-black text-slate-900 dark:text-white uppercase tracking-tight break-all">
-                                        {prod.kode_produksi}
-                                      </h4>
-                                    </div>
-
-                                    {/* Warna Badges */}
-                                    {prod.warnas.length > 0 && (
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        {prod.warnas.map((w) => (
-                                          <span
-                                            key={w}
-                                            className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-2xs"
-                                          >
-                                            {w}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-
-                                    {/* Catatan khusus produk if any */}
-                                    {prod.keterangan && (
-                                      <p className="text-[11px] text-slate-500 italic bg-white dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-                                        "{prod.keterangan}"
-                                      </p>
-                                    )}
-
-                                    {/* Matrix Varian Ukuran & Qty */}
-                                    <div className="space-y-1.5 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70">
-                                      <span className="block text-[10px] font-bold text-slate-500 uppercase">
-                                        Varian Size &amp; Qty:
-                                      </span>
-                                      <div className="flex flex-wrap items-center gap-1.5">
-                                        {prod.items.map((it, vIdx) => (
-                                          <div
-                                            key={it.id || vIdx}
-                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold shadow-2xs"
-                                          >
-                                            <span className="text-indigo-600 dark:text-indigo-400">
-                                              {it.size || 'S'}
-                                            </span>
-                                            {prod.warnas.length > 1 && (
-                                              <span className="text-[10px] text-slate-400 font-normal">
-                                                ({it.warna})
-                                              </span>
-                                            )}
-                                            <span className="text-slate-300 dark:text-slate-600">:</span>
-                                            <span className="text-slate-900 dark:text-white font-black">
-                                              {it.qty}
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleConfirmDeleteSingle(it)}
-                                              className="ml-1 text-slate-300 hover:text-rose-500 transition cursor-pointer"
-                                              title="Hapus varian ini"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Footer Kartu Produk */}
-                                <div className="px-3.5 py-2 bg-white dark:bg-slate-900/80 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-[11px]">
-                                  <span className="text-slate-400 font-medium">
-                                    {prod.items.length} Baris Varian
-                                  </span>
-                                  <span className="font-black text-emerald-600 dark:text-emerald-400">
-                                    Total {prod.totalQty} pcs
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
+                              return (
+                                <PenerimaanProductCardItem
+                                  key={prod.kode_produksi}
+                                  prod={prod}
+                                  group={group}
+                                  productCatalog={productCatalog}
+                                  isTableVisible={isTableVisible}
+                                  onToggleTable={() =>
+                                    setCardTableVisible((prev) => ({
+                                      ...prev,
+                                      [cardKey]: !isTableVisible,
+                                    }))
+                                  }
+                                  onPrintBarcode={() => handlePrintProductBarcode(group, prod)}
+                                  onOpenLightbox={() => {
+                                    if (prod.foto_url) {
+                                      setLightboxImage({
+                                        url: prod.foto_url,
+                                        title: `Kode: ${prod.kode_produksi}`,
+                                        subtitle: `${prod.warnas.join(', ')} • ${prod.totalQty} pcs • SJ: ${group.no_surat_jalan}`,
+                                      });
+                                    } else {
+                                      onShowToast(`Belum ada foto untuk produk ${prod.kode_produksi}`, 'info');
+                                    }
+                                  }}
+                                  onEditProduct={() => handleOpenEditBatch(group.no_surat_jalan)}
+                                  onDeleteProduct={() => handleConfirmDeleteProduct(group, prod)}
+                                  onDeleteVariant={(it) => handleConfirmDeleteSingle(it)}
+                                />
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2885,30 +2881,35 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-start gap-3.5">
-              <div className="p-3 rounded-2xl bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400">
+              <div className="p-3 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 shrink-0">
                 <AlertTriangle className="w-6 h-6" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
                   Konfirmasi Hapus Data
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
                   {deletingTarget.type === 'single'
                     ? `Apakah Anda yakin ingin menghapus 1 baris item: ${deletingTarget.kode_produksi}?`
+                    : deletingTarget.type === 'product'
+                    ? `Apakah Anda yakin ingin menghapus SELURUH varian produk ${deletingTarget.kode_produksi} (${deletingTarget.totalQty} pcs) dari Surat Jalan ${deletingTarget.no_surat_jalan}?`
                     : `Apakah Anda yakin ingin menghapus SELURUH data Surat Jalan ${deletingTarget.no_surat_jalan} (${deletingTarget.totalRows} baris, ${deletingTarget.totalQty} pcs)?`}
                 </p>
                 <div className="mt-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-[11px] text-slate-600 dark:text-slate-300 font-mono">
                   No Surat Jalan: {deletingTarget.no_surat_jalan}
+                  {deletingTarget.kode_produksi && (
+                    <div className="mt-0.5 font-bold">Produk: {deletingTarget.kode_produksi}</div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-3 flex items-center justify-end gap-2.5">
+            <div className="mt-4 flex items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setDeletingTarget(null)}
                 disabled={isDeleting}
-                className="px-2 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition cursor-pointer"
               >
                 Batal
               </button>
@@ -2916,7 +2917,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 type="button"
                 onClick={handleExecuteDelete}
                 disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 px-2 py-2 rounded-xl text-xs font-black text-white bg-primary-600 hover:bg-primary-700 shadow-md shadow-primary-600/30 transition disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/30 transition disabled:opacity-50 cursor-pointer"
               >
                 {isDeleting ? (
                   <>
@@ -2930,30 +2931,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   </>
                 )}
               </button>
-          </div>
-          
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </button>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* ========================================================
@@ -3283,6 +3263,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL CETAK BARCODE / LABEL THERMAL PRODUK (Sama seperti di Katalog) */}
+      <KatalogBarcodeModal
+        isOpen={Boolean(barcodeModalTarget)}
+        onClose={() => setBarcodeModalTarget(null)}
+        item={barcodeModalTarget}
+        onNotify={(msg, type) => onShowToast(msg, type)}
+      />
     </div>
   );
 };
