@@ -12,6 +12,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { KatalogBatch } from '../../types';
+import { compareKatalogBatches } from './katalogStorage';
 
 interface KatalogFilterDropdownProps {
   batches: KatalogBatch[];
@@ -53,11 +54,12 @@ export const KatalogFilterDropdown: React.FC<KatalogFilterDropdownProps> = ({
     };
   }, [isOpen]);
 
-  // Filtered batches inside dropdown search
+  // Filtered batches inside dropdown search (urutkan terbaru -> terlama berdasarkan angka batch)
   const filteredBatches = useMemo(() => {
-    if (!searchQuery.trim()) return batches;
-    const q = searchQuery.toLowerCase().trim();
-    return batches.filter((b) => b.name.toLowerCase().includes(q));
+    const list = !searchQuery.trim()
+      ? batches
+      : batches.filter((b) => b.name.toLowerCase().includes(searchQuery.toLowerCase().trim()));
+    return [...list].sort((a, b) => compareKatalogBatches(a, b, 'newest'));
   }, [batches, searchQuery]);
 
   const isAllSelected = selectedCatalogIds.length === batches.length && batches.length > 0;

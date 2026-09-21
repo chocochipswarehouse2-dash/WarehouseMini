@@ -7,6 +7,85 @@ import { syncAndMigrateKatalogImagesToGdrive } from '../../services/katalogGdriv
 
 export const KATALOG_STORAGE_KEY = 'wms_katalog_manual_data';
 
+export type KatalogSortOrder = 'newest' | 'oldest' | 'name_asc' | 'name_desc';
+
+// Helper parse nomor utama dan suffix huruf dari nama batch/katalog
+// Contoh: "325 B" -> num: 325, suffix: "B"
+// Contoh: "Katalog 328 B" -> num: 328, suffix: "B"
+// Contoh: "Batch 330" -> num: 330, suffix: ""
+export function parseBatchNumberAndSuffix(name: string): { num: number; suffix: string; raw: string } {
+  const clean = (name || '').trim();
+  const match = clean.match(/(\d+(?:\.\d+)?)\s*([A-Za-z]+)?/);
+  if (match) {
+    const num = parseFloat(match[1]);
+    const suffix = (match[2] || '').trim().toUpperCase();
+    return { num, suffix, raw: clean };
+  }
+  return { num: -1, suffix: '', raw: clean };
+}
+
+// Pembanding dua batch katalog: default 'newest' (angka terbesar di paling atas)
+export function compareKatalogBatches(
+  a: KatalogBatch,
+  b: KatalogBatch,
+  sortOrder: KatalogSortOrder = 'newest'
+): number {
+  if (sortOrder === 'name_asc') {
+    return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+  }
+  if (sortOrder === 'name_desc') {
+    return (b.name || '').localeCompare(a.name || '', undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  const pA = parseBatchNumberAndSuffix(a.name || '');
+  const pB = parseBatchNumberAndSuffix(b.name || '');
+
+  // Jika kedua batch memiliki nomor angka
+  if (pA.num >= 0 && pB.num >= 0) {
+    if (pA.num !== pB.num) {
+      // Semakin besar angka -> semakin baru
+      // 'newest': angka besar di atas (descending)
+      // 'oldest': angka kecil di atas (ascending)
+      return sortOrder === 'newest' ? pB.num - pA.num : pA.num - pB.num;
+    }
+    // Jika angkanya sama (misal 328 A vs 328 B)
+    if (pA.suffix !== pB.suffix) {
+      return sortOrder === 'newest'
+        ? pB.suffix.localeCompare(pA.suffix)
+        : pA.suffix.localeCompare(pB.suffix);
+    }
+  } else if (pA.num >= 0 && pB.num < 0) {
+    return -1; // Batch yang memiliki angka diprioritaskan lebih dulu
+  } else if (pA.num < 0 && pB.num >= 0) {
+    return 1;
+  }
+
+  // Fallback ke created_at jika ada
+  if (a.created_at && b.created_at) {
+    const timeA = new Date(a.created_at).getTime() || 0;
+    const timeB = new Date(b.created_at).getTime() || 0;
+    if (timeA !== timeB) {
+      return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
+    }
+  }
+
+  return sortOrder === 'newest'
+    ? (b.name || '').localeCompare(a.name || '', undefined, { numeric: true })
+    : (a.name || '').localeCompare(b.name || '', undefined, { numeric: true });
+}
+
+// Helper urutkan item di dalam batch secara natural berdasarkan nomor model
+export function sortKatalogItems(items: KatalogItem[]): KatalogItem[] {
+  return [...items].sort((a, b) => {
+    const numA = parseFloat(String(a.nomor || '').replace(/[^\d.]/g, ''));
+    const numB = parseFloat(String(b.nomor || '').replace(/[^\d.]/g, ''));
+    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+      return numA - numB;
+    }
+    return String(a.nomor || '').localeCompare(String(b.nomor || ''), undefined, { numeric: true });
+  });
+}
+
 // Helper kompresi gambar Data URI ke canvas agar hemat storage (<40KB per gambar)
 export async function compressImageDataUri(dataUri: string, maxWidth = 700, quality = 0.8): Promise<string> {
   if (!dataUri || !dataUri.startsWith('data:image')) {
@@ -51,7 +130,7 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
 
     // Format Baru: Array of KatalogBatch ({ id, name, items: [...] })
     if ('items' in parsed[0] && 'name' in parsed[0]) {
-      return parsed.map((b: any, idx: number) => ({
+      const batches = parsed.map((b: any, idx: number) => ({
         id: b.id || `batch-${idx + 1}`,
         name: b.name || `Katalog ${idx + 1}`,
         description: b.description || '',
@@ -60,15 +139,16 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
         created_at: b.created_at || new Date().toISOString(),
         updated_at: b.updated_at,
         is_hidden: Boolean(b.is_hidden),
-        items: (b.items || []).map((it: any) => ({
+        items: sortKatalogItems((b.items || []).map((it: any) => ({
           ...it,
           catalog_id: it.catalog_id || b.id || `batch-${idx + 1}`,
           catalog_name: it.catalog_name || b.name || `Katalog ${idx + 1}`,
           is_hidden: Boolean(it.is_hidden),
           publish_online: it.publish_online || '',
           publish_offline: it.publish_offline || '',
-        })),
+        }))),
       }));
+      return batches.sort((a, b) => compareKatalogBatches(a, b, 'newest'));
     }
 
     // Format Lama: Flat array of KatalogItem -> Bungkus ke batch default "325 B"
@@ -343,7 +423,9 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
       });
     });
 
-    const fromCloud = Array.from(batchMap.values());
+    const fromCloud = Array.from(batchMap.values())
+      .map((b) => ({ ...b, items: sortKatalogItems(b.items) }))
+      .sort((a, b) => compareKatalogBatches(a, b, 'newest'));
     try {
       localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(fromCloud));
     } catch {}
@@ -352,15 +434,20 @@ export async function loadKatalogBatches(): Promise<KatalogBatch[]> {
 
   // Fallback 1: Cloud Settings Snapshot dari wms_settings
   if (cloudSettingsBatches.length > 0) {
+    const sorted = cloudSettingsBatches
+      .map((b) => ({ ...b, items: sortKatalogItems(b.items) }))
+      .sort((a, b) => compareKatalogBatches(a, b, 'newest'));
     try {
-      localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(cloudSettingsBatches));
+      localStorage.setItem(KATALOG_STORAGE_KEY, JSON.stringify(sorted));
     } catch {}
-    return cloudSettingsBatches;
+    return sorted;
   }
 
   // Fallback 2: LocalStorage
   if (localBatches.length > 0) {
-    return localBatches;
+    return localBatches
+      .map((b) => ({ ...b, items: sortKatalogItems(b.items) }))
+      .sort((a, b) => compareKatalogBatches(a, b, 'newest'));
   }
 
   // Fallback 3: Default initial data 325B

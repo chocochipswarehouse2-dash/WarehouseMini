@@ -36,6 +36,7 @@ import {
   Globe,
   Store,
   Calendar,
+  ArrowUpDown,
 } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import JSZip from 'jszip';
@@ -52,6 +53,9 @@ import {
   compressImageDataUri,
   extractCatalogNameFromFilename,
   getDefaultInitialBatch,
+  compareKatalogBatches,
+  sortKatalogItems,
+  KatalogSortOrder,
 } from './katalog/katalogStorage';
 import { KatalogUploadModal } from './katalog/KatalogUploadModal';
 import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
@@ -106,6 +110,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
   // Filter & Tampilan
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<KatalogSortOrder>('newest');
   const [channelFilter, setChannelFilter] = useState<
     'all' | 'online' | 'offline' | 'online_only' | 'offline_only' | 'both' | 'none'
   >('all');
@@ -172,9 +177,10 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
     setIsLoading(true);
     try {
       const data = await loadKatalogBatches();
-      setBatches(data);
+      const sorted = [...data].sort((a, b) => compareKatalogBatches(a, b, 'newest'));
+      setBatches(sorted);
       // Pilih semua katalog secara default
-      setSelectedCatalogIds(data.map((b) => b.id));
+      setSelectedCatalogIds(sorted.map((b) => b.id));
     } catch (err) {
       console.error('Failed to load katalog batches:', err);
       onNotify('Gagal memuat katalog, menggunakan data lokal', 'error');
@@ -186,8 +192,9 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const saveBatches = async (newBatches: KatalogBatch[], notifyMsg?: string) => {
     setIsSaving(true);
     try {
-      await persistKatalogBatches(newBatches);
-      setBatches(newBatches);
+      const sorted = [...newBatches].sort((a, b) => compareKatalogBatches(a, b, 'newest'));
+      await persistKatalogBatches(sorted);
+      setBatches(sorted);
       if (notifyMsg) {
         onNotify(notifyMsg, 'success');
       }
@@ -254,10 +261,11 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
   // Filter Items
   const filteredBatches = useMemo(() => {
-    return batches
+    return [...batches]
+      .sort((a, b) => compareKatalogBatches(a, b, sortOrder))
       .filter((b) => selectedCatalogIds.includes(b.id))
       .map((b) => {
-        const items = b.items;
+        const items = sortKatalogItems(b.items);
         const q = searchQuery.trim().toLowerCase();
         const filteredItems = items.filter((it) => {
           const effectiveOnline = (it.publish_online || b.publish_online || '').trim();
@@ -296,7 +304,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         return { ...b, items: filteredItems };
       })
       .filter((b) => b.items.length > 0 || (!searchQuery.trim() && channelFilter === 'all'));
-  }, [batches, selectedCatalogIds, searchQuery, channelFilter]);
+  }, [batches, selectedCatalogIds, searchQuery, channelFilter, sortOrder]);
 
   const allFilteredItems = useMemo(() => {
     return filteredBatches.flatMap((b) => b.items);
@@ -1285,14 +1293,34 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
 
         {/* Baris 2: Filter Dropdown Katalog & Filter Saluran Publish */}
         <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <KatalogFilterDropdown
-            batches={batches}
-            selectedCatalogIds={selectedCatalogIds}
-            onToggleCatalog={toggleSelectCatalog}
-            onSelectAll={selectAllCatalogs}
-            onSelectOnly={selectOnlyCatalog}
-            getBatchPalette={getBatchPalette}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <KatalogFilterDropdown
+              batches={batches}
+              selectedCatalogIds={selectedCatalogIds}
+              onToggleCatalog={toggleSelectCatalog}
+              onSelectAll={selectAllCatalogs}
+              onSelectOnly={selectOnlyCatalog}
+              getBatchPalette={getBatchPalette}
+            />
+
+            {/* Selector Urutan Katalog */}
+            <div className="relative inline-flex items-center">
+              <select
+                id="katalog-sort-select"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as KatalogSortOrder)}
+                className="appearance-none pl-8 pr-7 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Urutan Tampilan Katalog Produk"
+              >
+                <option value="newest">Terbaru → Terlama (Angka Besar)</option>
+                <option value="oldest">Terlama → Terbaru (Angka Kecil)</option>
+                <option value="name_asc">Nama A → Z</option>
+                <option value="name_desc">Nama Z → A</option>
+              </select>
+              <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
 
           {/* Filter Channel / Saluran Rilis */}
           <div className="flex flex-wrap items-center gap-1.5 ml-auto">

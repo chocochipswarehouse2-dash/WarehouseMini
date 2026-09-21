@@ -80,6 +80,9 @@ export interface NormalizedInventoryItem {
   stokStudio?: number;
   stokShp?: number;
   stokTtk?: number;
+  stokCuci?: number;
+  stokPermak?: number;
+  stokDefect?: number;
   totalFisikGudang: number;
   totalStore: number;
   totalOnline: number;
@@ -492,6 +495,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         stokStudio: number;
         stokShp: number;
         stokTtk: number;
+        stokCuci: number;
+        stokPermak: number;
+        stokDefect: number;
       }
     > = {};
 
@@ -511,6 +517,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           stokStudio: 0,
           stokShp: 0,
           stokTtk: 0,
+          stokCuci: 0,
+          stokPermak: 0,
+          stokDefect: 0,
         };
       }
 
@@ -526,6 +535,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       }
       if (l.includes('TIKTOK') || l.includes('TTK') || l === 'TT' || a.includes('TIKTOK')) {
         skuStockMap[sku].stokTtk = (skuStockMap[sku].stokTtk || 0) + qty;
+      }
+
+      // Track sub-channels for Perbaikan (Cuci, Permak, Defect)
+      if (l.startsWith('CC') || l.includes('CUCI') || a.includes('CUCI')) {
+        skuStockMap[sku].stokCuci = (skuStockMap[sku].stokCuci || 0) + qty;
+      } else if (l.startsWith('PMK') || l.includes('PERMAK') || a.includes('PERMAK')) {
+        skuStockMap[sku].stokPermak = (skuStockMap[sku].stokPermak || 0) + qty;
+      } else if (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT') || a.includes('DEFECT') || a.includes('CACAT')) {
+        skuStockMap[sku].stokDefect = (skuStockMap[sku].stokDefect || 0) + qty;
       }
 
       let kat = 'Gudang Utama';
@@ -554,18 +572,23 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       ) {
         kat = 'Sample Studio';
       } else if (
-        (a === 'PERBAIKAN' || a.includes('PERMAK') || a.includes('CUCI')) &&
-        (l.startsWith('PMK') || l.startsWith('CC') || l.includes('PERMAK') || l.includes('CUCI'))
+        l.startsWith('CC') || l.includes('CUCI') || a.includes('CUCI')
       ) {
-        kat = 'Permak / Cuci';
+        kat = 'Cuci';
+      } else if (
+        l.startsWith('PMK') || l.includes('PERMAK') || a.includes('PERMAK')
+      ) {
+        kat = 'Permak';
       } else if (
         (a === 'PERBAIKAN' || a.includes('DEFECT') || a.includes('CACAT')) &&
         (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT'))
       ) {
         kat = 'Barang Cacat';
       } else if (a.includes('PERBAIKAN') || a.includes('DEFECT') || a.includes('PERMAK')) {
-        if (l.startsWith('PMK') || l.startsWith('CC') || l.includes('CUCI') || l.includes('PERMAK')) {
-          kat = 'Permak / Cuci';
+        if (l.startsWith('CC') || l.includes('CUCI')) {
+          kat = 'Cuci';
+        } else if (l.startsWith('PMK') || l.includes('PERMAK')) {
+          kat = 'Permak';
         } else {
           kat = 'Barang Cacat';
         }
@@ -598,6 +621,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       let liveFisik = 0;
       let studioFisik = 0;
       let permakFisik = 0;
+      let cuciFisik = 0;
       let defectFisik = 0;
       let shpFisik = 0;
       let ttkFisik = 0;
@@ -608,8 +632,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         mapFisik = Number(mapped.f?.['Gudang Utama'] ?? mapped.f?.['MAP'] ?? mapped.f?.['Warehouse'] ?? 0);
         liveFisik = Number(mapped.f?.['Barang Live'] ?? mapped.f?.['LIVE'] ?? 0);
         studioFisik = Number(mapped.stokStudio ?? mapped.f?.['Sample Studio'] ?? mapped.f?.['STUDIO'] ?? 0);
-        permakFisik = Number(mapped.f?.['Permak / Cuci'] ?? mapped.f?.['PERMAK'] ?? 0);
-        defectFisik = Number(mapped.f?.['Barang Cacat'] ?? mapped.f?.['DEFECT'] ?? 0);
+        cuciFisik = Number(mapped.stokCuci ?? mapped.f?.['Cuci'] ?? 0);
+        permakFisik = Number(mapped.stokPermak ?? mapped.f?.['Permak'] ?? 0);
+        defectFisik = Number(mapped.stokDefect ?? mapped.f?.['Barang Cacat'] ?? mapped.f?.['DEFECT'] ?? 0);
+        if (cuciFisik === 0 && permakFisik === 0 && mapped.f?.['Permak / Cuci']) {
+          permakFisik = Number(mapped.f['Permak / Cuci']);
+        }
         shpFisik = Number(mapped.stokShp ?? 0);
         ttkFisik = Number(mapped.stokTtk ?? 0);
         locList = Array.isArray(mapped.l) ? mapped.l : [];
@@ -618,9 +646,28 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         mapFisik = Number(row.f['Gudang Utama'] ?? row.f['MAP'] ?? 0);
         liveFisik = Number(row.f['Barang Live'] ?? row.f['LIVE'] ?? 0);
         studioFisik = Number(row.f['Sample Studio'] ?? 0);
-        permakFisik = Number(row.f['Permak / Cuci'] ?? 0);
+        cuciFisik = Number(row.f['Cuci'] ?? 0);
+        permakFisik = Number(row.f['Permak'] ?? row.f['Permak / Cuci'] ?? 0);
         defectFisik = Number(row.f['Barang Cacat'] ?? 0);
         locList = Array.isArray(row.l) ? row.l : (Array.isArray(row.locList) ? row.locList : []);
+      }
+
+      // If locList has CC... or PMK... locations, ensure cuciFisik / permakFisik / defectFisik are accurately recognized
+      if (locList.length > 0 && (cuciFisik === 0 || permakFisik === 0)) {
+        let locCuci = 0;
+        let locPermak = 0;
+        let locDefect = 0;
+        locList.forEach((it: any) => {
+          const lStr = typeof it === 'string' ? it.split(':')[0] : (it.lokasi || '');
+          const qVal = typeof it === 'string' ? (parseInt(it.split(':')[1], 10) || 1) : (Number(it.qty) || 1);
+          const lUp = lStr.toUpperCase();
+          if (lUp.startsWith('CC') || lUp.includes('CUCI')) locCuci += qVal;
+          else if (lUp.startsWith('PMK') || lUp.includes('PERMAK')) locPermak += qVal;
+          else if (lUp.startsWith('DF') || lUp.includes('DEFECT') || lUp.includes('CACAT')) locDefect += qVal;
+        });
+        if (locCuci > 0 && cuciFisik === 0) cuciFisik = locCuci;
+        if (locPermak > 0 && permakFisik === 0) permakFisik = locPermak;
+        if (locDefect > 0 && defectFisik === 0) defectFisik = locDefect;
       }
 
       // Ensure liveFisik accurately covers sub-channels shpFisik and ttkFisik
@@ -746,14 +793,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           MAP: { fisik: mapFisik, dp: mapDp },
           LIVE: { fisik: liveFisik, dp: liveDp },
           STUDIO: { fisik: studioFisik, dp: studioDp },
-          PERMAK: { fisik: permakFisik, dp: permakDp },
+          PERMAK: { fisik: permakFisik + cuciFisik, dp: permakDp },
           DEFECT: { fisik: defectFisik, dp: defectDp },
         },
         singles: singleVals,
         stokStudio: studioFisik,
         stokShp: shpFisik,
         stokTtk: ttkFisik,
-        totalFisikGudang: mapFisik + liveFisik + studioFisik + permakFisik + defectFisik,
+        stokCuci: cuciFisik,
+        stokPermak: permakFisik,
+        stokDefect: defectFisik,
+        totalFisikGudang: mapFisik + liveFisik + studioFisik + permakFisik + cuciFisik + defectFisik,
         totalStore: sTot,
         totalOnline: onTot,
         totalOffline: offTot,
@@ -1821,7 +1871,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             {kpiStats.totalPerbaikan.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 truncate">
-            Permak & Barang Defect
+            Permak, Cuci &amp; Defect
           </div>
         </div>
       </div>
@@ -2108,7 +2158,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                     ? 'Stok Fisik MAP (Gudang Utama)'
                     : kpiModal === 'BLOK_F'
                     ? 'Stok Tersedia di Blok F'
-                    : 'Stok Perbaikan (Permak & Defect)'}
+                    : 'Stok Perbaikan (Permak, Cuci & Defect)'}
                 </h2>
               </div>
               <button
@@ -2704,19 +2754,32 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                 })()
               )}
 
-              {/* MODAL 4: STOK PERBAIKAN (PERMAK & DEFECT & CUCI) */}
+              {/* MODAL 4: STOK PERBAIKAN (PERMAK, CUCI & DEFECT) */}
               {kpiModal === 'PERBAIKAN' && (
                 (() => {
-                  let list = normalizedInventory
-                    .filter((p) => (p.komparasi.PERMAK.fisik || 0) + (p.komparasi.DEFECT.fisik || 0) > 0)
-                    .map((p) => ({
-                      ...p,
-                      permakQty: p.komparasi.PERMAK.fisik || 0,
-                      defectQty: p.komparasi.DEFECT.fisik || 0,
-                      totalPerbaikan: (p.komparasi.PERMAK.fisik || 0) + (p.komparasi.DEFECT.fisik || 0),
-                    }));
+                  const allPerbaikan = normalizedInventory
+                    .filter((p) => (p.stokPermak || 0) + (p.stokCuci || 0) + (p.stokDefect ?? (p.komparasi.DEFECT.fisik || 0)) > 0)
+                    .map((p) => {
+                      const permakQty = p.stokPermak || 0;
+                      const cuciQty = p.stokCuci || 0;
+                      const defectQty = p.stokDefect ?? (p.komparasi.DEFECT.fisik || 0);
+                      return {
+                        ...p,
+                        permakQty,
+                        cuciQty,
+                        defectQty,
+                        totalPerbaikan: permakQty + cuciQty + defectQty,
+                      };
+                    });
 
+                  const countSemua = allPerbaikan.reduce((sum, it) => sum + it.totalPerbaikan, 0);
+                  const countPermak = allPerbaikan.reduce((sum, it) => sum + it.permakQty, 0);
+                  const countCuci = allPerbaikan.reduce((sum, it) => sum + it.cuciQty, 0);
+                  const countDefect = allPerbaikan.reduce((sum, it) => sum + it.defectQty, 0);
+
+                  let list = allPerbaikan;
                   if (kpiPerbaikanTab === 'PERMAK') list = list.filter((p) => p.permakQty > 0);
+                  else if (kpiPerbaikanTab === 'CUCI') list = list.filter((p) => p.cuciQty > 0);
                   else if (kpiPerbaikanTab === 'DEFECT') list = list.filter((p) => p.defectQty > 0);
 
                   if (kpiModalSearch.trim()) {
@@ -2733,35 +2796,66 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => setKpiPerbaikanTab('ALL')}
-                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
                             kpiPerbaikanTab === 'ALL'
                               ? 'bg-primary-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-primary-500'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
-                          🌐 Semua
+                          <span>🌐 Semua</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                          }`}>
+                            {countSemua}
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setKpiPerbaikanTab('PERMAK')}
-                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
                             kpiPerbaikanTab === 'PERMAK'
                               ? 'bg-blue-600 text-white font-extrabold shadow-[0_0_10px_rgba(37,99,235,0.3)] border border-blue-500'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
-                          🪡 Permak
+                          <span>🪡 Permak</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'PERMAK' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                          }`}>
+                            {countPermak}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('CUCI')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                            kpiPerbaikanTab === 'CUCI'
+                              ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)] border border-cyan-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span>🫧 Cuci</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'CUCI' ? 'bg-white/20 text-white' : 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300'
+                          }`}>
+                            {countCuci}
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setKpiPerbaikanTab('DEFECT')}
-                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
                             kpiPerbaikanTab === 'DEFECT'
                               ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)] border border-amber-400'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
-                          ⚠️ Defect
+                          <span>⚠️ Defect</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'DEFECT' ? 'bg-white/20 text-white' : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                          }`}>
+                            {countDefect}
+                          </span>
                         </button>
                       </div>
 
@@ -2769,7 +2863,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       <div className="px-3 py-2 bg-primary-500/5 dark:bg-primary-950/20 border border-primary-500/20 rounded-xl text-[11px] text-primary-800 dark:text-primary-300 flex items-start gap-2">
                         <span className="shrink-0 mt-0.5">💡</span>
                         <p className="leading-snug">
-                          <b>Acuan Stok Perbaikan:</b> Daftar barang yang sedang dalam antrean permak atau masuk sebagai barang defect.
+                          <b>Klasifikasi Rak Perbaikan:</b> Rak <b>PMK</b> masuk ke tab <b>Permak</b> (Jahit), rak <b>CC</b> masuk ke tab <b>Cuci</b> (Laundry noda), dan rak <b>DF</b> masuk ke tab <b>Defect</b>.
                         </p>
                       </div>
 
@@ -2796,17 +2890,18 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => {
-                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'PERMAK', 'DEFECT', 'TOTAL'];
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'PERMAK', 'CUCI', 'DEFECT', 'TOTAL'];
                             const rows = list.map((it) => [
                               it.produk,
                               it.size,
                               it.sku,
                               it.locStr || '-',
                               it.permakQty,
+                              it.cuciQty,
                               it.defectQty,
                               it.totalPerbaikan,
                             ]);
-                            handleExportModalCSV(`stok_perbaikan_${kpiPerbaikanTab}`, headers, rows);
+                            handleExportModalCSV(`stok_perbaikan_${kpiPerbaikanTab.toLowerCase()}`, headers, rows);
                           }}
                           className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
                         >
@@ -2815,7 +2910,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                         </button>
                       </div>
 
-                      {/* Unified Responsive Table (Exact PeminjamanView Layout) */}
+                      {/* Unified Responsive Table */}
                       <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
                         <table className="w-full text-left text-xs border-collapse font-sans">
                           <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
@@ -2823,6 +2918,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                               <th className="p-2.5">PRODUK & LOKASI</th>
                               <th className="p-2.5 text-center w-12">SIZE</th>
                               <th className="p-2.5 text-center w-14 text-blue-600 dark:text-blue-400">PERMAK</th>
+                              <th className="p-2.5 text-center w-14 text-cyan-600 dark:text-cyan-400">CUCI</th>
                               <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">DEFECT</th>
                               <th className="p-2.5 text-center w-14 text-primary-600 dark:text-primary-400">TOTAL</th>
                             </tr>
@@ -2830,7 +2926,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                             {list.length === 0 ? (
                               <tr>
-                                <td colSpan={5} className="p-6 text-center text-slate-400 italic text-xs">
+                                <td colSpan={6} className="p-6 text-center text-slate-400 italic text-xs">
                                   Tidak ada produk dalam status perbaikan dengan filter ini
                                 </td>
                               </tr>
@@ -2866,6 +2962,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                                       </span>
                                     </td>
                                     <td className="p-2.5 text-center">
+                                      <span className={`font-mono text-xs font-bold ${it.cuciQty > 0 ? 'text-cyan-600 dark:text-cyan-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {it.cuciQty || 0}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
                                       <span className={`font-mono text-xs font-bold ${it.defectQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
                                         {it.defectQty || 0}
                                       </span>
@@ -2896,7 +2997,18 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
                       <div className="text-right text-[11px] text-slate-500 font-mono">
                         Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
-                        <b className="text-amber-500">{totalPcs} Pcs</b> Fisik MAP
+                        <b className={
+                          kpiPerbaikanTab === 'PERMAK' ? 'text-blue-600 dark:text-blue-400' :
+                          kpiPerbaikanTab === 'CUCI' ? 'text-cyan-600 dark:text-cyan-400' :
+                          kpiPerbaikanTab === 'DEFECT' ? 'text-amber-600 dark:text-amber-400' :
+                          'text-primary-500'
+                        }>
+                          {totalPcs} Pcs
+                        </b>{' '}
+                        {kpiPerbaikanTab === 'PERMAK' ? 'Antrean Permak (PMK)' :
+                         kpiPerbaikanTab === 'CUCI' ? 'Antrean Cuci (CC)' :
+                         kpiPerbaikanTab === 'DEFECT' ? 'Barang Defect (DF)' :
+                         'Antrean Perbaikan & Cuci'}
                       </div>
                     </div>
                   );
@@ -3209,228 +3321,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       <div className="text-right text-[11px] text-slate-500 font-mono">
                         Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
                         <b className="text-emerald-500 dark:text-emerald-400">{totalPcs} Pcs</b> Tersedia di Blok F
-                      </div>
-                    </div>
-                  );
-                })()
-              )}
-
-              {/* MODAL 4: STOK PERBAIKAN (PERMAK & DEFECT & CUCI) */}
-              {kpiModal === 'PERBAIKAN' && (
-                (() => {
-                  let list = normalizedInventory
-                    .filter((p) => (p.komparasi.PERMAK.fisik || 0) + (p.komparasi.DEFECT.fisik || 0) > 0)
-                    .map((p) => ({
-                      ...p,
-                      permakQty: p.komparasi.PERMAK.fisik || 0,
-                      defectQty: p.komparasi.DEFECT.fisik || 0,
-                      totalPerbaikan: (p.komparasi.PERMAK.fisik || 0) + (p.komparasi.DEFECT.fisik || 0),
-                    }));
-
-                  if (kpiPerbaikanTab === 'PERMAK') list = list.filter((p) => p.permakQty > 0);
-                  else if (kpiPerbaikanTab === 'DEFECT') list = list.filter((p) => p.defectQty > 0);
-
-                  if (kpiModalSearch.trim()) {
-                    list = list.filter((p) =>
-                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
-                    );
-                  }
-
-                  const totalPcs = list.reduce((sum, it) => sum + it.totalPerbaikan, 0);
-
-                  return (
-                    <div className="space-y-3">
-                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
-                        <button
-                          type="button"
-                          onClick={() => setKpiPerbaikanTab('ALL')}
-                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                            kpiPerbaikanTab === 'ALL'
-                              ? 'bg-primary-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-primary-500'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          🌐 Semua
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setKpiPerbaikanTab('PERMAK')}
-                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                            kpiPerbaikanTab === 'PERMAK'
-                              ? 'bg-blue-600 text-white font-extrabold shadow-[0_0_10px_rgba(37,99,235,0.3)] border border-blue-500'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          🪡 Permak
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setKpiPerbaikanTab('DEFECT')}
-                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                            kpiPerbaikanTab === 'DEFECT'
-                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)] border border-amber-400'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          ⚠️ Defect
-                        </button>
-                      </div>
-
-                      {/* Guide Callout Box */}
-                      <div className="px-3 py-2 bg-primary-500/5 dark:bg-primary-950/20 border border-primary-500/20 rounded-xl text-[11px] text-primary-800 dark:text-primary-300 flex items-start gap-2">
-                        <span className="shrink-0 mt-0.5">💡</span>
-                        <p className="leading-snug">
-                          <b>Acuan Stok Perbaikan:</b> Daftar barang yang sedang dalam antrean permak atau masuk sebagai barang defect.
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2 items-center w-full">
-                        <div className="relative flex-1">
-                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            value={kpiModalSearch}
-                            onChange={(e) => setKpiModalSearch(e.target.value)}
-                            placeholder="Cari Produk / SKU..."
-                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
-                          />
-                          {kpiModalSearch && (
-                            <button
-                              type="button"
-                              onClick={() => setKpiModalSearch('')}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'PERMAK', 'DEFECT', 'TOTAL'];
-                            const rows = list.map((it) => [
-                              it.produk,
-                              it.size,
-                              it.sku,
-                              it.locStr || '-',
-                              it.permakQty,
-                              it.defectQty,
-                              it.totalPerbaikan,
-                            ]);
-                            handleExportModalCSV(`stok_perbaikan_${kpiPerbaikanTab}`, headers, rows);
-                          }}
-                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>CSV</span>
-                        </button>
-                      </div>
-
-                      {/* Responsive List Container */}
-                      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden max-h-[380px] overflow-y-auto">
-                        {list.length === 0 ? (
-                          <div className="p-8 text-center text-slate-400 text-xs">
-                            Tidak ada produk dalam status perbaikan dengan filter ini
-                          </div>
-                        ) : (
-                          <>
-                            {/* Mobile View: Clean Card Items (sm:hidden) */}
-                            <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800/60">
-                              {list.slice(0, modalDisplayLimit).map((it, idx) => (
-                                <div key={`${it.sku}_${idx}`} className="p-3 bg-white dark:bg-[#161F30] hover:bg-slate-50 dark:hover:bg-slate-800/40 space-y-2">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug break-words flex-1">
-                                      {it.produk}
-                                    </div>
-                                    <span className="shrink-0 px-2 py-0.5 font-mono text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-md">
-                                      {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                                    <span className="font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded">
-                                      {it.sku}
-                                    </span>
-                                    {it.locStr && it.locStr !== '-' && (
-                                      <span className="text-primary-500 font-mono text-[10px] flex items-center gap-1 bg-primary-50 dark:bg-primary-900/20 px-1.5 py-0.5 rounded border border-primary-200/50 dark:border-primary-800/40">
-                                        📍 {it.locStr}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-xs">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase">
-                                      Rincian Perbaikan
-                                    </span>
-                                    <div className="flex items-center gap-1.5 font-mono">
-                                      {it.permakQty > 0 && (
-                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                                          Permak: {it.permakQty}
-                                        </span>
-                                      )}
-                                      {it.defectQty > 0 && (
-                                        <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-500/10 px-1.5 py-0.5 rounded border border-primary-500/20">
-                                          Defect: {it.defectQty}
-                                        </span>
-                                      )}
-                                      <span className="text-[11px] font-extrabold text-primary-600 dark:text-primary-400 bg-primary-500/10 px-2 py-0.5 rounded-full border border-primary-500/30">
-                                        Tot: {it.totalPerbaikan}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Desktop / Tablet View: Wide Table (hidden sm:block) */}
-                            <div className="hidden sm:block overflow-x-auto">
-                              <table className="w-full text-left text-xs min-w-[500px]">
-                                <thead className="bg-slate-100 dark:bg-[#0E1420] text-[10px] font-extrabold uppercase text-slate-500 sticky top-0">
-                                  <tr>
-                                    <th className="p-2.5">Produk</th>
-                                    <th className="p-2.5 text-center">Size</th>
-                                    <th className="p-2.5">SKU</th>
-                                    <th className="p-2.5 text-center text-amber-600">Permak</th>
-                                    <th className="p-2.5 text-center text-primary-600">Defect</th>
-                                    <th className="p-2.5 text-right font-extrabold">Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                                  {list.slice(0, modalDisplayLimit).map((it, idx) => (
-                                    <tr key={`${it.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                      <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
-                                        {it.produk}
-                                        {it.locStr !== '-' && <div className="text-[10px] text-primary-500 font-mono font-normal">📍 {it.locStr}</div>}
-                                      </td>
-                                      <td className="p-2.5 text-center font-mono font-bold text-xs">{it.size}</td>
-                                      <td className="p-2.5 font-mono text-slate-500">{it.sku}</td>
-                                      <td className="p-2.5 text-center font-mono font-bold text-amber-600">{it.permakQty}</td>
-                                      <td className="p-2.5 text-center font-mono font-bold text-primary-600">{it.defectQty}</td>
-                                      <td className="p-2.5 text-right font-mono font-black text-primary-600">{it.totalPerbaikan}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {list.length > modalDisplayLimit && (
-                        <div className="flex justify-center pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
-                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
-                          >
-                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="text-right text-[11px] text-slate-500 font-mono">
-                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
-                        <b className="text-primary-500">{totalPcs} Pcs</b> Antrean Perbaikan
                       </div>
                     </div>
                   );
