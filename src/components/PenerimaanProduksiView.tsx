@@ -250,6 +250,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     items: PenerimaanProduksiItem[];
   } | null>(null);
   const [isUpdatingBatch, setIsUpdatingBatch] = useState<boolean>(false);
+  const [isDraggingPrimaryFoto, setIsDraggingPrimaryFoto] = useState<boolean>(false);
+  const [draggingProdKey, setDraggingProdKey] = useState<string | null>(null);
 
   // Delete Confirm Modal
   const [deletingTarget, setDeletingTarget] = useState<{
@@ -1203,25 +1205,17 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </button>
 
             <button
+              id="btn-tab-form-penerimaan"
               type="button"
               onClick={() => setActiveTab('input')}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
                 activeTab === 'input'
                   ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 sm:bg-teal-600 sm:text-white sm:shadow-teal-600/25 sm:ring-2 sm:ring-teal-600/30'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
               }`}
             >
               <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Input Batch</span>
-              <span
-                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                  activeTab === 'input'
-                    ? 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200 sm:bg-white/20 sm:text-white'
-                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                Multi
-              </span>
+              <span>Form Penerimaan</span>
             </button>
           </div>
           
@@ -2376,7 +2370,30 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           MODAL 1: EDIT SURAT JALAN (KATALOG SPLIT-SCREEN STYLE)
           ======================================================== */}
       {editingBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs">
+        <div
+          tabIndex={0}
+          onPaste={async (e) => {
+            if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+              const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
+              if (file) {
+                e.preventDefault();
+                try {
+                  const res = await compressImage(file, 1024, 0.75);
+                  const updated = [...editingBatch.items];
+                  if (updated.length > 0) {
+                    updated[0].foto_url = res.dataUrl;
+                    setEditingBatch({ ...editingBatch, items: updated });
+                    onShowToast(`Foto surat jalan berhasil ditempel (${Math.round(res.compressedSize / 1024)} KB)!`, 'success');
+                  }
+                } catch (err: any) {
+                  console.error('Gagal paste foto surat jalan:', err);
+                  onShowToast('Gagal memproses gambar dari clipboard', 'error');
+                }
+              }
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs outline-none"
+        >
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
@@ -2411,7 +2428,58 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   <span className="block text-xs font-black text-slate-700 dark:text-slate-300">
                     Foto Utama Surat Jalan / Sampel Produk
                   </span>
-                  <div className="relative aspect-square w-full rounded-2xl bg-slate-100 dark:bg-slate-800/80 border-2 border-dashed border-slate-300 dark:border-slate-700 overflow-hidden flex flex-col items-center justify-center group/hero">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingPrimaryFoto(true);
+                    }}
+                    onDragLeave={() => setIsDraggingPrimaryFoto(false)}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      setIsDraggingPrimaryFoto(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        try {
+                          const res = await compressImage(e.dataTransfer.files[0], 1024, 0.75);
+                          const updated = [...editingBatch.items];
+                          if (updated.length > 0) {
+                            updated[0].foto_url = res.dataUrl;
+                            setEditingBatch({ ...editingBatch, items: updated });
+                            onShowToast(`Foto surat jalan berhasil diupload (${Math.round(res.compressedSize / 1024)} KB)!`, 'success');
+                          }
+                        } catch (err: any) {
+                          console.error('Gagal drop foto surat jalan:', err);
+                          onShowToast('Gagal memproses file gambar', 'error');
+                        }
+                      }
+                    }}
+                    onPaste={async (e) => {
+                      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+                        const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
+                        if (file) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            const res = await compressImage(file, 1024, 0.75);
+                            const updated = [...editingBatch.items];
+                            if (updated.length > 0) {
+                              updated[0].foto_url = res.dataUrl;
+                              setEditingBatch({ ...editingBatch, items: updated });
+                              onShowToast(`Foto surat jalan berhasil ditempel (${Math.round(res.compressedSize / 1024)} KB)!`, 'success');
+                            }
+                          } catch (err: any) {
+                            console.error('Gagal paste foto:', err);
+                            onShowToast('Gagal memproses gambar dari clipboard', 'error');
+                          }
+                        }
+                      }
+                    }}
+                    tabIndex={0}
+                    className={`relative aspect-square w-full rounded-2xl bg-slate-100 dark:bg-slate-800/80 border-2 border-dashed overflow-hidden flex flex-col items-center justify-center group/hero transition-all focus:ring-2 focus:ring-blue-500 focus:outline-none ${
+                      isDraggingPrimaryFoto
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-4 ring-blue-500/20 scale-[1.01]'
+                        : 'border-slate-300 dark:border-slate-700 hover:border-blue-400'
+                    }`}
+                  >
                     {editingBatch.items.find((i) => i.foto_url)?.foto_url ? (
                       <>
                         <img
@@ -2419,10 +2487,68 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           alt="Foto Utama"
                           className="w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/hero:opacity-100 transition flex items-center justify-center gap-2">
-                          <label className="px-3 py-1.5 rounded-xl bg-white text-slate-900 text-xs font-bold shadow-md hover:bg-slate-100 cursor-pointer flex items-center gap-1.5">
-                            <Camera className="w-4 h-4" />
-                            <span>Ganti Foto</span>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/hero:opacity-100 transition flex flex-col items-center justify-center gap-2 p-3">
+                          <div className="flex items-center gap-2">
+                            <label className="px-3 py-1.5 rounded-xl bg-white text-slate-900 text-xs font-bold shadow-md hover:bg-slate-100 cursor-pointer flex items-center gap-1.5 transition">
+                              <Camera className="w-4 h-4" />
+                              <span>Ganti Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const res = await compressImage(e.target.files[0], 1024, 0.75);
+                                    const updated = [...editingBatch.items];
+                                    if (updated.length > 0) {
+                                      updated[0].foto_url = res.dataUrl;
+                                      setEditingBatch({ ...editingBatch, items: updated });
+                                      onShowToast(`Foto diperbarui (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
+                                    }
+                                  }
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...editingBatch.items];
+                                if (updated.length > 0) {
+                                  updated[0].foto_url = '';
+                                  setEditingBatch({ ...editingBatch, items: updated });
+                                  onShowToast('Foto utama dihapus', 'info');
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold shadow-md hover:bg-red-700 cursor-pointer flex items-center gap-1.5 transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span>Hapus</span>
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-white/90 bg-black/50 px-2.5 py-1 rounded-full backdrop-blur-xs">
+                            Bisa Drag &amp; Drop atau Paste (Ctrl+V) foto baru
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center p-4">
+                        <div className={`w-12 h-12 rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-2 transition-all ${
+                          isDraggingPrimaryFoto
+                            ? 'bg-blue-500 text-white scale-110'
+                            : 'bg-white dark:bg-slate-700 text-slate-400'
+                        }`}>
+                          <ImageIcon className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                          {isDraggingPrimaryFoto ? 'Lepaskan foto di sini!' : 'Belum ada foto utama'}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mb-3">
+                          Upload foto nota/surat jalan atau sampel produk
+                        </p>
+                        <div className="flex items-center justify-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700 cursor-pointer transition">
+                            <Upload className="w-4 h-4" />
+                            <span>Pilih Foto</span>
                             <input
                               type="file"
                               accept="image/*"
@@ -2434,43 +2560,16 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                   if (updated.length > 0) {
                                     updated[0].foto_url = res.dataUrl;
                                     setEditingBatch({ ...editingBatch, items: updated });
+                                    onShowToast(`Foto utama terupload (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
                                   }
                                 }
                               }}
                             />
                           </label>
                         </div>
-                      </>
-                    ) : (
-                      <div className="text-center p-4">
-                        <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center mx-auto mb-2 text-slate-400">
-                          <ImageIcon className="w-6 h-6" />
-                        </div>
-                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                          Belum ada foto utama
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2.5 flex items-center justify-center gap-1">
+                          <span>💡 Drag &amp; Drop atau Paste (Ctrl+V) langsung di sini</span>
                         </p>
-                        <p className="text-[11px] text-slate-400 mb-3">
-                          Upload foto nota/surat jalan atau sampel produk
-                        </p>
-                        <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700 cursor-pointer transition">
-                          <Upload className="w-4 h-4" />
-                          <span>Pilih Foto</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={async (e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                const res = await compressImage(e.target.files[0], 1024, 0.75);
-                                const updated = [...editingBatch.items];
-                                if (updated.length > 0) {
-                                  updated[0].foto_url = res.dataUrl;
-                                  setEditingBatch({ ...editingBatch, items: updated });
-                                }
-                              }
-                            }}
-                          />
-                        </label>
                       </div>
                     )}
                   </div>
@@ -2631,7 +2730,37 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                         {/* Photo Upload Thumbnail */}
                         <div className="md:col-span-3 flex flex-col items-center">
                           {prod.foto_url ? (
-                            <div className="relative w-full h-28 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group/prodimg">
+                            <div
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDraggingProdKey(prod.key);
+                              }}
+                              onDragLeave={() => setDraggingProdKey(null)}
+                              onDrop={async (e) => {
+                                e.preventDefault();
+                                setDraggingProdKey(null);
+                                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                  try {
+                                    const res = await compressImage(e.dataTransfer.files[0], 1024, 0.75);
+                                    const updated = editingBatch.items.map((it) => {
+                                      if (
+                                        (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                        (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                      ) {
+                                        return { ...it, foto_url: res.dataUrl };
+                                      }
+                                      return it;
+                                    });
+                                    setEditingBatch({ ...editingBatch, items: updated });
+                                    onShowToast(`Foto produk diganti (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
+                                  } catch (err: any) {
+                                    console.error('Gagal drop foto produk:', err);
+                                    onShowToast('Gagal memproses gambar', 'error');
+                                  }
+                                }
+                              }}
+                              className="relative w-full h-28 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 group/prodimg"
+                            >
                               <img src={prod.foto_url} alt={prod.kode_produksi} className="w-full h-full object-cover" />
                               <button
                                 type="button"
@@ -2653,16 +2782,18 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                               </button>
                             </div>
                           ) : (
-                            <label className="w-full h-28 rounded-xl bg-white dark:bg-slate-900 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 flex flex-col items-center justify-center cursor-pointer p-2 text-center transition">
-                              <Camera className="w-5 h-5 text-slate-400 mb-1" />
-                              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">Upload Foto</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    const res = await compressImage(e.target.files[0], 1024, 0.75);
+                            <div
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDraggingProdKey(prod.key);
+                              }}
+                              onDragLeave={() => setDraggingProdKey(null)}
+                              onDrop={async (e) => {
+                                e.preventDefault();
+                                setDraggingProdKey(null);
+                                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                  try {
+                                    const res = await compressImage(e.dataTransfer.files[0], 1024, 0.75);
                                     const updated = editingBatch.items.map((it) => {
                                       if (
                                         (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
@@ -2673,10 +2804,74 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                       return it;
                                     });
                                     setEditingBatch({ ...editingBatch, items: updated });
+                                    onShowToast(`Foto produk diupload (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
+                                  } catch (err: any) {
+                                    console.error('Gagal drop foto produk:', err);
+                                    onShowToast('Gagal memproses gambar', 'error');
                                   }
-                                }}
-                              />
-                            </label>
+                                }
+                              }}
+                              onPaste={async (e) => {
+                                if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+                                  const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
+                                  if (file) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    try {
+                                      const res = await compressImage(file, 1024, 0.75);
+                                      const updated = editingBatch.items.map((it) => {
+                                        if (
+                                          (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                          (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                        ) {
+                                          return { ...it, foto_url: res.dataUrl };
+                                        }
+                                        return it;
+                                      });
+                                      setEditingBatch({ ...editingBatch, items: updated });
+                                      onShowToast(`Foto produk ditempel (${Math.round(res.compressedSize / 1024)} KB)`, 'success');
+                                    } catch (err: any) {
+                                      console.error('Gagal paste foto produk:', err);
+                                      onShowToast('Gagal memproses gambar dari clipboard', 'error');
+                                    }
+                                  }
+                                }
+                              }}
+                              tabIndex={0}
+                              className={`w-full h-28 rounded-xl bg-white dark:bg-slate-900 border-2 border-dashed flex flex-col items-center justify-center p-2 text-center transition-all focus:ring-2 focus:ring-emerald-500 focus:outline-none ${
+                                draggingProdKey === prod.key
+                                  ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20 scale-[1.02]'
+                                  : 'border-slate-300 dark:border-slate-700 hover:border-emerald-500'
+                              }`}
+                            >
+                              <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full">
+                                <Camera className={`w-5 h-5 mb-1 ${draggingProdKey === prod.key ? 'text-emerald-500 scale-110' : 'text-slate-400'}`} />
+                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                  {draggingProdKey === prod.key ? 'Lepaskan Foto' : 'Upload Foto'}
+                                </span>
+                                <span className="text-[9px] text-slate-400 mt-0.5">Drag/Paste Foto</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      const res = await compressImage(e.target.files[0], 1024, 0.75);
+                                      const updated = editingBatch.items.map((it) => {
+                                        if (
+                                          (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase() === prod.kode_produksi &&
+                                          (it.warna || 'DEFAULT').trim().toUpperCase() === prod.warna
+                                        ) {
+                                          return { ...it, foto_url: res.dataUrl };
+                                        }
+                                        return it;
+                                      });
+                                      setEditingBatch({ ...editingBatch, items: updated });
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
                           )}
                         </div>
 
