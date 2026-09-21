@@ -519,7 +519,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       const lokasi = String(sRow.lokasi || '').trim();
       const area = String(sRow.area || '').trim();
       const qty = Number(sRow.sisa_stok) || 0;
-      if (!sku || qty === 0 || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
+      if (!sku || qty === 0 || isDummyProduct({ k: sku, p: sRow.nama_produk } as any) || sku.startsWith('#') || sku.includes('#') || sku.startsWith('*') || sku.startsWith('•') || sku === 'KOLI' || sku === 'BOX') return;
 
       if (!skuStockMap[sku]) {
         skuStockMap[sku] = {

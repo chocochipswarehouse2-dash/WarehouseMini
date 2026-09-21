@@ -59,6 +59,27 @@ export function isDummyProduct(item: ProductItem | null | undefined): boolean {
     return true;
   }
 
+  // Filter out WhatsApp formatting, order notes, and broadcast message headers
+  if (
+    sku.startsWith('*') ||
+    sku.startsWith('•') ||
+    sku.startsWith('📋') ||
+    sku.startsWith('>') ||
+    sku.startsWith('📦') ||
+    sku.startsWith('🔢') ||
+    sku.includes('━') ||
+    sku.startsWith('ORDER ') ||
+    sku.includes('TUGAS PICKING') ||
+    sku.includes('DAFTAR BARANG') ||
+    sku.includes('NO SJ:') ||
+    sku.includes('ASAL:') ||
+    sku.includes('TUJUAN:') ||
+    name.includes('mohon picker') ||
+    name.includes('sent via fonnte')
+  ) {
+    return true;
+  }
+
   // 2. Filter out non-product tags accidentally scanned as SKUs
   if (
     sku === 'KOLI' ||

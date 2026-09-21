@@ -89,6 +89,22 @@ function handleWhatsAppScan(payload) {
       return jsonResponse({ success: true, message: 'PING OK - Webhook Standalone Aktif' });
     }
 
+    // Abaikan pesan informasi tugas picking, surat jalan, atau format broadcast pengiriman
+    var upperMsg = message.toUpperCase();
+    if (
+      upperMsg.indexOf('TUGAS PICKING') > -1 ||
+      upperMsg.indexOf('PICKING LIST') > -1 ||
+      upperMsg.indexOf('DAFTAR BARANG YANG HARUS DIAMBIL') > -1 ||
+      upperMsg.indexOf('SENT VIA FONNTE') > -1 ||
+      upperMsg.indexOf('MOHON PICKER') > -1 ||
+      upperMsg.indexOf('EKSPEDISI:') > -1 ||
+      upperMsg.indexOf('*NO SJ:*') > -1 ||
+      upperMsg.indexOf('*ASAL:*') > -1
+    ) {
+      Logger.log('Pesan WA diabaikan: Format broadcast tugas picking / surat jalan bukan format scan.');
+      return jsonResponse({ success: true, message: 'IGNORED_PICKING_TASK_BROADCAST' });
+    }
+
     // 1. Ekstraksi dan Validasi Group ID (@g.us)
     var groupId = null;
     var candidates = [
@@ -169,17 +185,17 @@ function handleWhatsAppScan(payload) {
         continue;
       }
       
-      if (upper.indexOf(' IN') > -1 || upper.indexOf('#IN') === 0 || upper.indexOf('IN ') === 0 || upper === 'IN') {
+      if (/^#?IN\b/i.test(line) || /^IN\b/i.test(line) || /^#?MASUK\b/i.test(line)) {
         currentType = TYPE_IN;
-        var restIn = line.replace(/^#?[A-Z0-9_\s]*IN\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        var restIn = line.replace(/^#?[A-Z0-9_\s]*(IN|MASUK)\b/i, '').replace(/^[:\-\s]+/, '').trim();
         if (restIn && !currentLokasi) currentLokasi = restIn;
         currentDeskripsi = restIn || 'IN';
         continue;
       }
       
-      if (upper.indexOf(' OUT') > -1 || upper.indexOf('#OUT') === 0 || upper.indexOf('OUT ') === 0 || upper === 'OUT') {
+      if (/^#?OUT\b/i.test(line) || /^OUT\b/i.test(line) || /^#?KELUAR\b/i.test(line)) {
         currentType = TYPE_OUT;
-        var restOut = line.replace(/^#?[A-Z0-9_\s]*OUT\b/i, '').replace(/^[:\-\s]+/, '').trim();
+        var restOut = line.replace(/^#?[A-Z0-9_\s]*(OUT|KELUAR)\b/i, '').replace(/^[:\-\s]+/, '').trim();
         if (restOut && !currentLokasi) currentLokasi = restOut;
         currentDeskripsi = restOut || 'OUT';
         continue;
@@ -216,6 +232,22 @@ function handleWhatsAppScan(payload) {
       // 5. Baris Item SKU & QTY
       var itemSku = upper;
       var itemQty = 1;
+      
+      // Abaikan baris format non-SKU
+      if (
+        !itemSku ||
+        itemSku.indexOf('*') > -1 ||
+        itemSku.indexOf('•') > -1 ||
+        itemSku.indexOf('━') > -1 ||
+        itemSku.indexOf('>') > -1 ||
+        itemSku.indexOf('📦') > -1 ||
+        itemSku.indexOf('🔢') > -1 ||
+        itemSku.indexOf('📍') > -1 ||
+        itemSku.indexOf('🙏') > -1 ||
+        itemSku.length > 45
+      ) {
+        continue;
+      }
       
       if (upper.indexOf('|') > -1) {
         var partsPipe = upper.split('|');
