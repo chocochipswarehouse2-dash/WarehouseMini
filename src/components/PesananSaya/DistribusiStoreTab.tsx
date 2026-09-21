@@ -34,9 +34,10 @@ import {
 } from '../../services/gasTarikanMD';
 import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
-import { generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
+import { SuratJalanSelisihMessageParams, generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
 import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
+import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
 
 interface TarikanMDViewProps {
   session: UserSession | null;
@@ -304,6 +305,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
+  const [selisihWaModalParams, setSelisihWaModalParams] = useState<SuratJalanSelisihMessageParams | null>(null);
 
   // Custom confirmation modal (replaces window.confirm which is blocked in mobile/iframe)
   const [confirmModal, setConfirmModal] = useState<{
@@ -839,6 +841,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       source: rec.source,
       destination: rec.destination,
       tanggal_sj: rec.tanggal_sj,
+      tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
       file_name: `SJ-${rec.no_sj}`,
       items,
       scanQty,
@@ -1287,7 +1290,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           </span>
 
                           <div className="flex items-center gap-1.5">
-                            {draft.tipe_import === 'Pengiriman' && (
+                            {draft.items && draft.items.length > 0 && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1382,7 +1385,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {activeDraft.tipe_import === 'Pengiriman' && (
+                      {activeDraft.items && activeDraft.items.length > 0 && (
                         <button
                           type="button"
                           onClick={() => setPickingModalDraft(activeDraft)}
@@ -1692,16 +1695,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                     qty_scan: it.qty_scan,
                                     selisih: it.selisih,
                                   }));
-                                const text = generateSuratJalanSelisihMessage({
+                                setSelisihWaModalParams({
                                   no_sj: activeDraft.no_sj,
                                   destination: activeDraft.destination,
+                                  source: activeDraft.source,
+                                  tanggal_sj: activeDraft.tanggal_sj,
                                   items: kurangItems,
                                   productCatalog,
                                   type: 'kurang',
                                 });
-                                window.open(getWhatsAppWebUrl('', text), '_blank');
                               }}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] hover:bg-[#1DA851] text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                              title="Kirim laporan selisih kurang via Bot Fonnte atau WhatsApp Web"
                             >
                               <Send className="w-3.5 h-3.5" />
                               Share ke WA (Selisih Kurang)
@@ -1733,16 +1738,18 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                   is_unexpected: true,
                                 }));
 
-                                const text = generateSuratJalanSelisihMessage({
+                                setSelisihWaModalParams({
                                   no_sj: activeDraft.no_sj,
                                   destination: activeDraft.destination,
+                                  source: activeDraft.source,
+                                  tanggal_sj: activeDraft.tanggal_sj,
                                   items: [...regularLebih, ...unexpectedLebih],
                                   productCatalog,
                                   type: 'lebih',
                                 });
-                                window.open(getWhatsAppWebUrl('', text), '_blank');
                               }}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                              title="Kirim laporan selisih lebih via Bot Fonnte atau WhatsApp Web"
                             >
                               <Send className="w-3.5 h-3.5" />
                               Share ke WA (Selisih Lebih)
@@ -2059,6 +2066,41 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 Kembalikan ke Tab Pengecekan
                               </button>
 
+                              {/* FORMAT PICKING LANGSUNG DARI RIWAYAT */}
+                              {rec.items && rec.items.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const draftFromRec: PengecekanSJDraft = {
+                                      id: rec.id || `${rec.no_sj}___${rec.source}___${rec.destination}`,
+                                      no_sj: rec.no_sj,
+                                      source: rec.source,
+                                      destination: rec.destination,
+                                      tanggal_sj: rec.tanggal_sj,
+                                      tipe_import: rec.tipe_import || (rec.destination?.toLowerCase().includes('warehouse') ? 'Penerimaan' : 'Pengiriman') || 'Pengiriman',
+                                      file_name: `SJ-${rec.no_sj}`,
+                                      items: rec.items.map(i => ({
+                                        sku: i.sku,
+                                        nama_produk: i.nama_produk,
+                                        category: i.category,
+                                        qty_sj: i.qty_sj || i.qty_scan || 1,
+                                      })),
+                                      scanQty: {},
+                                      unexpected: {},
+                                      status: 'draft',
+                                      created_at: rec.created_at,
+                                      updated_at: rec.updated_at || new Date().toISOString(),
+                                    };
+                                    setPickingModalDraft(draftFromRec);
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                                  title="Format Picking (Cetak Lembar Kerja, Kirim WA ke Grup, atau Kirim ke Tugas Picking App)"
+                                >
+                                  <Send className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                  Format Picking
+                                </button>
+                              )}
+
                               {/* EXPORT DATA SJ INI */}
                               <button
                                 type="button"
@@ -2074,20 +2116,43 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const text = generateSuratJalanSelisihMessage({
+                                    setSelisihWaModalParams({
                                       no_sj: rec.no_sj,
                                       destination: rec.destination,
+                                      source: rec.source,
+                                      tanggal_sj: rec.tanggal_sj,
                                       items: rec.items,
                                       productCatalog,
                                       type: 'kurang',
                                     });
-                                    window.open(getWhatsAppWebUrl('', text), '_blank');
                                   }}
                                   className="px-3 py-1.5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#1DA851] dark:text-[#25D366] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-[#25D366]/30 cursor-pointer"
-                                  title="Share daftar selisih kurang ke WhatsApp"
+                                  title="Share daftar selisih kurang via Bot Fonnte / WhatsApp"
                                 >
                                   <Send className="w-3.5 h-3.5 text-[#25D366]" />
                                   Share WA (Kurang)
+                                </button>
+                              )}
+
+                              {rec.items.some(i => i.status_item === 'LEBIH' || i.selisih > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelisihWaModalParams({
+                                      no_sj: rec.no_sj,
+                                      destination: rec.destination,
+                                      source: rec.source,
+                                      tanggal_sj: rec.tanggal_sj,
+                                      items: rec.items,
+                                      productCatalog,
+                                      type: 'lebih',
+                                    });
+                                  }}
+                                  className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-amber-500/30 cursor-pointer"
+                                  title="Share daftar selisih lebih via Bot Fonnte / WhatsApp"
+                                >
+                                  <Send className="w-3.5 h-3.5 text-amber-500" />
+                                  Share WA (Lebih)
                                 </button>
                               )}
                             </div>
@@ -2321,6 +2386,15 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           onSuccessSentToApp={(draftId) => {
             setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, catatan: `${d.catatan || ''} [Tugas Picking App Terkirim]`.trim() } : d));
           }}
+        />
+
+        {/* MODAL LAPORAN SELISIH WA (KIRIM BOT FONNTE / WA WEB / COPY) */}
+        <DistribusiSelisihWaModal
+          isOpen={Boolean(selisihWaModalParams)}
+          onClose={() => setSelisihWaModalParams(null)}
+          params={selisihWaModalParams}
+          productCatalog={productCatalog || []}
+          onNotify={onShowToast}
         />
 
         {/* CUSTOM CONFIRMATION MODAL (No window.confirm blocks in iframe/mobile) */}
