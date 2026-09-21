@@ -31,9 +31,11 @@ import {
   Scissors,
   ShoppingBag,
   ExternalLink,
+  Printer,
 } from 'lucide-react';
 import { StockRealtimeItem, ProductItem, UserSession } from '../types';
 import { saveInventoryStocksToLocalDb, getAllInventoryStocksFromLocalDb } from '../services/localDb';
+import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
 import {
   fetchAllStockRealtime,
   fetchSupabaseStokFisikDirect,
@@ -216,6 +218,17 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
   const canExportData = hasPermission(session, 'action_export_data');
   const canSyncDealpos = hasPermission(session, 'action_sync_dealpos');
+
+  // Lokasi Export & Print PDF Modal State
+  const [isLokasiExportModalOpen, setIsLokasiExportModalOpen] = useState<boolean>(false);
+  const [selectedExportLocation, setSelectedExportLocation] = useState<string>('CC001');
+
+  const handleOpenLokasiExport = (locName?: string) => {
+    if (locName) {
+      setSelectedExportLocation(locName);
+    }
+    setIsLokasiExportModalOpen(true);
+  };
 
   // Close area dropdown on outside click
   useEffect(() => {
@@ -1463,13 +1476,20 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       <div className="flex flex-wrap gap-1 mt-1">
                         {item.locList.map((loc, lIdx) => {
                           const lStr = typeof loc === 'object' && loc !== null ? `${loc.lokasi}${loc.qty ? ` (${loc.qty})` : ''}` : String(loc);
+                          const cleanLocName = typeof loc === 'object' && loc !== null ? String(loc.lokasi || '').trim() : String(loc || '').split(':')[0].trim();
                           return (
-                            <span
+                            <button
                               key={lIdx}
-                              className="text-[9.5px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded font-mono border border-slate-200 dark:border-slate-700 inline-flex items-center gap-0.5"
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenLokasiExport(cleanLocName);
+                              }}
+                              className="text-[9.5px] px-1.5 py-0.2 bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-600 hover:text-amber-800 dark:text-slate-400 dark:hover:text-amber-300 rounded font-mono border border-slate-200 hover:border-amber-300 dark:border-slate-700 inline-flex items-center gap-0.5 transition-colors cursor-pointer"
+                              title={`Klik untuk ekspor / cetak data lokasi ${cleanLocName}`}
                             >
                               📍 {lStr}
-                            </span>
+                            </button>
                           );
                         })}
                       </div>
@@ -1618,9 +1638,22 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       {item.sku}
                     </span>
                     {item.locStr && item.locStr !== '-' && (
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const firstLoc = item.locList?.[0]
+                            ? typeof item.locList[0] === 'object'
+                              ? (item.locList[0] as any).lokasi
+                              : String(item.locList[0]).split(':')[0]
+                            : '';
+                          handleOpenLokasiExport(firstLoc);
+                        }}
+                        className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:text-amber-500 font-mono flex items-center gap-0.5 cursor-pointer underline-offset-2 hover:underline"
+                        title="Klik untuk ekspor / cetak data lokasi rak ini"
+                      >
                         📍 {item.locStr}
-                      </span>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -2051,6 +2084,19 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                 <span className="hidden sm:inline">CSV</span>
               </button>
             )}
+
+            {/* EKSPOR & PRINT LOKASI TERTENTU (MISAL CC001) */}
+            <button
+              type="button"
+              id="btnExportLokasiModal"
+              onClick={() => handleOpenLokasiExport()}
+              className="px-3 py-2 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-none shadow-xs"
+              title="Ekspor Data & Cetak PDF Lokasi Tertentu (misal: CC001)"
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">LOKASI & PRINT</span>
+            </button>
           </div>
         </div>
       </div>
@@ -3330,6 +3376,20 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           </div>
         </div>
       )}
+
+      {/* ========================================================
+          MODAL EKSPOR DATA & CETAK PDF LOKASI TERTENTU (misal CC001)
+          ======================================================== */}
+      <InventoryLokasiExportModal
+        isOpen={isLokasiExportModalOpen}
+        onClose={() => setIsLokasiExportModalOpen(false)}
+        initialLocation={selectedExportLocation}
+        stockList={stockList}
+        productCatalog={productCatalog}
+        currentLocations={currentLocations}
+        session={session}
+        onNotify={onNotify}
+      />
     </div>
   );
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Check, Edit3, Palette } from 'lucide-react';
+import { X, Plus, Trash2, Check, Edit3, Palette, RotateCcw } from 'lucide-react';
 import { fetchWmsSettings, saveWmsSettings } from '../services/settings';
+import { DEFAULT_CATEGORY_CONFIG } from './AgendaView';
 
 const PALETTE_OPTIONS = [
   { id: 'indigo', name: 'Ungu / Indigo', badgeBg: 'bg-indigo-100 dark:bg-indigo-950/50', badgeText: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-300 dark:border-indigo-800', cardBg: 'bg-indigo-50/70 dark:bg-indigo-950/30', dot: 'bg-indigo-500', gradient: 'from-indigo-500 to-purple-600' },
@@ -17,12 +18,14 @@ export const AgendaCategoryModal = ({
   isOpen,
   onClose,
   currentConfig,
-  onNotify
+  onNotify,
+  onSaveSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
   currentConfig: Record<string, any>;
-  onNotify?: (msg: string, type: 'success'|'error') => void;
+  onNotify?: (msg: string, type: 'success' | 'error') => void;
+  onSaveSuccess?: (newConfig: Record<string, any>) => void;
 }) => {
   const [categories, setCategories] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -42,12 +45,35 @@ export const AgendaCategoryModal = ({
       const res = await saveWmsSettings({ agenda_categories: categories });
       if (res) {
         onNotify?.('Kategori Agenda berhasil diperbarui!', 'success');
+        onSaveSuccess?.(categories);
         onClose();
       } else {
         onNotify?.('Gagal menyimpan kategori', 'error');
       }
     } catch (err) {
       onNotify?.('Terjadi kesalahan', 'error');
+    }
+    setIsSaving(false);
+  };
+
+  const handleResetToDefault = async () => {
+    if (!window.confirm('Reset semua kategori agenda ke pengaturan standar sistem?')) {
+      return;
+    }
+    const defaultConfig = JSON.parse(JSON.stringify(DEFAULT_CATEGORY_CONFIG));
+    setCategories(defaultConfig);
+    setIsSaving(true);
+    try {
+      const res = await saveWmsSettings({ agenda_categories: defaultConfig });
+      if (res) {
+        onNotify?.('Kategori Agenda berhasil di-reset ke standar sistem!', 'success');
+        onSaveSuccess?.(defaultConfig);
+        onClose();
+      } else {
+        onNotify?.('Gagal menyimpan reset kategori', 'error');
+      }
+    } catch (err) {
+      onNotify?.('Terjadi kesalahan saat reset kategori', 'error');
     }
     setIsSaving(false);
   };
@@ -150,17 +176,30 @@ export const AgendaCategoryModal = ({
           </button>
         </div>
 
-        <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-white dark:bg-[#1a2332]">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
-            Batal
-          </button>
-          <button 
-            onClick={handleSave}
+        <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-white dark:bg-[#1a2332]">
+          <button
+            type="button"
+            onClick={handleResetToDefault}
             disabled={isSaving}
-            className="px-6 py-2 rounded-xl text-sm font-bold text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 disabled:opacity-70 flex items-center gap-2"
+            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer disabled:opacity-50"
+            title="Kembalikan semua kategori ke susunan default sistem"
           >
-            {isSaving ? 'Menyimpan...' : 'Simpan Kategori'}
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Default</span>
           </button>
+
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+              Batal
+            </button>
+            <button 
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-6 py-2 rounded-xl text-sm font-bold text-white bg-primary-500 hover:bg-primary-600 shadow-md shadow-primary-500/20 disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+            >
+              {isSaving ? 'Menyimpan...' : 'Simpan Kategori'}
+            </button>
+          </div>
         </div>
 
       </div>

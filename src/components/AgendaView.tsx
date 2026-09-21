@@ -4,7 +4,7 @@ import {
   CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, User, Tag, 
   Trash2, Edit3, Search, Filter, Sun, Check, Sparkles, RefreshCw, 
   AlertTriangle, ArrowRight, Layers, Eye, CheckSquare, Square, MoreHorizontal, StickyNote,
-  FolderPlus, CalendarDays, ListFilter
+  FolderPlus, CalendarDays, ListFilter, RotateCcw
 } from 'lucide-react';
 import { compressImage } from '../utils/imageCompressor';
 import { 
@@ -709,8 +709,28 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
   };
 
   // Quick category toggle
-  const toggleCategory = (cat: AgendaCategory) => {
+  const toggleCategory = (cat: string) => {
     setSelectedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  };
+
+  const isAllCategoriesSelected = useMemo(() => {
+    const keys = Object.keys(categoryConfig);
+    return keys.length > 0 && keys.every(k => Boolean(selectedCategories[k]));
+  }, [categoryConfig, selectedCategories]);
+
+  const handleResetCategories = () => {
+    const keys = Object.keys(categoryConfig);
+    if (isAllCategoriesSelected) {
+      // Jika semua sedang aktif, nonaktifkan semua (memudahkan jika user ingin memilih 1 kategori saja)
+      const noneSelected = keys.reduce((acc, k) => ({ ...acc, [k]: false }), {} as Record<string, boolean>);
+      setSelectedCategories(noneSelected);
+      onShowToast?.('Semua filter kategori dinonaktifkan', 'info');
+    } else {
+      // Jika sebagian atau kosong, aktifkan semua kategori
+      const allSelected = keys.reduce((acc, k) => ({ ...acc, [k]: true }), {} as Record<string, boolean>);
+      setSelectedCategories(allSelected);
+      onShowToast?.('Filter kategori di-reset (semua aktif)', 'success');
+    }
   };
 
   return (
@@ -914,33 +934,40 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                 <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Filter Kategori
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button 
+                    type="button"
                     onClick={() => setIsCategoryModalOpen(true)}
-                    className="text-[10px] text-slate-500 hover:text-slate-700 font-bold flex items-center gap-1"
+                    className="text-[11px] text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-bold flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Buka panel kelola & edit kategori agenda"
                   >
-                    <Edit3 className="w-3 h-3" /> Edit
+                    <Edit3 className="w-3 h-3 text-slate-500" />
+                    <span>Edit</span>
                   </button>
                   <button 
-                    onClick={() => setSelectedCategories(Object.keys(categoryConfig).reduce((acc, k) => ({...acc, [k]: true}), {}))}
-                    className="text-[10px] text-primary-500 font-bold hover:underline"
+                    type="button"
+                    onClick={handleResetCategories}
+                    className="text-[11px] text-primary-600 dark:text-primary-400 hover:text-primary-700 font-bold hover:underline cursor-pointer flex items-center gap-0.5 px-1 py-0.5"
+                    title={isAllCategoriesSelected ? 'Batal pilih semua kategori' : 'Pilih semua kategori (reset)'}
                   >
-                    Reset
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>{isAllCategoriesSelected ? 'Batal' : 'Reset'}</span>
                   </button>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                {(Object.keys(categoryConfig) as AgendaCategory[]).map(catKey => {
-                  const cfg = categoryConfig[catKey];
-                  const isChecked = selectedCategories[catKey];
+                {Object.keys(categoryConfig).map(catKey => {
+                  const cfg = categoryConfig[catKey] || { label: catKey, dot: 'bg-slate-500' };
+                  const isChecked = Boolean(selectedCategories[catKey]);
                   const count = events.filter(e => e.category === catKey).length;
 
                   return (
-                    <label
+                    <button
                       key={catKey}
+                      type="button"
                       onClick={() => toggleCategory(catKey)}
-                      className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                      className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors text-left"
                     >
                       <div className="flex items-center gap-2.5">
                         <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
@@ -960,7 +987,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
                       <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full">
                         {count}
                       </span>
-                    </label>
+                    </button>
                   );
                 })}
               </div>
@@ -2664,6 +2691,29 @@ export const AgendaView: React.FC<AgendaViewProps> = ({ session, onShowToast }) 
           </div>
         </div>
       )}
+
+      {/* ===================================================================== */}
+      {/* MODAL KELOLA KATEGORI AGENDA */}
+      {/* ===================================================================== */}
+      <AgendaCategoryModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        currentConfig={categoryConfig}
+        onNotify={onShowToast}
+        onSaveSuccess={(newConfig) => {
+          setCategoryConfig(newConfig);
+          // Pastikan kategori baru langsung aktif di selectedCategories
+          setSelectedCategories(prev => {
+            const next = { ...prev };
+            Object.keys(newConfig).forEach(k => {
+              if (next[k] === undefined) {
+                next[k] = true;
+              }
+            });
+            return next;
+          });
+        }}
+      />
     </div>
   );
 };
