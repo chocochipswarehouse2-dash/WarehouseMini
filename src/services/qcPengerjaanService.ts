@@ -396,59 +396,48 @@ export async function finalizeAndSubmitQcJob(
 
 /**
  * Generate Text Ringkasan WhatsApp untuk Berita Acara ke CMT / Konveksi
+ * Format natural & rapi (standar komunikasi tim operasional gudang).
  */
 export function generateQcWhatsAppSummary(job: QcPengerjaanJob): string {
   const totals = calculateJobTotals(job.sizes);
-  const nowStr = new Date().toLocaleString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 
-  let msg = `*BERITA ACARA & REKAP HASIL QC PRODUKSI*\n`;
-  msg += `-------------------------------------------\n`;
-  msg += `🏷️ *Kode Produksi*: ${job.kode_produksi}\n`;
-  if (job.warna && job.warna !== '-') msg += `🎨 *Warna/Model*: ${job.warna}\n`;
-  msg += `📄 *No. Surat Jalan*: ${job.no_surat_jalan}\n`;
-  msg += `📦 *Kategori*: ${job.kategori || 'Lokal CMT'}\n`;
-  msg += `👥 *Tim PIC QC*: ${job.pic_list.join(', ') || 'Staff QC'}\n`;
-  msg += `⏰ *Waktu Selesai*: ${nowStr}\n`;
-  msg += `-------------------------------------------\n`;
-  msg += `*📊 RANGKUMAN HASIL PEMERIKSAAN*:\n`;
-  msg += `• Qty Setoran Awal: *${totals.total_qty_awal} pcs*\n`;
-  msg += `• Total Diperiksa: *${totals.total_diperiksa} pcs*\n`;
-  msg += `• ✅ Lolos (Grade A): *${totals.total_qty_oke} pcs*\n`;
-  if (totals.total_qty_noda > 0) msg += `• 🧼 Noda (Cuci): *${totals.total_qty_noda} pcs*\n`;
-  if (totals.total_qty_permak > 0) msg += `• 🪡 Permak (Jahit): *${totals.total_qty_permak} pcs*\n`;
-  if (totals.total_qty_defect > 0) msg += `• ❌ Defect (BS): *${totals.total_qty_defect} pcs*\n`;
-  
+  let msg = `*Hasil QC Produksi - ${job.kode_produksi}*\n`;
+  if (job.warna && job.warna !== '-') msg += `Model/Warna: ${job.warna}\n`;
+  msg += `No. Surat Jalan: ${job.no_surat_jalan}\n`;
+  if (job.kategori) msg += `Kategori: ${job.kategori}\n`;
+  msg += `PIC QC: ${job.pic_list.join(', ') || 'Warehouse'}\n\n`;
+
+  msg += `*Rangkuman:*\n`;
+  msg += `• Qty Setoran: *${totals.total_qty_awal} pcs*\n`;
+  msg += `• Lolos (Grade A): *${totals.total_qty_oke} pcs*\n`;
+  if (totals.total_qty_noda > 0) msg += `• Noda (Cuci): *${totals.total_qty_noda} pcs*\n`;
+  if (totals.total_qty_permak > 0) msg += `• Permak (Jahit): *${totals.total_qty_permak} pcs*\n`;
+  if (totals.total_qty_defect > 0) msg += `• Defect / BS: *${totals.total_qty_defect} pcs*\n`;
+
   if (totals.total_selisih !== 0) {
     const selisihLabel = totals.total_selisih > 0 ? `Lebih +${totals.total_selisih}` : `Kurang ${totals.total_selisih}`;
-    msg += `• ⚠️ Selisih Hitung: *${selisihLabel} pcs*\n`;
+    msg += `• Selisih: *${selisihLabel} pcs*\n`;
   }
-  msg += `• 🎯 *Pass Rate Kelolosan*: *${totals.pass_rate}%*\n`;
+  msg += `• Kelolosan: *${totals.pass_rate}%*\n\n`;
 
-  msg += `-------------------------------------------\n`;
-  msg += `*📋 RINCIAN PER SIZE*:\n`;
+  msg += `*Rincian per Size:*\n`;
   job.sizes.forEach((s) => {
-    const totalSizeCheck = s.qty_oke + s.qty_noda + s.qty_permak + s.qty_defect;
-    msg += `▫️ *Size ${s.size}*: Awal ${s.qty_awal} | OKE: ${s.qty_oke} | Reject: ${s.qty_noda + s.qty_permak + s.qty_defect} (Noda:${s.qty_noda}, Permak:${s.qty_permak}, Defect:${s.qty_defect})\n`;
+    const rejects: string[] = [];
+    if (s.qty_noda > 0) rejects.push(`Noda: ${s.qty_noda}`);
+    if (s.qty_permak > 0) rejects.push(`Permak: ${s.qty_permak}`);
+    if (s.qty_defect > 0) rejects.push(`Defect: ${s.qty_defect}`);
+
+    const rejectText = rejects.length > 0 ? ` (Reject: ${rejects.join(', ')})` : '';
+    msg += `• Size ${s.size}: Awal ${s.qty_awal} | Bagus: ${s.qty_oke}${rejectText}\n`;
   });
 
   if (job.catatan_umum && job.catatan_umum.trim()) {
-    msg += `-------------------------------------------\n`;
-    msg += `📝 *Catatan / Temuan QC*:\n${job.catatan_umum.trim()}\n`;
+    msg += `\n*Catatan QC:*\n${job.catatan_umum.trim()}\n`;
   }
 
   if (job.foto_evidence && job.foto_evidence.length > 0) {
-    msg += `-------------------------------------------\n`;
-    msg += `📸 *Dokumentasi Bukti*: ${job.foto_evidence.length} foto terlampir di sistem WMS.\n`;
+    msg += `\n_${job.foto_evidence.length} foto bukti terlampir di sistem._\n`;
   }
 
-  msg += `-------------------------------------------\n`;
-  msg += `_Laporan otomatis sistem WMS Inventory Produksi._`;
-
-  return msg;
+  return msg.trim();
 }

@@ -710,28 +710,50 @@ export async function cancelPengirimanStoreReport(
 
 export function generateKoliLabelsForReport(report: PengirimanStoreReport): KoliMarkingLabel[] {
   const labels: KoliMarkingLabel[] = [];
-  let globalKoliCounter = 1;
-  const totalKoliReport = report.total_koli || 1;
+
+  // 1. Hitung total koli per nomor surat jalan agar penomoran Koli 1/1, 1/2 dll akurat per surat jalan
+  const sjKoliTotals: Record<string, number> = {};
+  report.items.forEach((item) => {
+    const sjKey = (item.no_surat_jalan?.trim() && item.no_surat_jalan.trim() !== 'Tidak ada no surat jalan' && item.no_surat_jalan.trim() !== '-')
+      ? item.no_surat_jalan.trim()
+      : `_NOSJ_${report.id}`;
+    const koliCount = item.hitung_koli || 1;
+    sjKoliTotals[sjKey] = (sjKoliTotals[sjKey] || 0) + koliCount;
+  });
+
+  const sjKoliCounters: Record<string, number> = {};
 
   report.items.forEach((item, itemIdx) => {
     const koliCount = item.hitung_koli || 1;
+    const rawSJ = item.no_surat_jalan?.trim() || '';
+    const hasSJ = rawSJ !== '' && rawSJ !== 'Tidak ada no surat jalan' && rawSJ !== '-';
+    const noSJ = hasSJ ? rawSJ : '-';
+    const sjKey = hasSJ ? rawSJ : `_NOSJ_${report.id}`;
+
+    const totalKoliForSJ = sjKoliTotals[sjKey] || (report.total_koli || 1);
 
     for (let i = 1; i <= koliCount; i++) {
-      // Kode marking koli: e.g. KLI-DSP2609-001-K1/3
-      const cleanId = report.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8);
-      const markingCode = `KLI-${cleanId}-K${globalKoliCounter}/${totalKoliReport}`;
+      sjKoliCounters[sjKey] = (sjKoliCounters[sjKey] || 0) + 1;
+      const koliIndexSJ = sjKoliCounters[sjKey];
 
-      const qtyDisplay =
-        item.satuan === 'Pcs'
-          ? `${item.qty} Pcs (Koli ${globalKoliCounter}/${totalKoliReport})`
-          : `Koli ${i} dari ${koliCount} (${globalKoliCounter}/${totalKoliReport})`;
+      // Kode marking koli: e.g. KLI-09226-K1/1 atau KLI-DSP2609-K1/1
+      const cleanSJ = hasSJ ? rawSJ.replace(/[^a-zA-Z0-9]/g, '').slice(-8) : '';
+      const cleanReportId = report.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8);
+      const markingCode = `KLI-${cleanSJ || cleanReportId}-K${koliIndexSJ}/${totalKoliForSJ}`;
 
-      const noSJ = item.no_surat_jalan?.trim() || 'Tidak ada no surat jalan';
+      // Format qty yang rapi dan tidak redundan
+      let qtyDisplay = '';
+      if (item.satuan === 'Pcs') {
+        qtyDisplay = `${item.qty} Pcs`;
+      } else {
+        qtyDisplay = koliCount > 1 ? `Koli ${i} dari ${koliCount} (${item.qty} Koli)` : `${item.qty} Koli`;
+      }
+
       const qrDataString = `TOKO: ${report.store_tujuan}
 NO SJ: ${noSJ}
 BARANG: ${item.deskripsi}
 QTY: ${qtyDisplay}
-KOLI: ${globalKoliCounter}/${totalKoliReport}
+KOLI: ${koliIndexSJ}/${totalKoliForSJ}
 TGL: ${report.tanggal_laporan}
 KODE: ${markingCode}`;
 
@@ -743,17 +765,15 @@ KODE: ${markingCode}`;
         store_tujuan: report.store_tujuan,
         no_surat_jalan: noSJ,
         deskripsi: item.deskripsi,
-        koli_index: globalKoliCounter,
+        koli_index: koliIndexSJ,
         total_koli_item: koliCount,
-        total_koli_report: totalKoliReport,
+        total_koli_report: totalKoliForSJ,
         qty_display: qtyDisplay,
         tanggal: report.tanggal_laporan,
         pic_nama: report.pic_nama,
         qr_data_string: qrDataString,
         barcode_data_string: barcodeDataString,
       });
-
-      globalKoliCounter++;
     }
   });
 
