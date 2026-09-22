@@ -660,6 +660,72 @@ export interface QcReport {
 }
 
 
+// ------------------------------------------------------------
+// MODUL PENGERJAAN & REVIEW QC PER KODE PRODUKSI (MASTER JOB CARD)
+// ------------------------------------------------------------
+export type QcPengerjaanStatus = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
+
+export interface QcSizeTally {
+  size: string;
+  qty_awal: number;
+  qty_oke: number;
+  qty_noda: number;
+  qty_permak: number;
+  qty_defect: number;
+  catatan?: string;
+}
+
+export interface QcPhotoEvidence {
+  id: string;
+  url: string;
+  label?: string; // e.g. "Noda Lengan", "Jahitan Sobek", "Defect Kain"
+  size?: string;
+  tipe?: 'NODA' | 'PERMAK' | 'DEFECT' | 'LAINNYA';
+  timestamp?: string;
+}
+
+export interface QcPengerjaanJob {
+  id: string; // e.g. "QCJOB-CCP010-20260922" or UUID
+  kode_produksi: string;
+  nama_produk?: string;
+  warna?: string;
+  no_surat_jalan: string;
+  kategori?: string; // 'Lokal CMT' | 'Kargo'
+  tanggal_penerimaan?: string;
+  foto_url?: string;
+  keterangan_penerimaan?: string;
+  
+  // Tim PIC Kolaborasi (Multi-PIC)
+  pic_list: string[]; // e.g. ['Siti Nurhaliza', 'Rian Pratama']
+  
+  // Status & Waktu
+  status: QcPengerjaanStatus;
+  started_at?: string;
+  completed_at?: string;
+  updated_at?: string;
+  
+  // Rincian per Size
+  sizes: QcSizeTally[];
+  
+  // Total Agregat Kalkulasi
+  total_qty_awal: number;
+  total_qty_oke: number;
+  total_qty_noda: number;
+  total_qty_permak: number;
+  total_qty_defect: number;
+  total_diperiksa: number;
+  total_selisih: number; // total_diperiksa - total_qty_awal
+  pass_rate: number; // (total_qty_oke / total_diperiksa) * 100
+  
+  // Foto & Dokumentasi Bukti
+  foto_evidence: QcPhotoEvidence[];
+  catatan_umum?: string;
+  
+  // Sinkronisasi Laporan QC & Tiket Perbaikan
+  qc_report_ids?: string[];
+  perbaikan_ticket_ids?: string[];
+}
+
 export interface WmsSettings {
   id?: number;
   gas_endpoint?: string;

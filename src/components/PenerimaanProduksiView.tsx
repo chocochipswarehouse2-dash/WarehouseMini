@@ -38,6 +38,7 @@ import {
   Copy,
   QrCode,
   EyeOff,
+  CheckSquare,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -50,6 +51,7 @@ import {
   KatalogItem,
 } from '../types';
 import { PenerimaanProductCardItem } from './penerimaan/PenerimaanProductCardItem';
+import { QcPengerjaanTab } from './penerimaan/QcPengerjaanTab';
 import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -71,7 +73,7 @@ interface PenerimaanProduksiViewProps {
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type TabMode = 'riwayat' | 'input';
+type TabMode = 'riwayat' | 'input' | 'qc_pengerjaan';
 
 export interface SuratJalanGroup {
   no_surat_jalan: string;
@@ -177,6 +179,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<TabMode>('riwayat');
+  const [selectedQcTargetCode, setSelectedQcTargetCode] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
@@ -1181,11 +1184,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Top-Level Tab Switcher */}
-        <div className="flex-1 grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-2">
+          <div className="flex-1 grid grid-cols-3 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-2">
             <button
               type="button"
-              onClick={() => setActiveTab('riwayat')}
-              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+              onClick={() => {
+                setSelectedQcTargetCode(undefined);
+                setActiveTab('riwayat');
+              }}
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
                 activeTab === 'riwayat'
                   ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 sm:bg-emerald-600 sm:text-white sm:shadow-emerald-600/25 sm:ring-2 sm:ring-emerald-600/30'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
@@ -1207,7 +1213,10 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             <button
               id="btn-tab-form-penerimaan"
               type="button"
-              onClick={() => setActiveTab('input')}
+              onClick={() => {
+                setSelectedQcTargetCode(undefined);
+                setActiveTab('input');
+              }}
               className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
                 activeTab === 'input'
                   ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 sm:bg-teal-600 sm:text-white sm:shadow-teal-600/25 sm:ring-2 sm:ring-teal-600/30'
@@ -1216,6 +1225,23 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             >
               <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Form Penerimaan</span>
+            </button>
+
+            <button
+              id="btn-tab-qc-pengerjaan"
+              type="button"
+              onClick={() => {
+                setSelectedQcTargetCode(undefined);
+                setActiveTab('qc_pengerjaan');
+              }}
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+                activeTab === 'qc_pengerjaan'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 sm:bg-indigo-600 sm:text-white sm:shadow-indigo-600/25 sm:ring-2 sm:ring-indigo-600/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
+              }`}
+            >
+              <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Pengerjaan QC</span>
             </button>
           </div>
           
@@ -2013,6 +2039,10 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                   onEditProduct={() => handleOpenEditBatch(group.no_surat_jalan)}
                                   onDeleteProduct={() => handleConfirmDeleteProduct(group, prod)}
                                   onDeleteVariant={(it) => handleConfirmDeleteSingle(it)}
+                                  onOpenQcJob={(kode) => {
+                                    setSelectedQcTargetCode(kode);
+                                    setActiveTab('qc_pengerjaan');
+                                  }}
                                 />
                               );
                             })}
@@ -2364,6 +2394,19 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================
+          TAB 3: MASTER QC PENGERJAAN & REKAP KODE PRODUKSI
+          ======================================================== */}
+      {activeTab === 'qc_pengerjaan' && (
+        <QcPengerjaanTab
+          session={session}
+          penerimaanItems={dataList}
+          productCatalog={productCatalog}
+          targetJobCode={selectedQcTargetCode}
+          onShowToast={onShowToast}
+        />
       )}
 
       {/* ========================================================

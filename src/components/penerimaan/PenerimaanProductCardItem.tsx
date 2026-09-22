@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   QrCode,
+  Play,
 } from 'lucide-react';
 import {
   ProductItem,
@@ -41,6 +42,7 @@ interface PenerimaanProductCardItemProps {
   onEditProduct: () => void;
   onDeleteProduct: () => void;
   onDeleteVariant: (item: PenerimaanProduksiItem) => void;
+  onOpenQcJob?: (kodeProduksi: string, noSuratJalan: string) => void;
 }
 
 export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps> = ({
@@ -54,6 +56,7 @@ export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps>
   onEditProduct,
   onDeleteProduct,
   onDeleteVariant,
+  onOpenQcJob,
 }) => {
   // Cari produk katalog yang cocok untuk mengambil nama produk asli & harga jual jika ada
   const matchedProduct = useMemo(() => {
@@ -345,26 +348,39 @@ export const PenerimaanProductCardItem: React.FC<PenerimaanProductCardItemProps>
         )}
       </div>
 
-      {/* BAGIAN BAWAH: Aksi Edit & Hapus Produk (Sama persis Katalog Produk) */}
-      <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 shrink-0 h-10">
-        <button
-          id={`btn-edit-bot-${prod.kode_produksi}`}
-          type="button"
-          onClick={onEditProduct}
-          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-        >
-          <Edit className="w-3 h-3" />
-          <span>Edit Produk</span>
-        </button>
-        <button
-          id={`btn-del-bot-${prod.kode_produksi}`}
-          type="button"
-          onClick={onDeleteProduct}
-          className="text-rose-500 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-        >
-          <Trash2 className="w-3 h-3" />
-          <span>Hapus</span>
-        </button>
+      {/* BAGIAN BAWAH: Aksi Edit & Hapus Produk & Kerjakan QC */}
+      <div className="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 shrink-0 h-10 gap-2">
+        <div className="flex items-center gap-3">
+          <button
+            id={`btn-edit-bot-${prod.kode_produksi}`}
+            type="button"
+            onClick={onEditProduct}
+            className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <Edit className="w-3 h-3" />
+            <span>Edit</span>
+          </button>
+          <button
+            id={`btn-del-bot-${prod.kode_produksi}`}
+            type="button"
+            onClick={onDeleteProduct}
+            className="text-rose-500 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Hapus</span>
+          </button>
+        </div>
+
+        {onOpenQcJob && (
+          <button
+            type="button"
+            onClick={() => onOpenQcJob(prod.kode_produksi, group.no_surat_jalan)}
+            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all shadow-xs active:scale-95"
+          >
+            <Play className="w-3 h-3 fill-current" />
+            <span>Kerjakan QC</span>
+          </button>
+        )}
       </div>
     </div>
   );
