@@ -157,6 +157,11 @@ export async function fetchMutasiStoreList(): Promise<PenerimaanMutasiStoreItem[
   return [];
 }
 
+function isUuid(val?: string): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 export async function saveMutasiStore(
   payload: PenerimaanMutasiStoreItem
 ): Promise<{ success: boolean; data?: PenerimaanMutasiStoreItem; message: string }> {
@@ -165,36 +170,49 @@ export async function saveMutasiStore(
       ? payload.no_surat_jalan.trim()
       : 'Tidak ada surat jalan';
 
-  const recordToSave = {
-    ...payload,
-    id: payload.id || undefined,
+  const validId = isUuid(payload.id) ? payload.id : undefined;
+
+  const recordToSave: any = {
     tanggal_diterima: payload.tanggal_diterima || new Date().toISOString().split('T')[0],
+    asal_store_id: payload.asal_store_id || '',
+    asal_store_nama: payload.asal_store_nama || 'Store',
     no_surat_jalan: cleanSuratJalan,
     kategori_produk: payload.kategori_produk || 'Mutasi Antar Store',
     up_tujuan: payload.up_tujuan || 'Warehouse',
+    deskripsi: payload.deskripsi || '',
     qty: Number(payload.qty || 1),
     satuan_qty: payload.satuan_qty || 'Pcs',
     foto_urls: payload.foto_urls || [],
     lokasi_stamp: payload.lokasi_stamp || {},
+    pic_nama: payload.pic_nama || '',
+    pic_username: payload.pic_username || '',
     timestamp_input: payload.timestamp_input || new Date().toISOString(),
+    keterangan: payload.keterangan || '',
     created_at: payload.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
+  if (validId) {
+    recordToSave.id = validId;
+  }
+
   try {
-    if (payload.id) {
+    if (validId) {
       await supabaseFetch(
         'penerimaan_mutasi_store',
         'PATCH',
         recordToSave,
-        `id=eq.${payload.id}`
+        `id=eq.${validId}`
       );
     } else {
-      await supabaseFetch('penerimaan_mutasi_store', 'POST', [recordToSave]);
+      const inserted = await supabaseFetch<any[]>('penerimaan_mutasi_store', 'POST', [recordToSave]);
+      if (inserted && Array.isArray(inserted) && inserted.length > 0 && inserted[0].id) {
+        recordToSave.id = inserted[0].id;
+      }
     }
 
     // Refresh local cache
-    const currentList = await fetchMutasiStoreList();
+    await fetchMutasiStoreList();
     return { success: true, message: 'Data mutasi store berhasil disimpan!', data: recordToSave };
   } catch (err: any) {
     console.warn('Save to Supabase error, updating local cache:', err);
@@ -203,7 +221,7 @@ export async function saveMutasiStore(
       const localList: PenerimaanMutasiStoreItem[] = JSON.parse(
         localStorage.getItem(LOCAL_STORAGE_MUTASI_STORE) || '[]'
       );
-      const generatedId = payload.id || `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const generatedId = validId || `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const newRecord = { ...recordToSave, id: generatedId };
       const index = localList.findIndex((i) => i.id === generatedId);
       if (index >= 0) {
@@ -232,21 +250,33 @@ export async function saveMutasiStoreBulk(
         ? payload.no_surat_jalan.trim()
         : 'Tidak ada surat jalan';
 
-    return {
-      ...payload,
-      id: payload.id || undefined,
+    const validId = isUuid(payload.id) ? payload.id : undefined;
+
+    const item: any = {
       tanggal_diterima: payload.tanggal_diterima || new Date().toISOString().split('T')[0],
+      asal_store_id: payload.asal_store_id || '',
+      asal_store_nama: payload.asal_store_nama || 'Store',
       no_surat_jalan: cleanSuratJalan,
       kategori_produk: payload.kategori_produk || 'Mutasi Antar Store',
       up_tujuan: payload.up_tujuan || 'Warehouse',
+      deskripsi: payload.deskripsi || '',
       qty: Number(payload.qty || 1),
       satuan_qty: payload.satuan_qty || 'Pcs',
       foto_urls: payload.foto_urls || [],
       lokasi_stamp: payload.lokasi_stamp || {},
+      pic_nama: payload.pic_nama || '',
+      pic_username: payload.pic_username || '',
       timestamp_input: payload.timestamp_input || new Date().toISOString(),
+      keterangan: payload.keterangan || '',
       created_at: payload.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
+    if (validId) {
+      item.id = validId;
+    }
+
+    return item;
   });
 
   try {
@@ -255,7 +285,7 @@ export async function saveMutasiStoreBulk(
     return {
       success: true,
       count: recordsToSave.length,
-      message: `${recordsToSave.length} laporan mutasi store berhasil disimpan!`,
+      message: `${recordsToSave.length} laporan mutasi store berhasil disimpan ke database!`,
     };
   } catch (err: any) {
     console.warn('Bulk save to Supabase error, updating local cache:', err);
@@ -358,34 +388,50 @@ export async function fetchPenerimaanPaketList(): Promise<PenerimaanPaketItem[]>
 export async function savePenerimaanPaket(
   payload: PenerimaanPaketItem
 ): Promise<{ success: boolean; data?: PenerimaanPaketItem; message: string }> {
-  const recordToSave = {
-    ...payload,
-    id: payload.id || undefined,
+  const validId = isUuid(payload.id) ? payload.id : undefined;
+
+  const recordToSave: any = {
     tanggal_diterima: payload.tanggal_diterima || new Date().toISOString().split('T')[0],
+    ekspedisi: payload.ekspedisi || 'Ekspedisi',
+    no_resi: payload.no_resi || '',
+    pengirim: payload.pengirim || '',
+    penerima_up: payload.penerima_up || '',
+    jenis_paket: payload.jenis_paket || 'Barang / Sampel',
+    deskripsi: payload.deskripsi || '',
     qty_paket: Number(payload.qty_paket || 1),
     foto_urls: payload.foto_urls || [],
     lokasi_stamp: payload.lokasi_stamp || {},
+    pic_nama: payload.pic_nama || '',
+    pic_username: payload.pic_username || '',
     timestamp_input: payload.timestamp_input || new Date().toISOString(),
+    keterangan: payload.keterangan || '',
     created_at: payload.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
+  if (validId) {
+    recordToSave.id = validId;
+  }
+
   try {
-    if (payload.id) {
-      await supabaseFetch('penerimaan_paket', 'PATCH', recordToSave, `id=eq.${payload.id}`);
+    if (validId) {
+      await supabaseFetch('penerimaan_paket', 'PATCH', recordToSave, `id=eq.${validId}`);
     } else {
-      await supabaseFetch('penerimaan_paket', 'POST', [recordToSave]);
+      const inserted = await supabaseFetch<any[]>('penerimaan_paket', 'POST', [recordToSave]);
+      if (inserted && Array.isArray(inserted) && inserted.length > 0 && inserted[0].id) {
+        recordToSave.id = inserted[0].id;
+      }
     }
 
     await fetchPenerimaanPaketList();
-    return { success: true, message: 'Data penerimaan paket berhasil disimpan!', data: recordToSave };
+    return { success: true, message: 'Data penerimaan paket berhasil disimpan ke database!', data: recordToSave };
   } catch (err: any) {
     console.warn('Save to Supabase error, updating local cache:', err);
     try {
       const localList: PenerimaanPaketItem[] = JSON.parse(
         localStorage.getItem(LOCAL_STORAGE_PAKET) || '[]'
       );
-      const generatedId = payload.id || `local_pkt_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const generatedId = validId || `local_pkt_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const newRecord = { ...recordToSave, id: generatedId };
       const index = localList.findIndex((i) => i.id === generatedId);
       if (index >= 0) {

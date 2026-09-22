@@ -905,6 +905,10 @@ export interface PenerimaanPaketItem {
   tanggal_diterima: string; // YYYY-MM-DD
   ekspedisi: string;
   no_resi?: string;
+  pengirim?: string;
+  penerima_up?: string;
+  jenis_paket?: string;
+  deskripsi?: string;
   qty_paket: number;
   foto_urls: string[];
   lokasi_stamp?: LocationStamp;
@@ -1024,6 +1028,24 @@ export interface KoliMarkingLabel {
   pic_nama: string;
   qr_data_string?: string;
   barcode_data_string?: string;
+}
+
+export interface RiwayatHandoverPaket {
+  id: string;
+  no_manifest: string;
+  tgl_kirim: string;
+  ekspedisi: string;
+  driver_kurir: string;
+  no_kendaraan: string;
+  total_paket: number;
+  pic_nama: string;
+  pic_username?: string;
+  waktu_handover: string;
+  status: 'Diserahkan ke Kurir' | 'Selesai';
+  keterangan?: string;
+  resi_list: string[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 

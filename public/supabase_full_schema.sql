@@ -404,12 +404,21 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   is_all_day BOOLEAN DEFAULT false,
   start_time TEXT DEFAULT '',
   end_time TEXT DEFAULT '',
-  category TEXT DEFAULT 'umum' 
-    CHECK (category IN ('meeting', 'operasional', 'project', 'supplier', 'urgent', 'umum')),
+  category TEXT DEFAULT 'umum',
   location TEXT DEFAULT '',
   pic TEXT DEFAULT '',
   project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
   attachments JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.wms_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT DEFAULT '',
+  content TEXT NOT NULL,
+  color TEXT DEFAULT 'yellow',
   created_by TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
@@ -496,6 +505,118 @@ ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_publish_online T
 ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS catalog_publish_offline TEXT;
 ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS publish_online TEXT;
 ALTER TABLE public.wms_katalog ADD COLUMN IF NOT EXISTS publish_offline TEXT;
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- 18C. TABEL LOADING DOCK (PENERIMAAN & PENGIRIMAN STORE / PAKET)
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.penerimaan_mutasi_store (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tanggal_diterima DATE NOT NULL DEFAULT CURRENT_DATE,
+  asal_store_id TEXT DEFAULT '',
+  asal_store_nama TEXT NOT NULL,
+  no_surat_jalan TEXT DEFAULT 'Tidak ada surat jalan',
+  kategori_produk TEXT DEFAULT 'Mutasi Antar Store',
+  up_tujuan TEXT DEFAULT 'Warehouse',
+  deskripsi TEXT DEFAULT '',
+  qty NUMERIC DEFAULT 1,
+  satuan_qty TEXT DEFAULT 'Pcs',
+  foto_urls JSONB DEFAULT '[]'::jsonb,
+  lokasi_stamp JSONB DEFAULT '{}'::jsonb,
+  pic_nama TEXT DEFAULT '',
+  pic_username TEXT DEFAULT '',
+  timestamp_input TIMESTAMPTZ DEFAULT now(),
+  keterangan TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.penerimaan_paket (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tanggal_diterima DATE NOT NULL DEFAULT CURRENT_DATE,
+  ekspedisi TEXT NOT NULL,
+  no_resi TEXT DEFAULT '',
+  pengirim TEXT DEFAULT '',
+  penerima_up TEXT DEFAULT '',
+  jenis_paket TEXT DEFAULT 'Barang / Sampel',
+  deskripsi TEXT DEFAULT '',
+  qty_paket NUMERIC DEFAULT 1,
+  foto_urls JSONB DEFAULT '[]'::jsonb,
+  lokasi_stamp JSONB DEFAULT '{}'::jsonb,
+  pic_nama TEXT DEFAULT '',
+  pic_username TEXT DEFAULT '',
+  timestamp_input TIMESTAMPTZ DEFAULT now(),
+  keterangan TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.pengiriman_store_reports (
+  id TEXT PRIMARY KEY,
+  store_tujuan_id TEXT DEFAULT '',
+  store_tujuan TEXT NOT NULL,
+  tanggal_laporan DATE DEFAULT CURRENT_DATE,
+  items JSONB DEFAULT '[]'::jsonb,
+  total_item_count NUMERIC DEFAULT 0,
+  total_koli NUMERIC DEFAULT 0,
+  pic_nama TEXT DEFAULT '',
+  pic_username TEXT DEFAULT '',
+  status TEXT DEFAULT 'dispatched',
+  foto_urls JSONB DEFAULT '[]'::jsonb,
+  gdrive_folder_url TEXT DEFAULT '',
+  trip_id TEXT DEFAULT '',
+  tanggal_kirim TEXT DEFAULT '',
+  waktu_kirim TEXT DEFAULT '',
+  dikirim_oleh TEXT DEFAULT '',
+  armada TEXT DEFAULT '',
+  no_polisi TEXT DEFAULT '',
+  catatan_kirim TEXT DEFAULT '',
+  audit_logs JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.pengiriman_store_trips (
+  id TEXT PRIMARY KEY,
+  report_ids JSONB DEFAULT '[]'::jsonb,
+  tanggal_kirim DATE DEFAULT CURRENT_DATE,
+  waktu_kirim TEXT DEFAULT '',
+  dikirim_oleh TEXT DEFAULT '',
+  armada TEXT DEFAULT '',
+  no_polisi TEXT DEFAULT '',
+  catatan_kirim TEXT DEFAULT '',
+  status TEXT DEFAULT 'in_transit',
+  foto_bukti_surat_jalan TEXT DEFAULT '',
+  gdrive_folder_url TEXT DEFAULT '',
+  pic_nama TEXT DEFAULT '',
+  pic_username TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.pengiriman_paket_handover (
+  id TEXT PRIMARY KEY,
+  no_manifest TEXT NOT NULL,
+  tgl_kirim DATE DEFAULT CURRENT_DATE,
+  ekspedisi TEXT NOT NULL,
+  driver_kurir TEXT DEFAULT '',
+  no_kendaraan TEXT DEFAULT '',
+  total_paket NUMERIC DEFAULT 0,
+  pic_nama TEXT DEFAULT '',
+  pic_username TEXT DEFAULT '',
+  waktu_handover TEXT DEFAULT '',
+  status TEXT DEFAULT 'Diserahkan ke Kurir',
+  keterangan TEXT DEFAULT '',
+  resi_list JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.ekspedisi_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nama TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 
 -- ──────────────────────────────────────────────────────────────────────────────
 -- 19. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
@@ -592,10 +713,10 @@ DECLARE
   tbl text;
   tables text[] := ARRAY[
     'wms_users', 'master_produk', 'log_produk', 'stock_opname_queue',
-    'penerimaan_produksi', 'picking_list', 'peminjaman', 'perbaikan_tickets',
-    'qc_reports', 'manual_shipment', 'pengecekan_sj', 'address_book',
+    'penerimaan_produksi', 'penerimaan_mutasi_store', 'penerimaan_paket', 'picking_list', 'peminjaman', 'perbaikan_tickets',
+    'qc_reports', 'manual_shipment', 'pengecekan_sj', 'pengiriman_store_reports', 'pengiriman_store_trips', 'pengiriman_paket_handover', 'ekspedisi_config', 'address_book',
     'karyawan', 'master_shift', 'roster_shift', 'presensi', 'lembur', 'perijinan_cuti',
-    'wms_projects', 'wms_agenda', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings', 'wms_katalog'
+    'wms_projects', 'wms_agenda', 'wms_notes', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings', 'wms_katalog'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
@@ -614,7 +735,7 @@ DECLARE
   tables text[] := ARRAY[
     'log_produk', 'stock_opname_queue', 'peminjaman', 'picking_list',
     'perbaikan_tickets', 'qc_reports', 'manual_shipment', 'pengecekan_sj',
-    'karyawan', 'presensi', 'lembur', 'wms_projects', 'wms_agenda',
+    'karyawan', 'presensi', 'lembur', 'wms_projects', 'wms_agenda', 'wms_notes',
     'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings'
   ];
 BEGIN

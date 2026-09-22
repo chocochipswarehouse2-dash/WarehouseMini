@@ -115,6 +115,7 @@ const ALL_TABLES = [
   'pengecekan_sj',
   'pengiriman_store_reports',
   'pengiriman_store_trips',
+  'pengiriman_paket_handover',
   // HR — karyawan HARUS sebelum tabel yang ber-FK ke nik
   'karyawan',
   'master_shift',
@@ -125,6 +126,7 @@ const ALL_TABLES = [
   // Project & Agenda — wms_projects HARUS sebelum wms_agenda
   'wms_projects',
   'wms_agenda',
+  'wms_notes',
   // Misc
   'wms_roadmap',
   'wms_system_docs',

@@ -893,7 +893,7 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   is_all_day BOOLEAN DEFAULT false,
   start_time TEXT DEFAULT '',
   end_time TEXT DEFAULT '',
-  category TEXT DEFAULT 'umum' CHECK (category IN ('meeting', 'operasional', 'project', 'supplier', 'urgent', 'umum')),
+  category TEXT DEFAULT 'umum',
   location TEXT DEFAULT '',
   pic TEXT DEFAULT '',
   project_id UUID REFERENCES public.wms_projects(id) ON DELETE SET NULL,
@@ -903,11 +903,28 @@ CREATE TABLE IF NOT EXISTS public.wms_agenda (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Drop old check constraint if exists
+ALTER TABLE public.wms_agenda DROP CONSTRAINT IF EXISTS wms_agenda_category_check;
+
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_start_date ON public.wms_agenda(start_date);
 CREATE INDEX IF NOT EXISTS idx_wms_agenda_category ON public.wms_agenda(category);
 
+-- 3. TABEL CATATAN & STICKY NOTES (wms_notes)
+CREATE TABLE IF NOT EXISTS public.wms_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT DEFAULT '',
+  content TEXT NOT NULL,
+  color TEXT DEFAULT 'yellow',
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wms_notes_created_at ON public.wms_notes(created_at DESC);
+
 ALTER TABLE public.wms_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wms_agenda ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wms_notes ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
@@ -916,6 +933,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_agenda' AND policyname = 'Allow public all access wms_agenda') THEN
     CREATE POLICY "Allow public all access wms_agenda" ON public.wms_agenda FOR ALL USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'wms_notes' AND policyname = 'Allow public all access wms_notes') THEN
+    CREATE POLICY "Allow public all access wms_notes" ON public.wms_notes FOR ALL USING (true);
   END IF;
 END $$;
 `;
@@ -6890,9 +6910,9 @@ export async function getAgendaEvents(): Promise<AgendaEvent[]> {
  * Menyimpan / memperbarui agenda ke Supabase dan local cache
  */
 export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<AgendaEvent> {
-  const isNew = !item.id;
+  const isExistingUuid = Boolean(item.id && isValidUUID(item.id));
+  const id = isExistingUuid ? (item.id as string) : generateUUID();
   const nowIso = new Date().toISOString();
-  const id = item.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'agenda-' + Date.now());
   
   const payload: AgendaEvent = {
     id,
@@ -6906,8 +6926,8 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     category: item.category || 'umum',
     location: item.location || '',
     pic: item.pic || '',
-    project_id: item.project_id || undefined,
-    attachments: item.attachments || [],
+    project_id: item.project_id && isValidUUID(item.project_id) ? item.project_id : undefined,
+    attachments: Array.isArray(item.attachments) ? item.attachments : [],
     created_by: item.created_by || 'User',
     created_at: item.created_at || nowIso,
     updated_at: nowIso,
@@ -6915,7 +6935,7 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
 
   // 1. Simpan ke Supabase
   try {
-    if (isNew) {
+    if (!isExistingUuid) {
       await supabaseFetch('wms_agenda', 'POST', [payload]);
     } else {
       const updateData = { ...payload };
@@ -6931,7 +6951,9 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
     try {
       const cached = localStorage.getItem(LOCAL_AGENDA_KEY);
       let list: AgendaEvent[] = cached ? JSON.parse(cached) : [];
-      const idx = list.findIndex(a => a.id === id);
+      // Replace existing by UUID or legacy id (e.g. seed-agenda-*)
+      const oldId = item.id;
+      const idx = list.findIndex(a => a.id === id || (oldId && a.id === oldId));
       if (idx >= 0) {
         list[idx] = payload;
       } else {
@@ -6951,10 +6973,12 @@ export async function saveAgendaEvent(item: Partial<AgendaEvent>): Promise<Agend
  * Menghapus agenda dari Supabase dan local cache
  */
 export async function deleteAgendaEvent(id: string): Promise<void> {
-  try {
-    await supabaseFetch('wms_agenda', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
-  } catch (err) {
-    console.warn('Gagal hapus agenda di Supabase:', err);
+  if (isValidUUID(id)) {
+    try {
+      await supabaseFetch('wms_agenda', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+    } catch (err) {
+      console.warn('Gagal hapus agenda di Supabase:', err);
+    }
   }
 
   if (typeof window !== 'undefined') {
@@ -7006,9 +7030,9 @@ export async function getProjects(): Promise<ProjectItem[]> {
  * Menyimpan / memperbarui proyek ke Supabase dan local cache
  */
 export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectItem> {
-  const isNew = !item.id;
+  const isExistingUuid = Boolean(item.id && isValidUUID(item.id));
+  const id = isExistingUuid ? (item.id as string) : generateUUID();
   const nowIso = new Date().toISOString();
-  const id = item.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'project-' + Date.now());
 
   const payload: ProjectItem = {
     id,
@@ -7021,8 +7045,8 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
     start_date: item.start_date || getRelativeDateStr(0),
     deadline: item.deadline || getRelativeDateStr(14),
     progress: typeof item.progress === 'number' ? Math.max(0, Math.min(100, item.progress)) : 0,
-    tasks: item.tasks || [],
-    attachments: item.attachments || [],
+    tasks: Array.isArray(item.tasks) ? item.tasks : [],
+    attachments: Array.isArray(item.attachments) ? item.attachments : [],
     created_by: item.created_by || 'User',
     created_at: item.created_at || nowIso,
     updated_at: nowIso,
@@ -7030,7 +7054,7 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
 
   // 1. Simpan ke Supabase
   try {
-    if (isNew) {
+    if (!isExistingUuid) {
       await supabaseFetch('wms_projects', 'POST', [payload]);
     } else {
       const updateData = { ...payload };
@@ -7046,7 +7070,8 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
     try {
       const cached = localStorage.getItem(LOCAL_PROJECTS_KEY);
       let list: ProjectItem[] = cached ? JSON.parse(cached) : [];
-      const idx = list.findIndex(p => p.id === id);
+      const oldId = item.id;
+      const idx = list.findIndex(p => p.id === id || (oldId && p.id === oldId));
       if (idx >= 0) {
         list[idx] = payload;
       } else {
@@ -7066,10 +7091,12 @@ export async function saveProject(item: Partial<ProjectItem>): Promise<ProjectIt
  * Menghapus proyek dari Supabase dan local cache
  */
 export async function deleteProject(id: string): Promise<void> {
-  try {
-    await supabaseFetch('wms_projects', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
-  } catch (err) {
-    console.warn('Gagal hapus project di Supabase:', err);
+  if (isValidUUID(id)) {
+    try {
+      await supabaseFetch('wms_projects', 'DELETE', null, `id=eq.${encodeURIComponent(id)}`);
+    } catch (err) {
+      console.warn('Gagal hapus project di Supabase:', err);
+    }
   }
 
   if (typeof window !== 'undefined') {

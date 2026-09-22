@@ -117,7 +117,7 @@ export async function fetchPengirimanStoreReports(): Promise<PengirimanStoreRepo
       'select=*&order=created_at.desc'
     );
 
-    if (data && Array.isArray(data) && data.length > 0) {
+    if (data && Array.isArray(data)) {
       const remoteList: PengirimanStoreReport[] = data.map((d: any) => ({
         id: d.id,
         store_tujuan_id: d.store_tujuan_id,
@@ -151,6 +151,43 @@ export async function fetchPengirimanStoreReports(): Promise<PengirimanStoreRepo
   }
 
   return getCachedReports();
+}
+
+export async function fetchPengirimanStoreTrips(): Promise<PengirimanStoreTrip[]> {
+  try {
+    const data = await supabaseFetch<any[]>(
+      'pengiriman_store_trips',
+      'GET',
+      null,
+      'select=*&order=created_at.desc'
+    );
+
+    if (data && Array.isArray(data)) {
+      const remoteTrips: PengirimanStoreTrip[] = data.map((d: any) => ({
+        id: d.id,
+        tanggal_kirim: d.tanggal_kirim,
+        waktu_kirim: d.waktu_kirim || '',
+        dikirim_oleh: d.dikirim_oleh || '',
+        store_tujuan_list: typeof d.store_tujuan_list === 'string' ? JSON.parse(d.store_tujuan_list) : (d.store_tujuan_list || []),
+        report_ids: typeof d.report_ids === 'string' ? JSON.parse(d.report_ids) : (d.report_ids || []),
+        total_koli: Number(d.total_koli || 0),
+        armada: d.armada || '',
+        no_polisi: d.no_polisi || '',
+        catatan: d.catatan_kirim || d.catatan || '',
+        status: d.status || 'in_transit',
+        created_by_nama: d.pic_nama || d.created_by_nama || 'Petugas Gudang',
+        created_by_username: d.pic_username || d.created_by_username || 'operator',
+        created_at: d.created_at || new Date().toISOString(),
+      }));
+
+      saveTripsToCache(remoteTrips);
+      return remoteTrips;
+    }
+  } catch (e) {
+    console.warn('Supabase fetch pengiriman_store_trips error, fallback to cache:', e);
+  }
+
+  return getCachedTrips();
 }
 
 export async function savePengirimanStoreReport(
@@ -424,8 +461,28 @@ export async function processKirimStoreReports(payload: {
     const cachedTrips = getCachedTrips();
     saveTripsToCache([tripRecord, ...cachedTrips]);
 
-    // Background sync to Supabase
+    // Sync Trip and matching Reports to Supabase
     try {
+      // 1. Insert Trip to Supabase
+      await supabaseFetch('pengiriman_store_trips', 'POST', [
+        {
+          id: tripRecord.id,
+          tanggal_kirim: tripRecord.tanggal_kirim,
+          waktu_kirim: tripRecord.waktu_kirim,
+          dikirim_oleh: tripRecord.dikirim_oleh,
+          armada: tripRecord.armada || '',
+          no_polisi: tripRecord.no_polisi || '',
+          catatan_kirim: tripRecord.catatan || '',
+          status: 'in_transit',
+          report_ids: JSON.stringify(tripRecord.report_ids),
+          pic_nama: tripRecord.created_by_nama,
+          pic_username: tripRecord.created_by_username,
+          created_at: tripRecord.created_at,
+          updated_at: nowIso,
+        },
+      ]);
+
+      // 2. Update status of each dispatched report to 'sent'
       for (const reportId of payload.report_ids) {
         await supabaseFetch(
           'pengiriman_store_reports',
