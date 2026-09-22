@@ -30,6 +30,9 @@ import {
   Eye,
   Loader2,
   UploadCloud,
+  Barcode as BarcodeIcon,
+  Check,
+  X,
 } from 'lucide-react';
 import {
   UserSession,
@@ -513,16 +516,55 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   };
 
   const handleSelectAllDispatched = () => {
-    if (selectedDispatchedIds.length === filteredDispatched.length) {
+    if (selectedDispatchedIds.length === filteredDispatched.length && filteredDispatched.length > 0) {
       setSelectedDispatchedIds([]);
     } else {
       setSelectedDispatchedIds(filteredDispatched.map((r) => r.id));
     }
   };
 
+  const selectedDispatchedObjects = useMemo(() => {
+    return dispatchedReports.filter((r) => selectedDispatchedIds.includes(r.id));
+  }, [dispatchedReports, selectedDispatchedIds]);
+
+  const totalKoliSelectedDispatched = useMemo(() => {
+    return selectedDispatchedObjects.reduce((acc, r) => acc + (r.total_koli || 1), 0);
+  }, [selectedDispatchedObjects]);
+
+  const totalKoliFilteredDispatched = useMemo(() => {
+    return filteredDispatched.reduce((acc, r) => acc + (r.total_koli || 1), 0);
+  }, [filteredDispatched]);
+
+  const selectedDispatchedStoreNames = useMemo(() => {
+    return Array.from(new Set(selectedDispatchedObjects.map((r) => r.store_tujuan)));
+  }, [selectedDispatchedObjects]);
+
   const handleSendSelectedFromDispatched = (report: PengirimanStoreReport) => {
     setSelectedStoreKirim(report.store_tujuan);
     setSelectedReportIdsForKirim([report.id]);
+    setActiveSubTab('kirim');
+  };
+
+  const handleSendSelectedBulkFromDispatched = (reportsToShip: PengirimanStoreReport[]) => {
+    if (reportsToShip.length === 0) {
+      onShowToast('Pilih minimal 1 laporan untuk dikirim', 'warning');
+      return;
+    }
+    const storeNames = Array.from(new Set(reportsToShip.map((r) => r.store_tujuan)));
+    if (storeNames.length > 1) {
+      setSelectedStoreKirim(storeNames[0]);
+      const idsForFirstStore = reportsToShip
+        .filter((r) => r.store_tujuan === storeNames[0])
+        .map((r) => r.id);
+      setSelectedReportIdsForKirim(idsForFirstStore);
+      onShowToast(
+        `Membuka setup kirim untuk store: ${storeNames[0]} (${idsForFirstStore.length} laporan terpilih)`,
+        'info'
+      );
+    } else {
+      setSelectedStoreKirim(storeNames[0]);
+      setSelectedReportIdsForKirim(reportsToShip.map((r) => r.id));
+    }
     setActiveSubTab('kirim');
   };
 
@@ -742,6 +784,31 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     }
     setLabelsToPrint(lbls);
     setPrintModalTitle(`Cetak Label Koli: ${rep.store_tujuan} (${lbls.length} Koli)`);
+    setPrintModalOpen(true);
+  };
+
+  const handlePrintBulkLabels = (reportsToPrint: PengirimanStoreReport[]) => {
+    if (reportsToPrint.length === 0) {
+      onShowToast('Pilih minimal 1 laporan untuk mencetak barcode label koli massal', 'warning');
+      return;
+    }
+    const allLabels: KoliMarkingLabel[] = [];
+    reportsToPrint.forEach((rep) => {
+      const labels = generateKoliLabelsForReport(rep);
+      allLabels.push(...labels);
+    });
+
+    if (allLabels.length === 0) {
+      onShowToast('Tidak ada koli untuk dicetak labelnya', 'warning');
+      return;
+    }
+
+    setLabelsToPrint(allLabels);
+    const storeNames = Array.from(new Set(reportsToPrint.map((r) => r.store_tujuan)));
+    const storeLabel = storeNames.length === 1 ? storeNames[0] : `${storeNames.length} Store`;
+    setPrintModalTitle(
+      `Cetak Barcode Label Koli Massal: ${storeLabel} (${allLabels.length} Label - ${reportsToPrint.length} Laporan)`
+    );
     setPrintModalOpen(true);
   };
 
@@ -1334,7 +1401,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={handleSelectAllDispatched}
@@ -1347,8 +1414,75 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 )}
                 <span>Pilih Semua ({filteredDispatched.length})</span>
               </button>
+
+              {/* Tombol Cetak Barcode Koli Massal */}
+              {selectedDispatchedIds.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => handlePrintBulkLabels(selectedDispatchedObjects)}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/25 flex items-center gap-1.5 cursor-pointer transition-all animate-in fade-in"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>
+                    Cetak Barcode Terpilih ({selectedDispatchedIds.length} Lap • {totalKoliSelectedDispatched} Koli)
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handlePrintBulkLabels(filteredDispatched)}
+                  disabled={filteredDispatched.length === 0}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  title="Cetak barcode koli untuk seluruh hasil filter"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Massal Semua ({totalKoliFilteredDispatched} Koli)</span>
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Banner Toko Spesifik (Jika Filter Toko Aktif) */}
+          {filterStoreDispatched && filteredDispatched.length > 0 && (
+            <div className="bg-linear-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 border border-indigo-200/80 dark:border-indigo-800/80 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-600/20">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase flex items-center gap-2">
+                    <span>{filterStoreDispatched}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-200 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200">
+                      Cabang Aktif
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    Terdapat <strong className="text-indigo-600 dark:text-indigo-400">{filteredDispatched.length} laporan</strong> dengan total <strong className="text-indigo-600 dark:text-indigo-400">{totalKoliFilteredDispatched} Koli</strong> siap kirim.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handlePrintBulkLabels(filteredDispatched)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-black text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-indigo-300 dark:border-indigo-700 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-4 h-4 text-indigo-600" />
+                  <span>Cetak Barcode Koli {filterStoreDispatched} ({totalKoliFilteredDispatched} Koli)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendSelectedBulkFromDispatched(filteredDispatched)}
+                  className="px-4 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 flex items-center gap-1.5 shadow-md shadow-blue-600/25 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Kirim Semua ({totalKoliFilteredDispatched} Koli)</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {filteredDispatched.length === 0 ? (
             <div className="bg-white dark:bg-[#131d31] p-10 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
@@ -1514,6 +1648,59 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Floating Sticky Action Bar saat ada Laporan Dispatched yang Terpilih */}
+          {selectedDispatchedIds.length > 0 && (
+            <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white backdrop-blur-md px-4 py-3 rounded-2xl border border-slate-700 shadow-2xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <CheckSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black">
+                      {selectedDispatchedIds.length} Laporan Dipilih
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                      {totalKoliSelectedDispatched} Koli Total
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-[300px]">
+                    {selectedDispatchedStoreNames.join(', ')}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrintBulkLabels(selectedDispatchedObjects)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer transition-all"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Barcode Koli Massal</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendSelectedBulkFromDispatched(selectedDispatchedObjects)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 shadow-lg shadow-blue-600/30 cursor-pointer transition-all"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Setup Kirim</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedDispatchedIds([])}
+                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Batal Pilih"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1762,15 +1949,28 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 Alur: <strong>Submit Kirim</strong> → <strong>Cetak Surat Jalan (A4 Rangkap 2)</strong> → Masuk ke <strong>Histori</strong>.
               </div>
 
-              <button
-                type="button"
-                onClick={handleSubmitKirim}
-                disabled={isProcessingKirim || selectedReportIdsForKirim.length === 0}
-                className="w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-black text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Send className="w-4 h-4" />
-                <span>Submit Kirim & Cetak Surat Jalan ({totalKoliSelectedForKirim} Koli)</span>
-              </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => handlePrintBulkLabels(selectedDispatchedObjectsForKirim)}
+                  disabled={selectedReportIdsForKirim.length === 0}
+                  className="flex-1 sm:flex-none px-4 py-3 rounded-xl text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  title="Cetak barcode koli untuk barang yang dipilih"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Label Koli ({totalKoliSelectedForKirim} Koli)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitKirim}
+                  disabled={isProcessingKirim || selectedReportIdsForKirim.length === 0}
+                  className="flex-1 sm:flex-none px-6 py-3 rounded-xl text-sm font-black text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Submit Kirim & Cetak SJ</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1940,7 +2140,18 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                                 Surat Jalan
                               </button>
 
-                              {/* 2. Edit Pengiriman */}
+                              {/* 2. Cetak Ulang Label Koli */}
+                              <button
+                                type="button"
+                                onClick={() => handlePrintLabelsForReport(rep)}
+                                className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 rounded-lg flex items-center gap-1 cursor-pointer"
+                                title="Cetak Barcode Label Koli"
+                              >
+                                <Printer className="w-3 h-3" />
+                                Label Koli
+                              </button>
+
+                              {/* 3. Edit Pengiriman */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenEdit(rep)}
@@ -1951,7 +2162,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                                 Edit
                               </button>
 
-                              {/* 3. Cancel Pengiriman */}
+                              {/* 4. Cancel Pengiriman */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenCancel(rep)}
@@ -1962,7 +2173,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                                 Cancel
                               </button>
 
-                              {/* 4. Delete Pengiriman */}
+                              {/* 5. Delete Pengiriman */}
                               <button
                                 type="button"
                                 onClick={() => handleDeleteReport(rep)}
