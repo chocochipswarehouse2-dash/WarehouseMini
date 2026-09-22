@@ -229,9 +229,18 @@ function handleWhatsAppScan(payload) {
         }
       }
       
+      var itemLokasi = currentLokasi ? currentLokasi.trim() : 'Warehouse';
+      var itemType = currentType ? currentType : TYPE_SO;
+      var itemDeskripsi = currentDeskripsi || (itemType === TYPE_SO ? 'Stock Opname WA' : itemType);
+      var itemArea = getArea(itemLokasi);
+
       rawItems.push({
         sku: itemSku,
-        qty: itemQty
+        qty: itemQty,
+        lokasi: itemLokasi,
+        type: itemType,
+        deskripsi: itemDeskripsi,
+        area: itemArea
       });
     }
     
@@ -295,16 +304,16 @@ function handleWhatsAppScan(payload) {
       var size = meta ? (meta.size || '-') : '-';
       
       logEntries.push({
-        type: typeFinal,
+        type: it.type || typeFinal,
         invoice: invoice,
         sku: it.sku,
         nama_produk: nama_produk,
         size: size,
-        area: areaFinal,
-        lokasi: lokasiFinal,
+        area: it.area || areaFinal,
+        lokasi: it.lokasi || lokasiFinal,
         qty: it.qty,
         operator: operator,
-        keterangan: deskripsiFinal,
+        keterangan: it.deskripsi || deskripsiFinal,
         created_at: nowIso
       });
     }

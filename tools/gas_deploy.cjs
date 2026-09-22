@@ -1,4 +1,6 @@
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const MAIN_SCRIPT_ID = '1kxPONxg5JyJKzrHg2EApt9K8c9nK6hccygtny2jf69JtgKIoVauTgDEU';
 const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsruqmE';
@@ -6,8 +8,22 @@ const WEBHOOK_SCRIPT_ID = '1EfZ76Hl-bJhwvfzWpBkMD2zR8YbEkeBRgkgD76NHv95_XeHwtfsr
 const NEW_URL = 'https://ilhqerecxbywqrhfpbbc.supabase.co';
 const NEW_KEY = 'sb_publishable_tMgdx9b0XBAQei7WcKYvMg_QwJ-lopn';
 
+const GAS_DIR = path.join(__dirname, '../gas');
+
+function getClasprcPath() {
+  const p1 = 'C:/Users/Chocochips Warehouse/.clasprc.json';
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.join(os.homedir(), '.clasprc.json');
+  if (fs.existsSync(p2)) return p2;
+  return p1;
+}
+
 async function getAccessToken() {
-  const clasprc = JSON.parse(fs.readFileSync('C:/Users/Chocochips Warehouse/.clasprc.json', 'utf8'));
+  const targetPath = getClasprcPath();
+  if (!fs.existsSync(targetPath)) {
+    throw new Error(`File credentials clasprc tidak ditemukan di ${targetPath}. Pastikan sudah login clasp atau jalankan di environment lokal.`);
+  }
+  const clasprc = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
   const def = clasprc.tokens.default;
 
   if (def.expiry_date && def.expiry_date > Date.now() + 60000 && def.access_token) {
@@ -33,7 +49,7 @@ async function getAccessToken() {
 
   def.access_token = data.access_token;
   def.expiry_date = Date.now() + (data.expires_in * 1000);
-  fs.writeFileSync('C:/Users/Chocochips Warehouse/.clasprc.json', JSON.stringify(clasprc, null, 2), 'utf8');
+  fs.writeFileSync(targetPath, JSON.stringify(clasprc, null, 2), 'utf8');
   return def.access_token;
 }
 
@@ -46,8 +62,8 @@ async function deployStandaloneWebhook(headers) {
   console.log(`Script ID: ${WEBHOOK_SCRIPT_ID}`);
   console.log('======================================================');
 
-  const codeContent = fs.readFileSync('d:/Antigravity/WMS Inventory/gas/Code.js', 'utf8');
-  const appsscriptJson = fs.readFileSync('d:/Antigravity/WMS Inventory/gas/appsscript.json', 'utf8');
+  const codeContent = fs.readFileSync(path.join(GAS_DIR, 'Code.js'), 'utf8');
+  const appsscriptJson = fs.readFileSync(path.join(GAS_DIR, 'appsscript.json'), 'utf8');
 
   const files = [
     {
@@ -134,7 +150,7 @@ async function deployMainBackend(headers) {
   proj.files = proj.files.filter(f => f.name !== 'SyncSupabaseToSheet');
 
   console.log('2. Memperbarui Supabase credentials & Handler di file GAS...');
-  const fonnteHandlerCode = fs.readFileSync('d:/Antigravity/WMS Inventory/gas/fonnte_handler.js', 'utf8');
+  const fonnteHandlerCode = fs.readFileSync(path.join(GAS_DIR, 'fonnte_handler.js'), 'utf8');
 
   for (const file of proj.files) {
     if (file.name === 'SupabaseBridge') {
