@@ -85,6 +85,25 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const canExportData = hasPermission(session, 'action_export_data');
   const currentOperator = session?.username || 'Operator';
 
+  const dedupQueueList = (data: StockOpnameQueueItem[]) => {
+    const map = new Map<string, StockOpnameQueueItem>();
+    for (const item of data) {
+      const inv = (item.invoice || item.sesi_id || '').trim();
+      const sku = (item.sku || '').trim().toUpperCase();
+      const lok = (item.lokasi || '').trim().toUpperCase();
+      const key = `${inv}__${sku}__${lok}`;
+      if (!map.has(key)) {
+        map.set(key, item);
+      } else {
+        const existing = map.get(key)!;
+        if (existing.status === 'PENDING' && item.status !== 'PENDING') {
+          map.set(key, item);
+        }
+      }
+    }
+    return Array.from(map.values());
+  };
+
   const loadSoData = async (_arg?: any) => {
     const silentSync = typeof _arg === 'boolean' ? _arg : true;
     // 1. Instant Cache Load: Render immediately if cached data exists (0ms response)
@@ -94,7 +113,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setSoQueue(parsed);
+            setSoQueue(dedupQueueList(parsed));
           }
         }
       } catch {}
@@ -109,8 +128,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           if (syncRes && syncRes.newQueueItemsCount > 0) {
             fetchStockOpnameQueue('ALL').then((freshData) => {
               if (freshData && Array.isArray(freshData)) {
-                const unique = Array.from(new Map(freshData.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
-                setSoQueue(unique);
+                setSoQueue(dedupQueueList(freshData));
               }
             }).catch(() => {});
           }
@@ -119,8 +137,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
 
       const data = await fetchStockOpnameQueue('ALL');
       if (data && Array.isArray(data) && data.length > 0) {
-        const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
-        setSoQueue(unique);
+        setSoQueue(dedupQueueList(data));
       }
       setSelectedSoIds([]);
     } catch (e: any) {
@@ -144,7 +161,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     try {
       await syncPendingStockOpnameFromLogProduk().catch(() => {});
       const data = await fetchStockOpnameQueue();
-      const unique = Array.from(new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
+      const unique = dedupQueueList(data);
       setSoQueue(unique);
       setSelectedSoIds([]);
       if (onNotify) onNotify(`Muat ulang penuh selesai — ${unique.length} baris dimuat.`, 'success');
@@ -164,8 +181,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     const unsubQueue = globalRealtimeStore.subscribe('stock_opname_queue', () => {
       fetchStockOpnameQueue('ALL').then((freshData) => {
         if (freshData && Array.isArray(freshData)) {
-          const unique = Array.from(new Map(freshData.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
-          setSoQueue(unique);
+          setSoQueue(dedupQueueList(freshData));
         }
       }).catch(() => {});
     });
@@ -177,8 +193,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           if (res && res.newQueueItemsCount > 0) {
             fetchStockOpnameQueue('ALL').then((freshData) => {
               if (freshData && Array.isArray(freshData)) {
-                const unique = Array.from(new Map(freshData.map((item) => [item.id || `${item.invoice}_${item.sku}_${Math.random()}`, item])).values());
-                setSoQueue(unique);
+                setSoQueue(dedupQueueList(freshData));
               }
             }).catch(() => {});
           }
