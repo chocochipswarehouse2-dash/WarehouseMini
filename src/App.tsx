@@ -1061,6 +1061,7 @@ export default function App() {
       if (['#IN', '#OUT', '#SO'].includes(cleanText)) {
         const cat = cleanText.replace('#', '') as CategoryType;
         setCurrentCategory(cat);
+        currentCategoryRef.current = cat;
         playCategoryBeep();
         vibrateDevice(60);
         showToast(`Kategori aktif: #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})`, 'info');
@@ -1073,6 +1074,7 @@ export default function App() {
       const loc = text.replace(/^#?LOK:?\s*/i, '').trim();
       if (loc) {
         setCurrentLocation(loc);
+        currentLocationRef.current = loc;
         playCategoryBeep();
         vibrateDevice(60);
         showToast(`Lokasi aktif: #${loc}`, 'info');
@@ -1183,15 +1185,6 @@ export default function App() {
     playCategoryBeep();
     vibrateDevice(40);
 
-    // If user already scanned items with another category, update existing list to the selected category
-    if (scannedData.length > 0 && scannedData.some((item) => item.category !== cat)) {
-      setScannedData((prev) =>
-        prev.map((item) => ({ ...item, category: cat }))
-      );
-      showToast(`Mode diubah ke #${cat}: ${scannedData.length} item di daftar scan disesuaikan ke #${cat}`, 'info');
-      return;
-    }
-
     showToast(`Kategori aktif diubah ke #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})`, 'info');
   };
 
@@ -1200,15 +1193,6 @@ export default function App() {
     currentLocationRef.current = loc;
     playCategoryBeep();
     vibrateDevice(40);
-
-    // If user selected location and there are items, sync location to current items as well
-    if (loc && scannedData.length > 0) {
-      setScannedData((prev) =>
-        prev.map((item) => ({ ...item, location: loc }))
-      );
-      showToast(`Lokasi aktif dan ${scannedData.length} item di daftar diubah ke #${loc}`, 'info');
-      return;
-    }
 
     showToast(loc ? `Lokasi aktif diubah ke #${loc}` : 'Lokasi aktif dikosongkan', 'info');
   };
