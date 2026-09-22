@@ -110,6 +110,7 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
     qty:      headers.findIndex(h => h === 'qty' || h === 'quantity' || h === 'jumlah' || h === 'qty sj'),
     source:   headers.findIndex(h => h === 'source' || h === 'asal' || h === 'dari' || h === 'pengirim' || h === 'outlet asal'),
     dest:     headers.findIndex(h => h === 'destination' || h === 'tujuan' || h === 'ke' || h === 'penerima' || h === 'outlet tujuan'),
+    lokasi:   headers.findIndex(h => h === 'location' || h === 'lokasi' || h === 'rak' || h === 'rack' || h === 'bin' || h === 'bin location' || h === 'storage' || h === 'posisi'),
   };
 
   if (col.code < 0) {
@@ -175,6 +176,7 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
     const effectiveSize = (detectedSize && detectedSize !== '-') ? detectedSize : '';
 
     const category = get(col.category);
+    const rowLokasi = get(col.lokasi) || (catProd?.lokasi && isWarehouseLocation(catProd.lokasi) ? catProd.lokasi : undefined);
 
     const groupKey = `${rowNoSj.toUpperCase()}___${rowSource.toUpperCase()}___${rowDest.toUpperCase()}`;
 
@@ -191,8 +193,11 @@ function parseCsvContent(content: string, fileName: string, productCatalog?: Pro
     const group = groupMap.get(groupKey)!;
     if (group.skuMap.has(sku)) {
       group.skuMap.get(sku)!.qty_sj += qty;
+      if (rowLokasi && !group.skuMap.get(sku)!.lokasi) {
+        group.skuMap.get(sku)!.lokasi = rowLokasi;
+      }
     } else {
-      group.skuMap.set(sku, { sku, nama_produk: nama, size: effectiveSize || undefined, category, qty_sj: qty });
+      group.skuMap.set(sku, { sku, nama_produk: nama, size: effectiveSize || undefined, category, qty_sj: qty, lokasi: rowLokasi });
     }
   }
 

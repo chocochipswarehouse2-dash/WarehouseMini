@@ -307,62 +307,66 @@ export function getAreaFromLokasi(lokasi: string, area?: string): string {
  * Check if a given location & area belongs to the warehouse area (for picking & fulfillment)
  */
 export function isWarehouseLocation(lokasi: string, area?: string): boolean {
+  if (!lokasi) return false;
+  const lok = String(lokasi || '').trim().toUpperCase();
+  if (
+    !lok ||
+    lok === '-' ||
+    lok === '--' ||
+    lok === 'NONE' ||
+    lok === 'DEFAULT' ||
+    lok === 'NULL' ||
+    lok === 'UNDEFINED' ||
+    lok === 'UNKNOWN' ||
+    lok === 'BELUM ADA RAK'
+  ) {
+    return false;
+  }
+
+  // Check specific non-warehouse area categories
   if (area && area.trim()) {
     const a = area.trim().toUpperCase();
     if (
-      a.includes('BLOK') ||
-      a.includes('STUDIO') ||
-      a.includes('TOKO') ||
+      a === 'BLOK F' ||
+      a === 'STUDIO' ||
+      a === 'TOKO' ||
+      a === 'STORE' ||
+      a === 'LIVE' ||
+      a === 'SHOPEE' ||
+      a === 'TIKTOK' ||
       a.includes('PERBAIKAN') ||
       a.includes('REPAIR') ||
       a.includes('DEFECT') ||
-      a.includes('LIVE') ||
-      a.includes('SHOPEE') ||
-      a.includes('TIKTOK') ||
-      a.includes('BS') ||
-      a.includes('SAMPLE') ||
-      a.includes('STORE') ||
       a.includes('CUCI')
     ) {
       return false;
     }
   }
 
-  const lok = String(lokasi || '').trim().toUpperCase();
-  if (!lok || lok === '-' || lok === '--' || lok === 'NONE' || lok === 'DEFAULT' || lok === 'NULL' || lok === 'UNDEFINED') {
-    return false;
-  }
-
-  // Non-warehouse location keywords to exclude from warehouse picking
+  // Non-warehouse location/channel names to exclude from warehouse picking
   if (
-    lok.includes('BLOK F') ||
-    lok.includes('BLOK-F') ||
-    lok.includes('BLOK_F') ||
-    lok.includes('SHOPEE') ||
-    lok.includes('TIKTOK') ||
-    lok.includes('TOK') ||
-    lok.includes('SHP') ||
-    lok.includes('TTK') ||
-    lok.includes('LIVE') ||
-    lok.includes('STUDIO') ||
-    lok.includes('FOTO') ||
-    lok.includes('DISPLAY') ||
-    lok.includes('TOKO') ||
-    lok.includes('STORE') ||
-    lok.startsWith('STD') ||
-    lok.startsWith('TK') ||
-    lok.startsWith('CC') || // CC001, CC002, CC003 etc.
-    lok.includes('CUCI') ||
-    lok.includes('WASH') ||
-    lok.includes('PERBAIKAN') ||
-    lok.includes('REPAIR') ||
-    lok.includes('DEFECT') ||
-    lok.includes('BS') ||
-    lok.includes('REJECT') ||
-    lok.includes('RETUR') ||
-    lok.includes('SAMPLE') ||
-    lok.includes('DAMAGE') ||
-    lok.includes('RUSAK')
+    lok === 'BLOK F' ||
+    lok === 'BLOK-F' ||
+    lok === 'BLOK_F' ||
+    lok === 'SHOPEE' ||
+    lok === 'TIKTOK' ||
+    lok === 'LIVE' ||
+    lok === 'STUDIO' ||
+    lok === 'FOTO' ||
+    lok === 'DISPLAY' ||
+    lok === 'TOKO' ||
+    lok === 'STORE' ||
+    lok === 'CUCI' ||
+    lok === 'WASH' ||
+    lok === 'PERBAIKAN' ||
+    lok === 'REPAIR' ||
+    lok === 'DEFECT' ||
+    lok === 'BS' ||
+    lok === 'REJECT' ||
+    lok === 'RETUR' ||
+    lok === 'SAMPLE' ||
+    lok === 'DAMAGE' ||
+    lok === 'RUSAK'
   ) {
     return false;
   }
@@ -1037,13 +1041,16 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
   if (cleanSkus.length === 0) return [];
   const cleanSkuSet = new Set(cleanSkus);
 
-  // 1. Check in-memory cache first (0 network egress)
+  // 1. Check in-memory cache if ALL cleanSkus are present
   if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-    const matched = memoryStokFisikCache.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
-    if (matched.length > 0) return matched;
+    const cachedSkuSet = new Set(memoryStokFisikCache.map(r => (r.sku || '').toUpperCase()));
+    const allCached = cleanSkus.every(s => cachedSkuSet.has(s));
+    if (allCached) {
+      return memoryStokFisikCache.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
+    }
   }
 
-  // 2. Check local IndexedDB cache (0 network egress)
+  // 2. Check local IndexedDB cache if ALL cleanSkus are present
   try {
     const localStocks = await getAllInventoryStocksFromLocalDb();
     if (localStocks && localStocks.length > 0) {
@@ -1051,19 +1058,22 @@ export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeIt
         memoryStokFisikCache = localStocks;
         memoryStokFisikLastFetch = Date.now();
       }
-      const matched = localStocks.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
-      if (matched.length > 0) return matched;
+      const localSkuSet = new Set(localStocks.map(r => (r.sku || '').toUpperCase()));
+      const allLocal = cleanSkus.every(s => localSkuSet.has(s));
+      if (allLocal) {
+        return localStocks.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
+      }
     }
   } catch {}
 
-  // 3. Fallback to Supabase PostgREST for ONLY the requested SKUs (avoids downloading 50,000 rows!)
+  // 3. Fallback to Supabase PostgREST for the requested SKUs
   try {
     const skuParam = cleanSkus.map(s => `"${encodeURIComponent(s)}"`).join(',');
     const rows = await supabaseFetch<StockRealtimeItem[]>(
       'stok_real_fisik',
       'GET',
       null,
-      `sku=in.(${skuParam})&sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
+      `sku=in.(${skuParam})&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
     );
     if (Array.isArray(rows)) {
       return rows.filter(r => isWarehouseLocation(r.lokasi || '', r.area || ''));
@@ -1951,16 +1961,16 @@ export function setMemoryStokFisikCache(data: StockRealtimeItem[]): void {
 }
 
 export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promise<StockRealtimeItem[]> {
-  // SWR: return in-memory cache if fresh within 10 minutes and not forcing refresh
-  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 10 * 60 * 1000) {
+  // SWR: return in-memory cache if fresh within 1 minute and not forcing refresh
+  if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 60 * 1000) {
     return memoryStokFisikCache;
   }
 
-  // SWR Local Database (IndexedDB) check: 0ms instant load, 0 network egress
+  // SWR Local Database (IndexedDB) check: 0ms instant load if fresh within 1 minute
   if (!forceRefresh) {
     try {
       const localDbStock = await getAllInventoryStocksFromLocalDb();
-      if (localDbStock && localDbStock.length > 0) {
+      if (localDbStock && localDbStock.length > 0 && Date.now() - memoryStokFisikLastFetch < 60 * 1000) {
         memoryStokFisikCache = localDbStock;
         memoryStokFisikLastFetch = Date.now();
         return localDbStock;
@@ -4984,32 +4994,34 @@ export async function fetchPresensiRange(
 }
 
 
-export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<StockRealtimeItem[]> {
+export async function fetchSupabaseStokFisikBySkus(skus: string[], forceFresh = false): Promise<StockRealtimeItem[]> {
   if (!skus || skus.length === 0) return [];
   const cleanSkus = Array.from(new Set(skus.map(s => String(s || '').trim().toUpperCase()).filter(Boolean)));
   if (cleanSkus.length === 0) return [];
   const cleanSet = new Set(cleanSkus);
   
-  // 1. Check in-memory cache first (0 network egress)
-  if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-    const matched = memoryStokFisikCache.filter(r => cleanSet.has((r.sku || '').toUpperCase()));
-    if (matched.length > 0) return matched;
-  }
-
-  // 2. Check IndexedDB local cache (0 network egress)
-  try {
-    const localStocks = await getAllInventoryStocksFromLocalDb();
-    if (localStocks && localStocks.length > 0) {
-      if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
-        memoryStokFisikCache = localStocks;
-        memoryStokFisikLastFetch = Date.now();
-      }
-      const matched = localStocks.filter(r => cleanSet.has((r.sku || '').toUpperCase()));
+  if (!forceFresh) {
+    // 1. Check in-memory cache first if fresh
+    if (memoryStokFisikCache && memoryStokFisikCache.length > 0 && Date.now() - memoryStokFisikLastFetch < 60 * 1000) {
+      const matched = memoryStokFisikCache.filter(r => cleanSet.has((r.sku || '').toUpperCase()));
       if (matched.length > 0) return matched;
     }
-  } catch {}
 
-  // 3. Fallback to Supabase PostgREST for ONLY the requested SKUs (avoids downloading 50,000 rows!)
+    // 2. Check IndexedDB local cache if fresh
+    try {
+      const localStocks = await getAllInventoryStocksFromLocalDb();
+      if (localStocks && localStocks.length > 0 && Date.now() - memoryStokFisikLastFetch < 60 * 1000) {
+        if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
+          memoryStokFisikCache = localStocks;
+          memoryStokFisikLastFetch = Date.now();
+        }
+        const matched = localStocks.filter(r => cleanSet.has((r.sku || '').toUpperCase()));
+        if (matched.length > 0) return matched;
+      }
+    } catch {}
+  }
+
+  // 3. Fallback to Supabase PostgREST for ONLY the requested SKUs
   try {
     const skuParam = cleanSkus.map(s => `"${encodeURIComponent(s)}"`).join(',');
     const rows = await supabaseFetch<StockRealtimeItem[]>(
@@ -5018,7 +5030,16 @@ export async function fetchSupabaseStokFisikBySkus(skus: string[]): Promise<Stoc
       null,
       `sku=in.(${skuParam})&sisa_stok=neq.0&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
     );
-    if (Array.isArray(rows)) return rows;
+    if (Array.isArray(rows)) {
+      if (rows.length > 0 && memoryStokFisikCache) {
+        const fetchedSkus = new Set(rows.map(r => (r.sku || '').toUpperCase()));
+        memoryStokFisikCache = [
+          ...memoryStokFisikCache.filter(r => !fetchedSkus.has((r.sku || '').toUpperCase())),
+          ...rows
+        ];
+      }
+      return rows;
+    }
   } catch (err) {
     console.error('Error in fetchSupabaseStokFisikBySkus:', err);
   }

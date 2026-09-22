@@ -87,83 +87,61 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       });
   }, [isOpen, draftSkusKey]);
 
-  // Helper: Extract all locations for a given item / SKU (strictly warehouse area locations that actually have stock > 0)
+  // Helper: Extract all warehouse locations for a given item / SKU across realtime stock, master catalog, and draft items
   const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
     const cleanSku = String(sku || '').trim().toUpperCase();
     if (!cleanSku) return [];
     const map = new Map<string, ProductLocationInfo>();
 
     // 1. Authoritative check: live Supabase stok_real_fisik data
-    const isRealtimeChecked = cleanSku in realtimeSkuStocks;
-    if (isRealtimeChecked) {
-      const realtimeList = realtimeSkuStocks[cleanSku] || [];
-      // ONLY recommend warehouse locations that currently have physical stock (sisa_stok > 0)!
-      realtimeList.forEach((stk) => {
-        const loc = String(stk.lokasi || '').trim().toUpperCase();
-        const qty = Number(stk.sisa_stok) || 0;
-        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty > 0) {
-          const existing = map.get(loc);
-          if (existing) {
-            existing.qty = (existing.qty || 0) + qty;
-          } else {
-            map.set(loc, {
-              lokasi: loc,
-              qty: qty,
-              isPrimary: false,
-              source: 'REALTIME_STOCK',
-              area: stk.area || 'Warehouse',
-            });
-          }
+    const realtimeList = realtimeSkuStocks[cleanSku] || [];
+    realtimeList.forEach((stk) => {
+      const loc = String(stk.lokasi || '').trim().toUpperCase();
+      const qty = Number(stk.sisa_stok) || 0;
+      if (loc && isWarehouseLocation(loc, stk.area)) {
+        const existing = map.get(loc);
+        if (existing) {
+          existing.qty = (existing.qty || 0) + qty;
+        } else {
+          map.set(loc, {
+            lokasi: loc,
+            qty: qty,
+            isPrimary: false,
+            source: 'REALTIME_STOCK',
+            area: stk.area || 'Warehouse',
+          });
         }
-      });
-
-      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
-      if (sorted.length > 0) {
-        sorted[0].isPrimary = true;
       }
-      return sorted;
-    }
+    });
 
-    // 2. Fallback only while realtime data is still loading or not yet queried
-    const strItemLokasi = String(itemLokasi || '').trim();
-    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--' && !strItemLokasi.toUpperCase().includes('BLOK F')) {
-      const parts = strItemLokasi
-        .split(/[,/;\n|]+/)
-        .map((s) => String(s || '').trim().toUpperCase())
-        .filter((loc) => loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc));
-      parts.forEach((loc, idx) => {
-        map.set(loc, {
-          lokasi: loc,
-          isPrimary: idx === 0,
-          source: 'SJ',
-        });
-      });
-    }
-
-    const catMatch = productCatalog.find((p) => p.k && p.k.trim().toUpperCase() === cleanSku);
+    // 2. Check catalog locations (p.locList & p.lokasi)
+    const catMatch = productCatalog.find(
+      (p) => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku)
+    );
     if (catMatch) {
       if (Array.isArray(catMatch.locList)) {
         catMatch.locList.forEach((itemLoc) => {
           if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
             const loc = String(itemLoc.lokasi || '').trim().toUpperCase();
             const qty = Number(itemLoc.qty) || 0;
-            if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc) && qty > 0) {
+            if (loc && isWarehouseLocation(loc)) {
               if (!map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: qty,
-                  isPrimary: map.size === 0,
+                  isPrimary: false,
                   source: 'CATALOG',
                 });
               }
             }
           } else if (typeof itemLoc === 'string') {
             const loc = itemLoc.trim().toUpperCase();
-            if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc)) {
+            if (loc && isWarehouseLocation(loc)) {
               if (!map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
-                  isPrimary: map.size === 0,
+                  qty: 0,
+                  isPrimary: false,
                   source: 'CATALOG',
                 });
               }
@@ -173,11 +151,12 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       }
       if (catMatch.lokasi) {
         const loc = String(catMatch.lokasi).trim().toUpperCase();
-        if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc)) {
+        if (loc && isWarehouseLocation(loc)) {
           if (!map.has(loc)) {
             map.set(loc, {
               lokasi: loc,
-              isPrimary: map.size === 0,
+              qty: 0,
+              isPrimary: false,
               source: 'CATALOG',
             });
           }
@@ -185,8 +164,35 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       }
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
-    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    // 3. Check Surat Jalan Item Lokasi (if specified in CSV/document)
+    const strItemLokasi = String(itemLokasi || '').trim();
+    if (strItemLokasi && strItemLokasi !== '-' && strItemLokasi !== '--') {
+      const parts = strItemLokasi
+        .split(/[,/;\n|]+/)
+        .map((s) => String(s || '').trim().toUpperCase())
+        .filter((loc) => loc && isWarehouseLocation(loc));
+      parts.forEach((loc) => {
+        if (!map.has(loc)) {
+          map.set(loc, {
+            lokasi: loc,
+            qty: 0,
+            isPrimary: false,
+            source: 'SJ',
+          });
+        }
+      });
+    }
+
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi));
+    // Sort: locations with stock > 0 first (descending by qty), then locations with 0 stock
+    allLocs.sort((a, b) => {
+      const qtyDiff = (b.qty || 0) - (a.qty || 0);
+      if (qtyDiff !== 0) return qtyDiff;
+      return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    if (allLocs.length > 0) {
+      allLocs[0].isPrimary = true;
+    }
     return allLocs;
   };
 
@@ -199,7 +205,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     list.forEach((stk) => {
       const loc = String(stk.lokasi || '').trim().toUpperCase();
       const qty = Number(stk.sisa_stok) || 0;
-      if (loc && loc !== '-' && loc !== '--' && isWarehouseLocation(loc, stk.area) && qty <= 0) {
+      if (loc && isWarehouseLocation(loc, stk.area) && qty <= 0) {
         if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
       }
     });
@@ -232,37 +238,31 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       }
 
       const locs = getProductLocations(cleanSku, (it as any).lokasi);
-      const emptyRacks = getRecordedEmptyLocations(cleanSku);
-      const isRealtimeLoaded = cleanSku in realtimeSkuStocks;
+      const locsWithStock = locs.filter((l) => (l.qty || 0) > 0);
+      const locsZeroStock = locs.filter((l) => (l.qty || 0) <= 0);
 
       let lokasiDisplay = '-';
       let isKosong = false;
+      let primaryLokasi = 'Belum Ada Rak';
 
-      const primaryLokasi = locs.length > 0
-        ? locs[0].lokasi
-        : (emptyRacks.length > 0
-            ? emptyRacks[0]
-            : ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'Warehouse'
-                ? (it as any).lokasi
-                : (prod?.lokasi && isWarehouseLocation(prod.lokasi) ? prod.lokasi : 'Warehouse')));
-
-      if (locs.length > 0) {
-        lokasiDisplay = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
-      } else if (isRealtimeLoaded) {
+      if (locsWithStock.length > 0) {
+        lokasiDisplay = locsWithStock.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        primaryLokasi = locsWithStock[0].lokasi;
+        isKosong = false;
+      } else if (locsZeroStock.length > 0) {
         isKosong = true;
-        if (emptyRacks.length > 0) {
-          lokasiDisplay = emptyRacks.join(', ');
-        } else if (primaryLokasi && primaryLokasi !== '-' && primaryLokasi !== 'Warehouse') {
-          lokasiDisplay = primaryLokasi;
-        } else {
-          lokasiDisplay = 'Belum Ada Rak';
-        }
-      } else if ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'Warehouse') {
+        lokasiDisplay = locsZeroStock.map((l) => l.lokasi).join(', ');
+        primaryLokasi = locsZeroStock[0].lokasi;
+      } else if ((it as any).lokasi && isWarehouseLocation((it as any).lokasi)) {
         lokasiDisplay = (it as any).lokasi;
+        primaryLokasi = (it as any).lokasi;
       } else if (prod?.lokasi && isWarehouseLocation(prod.lokasi)) {
         lokasiDisplay = prod.lokasi;
+        primaryLokasi = prod.lokasi;
       } else {
         lokasiDisplay = loadingStock ? 'Memeriksa Rak...' : 'Belum Ada Rak';
+        primaryLokasi = 'Belum Ada Rak';
+        isKosong = true;
       }
 
       // Pastikan nama_produk mengambil nama asli dari katalog jika di draft isinya hanya SKU
@@ -281,7 +281,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         lokasi: lokasiDisplay,
         primaryLokasi,
         locList: locs,
-        emptyRacks,
+        emptyRacks: locsZeroStock.map(l => l.lokasi),
         isKosong,
         qty: it.qty_sj || 1,
       };

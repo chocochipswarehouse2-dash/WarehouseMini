@@ -297,8 +297,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     try {
       // 1. Fetch physical stock rows directly from Supabase (stok_real_fisik / stok_realtime)
-      // Call with isManualRefresh to allow using cache from supabase.ts if not manually refreshed
-      const realtimeData = await fetchSupabaseStokFisikDirect(isManualRefresh || forceNetwork);
+      // Force fresh network fetch so the latest mutations are always retrieved while cached UI is displayed
+      const realtimeData = await fetchSupabaseStokFisikDirect(true);
       if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
         globalInventoryStockCache = realtimeData;
         globalInventoryLastFetch = Date.now();
@@ -308,7 +308,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         saveInventoryStocksToLocalDb(realtimeData).catch(() => {});
       } else if (!hasCachedData || stockList.length === 0) {
         // 2. Fallback to fetchAllStockRealtime if direct returned empty
-        const fallbackData = await fetchAllStockRealtime(50000);
+        const fallbackData = await fetchAllStockRealtime(50000, true);
         if (fallbackData && Array.isArray(fallbackData) && fallbackData.length > 0) {
           globalInventoryStockCache = fallbackData;
           globalInventoryLastFetch = Date.now();
@@ -375,7 +375,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       pendingSkus.clear();
       
       try {
-        const deltaRows = await fetchSupabaseStokFisikBySkus(skus);
+        const deltaRows = await fetchSupabaseStokFisikBySkus(skus, true);
         const upperSkus = new Set(skus.map((s) => String(s).trim().toUpperCase()));
         
         // Remove old rows for these SKUs, insert new ones
@@ -438,27 +438,21 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     if (matchingSkus.length === 0) return;
 
-    // Check if any matching SKU is missing in stockList
-    const missingSkus = matchingSkus.filter(
-      (sku) => !stockList.some((s) => String(s.sku || '').trim().toUpperCase() === sku)
-    );
-
-    if (missingSkus.length > 0) {
-      fetchSupabaseStokFisikBySkus(missingSkus).then((deltaRows) => {
-        if (deltaRows && deltaRows.length > 0) {
-          const deltaSkus = new Set(deltaRows.map((d) => String(d.sku || '').trim().toUpperCase()));
-          setStockList((prev) => {
-            const filtered = prev.filter((p) => !deltaSkus.has(String(p.sku || '').trim().toUpperCase()));
-            const merged = [...filtered, ...deltaRows];
-            globalInventoryStockCache = merged;
-            saveInventoryStocksToLocalDb(merged).catch(() => {});
-            return merged;
-          });
-        }
-      }).catch((err) => {
-        console.warn('Search delta stock fetch failed:', err);
-      });
-    }
+    // Always fetch live stock from Supabase for searched SKUs to guarantee instant 100% accuracy
+    fetchSupabaseStokFisikBySkus(matchingSkus, true).then((deltaRows) => {
+      if (deltaRows) {
+        const matchingSet = new Set(matchingSkus);
+        setStockList((prev) => {
+          const filtered = prev.filter((p) => !matchingSet.has(String(p.sku || '').trim().toUpperCase()));
+          const merged = [...filtered, ...deltaRows];
+          globalInventoryStockCache = merged;
+          saveInventoryStocksToLocalDb(merged).catch(() => {});
+          return merged;
+        });
+      }
+    }).catch((err) => {
+      console.warn('Search live stock fetch failed:', err);
+    });
 
     // Also fetch DealPOS channels on-demand for searched items if not yet loaded
     const missingDealposSkus = matchingSkus.filter((sku) => !dealposDeltaMap[sku]);
