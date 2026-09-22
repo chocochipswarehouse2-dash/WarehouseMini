@@ -753,6 +753,27 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- AUTO-SYNC SEQUENCES: Mencegah error "duplicate key value violates unique constraint"
+-- setelah migrasi atau bulk insert data dengan ID manual.
+-- ──────────────────────────────────────────────────────────────────────────────
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT table_name, column_name, sequence_name 
+    FROM (
+      SELECT table_name, column_name, pg_get_serial_sequence('public.' || table_name, column_name) AS sequence_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND data_type IN ('bigint', 'integer')
+    ) s
+    WHERE sequence_name IS NOT NULL
+  ) LOOP
+    EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM public.%I), 0) + 1, false);', r.sequence_name, r.column_name, r.table_name);
+  END LOOP;
+END $$;
+
 -- ==============================================================================
 -- SELESAI! Seluruh 24 tabel & skema database Supabase telah siap digunakan 100%.
 -- ==============================================================================

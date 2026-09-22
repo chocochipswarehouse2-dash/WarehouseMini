@@ -6322,6 +6322,34 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
 }
 
 /**
+ * Helper to get next sequential BIGINT IDs for penerimaan_produksi
+ * This avoids PostgreSQL error 23505 (duplicate key value violates unique constraint "penerimaan_produksi_pkey")
+ * when sequence is desynced after bulk imports.
+ */
+export async function getNextPenerimaanProduksiIds(count: number = 1): Promise<number[]> {
+  try {
+    const res = await supabaseFetch<Array<{ id: number }>>(
+      'penerimaan_produksi',
+      'GET',
+      undefined,
+      'select=id&order=id.desc&limit=1'
+    );
+    let maxId = 0;
+    if (res && Array.isArray(res) && res.length > 0 && typeof res[0].id === 'number') {
+      maxId = res[0].id;
+    }
+    const ids: number[] = [];
+    for (let i = 1; i <= count; i++) {
+      ids.push(maxId + i);
+    }
+    return ids;
+  } catch (e) {
+    console.warn('Gagal fetch max id penerimaan_produksi:', e);
+    return [];
+  }
+}
+
+/**
  * Sync offline Penerimaan Produksi items to Supabase
  */
 export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number, failed: number, errors: string[] }> {
@@ -6340,6 +6368,10 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
 
   if (offlineItems.length === 0) return { synced: 0, failed: 0, errors: [] };
 
+  // Fetch sequential IDs in advance to avoid PostgreSQL sequence desync (error 23505)
+  const nextIds = await getNextPenerimaanProduksiIds(offlineItems.length);
+  let idIndex = 0;
+
   let synced = 0;
   let failed = 0;
   const errors: string[] = [];
@@ -6347,7 +6379,7 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
 
   for (const item of offlineItems) {
     try {
-      const rowToInsert = { ...item };
+      const rowToInsert: any = { ...item };
       
       // Upload image to Google Drive if it is a data URI
       if (rowToInsert.foto_url && rowToInsert.foto_url.startsWith('data:')) {
@@ -6364,10 +6396,34 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
         }
       }
 
-      delete rowToInsert.id; // Let Supabase generate a new ID
       delete (rowToInsert as any).sheet_row;
+
+      // Assign sequential ID if available to prevent unique constraint error
+      if (nextIds.length > idIndex && typeof nextIds[idIndex] === 'number') {
+        rowToInsert.id = nextIds[idIndex++];
+      } else {
+        delete rowToInsert.id;
+      }
       
-      const res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert], '', true);
+      let res: any = null;
+      try {
+        res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert], '', true);
+      } catch (postErr: any) {
+        const errMsg = String(postErr?.message || postErr || '');
+        // If error is 23505 / duplicate key, dynamically re-fetch fresh max ID and retry immediately
+        if (errMsg.includes('penerimaan_produksi_pkey') || errMsg.includes('23505')) {
+          const freshIds = await getNextPenerimaanProduksiIds(1);
+          if (freshIds.length > 0) {
+            rowToInsert.id = freshIds[0];
+            res = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'POST', [rowToInsert], '', true);
+          } else {
+            throw postErr;
+          }
+        } else {
+          throw postErr;
+        }
+      }
+
       if (res && Array.isArray(res) && res.length > 0) {
         synced++;
       } else {
@@ -6451,6 +6507,18 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
     throw new Error('Tidak ada baris data barang untuk disimpan.');
   }
 
+  // Pre-allocate explicit sequential IDs from max(id) + 1 to prevent sequence desync errors
+  try {
+    const nextIds = await getNextPenerimaanProduksiIds(rowsToInsert.length);
+    if (nextIds.length === rowsToInsert.length) {
+      for (let idx = 0; idx < rowsToInsert.length; idx++) {
+        rowsToInsert[idx].id = nextIds[idx];
+      }
+    }
+  } catch (eId) {
+    console.warn('Could not pre-allocate IDs, relying on fallback:', eId);
+  }
+
   let savedItems: PenerimaanProduksiItem[] = [];
 
   // Attempt 1: Direct Supabase insert
@@ -6459,11 +6527,38 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
     if (res && Array.isArray(res) && res.length > 0) {
       savedItems = res;
     } else {
+      throw new Error('Empty response from Supabase');
+    }
+  } catch (err: any) {
+    const errMsg = String(err?.message || err || '');
+    // If sequence desync causes unique constraint violation (penerimaan_produksi_pkey / code 23505)
+    if (errMsg.includes('penerimaan_produksi_pkey') || errMsg.includes('23505')) {
+      try {
+        const freshIds = await getNextPenerimaanProduksiIds(rowsToInsert.length);
+        if (freshIds.length === rowsToInsert.length) {
+          const rowsWithIds = rowsToInsert.map((r, idx) => ({
+            ...r,
+            id: freshIds[idx],
+          }));
+          const retryRes = await supabaseFetch<PenerimaanProduksiItem[]>(
+            'penerimaan_produksi',
+            'POST',
+            rowsWithIds,
+            '',
+            true
+          );
+          if (retryRes && Array.isArray(retryRes) && retryRes.length > 0) {
+            savedItems = retryRes;
+          }
+        }
+      } catch (retryErr) {
+        console.warn('Retry with explicit IDs failed:', retryErr);
+      }
+    }
+    if (savedItems.length === 0) {
+      console.warn('Gagal insert penerimaan_produksi ke Supabase, simpan ke local cache:', err);
       savedItems = rowsToInsert.map((r, idx) => ({ ...r, id: `local_${Date.now()}_${idx}` }));
     }
-  } catch (err) {
-    console.warn('Gagal insert penerimaan_produksi ke Supabase, simpan ke local cache:', err);
-    savedItems = rowsToInsert.map((r, idx) => ({ ...r, id: `local_${Date.now()}_${idx}` }));
   }
 
   // Update local cache
