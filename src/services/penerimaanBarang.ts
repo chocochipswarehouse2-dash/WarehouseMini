@@ -562,8 +562,8 @@ export async function applyPhotoWatermark(
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      // Create canvas with max dimension 1600px for high quality yet lightweight
-      const maxDim = 1600;
+      // Create canvas with max dimension 1200px for ultra-fast upload & crystal-clear legibility
+      const maxDim = 1200;
       let width = img.width;
       let height = img.height;
 
@@ -591,7 +591,7 @@ export async function applyPhotoWatermark(
       ctx.drawImage(img, 0, 0, width, height);
 
       // Calculate scale factor relative to reference width (designed to be very readable even on mobile)
-      const scale = Math.max(0.85, Math.min(2.2, width / 900));
+      const scale = Math.max(0.8, Math.min(1.8, width / 900));
       const padding = Math.round(24 * scale);
       const fontSizeTitle = Math.round(28 * scale);
       const fontSizeHeading = Math.round(22 * scale);
@@ -696,12 +696,17 @@ export async function applyPhotoWatermark(
         currentY += lineHeight;
       });
 
-      // Convert back to JPEG data URL
+      // Convert back to JPEG data URL with optimized compression (0.78)
       try {
-        const watermarkedUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const watermarkedUrl = canvas.toDataURL('image/jpeg', 0.78);
+        // Release canvas memory buffer immediately
+        canvas.width = 0;
+        canvas.height = 0;
         resolve(watermarkedUrl);
       } catch (err) {
         console.warn('Canvas toDataURL failed:', err);
+        canvas.width = 0;
+        canvas.height = 0;
         resolve(imageSource);
       }
     };

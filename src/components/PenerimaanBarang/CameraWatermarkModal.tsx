@@ -20,6 +20,7 @@ import {
 import { LocationStamp } from '../../types';
 import { applyPhotoWatermark } from '../../services/penerimaanBarang';
 import { uploadImageToGdrive } from '../../services/gdriveUpload';
+import { compressImage } from '../../utils/imageCompressor';
 
 interface CameraWatermarkModalProps {
   isOpen: boolean;
@@ -62,7 +63,7 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // 1. Fetch Geolocation
+  // 1. Fetch Geolocation (Prioritaskan cache GPS cepat agar instan)
   const requestLocation = () => {
     if (!navigator.geolocation) {
       setLocationStatus('error');
@@ -71,6 +72,7 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
     }
 
     setLocationStatus('loading');
+    // Gunakan posisi ter-cache (hingga 5 menit) untuk respon instan tanpa tunggu satelit
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const loc: LocationStamp = {
@@ -83,10 +85,24 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
         setLocationStatus('success');
       },
       (err) => {
-        console.warn('Geolocation error:', err);
-        setLocationStatus('error');
+        console.warn('GPS akurasi tinggi lambat/gagal, fallback ke estimasi seluler:', err);
+        // Fallback cepat ke jaringan seluler/wifi
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const loc: LocationStamp = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              timestamp: new Date(pos.timestamp).toISOString(),
+            };
+            setLocation(loc);
+            setLocationStatus('success');
+          },
+          () => setLocationStatus('error'),
+          { enableHighAccuracy: false, timeout: 4000, maximumAge: 600000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 300000 }
     );
   };
 
@@ -149,14 +165,31 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
     if (!videoRef.current) return;
     const video = videoRef.current;
 
+    const vWidth = video.videoWidth || 1280;
+    const vHeight = video.videoHeight || 720;
+    const maxSnap = 1280;
+    let targetW = vWidth;
+    let targetH = vHeight;
+    if (vWidth > maxSnap || vHeight > maxSnap) {
+      if (vWidth > vHeight) {
+        targetH = Math.round((vHeight * maxSnap) / vWidth);
+        targetW = maxSnap;
+      } else {
+        targetW = Math.round((vWidth * maxSnap) / vHeight);
+        targetH = maxSnap;
+      }
+    }
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width = targetW;
+    canvas.height = targetH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const rawDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    ctx.drawImage(video, 0, 0, targetW, targetH);
+    const rawDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    canvas.width = 0;
+    canvas.height = 0;
 
     // Apply auto watermark immediately
     setIsProcessing(true);
@@ -180,7 +213,7 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
     }
   };
 
-  // 4. File Upload Handler
+  // 4. File Upload Handler (Pra-kompresi gambar galeri sebelum watermark)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -188,28 +221,24 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
     setIsProcessing(true);
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const reader = new FileReader();
-      await new Promise<void>((resolve) => {
-        reader.onload = async (event) => {
-          const rawDataUrl = event.target?.result as string;
-          if (rawDataUrl) {
-            const watermarked = await applyPhotoWatermark(rawDataUrl, {
-              title,
-              entityName,
-              kategori,
-              noSuratJalan,
-              upTujuan,
-              location: location || undefined,
-              picName,
-              picUsername,
-              qtyInfo,
-            });
-            setCapturedImages((prev) => [...prev, watermarked]);
-          }
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
+      try {
+        // Pre-compress file into lightweight 1200px max before applying watermark
+        const compressed = await compressImage(file, 1200, 0.8);
+        const watermarked = await applyPhotoWatermark(compressed.dataUrl, {
+          title,
+          entityName,
+          kategori,
+          noSuratJalan,
+          upTujuan,
+          location: location || undefined,
+          picName,
+          picUsername,
+          qtyInfo,
+        });
+        setCapturedImages((prev) => [...prev, watermarked]);
+      } catch (err) {
+        console.warn('Gagal memproses file upload:', err);
+      }
     }
     setIsProcessing(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -220,27 +249,35 @@ export const CameraWatermarkModal: React.FC<CameraWatermarkModalProps> = ({
     setCapturedImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // 6. Save & Upload to Google Drive
+  // 6. Save & Upload to Google Drive (PARALEL CONCURRENT UPLOAD)
   const handleUploadAndFinish = async () => {
     if (capturedImages.length === 0) return;
 
     setIsProcessing(true);
-    setUploadProgress('Mengompres dan mengunggah foto ke Google Drive...');
-    const uploadedUrls: string[] = [];
+    const total = capturedImages.length;
+    setUploadProgress(`Mengompres dan mengunggah ${total} foto ke Google Drive...`);
 
     try {
-      for (let i = 0; i < capturedImages.length; i++) {
-        setUploadProgress(`Mengunggah foto ${i + 1} dari ${capturedImages.length}...`);
-        const imgData = capturedImages[i];
+      let completedCount = 0;
+      // Parallel concurrent upload
+      const uploadPromises = capturedImages.map(async (imgData, i) => {
         const filename = `${title.replace(/\s+/g, '_')}_${Date.now()}_${i + 1}.jpg`;
-        const res = await uploadImageToGdrive(imgData, filename);
-        if (res.success && res.url) {
-          uploadedUrls.push(res.url);
-        } else {
-          // Fallback to the watermarked base64 image if GDrive failed
-          uploadedUrls.push(imgData);
+        try {
+          const res = await uploadImageToGdrive(imgData, filename);
+          completedCount++;
+          setUploadProgress(`Mengunggah foto: ${completedCount}/${total} selesai...`);
+          if (res.success && res.url) {
+            return res.url;
+          }
+          return imgData;
+        } catch (uploadErr) {
+          console.warn(`Gagal upload foto ${i + 1}:`, uploadErr);
+          completedCount++;
+          return imgData;
         }
-      }
+      });
+
+      const uploadedUrls = await Promise.all(uploadPromises);
 
       onPhotosUploaded(uploadedUrls, location || undefined);
       stopCamera();

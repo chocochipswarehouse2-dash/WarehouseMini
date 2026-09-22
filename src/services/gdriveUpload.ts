@@ -97,10 +97,8 @@ export async function uploadImageToGdrive(
 
   try {
     const payload = {
-      base64: base64Data, // backward compatibility
-      base64File: base64Data, // new webhook.js requirement
-      filename: generatedFilename, // backward compatibility
-      fileName: generatedFilename, // new webhook.js requirement
+      base64File: base64Data, // standard webhook.js requirement
+      fileName: generatedFilename, // standard webhook.js requirement
       folderId: folderId,
     };
 
