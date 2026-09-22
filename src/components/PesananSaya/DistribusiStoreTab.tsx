@@ -36,6 +36,7 @@ import { fetchWithDeltaSync, clearDeltaSyncCache } from '../../services/gasSync'
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { SuratJalanSelisihMessageParams, generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
 import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
+import { isWarehouseLocation } from '../../services/supabase';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
 

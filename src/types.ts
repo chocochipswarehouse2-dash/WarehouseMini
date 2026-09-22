@@ -688,6 +688,7 @@ export interface TarikanMDItem {
   size?: string;
   category?: string;
   qty_sj: number;
+  lokasi?: string;
 }
 
 /** Hasil komparasi SJ vs aktual scan/input */
