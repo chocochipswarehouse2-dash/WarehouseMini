@@ -166,11 +166,88 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
       const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
       if (doc) {
         let pageSizeCss = 'size: 50mm 20mm; margin: 0;';
-        if (format === 'thermal_70x40') pageSizeCss = 'size: 70mm 40mm; margin: 0;';
-        else if (format === 'thermal_80x50') pageSizeCss = 'size: 80mm 50mm; margin: 0;';
-        else if (format === 'thermal_100x150') pageSizeCss = 'size: 100mm 150mm; margin: 0;';
-        else if (format === 'a6') pageSizeCss = 'size: A6 portrait; margin: 2mm;';
-        else if (format === 'a4') pageSizeCss = 'size: A4 portrait; margin: 4mm;';
+        let sheetPrintCss = '';
+
+        if (format === 'thermal_70x40') {
+          pageSizeCss = 'size: 70mm 40mm; margin: 0;';
+          sheetPrintCss = `
+            .koli-label-page {
+              width: 70mm !important;
+              height: 40mm !important;
+              max-width: 70mm !important;
+              max-height: 40mm !important;
+              page-break-after: always;
+              break-after: page;
+            }
+          `;
+        } else if (format === 'thermal_80x50') {
+          pageSizeCss = 'size: 80mm 50mm; margin: 0;';
+          sheetPrintCss = `
+            .koli-label-page {
+              width: 80mm !important;
+              height: 50mm !important;
+              max-width: 80mm !important;
+              max-height: 50mm !important;
+              page-break-after: always;
+              break-after: page;
+            }
+          `;
+        } else if (format === 'thermal_100x150') {
+          pageSizeCss = 'size: 100mm 150mm; margin: 0;';
+          sheetPrintCss = `
+            .koli-label-page {
+              width: 100mm !important;
+              height: 150mm !important;
+              page-break-after: always;
+              break-after: page;
+            }
+          `;
+        } else if (format === 'a6') {
+          pageSizeCss = 'size: A6 portrait; margin: 2mm;';
+          sheetPrintCss = `
+            .koli-sheet {
+              width: 100% !important;
+              height: 98vh !important;
+              max-height: 100vh !important;
+              page-break-after: always;
+              break-after: page;
+              padding: 2mm !important;
+              box-shadow: none !important;
+              border: none !important;
+            }
+          `;
+        } else if (format === 'a4') {
+          pageSizeCss = 'size: A4 portrait; margin: 4mm;';
+          sheetPrintCss = `
+            .koli-sheet {
+              width: 100% !important;
+              height: 98vh !important;
+              max-height: 100vh !important;
+              page-break-after: always;
+              break-after: page;
+              padding: 3mm !important;
+              box-shadow: none !important;
+              border: none !important;
+            }
+          `;
+        } else {
+          // thermal_50x20
+          sheetPrintCss = `
+            .koli-label-page {
+              width: 50mm !important;
+              height: 20mm !important;
+              max-width: 50mm !important;
+              max-height: 20mm !important;
+              page-break-after: always;
+              break-after: page;
+            }
+          `;
+        }
+
+        // Copy parent page stylesheets for Tailwind CSS
+        const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+          .map((el) => el.outerHTML)
+          .join('\n');
 
         const fullHtml = `
           <!DOCTYPE html>
@@ -178,12 +255,128 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
           <head>
             <meta charset="utf-8" />
             <title>Cetak Barcode Koli</title>
+            ${headStyles}
             <style>
-              * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-              body { background: #fff; color: #000; font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-              @page { ${pageSizeCss} }
-              .koli-label-page { page-break-after: always; break-after: page; }
-              .koli-sheet { page-break-after: always; break-after: page; }
+              * {
+                box-sizing: border-box !important;
+                margin: 0;
+                padding: 0;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+              }
+              body {
+                background: #ffffff !important;
+                color: #000000 !important;
+                font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+              }
+              @page {
+                ${pageSizeCss}
+              }
+
+              /* Layout Utilities */
+              .flex { display: flex !important; }
+              .flex-col { flex-direction: column !important; }
+              .flex-row { flex-direction: row !important; }
+              .flex-wrap { flex-wrap: wrap !important; }
+              .flex-1 { flex: 1 1 0% !important; }
+              .items-center { align-items: center !important; }
+              .items-start { align-items: flex-start !important; }
+              .items-baseline { align-items: baseline !important; }
+              .justify-between { justify-content: space-between !important; }
+              .justify-center { justify-content: center !important; }
+              .shrink-0 { flex-shrink: 0 !important; }
+              .min-w-0 { min-width: 0px !important; }
+
+              /* Grid Utilities */
+              .grid { display: grid !important; }
+              .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+              .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+              .grid-rows-1 { grid-template-rows: repeat(1, minmax(0, 1fr)) !important; }
+              .grid-rows-2 { grid-template-rows: repeat(2, minmax(0, 1fr)) !important; }
+              .grid-rows-3 { grid-template-rows: repeat(3, minmax(0, 1fr)) !important; }
+              .grid-rows-4 { grid-template-rows: repeat(4, minmax(0, 1fr)) !important; }
+              .gap-1 { gap: 4px !important; }
+              .gap-1\\.5 { gap: 6px !important; }
+              .gap-2 { gap: 8px !important; }
+              .gap-2\\.5 { gap: 10px !important; }
+              .gap-3 { gap: 12px !important; }
+
+              /* Borders & Colors */
+              .border { border: 1px solid #000000 !important; }
+              .border-2 { border: 2px solid #000000 !important; }
+              .border-t { border-top: 1px solid #000000 !important; }
+              .border-t-2 { border-top: 2px solid #000000 !important; }
+              .border-b { border-bottom: 1px solid #000000 !important; }
+              .border-b-2 { border-bottom: 2px solid #000000 !important; }
+              .border-black { border-color: #000000 !important; }
+              .rounded-xs { border-radius: 2px !important; }
+              .rounded-sm { border-radius: 3px !important; }
+              .rounded-md { border-radius: 6px !important; }
+              .rounded-lg { border-radius: 8px !important; }
+
+              .bg-white { background-color: #ffffff !important; }
+              .bg-black { background-color: #000000 !important; color: #ffffff !important; }
+              .text-white { color: #ffffff !important; }
+              .text-black { color: #000000 !important; }
+              .text-slate-700 { color: #334155 !important; }
+
+              /* Typography */
+              .font-semibold { font-weight: 600 !important; }
+              .font-bold { font-weight: 700 !important; }
+              .font-black { font-weight: 900 !important; }
+              .font-mono { font-family: monospace !important; }
+              .uppercase { text-transform: uppercase !important; }
+              .truncate { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+              .whitespace-nowrap { white-space: nowrap !important; }
+              .leading-tight { line-height: 1.2 !important; }
+              .tracking-tight { letter-spacing: -0.025em !important; }
+              .tracking-wider { letter-spacing: 0.05em !important; }
+
+              /* Spacing & Sizes */
+              .w-full { width: 100% !important; }
+              .h-full { height: 100% !important; }
+              .p-1 { padding: 4px !important; }
+              .p-1\\.5 { padding: 6px !important; }
+              .p-2 { padding: 8px !important; }
+              .p-2\\.5 { padding: 10px !important; }
+              .p-3 { padding: 12px !important; }
+              .p-3\\.5 { padding: 14px !important; }
+              .px-1 { padding-left: 4px !important; padding-right: 4px !important; }
+              .px-1\\.5 { padding-left: 6px !important; padding-right: 6px !important; }
+              .px-2 { padding-left: 8px !important; padding-right: 8px !important; }
+              .px-2\\.5 { padding-left: 10px !important; padding-right: 10px !important; }
+              .py-0\\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+              .py-1 { padding-top: 4px !important; padding-bottom: 4px !important; }
+              .pt-0\\.5 { padding-top: 2px !important; }
+              .pt-1 { padding-top: 4px !important; }
+              .pb-0\\.5 { padding-bottom: 2px !important; }
+              .pb-1 { padding-bottom: 4px !important; }
+              .mt-0\\.5 { margin-top: 2px !important; }
+              .mt-1 { margin-top: 4px !important; }
+              .mt-2 { margin-top: 8px !important; }
+              .mt-auto { margin-top: auto !important; }
+
+              /* Explicit element constraints */
+              img {
+                object-fit: contain !important;
+                display: block !important;
+              }
+              .w-8 { width: 32px !important; }
+              .h-8 { height: 32px !important; }
+              .w-11 { width: 44px !important; }
+              .h-11 { height: 44px !important; }
+              .w-16 { width: 64px !important; }
+              .h-16 { height: 64px !important; }
+              .w-24 { width: 96px !important; }
+              .h-24 { height: 96px !important; }
+
+              svg {
+                display: block !important;
+                width: 100% !important;
+              }
+
+              ${sheetPrintCss}
             </style>
           </head>
           <body>
@@ -196,10 +389,36 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
         doc.write(fullHtml);
         doc.close();
 
-        setTimeout(() => {
-          printFrame?.contentWindow?.focus();
-          printFrame?.contentWindow?.print();
-        }, 250);
+        // Ensure all images are loaded before invoking print
+        const triggerPrint = () => {
+          setTimeout(() => {
+            printFrame?.contentWindow?.focus();
+            printFrame?.contentWindow?.print();
+          }, 150);
+        };
+
+        const images = doc.images;
+        let loadedCount = 0;
+        const totalImages = images.length;
+        if (totalImages === 0) {
+          triggerPrint();
+        } else {
+          for (let i = 0; i < totalImages; i++) {
+            if (images[i].complete) {
+              loadedCount++;
+              if (loadedCount === totalImages) triggerPrint();
+            } else {
+              images[i].onload = () => {
+                loadedCount++;
+                if (loadedCount === totalImages) triggerPrint();
+              };
+              images[i].onerror = () => {
+                loadedCount++;
+                if (loadedCount === totalImages) triggerPrint();
+              };
+            }
+          }
+        }
       }
     } catch (e) {
       window.print();
@@ -371,6 +590,40 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+      {/* Print Specific CSS in case of native window.print() */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #printable-koli-area, #printable-koli-area * {
+            visibility: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          #printable-koli-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+          }
+          .koli-sheet {
+            page-break-after: always;
+            break-after: page;
+            height: 98vh !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .koli-label-page {
+            page-break-after: always;
+            break-after: page;
+          }
+        }
+      `}</style>
+
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header Modal */}
