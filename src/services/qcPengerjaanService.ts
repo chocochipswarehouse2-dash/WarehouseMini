@@ -168,6 +168,7 @@ export function buildOrGetQcJob(
     const totals = calculateJobTotals(mergedSizes);
     return {
       ...existing,
+      source_type: 'PRODUKSI',
       foto_url: primaryFoto || existing.foto_url,
       warna: warna || existing.warna,
       kategori: kategori || existing.kategori,
@@ -196,6 +197,7 @@ export function buildOrGetQcJob(
 
   const newJob: QcPengerjaanJob = {
     id: jobId,
+    source_type: 'PRODUKSI',
     kode_produksi: kodeProduksi,
     warna: warna || '-',
     no_surat_jalan: noSuratJalan,
@@ -212,6 +214,224 @@ export function buildOrGetQcJob(
   };
 
   return newJob;
+}
+
+/**
+ * Generate unique ID untuk Master QC Mutasi Job Card (per No SJ + Store Asal)
+ */
+export function generateQcMutasiJobId(noSuratJalan: string, storeAsal?: string): string {
+  const cleanSJ = (noSuratJalan || 'SJ').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+  const cleanStore = (storeAsal || 'STORE').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+  return `QCMUT-${cleanSJ}-${cleanStore}`;
+}
+
+/**
+ * Ekstraksi kode produksi, warna, dan size dari PengecekanSJItem
+ */
+export function extractProductInfoFromSJItem(item: { sku?: string; nama_produk?: string; warna?: string; size?: string }): {
+  kode_produksi: string;
+  warna: string;
+  size: string;
+} {
+  const sku = (item.sku || '').trim();
+  const nama = (item.nama_produk || '').trim();
+  let warna = (item.warna || '').trim();
+  let size = (item.size || '').trim();
+
+  // Pattern standard SKU: [KODE]-[WARNA]-[SIZE] e.g. "DRS-BLK-M" or "CCR004-NAVY-L"
+  const parts = sku.split('-');
+  let kode_produksi = sku;
+
+  if (parts.length >= 3) {
+    size = size || parts[parts.length - 1].toUpperCase();
+    warna = warna || parts[parts.length - 2].toUpperCase();
+    kode_produksi = parts.slice(0, parts.length - 2).join('-');
+  } else if (parts.length === 2) {
+    size = size || parts[1].toUpperCase();
+    kode_produksi = parts[0];
+  } else if (!kode_produksi && nama) {
+    kode_produksi = nama;
+  }
+
+  if (!size) size = 'ALL SIZE';
+  if (!warna) warna = '-';
+
+  return {
+    kode_produksi: kode_produksi || 'ITEM',
+    warna,
+    size,
+  };
+}
+
+/**
+ * Ambil atau buat instance Job Card untuk QC Mutasi berdasarkan PengecekanSJRecord (Per Surat Jalan + Store)
+ */
+export function buildOrGetQcMutasiJobFromRecord(
+  rec: {
+    id: string;
+    no_sj: string;
+    source: string;
+    destination?: string;
+    tanggal_sj?: string;
+    catatan?: string;
+    submitted_by?: string;
+    items?: Array<{
+      sku: string;
+      nama_produk: string;
+      qty_sj: number;
+      qty_scan: number;
+      size?: string;
+      warna?: string;
+      foto_url?: string;
+    }>;
+  },
+  currentUserName?: string
+): QcPengerjaanJob {
+  const storeAsal = rec.source || 'Store';
+  const jobId = generateQcMutasiJobId(rec.no_sj, storeAsal);
+  const savedJobs = getSavedQcJobsFromLocal();
+  const existing = savedJobs[jobId];
+
+  const items = rec.items || [];
+  let primaryFoto = '';
+
+  // Buat array rincian item berdasarkan SKU + Size
+  const incomingSizes: QcSizeTally[] = items.map((it) => {
+    const info = extractProductInfoFromSJItem(it);
+    const sName = (it.size || info.size || 'ALL SIZE').trim().toUpperCase();
+    const sku = (it.sku || '').trim();
+    const namaProduk = (it.nama_produk || info.kode_produksi || sku).trim();
+    const warna = (it.warna || info.warna || '-').trim();
+    const qtyDiterima = Number(it.qty_scan) > 0 ? Number(it.qty_scan) : (Number(it.qty_sj) || 0);
+
+    if (!primaryFoto && it.foto_url) primaryFoto = it.foto_url;
+
+    return {
+      size: sName,
+      sku,
+      nama_produk: namaProduk,
+      warna,
+      qty_awal: qtyDiterima,
+      qty_oke: 0,
+      qty_noda: 0,
+      qty_permak: 0,
+      qty_defect: 0,
+    };
+  });
+
+  const sourceName = rec.source || 'Store';
+  const destName = rec.destination || 'Gudang Utama';
+  const kategori = `Mutasi (${sourceName} ➔ ${destName})`;
+  const tanggalPenerimaan = rec.tanggal_sj || new Date().toISOString().slice(0, 10);
+  const keteranganPenerimaan = `Mutasi Masuk dari ${sourceName} ke ${destName}. ${rec.catatan ? `Catatan: ${rec.catatan}` : ''}`.trim();
+
+  if (existing) {
+    // Sinkronisasi data existing dengan items terbaru dari Surat Jalan
+    const existingMap = new Map(existing.sizes.map((s) => [s.sku ? `${s.sku}___${s.size}` : s.size, s]));
+    const mergedSizes: QcSizeTally[] = incomingSizes.map((inc) => {
+      const key = inc.sku ? `${inc.sku}___${inc.size}` : inc.size;
+      const found = existingMap.get(key);
+      if (found) {
+        return {
+          ...found,
+          sku: inc.sku || found.sku,
+          nama_produk: inc.nama_produk || found.nama_produk,
+          warna: inc.warna || found.warna,
+          qty_awal: inc.qty_awal,
+        };
+      }
+      return inc;
+    });
+
+    const totals = calculateJobTotals(mergedSizes);
+    return {
+      ...existing,
+      source_type: 'MUTASI',
+      source_ref_id: rec.id || existing.source_ref_id,
+      store_asal: sourceName,
+      store_tujuan: destName,
+      nama_produk: `Mutasi: ${sourceName} (${items.length} SKU)`,
+      foto_url: primaryFoto || existing.foto_url,
+      kategori: kategori || existing.kategori,
+      tanggal_penerimaan: tanggalPenerimaan || existing.tanggal_penerimaan,
+      keterangan_penerimaan: keteranganPenerimaan || existing.keterangan_penerimaan,
+      sizes: mergedSizes,
+      ...totals,
+    };
+  }
+
+  // Buat Baru QC Mutasi Job (1 Surat Jalan + Store = 1 Job Card)
+  const initialTotals = calculateJobTotals(incomingSizes);
+  const initialPicList: string[] = [];
+  if (currentUserName && currentUserName.trim()) {
+    initialPicList.push(currentUserName.trim());
+  } else if (rec.submitted_by && rec.submitted_by.trim()) {
+    initialPicList.push(rec.submitted_by.trim());
+  }
+
+  const newJob: QcPengerjaanJob = {
+    id: jobId,
+    source_type: 'MUTASI',
+    source_ref_id: rec.id,
+    kode_produksi: `${rec.no_sj} • ${sourceName}`,
+    nama_produk: `Mutasi Masuk dari ${sourceName}`,
+    warna: `${items.length} SKU Barang`,
+    no_surat_jalan: rec.no_sj,
+    store_asal: sourceName,
+    store_tujuan: destName,
+    kategori,
+    tanggal_penerimaan: tanggalPenerimaan,
+    foto_url: primaryFoto,
+    keterangan_penerimaan: keteranganPenerimaan,
+    pic_list: initialPicList,
+    status: 'DRAFT',
+    sizes: incomingSizes,
+    ...initialTotals,
+    foto_evidence: [],
+    catatan_umum: '',
+  };
+
+  return newJob;
+}
+
+/**
+ * Backward compatibility helper
+ */
+export function buildOrGetQcMutasiJob(
+  noSuratJalan: string,
+  kodeProduksi: string,
+  items: Array<{
+    sku: string;
+    nama_produk: string;
+    qty_sj: number;
+    qty_scan: number;
+    size?: string;
+    warna?: string;
+    foto_url?: string;
+  }>,
+  recInfo: {
+    id?: string;
+    source?: string;
+    destination?: string;
+    tanggal_sj?: string;
+    catatan?: string;
+    submitted_by?: string;
+  },
+  currentUserName?: string
+): QcPengerjaanJob {
+  return buildOrGetQcMutasiJobFromRecord(
+    {
+      id: recInfo.id || '',
+      no_sj: noSuratJalan,
+      source: recInfo.source || kodeProduksi,
+      destination: recInfo.destination,
+      tanggal_sj: recInfo.tanggal_sj,
+      catatan: recInfo.catatan,
+      submitted_by: recInfo.submitted_by,
+      items,
+    },
+    currentUserName
+  );
 }
 
 /**
@@ -400,15 +620,25 @@ export async function finalizeAndSubmitQcJob(
  */
 export function generateQcWhatsAppSummary(job: QcPengerjaanJob): string {
   const totals = calculateJobTotals(job.sizes);
+  const isMutasi = job.source_type === 'MUTASI';
 
-  let msg = `*Hasil QC Produksi - ${job.kode_produksi}*\n`;
-  if (job.warna && job.warna !== '-') msg += `Model/Warna: ${job.warna}\n`;
+  let msg = isMutasi
+    ? `*Hasil QC Mutasi - SJ ${job.no_surat_jalan}*\n`
+    : `*Hasil QC Produksi - ${job.kode_produksi}*\n`;
+
+  if (isMutasi) {
+    if (job.store_asal) msg += `Asal Store: *${job.store_asal}*\n`;
+    if (job.store_tujuan) msg += `Tujuan: *${job.store_tujuan}*\n`;
+    msg += `Total SKU/Item: *${job.sizes.length} SKU*\n`;
+  } else {
+    if (job.warna && job.warna !== '-') msg += `Model/Warna: ${job.warna}\n`;
+    if (job.kategori) msg += `Kategori: ${job.kategori}\n`;
+  }
   msg += `No. Surat Jalan: ${job.no_surat_jalan}\n`;
-  if (job.kategori) msg += `Kategori: ${job.kategori}\n`;
   msg += `PIC QC: ${job.pic_list.join(', ') || 'Warehouse'}\n\n`;
 
   msg += `*Rangkuman:*\n`;
-  msg += `• Qty Setoran: *${totals.total_qty_awal} pcs*\n`;
+  msg += `• Total Qty Fisik: *${totals.total_qty_awal} pcs*\n`;
   msg += `• Lolos (Grade A): *${totals.total_qty_oke} pcs*\n`;
   if (totals.total_qty_noda > 0) msg += `• Noda (Cuci): *${totals.total_qty_noda} pcs*\n`;
   if (totals.total_qty_permak > 0) msg += `• Permak (Jahit): *${totals.total_qty_permak} pcs*\n`;
@@ -420,7 +650,7 @@ export function generateQcWhatsAppSummary(job: QcPengerjaanJob): string {
   }
   msg += `• Kelolosan: *${totals.pass_rate}%*\n\n`;
 
-  msg += `*Rincian per Size:*\n`;
+  msg += `*Rincian Barang / SKU:*\n`;
   job.sizes.forEach((s) => {
     const rejects: string[] = [];
     if (s.qty_noda > 0) rejects.push(`Noda: ${s.qty_noda}`);
@@ -428,7 +658,8 @@ export function generateQcWhatsAppSummary(job: QcPengerjaanJob): string {
     if (s.qty_defect > 0) rejects.push(`Defect: ${s.qty_defect}`);
 
     const rejectText = rejects.length > 0 ? ` (Reject: ${rejects.join(', ')})` : '';
-    msg += `• Size ${s.size}: Awal ${s.qty_awal} | Bagus: ${s.qty_oke}${rejectText}\n`;
+    const label = s.sku ? `${s.sku} (${s.size})` : `Size ${s.size}`;
+    msg += `• ${label}: Diterima ${s.qty_awal} | Bagus: ${s.qty_oke}${rejectText}\n`;
   });
 
   if (job.catatan_umum && job.catatan_umum.trim()) {

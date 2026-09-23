@@ -667,6 +667,9 @@ export type QcPengerjaanStatus = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
 
 export interface QcSizeTally {
   size: string;
+  sku?: string;
+  nama_produk?: string;
+  warna?: string;
   qty_awal: number;
   qty_oke: number;
   qty_noda: number;
@@ -685,12 +688,16 @@ export interface QcPhotoEvidence {
 }
 
 export interface QcPengerjaanJob {
-  id: string; // e.g. "QCJOB-CCP010-20260922" or UUID
+  id: string; // e.g. "QCJOB-CCP010-20260922" or "QCMUT-SJ001-STORE_A"
+  source_type?: 'PRODUKSI' | 'MUTASI'; // Asal pengerjaan QC
+  source_ref_id?: string; // ID referensi transaksi/surat jalan
   kode_produksi: string;
   nama_produk?: string;
   warna?: string;
   no_surat_jalan: string;
-  kategori?: string; // 'Lokal CMT' | 'Kargo'
+  store_asal?: string;
+  store_tujuan?: string;
+  kategori?: string; // 'Lokal CMT' | 'Kargo' | 'Mutasi (Store -> Warehouse)'
   tanggal_penerimaan?: string;
   foto_url?: string;
   keterangan_penerimaan?: string;

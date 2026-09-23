@@ -269,8 +269,10 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider bg-indigo-600 text-white shadow-2xs">
-                Master QC Job Card
+              <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider ${
+                job.source_type === 'MUTASI' ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white'
+              } shadow-2xs`}>
+                {job.source_type === 'MUTASI' ? 'QC Mutasi Surat Jalan' : 'Master QC Job Card'}
               </span>
               <span
                 className={`px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider ${
@@ -289,7 +291,7 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
               </span>
             </div>
             <h1 className="text-lg sm:text-2xl font-black font-mono text-slate-900 dark:text-white mt-1">
-              #{job.kode_produksi}{' '}
+              {job.source_type === 'MUTASI' ? `Surat Jalan: ${job.no_surat_jalan}` : `#${job.kode_produksi}`}{' '}
               {job.warna && job.warna !== '-' && (
                 <span className="text-base font-sans font-bold text-slate-600 dark:text-slate-400">
                   ({job.warna})
@@ -297,7 +299,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
               )}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Surat Jalan: <span className="font-bold text-slate-700 dark:text-slate-300">{job.no_surat_jalan}</span> • Kategori: <span className="font-bold">{job.kategori || 'Lokal CMT'}</span>
+              {job.source_type === 'MUTASI' ? (
+                <>🏪 Asal Store: <span className="font-bold text-slate-700 dark:text-slate-300">{job.store_asal || 'Store'}</span> • Total: <span className="font-bold">{job.sizes.length} SKU/Item</span></>
+              ) : (
+                <>Surat Jalan: <span className="font-bold text-slate-700 dark:text-slate-300">{job.no_surat_jalan}</span> • Kategori: <span className="font-bold">{job.kategori || 'Lokal CMT'}</span></>
+              )}
             </p>
           </div>
         </div>
@@ -518,11 +524,12 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Pilih Size untuk Tally / Input Cepat:
+              {job.source_type === 'MUTASI' ? 'Pilih Item / SKU untuk Tally:' : 'Pilih Size untuk Tally / Input Cepat:'}
             </span>
             {activeSize && (
               <span className="text-xs text-slate-500 font-medium">
-                Setoran Awal: <strong className="text-slate-800 dark:text-slate-200">{activeSize.qty_awal} pcs</strong> | Diperiksa:{' '}
+                {job.source_type === 'MUTASI' ? 'Fisik SJ:' : 'Setoran Awal:'}{' '}
+                <strong className="text-slate-800 dark:text-slate-200">{activeSize.qty_awal} pcs</strong> | Diperiksa:{' '}
                 <strong className="text-indigo-600 dark:text-indigo-400">
                   {activeSize.qty_oke + activeSize.qty_noda + activeSize.qty_permak + activeSize.qty_defect} pcs
                 </strong>
@@ -530,32 +537,61 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5">
             {job.sizes.map((s, idx) => {
               const totalPeriksa = s.qty_oke + s.qty_noda + s.qty_permak + s.qty_defect;
               const isMatch = totalPeriksa === s.qty_awal;
               return (
                 <button
-                  key={s.size}
+                  key={s.sku ? `${s.sku}_${s.size}_${idx}` : `${s.size}_${idx}`}
                   type="button"
                   onClick={() => setSelectedSizeIndex(idx)}
-                  className={`flex flex-col items-center justify-center px-4 py-2.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer min-w-[76px] ${
+                  className={`flex flex-col items-start px-3.5 py-2 rounded-xl font-bold transition-all shrink-0 cursor-pointer min-w-[100px] text-left ${
                     selectedSizeIndex === idx
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-600/30'
                       : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  <span className="text-sm font-black font-mono leading-tight">{s.size}</span>
-                  <span className="text-[10px] opacity-80 mt-0.5">
-                    {totalPeriksa}/{s.qty_awal}
+                  <div className="flex items-center justify-between w-full gap-1">
+                    <span className="text-xs font-black font-mono leading-tight truncate max-w-[120px]">
+                      {s.sku || s.size}
+                    </span>
+                    {isMatch && totalPeriksa > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                    )}
+                  </div>
+                  <span className="text-[10px] opacity-80 mt-0.5 truncate max-w-[120px]">
+                    Size {s.size} • {totalPeriksa}/{s.qty_awal}
                   </span>
-                  {isMatch && totalPeriksa > 0 && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-0.5" />
-                  )}
                 </button>
               );
             })}
           </div>
+
+          {/* Active Item Banner for QC Mutasi */}
+          {job.source_type === 'MUTASI' && activeSize && (
+            <div className="mt-2.5 p-2.5 sm:p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <span className="font-mono font-black text-emerald-950 dark:text-emerald-200 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                  {activeSize.sku || activeSize.size}
+                </span>
+                <span className="text-slate-700 dark:text-slate-300 font-bold truncate">
+                  {activeSize.nama_produk || 'Produk'}
+                </span>
+                <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded font-black text-[10px]">
+                  Size: {activeSize.size}
+                </span>
+                {activeSize.warna && activeSize.warna !== '-' && (
+                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-medium text-[10px]">
+                    Warna: {activeSize.warna}
+                  </span>
+                )}
+              </div>
+              <span className="text-emerald-700 dark:text-emerald-300 font-extrabold text-[11px]">
+                Fisik Surat Jalan: {activeSize.qty_awal} pcs
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Tally Controls Pad (Tampilan Tombol Sentuh Besar untuk Operasional Lapangan Cepat) */}

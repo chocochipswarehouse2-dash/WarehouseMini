@@ -39,6 +39,11 @@ import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, reso
 import { isWarehouseLocation } from '../../services/supabase';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
+import {
+  buildOrGetQcMutasiJob,
+  extractProductInfoFromSJItem,
+  saveSingleQcJob,
+} from '../../services/qcPengerjaanService';
 
 interface TarikanMDViewProps {
   session: UserSession | null;
@@ -310,6 +315,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SELESAI' | 'COCOK' | 'SELISIH'>('ALL');
+  const [riwayatTypeFilter, setRiwayatTypeFilter] = useState<'ALL' | 'PENERIMAAN' | 'PENGIRIMAN'>('ALL');
   const [pickingModalDraft, setPickingModalDraft] = useState<PengecekanSJDraft | null>(null);
   const [selisihWaModalParams, setSelisihWaModalParams] = useState<SuratJalanSelisihMessageParams | null>(null);
 
@@ -714,6 +720,46 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           onShowToast(`Pengecekan SJ "${activeDraft.no_sj}" berhasil disimpan ke Database Supabase!`, 'success');
         }
 
+        // Jika ini adalah Penerimaan / Mutasi Masuk, inisialisasi / perbarui QC Mutasi Job
+        const isPenerimaan =
+          record.tipe_import === 'Penerimaan' ||
+          (!record.tipe_import &&
+            ((record.destination || '').toLowerCase().includes('warehouse') ||
+              (record.destination || '').toLowerCase().includes('gudang') ||
+              (record.destination || '').toLowerCase().includes('pusat')));
+
+        if (isPenerimaan && allRows.length > 0) {
+          try {
+            const itemGroupMap = new Map<string, PengecekanSJItem[]>();
+            allRows.forEach(it => {
+              const info = extractProductInfoFromSJItem(it);
+              const groupKode = (it.kode_produksi || info.kode_produksi || 'ITEM').trim().toUpperCase();
+              if (!itemGroupMap.has(groupKode)) itemGroupMap.set(groupKode, []);
+              itemGroupMap.get(groupKode)!.push(it);
+            });
+
+            itemGroupMap.forEach((items, groupKode) => {
+              const mutasiJob = buildOrGetQcMutasiJob(
+                record.no_sj,
+                groupKode,
+                items,
+                {
+                  id: record.id,
+                  source: record.source,
+                  destination: record.destination,
+                  tanggal_sj: record.tanggal_sj,
+                  catatan: record.catatan,
+                  submitted_by: record.submitted_by,
+                },
+                submittedBy
+              );
+              saveSingleQcJob(mutasiJob);
+            });
+          } catch (qcErr) {
+            console.error('Failed to auto-register QC Mutasi Job:', qcErr);
+          }
+        }
+
         // Optimistic UI: langsung tampilkan record baru di riwayat
         setRecords(prev => {
           const filtered = prev.filter(r => r.no_sj !== record.no_sj && r.id !== record.id);
@@ -976,9 +1022,42 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     });
   };
 
+  // RIWAYAT COUNTS (PENERIMAAN vs PENGIRIMAN)
+  const riwayatCounts = useMemo(() => {
+    let penerimaan = 0;
+    let pengiriman = 0;
+    records.forEach(r => {
+      const isPenerimaan =
+        r.tipe_import === 'Penerimaan' ||
+        (!r.tipe_import &&
+          ((r.destination || '').toLowerCase().includes('warehouse') ||
+            (r.destination || '').toLowerCase().includes('gudang') ||
+            (r.destination || '').toLowerCase().includes('pusat')));
+      if (isPenerimaan) penerimaan++;
+      else pengiriman++;
+    });
+    return {
+      all: records.length,
+      penerimaan,
+      pengiriman,
+    };
+  }, [records]);
+
   // FILTERED RIWAYAT RECORDS
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
+      const isPenerimaan =
+        r.tipe_import === 'Penerimaan' ||
+        (!r.tipe_import &&
+          ((r.destination || '').toLowerCase().includes('warehouse') ||
+            (r.destination || '').toLowerCase().includes('gudang') ||
+            (r.destination || '').toLowerCase().includes('pusat')));
+
+      const matchType =
+        riwayatTypeFilter === 'ALL' ||
+        (riwayatTypeFilter === 'PENERIMAAN' && isPenerimaan) ||
+        (riwayatTypeFilter === 'PENGIRIMAN' && !isPenerimaan);
+
       const matchSearch =
         !searchFilter ||
         r.no_sj.toLowerCase().includes(searchFilter.toLowerCase()) ||
@@ -993,9 +1072,9 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         (statusFilter === 'COCOK' && r.status_komparasi === 'COCOK') ||
         (statusFilter === 'SELISIH' && r.status_komparasi === 'SELISIH');
 
-      return matchSearch && matchStatus;
+      return matchType && matchSearch && matchStatus;
     });
-  }, [records, searchFilter, statusFilter]);
+  }, [records, searchFilter, statusFilter, riwayatTypeFilter]);
 
   // ==========================================
   // RENDER VIEW
@@ -1838,6 +1917,68 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
         {/* ======================================================== */}
         {activeTab === 'riwayat' && (
           <div className="space-y-3">
+            {/* SUB-TAB TIPE: SEMUA vs PENERIMAAN vs PENGIRIMAN */}
+            <div className="bg-white dark:bg-[#131d31] p-2 sm:p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto">
+                <button
+                  type="button"
+                  id="btn-riwayat-semua"
+                  onClick={() => setRiwayatTypeFilter('ALL')}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
+                    riwayatTypeFilter === 'ALL'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Semua Riwayat</span>
+                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
+                    riwayatTypeFilter === 'ALL' ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}>
+                    {riwayatCounts.all}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-riwayat-penerimaan"
+                  onClick={() => setRiwayatTypeFilter('PENERIMAAN')}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
+                    riwayatTypeFilter === 'PENERIMAAN'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                  }`}
+                >
+                  <ArrowDownToLine className="w-3.5 h-3.5" />
+                  <span>Penerimaan / Mutasi Masuk</span>
+                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
+                    riwayatTypeFilter === 'PENERIMAAN' ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                  }`}>
+                    {riwayatCounts.penerimaan}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-riwayat-pengiriman"
+                  onClick={() => setRiwayatTypeFilter('PENGIRIMAN')}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer select-none shrink-0 ${
+                    riwayatTypeFilter === 'PENGIRIMAN'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                  }`}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>Pengiriman / Transfer Toko</span>
+                  <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold ${
+                    riwayatTypeFilter === 'PENGIRIMAN' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                  }`}>
+                    {riwayatCounts.pengiriman}
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* HEADER FILTER & STATS */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#131d31] p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="relative flex-1">
