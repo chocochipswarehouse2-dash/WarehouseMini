@@ -178,6 +178,8 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               max-height: 40mm !important;
               page-break-after: always;
               break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
             }
           `;
         } else if (format === 'thermal_80x50') {
@@ -190,6 +192,8 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               max-height: 50mm !important;
               page-break-after: always;
               break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
             }
           `;
         } else if (format === 'thermal_100x150') {
@@ -200,6 +204,8 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               height: 150mm !important;
               page-break-after: always;
               break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
             }
           `;
         } else if (format === 'a6') {
@@ -207,13 +213,20 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
           sheetPrintCss = `
             .koli-sheet {
               width: 100% !important;
-              height: 98vh !important;
+              height: 100vh !important;
               max-height: 100vh !important;
               page-break-after: always;
               break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
               padding: 2mm !important;
               box-shadow: none !important;
               border: none !important;
+              box-sizing: border-box !important;
+            }
+            .koli-sheet > div {
+              height: 100% !important;
+              width: 100% !important;
             }
           `;
         } else if (format === 'a4') {
@@ -221,13 +234,20 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
           sheetPrintCss = `
             .koli-sheet {
               width: 100% !important;
-              height: 98vh !important;
+              height: 100vh !important;
               max-height: 100vh !important;
               page-break-after: always;
               break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
               padding: 3mm !important;
               box-shadow: none !important;
               border: none !important;
+              box-sizing: border-box !important;
+            }
+            .koli-sheet > div {
+              height: 100% !important;
+              width: 100% !important;
             }
           `;
         } else {
@@ -240,14 +260,11 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               max-height: 20mm !important;
               page-break-after: always;
               break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
             }
           `;
         }
-
-        // Copy parent page stylesheets for Tailwind CSS
-        const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-          .map((el) => el.outerHTML)
-          .join('\n');
 
         const fullHtml = `
           <!DOCTYPE html>
@@ -255,20 +272,24 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
           <head>
             <meta charset="utf-8" />
             <title>Cetak Barcode Koli</title>
-            ${headStyles}
             <style>
               * {
                 box-sizing: border-box !important;
                 margin: 0;
                 padding: 0;
+                visibility: visible !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 color-adjust: exact !important;
               }
-              body {
+              html, body {
                 background: #ffffff !important;
                 color: #000000 !important;
                 font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+                width: 100% !important;
+                height: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
               }
               @page {
                 ${pageSizeCss}
@@ -301,6 +322,7 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               .gap-2 { gap: 8px !important; }
               .gap-2\\.5 { gap: 10px !important; }
               .gap-3 { gap: 12px !important; }
+              .gap-6 { gap: 24px !important; }
 
               /* Borders & Colors */
               .border { border: 1px solid #000000 !important; }
@@ -310,6 +332,7 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               .border-b { border-bottom: 1px solid #000000 !important; }
               .border-b-2 { border-bottom: 2px solid #000000 !important; }
               .border-black { border-color: #000000 !important; }
+              .border-slate-400 { border-color: #94a3b8 !important; }
               .rounded-xs { border-radius: 2px !important; }
               .rounded-sm { border-radius: 3px !important; }
               .rounded-md { border-radius: 6px !important; }
@@ -332,6 +355,9 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               .leading-tight { line-height: 1.2 !important; }
               .tracking-tight { letter-spacing: -0.025em !important; }
               .tracking-wider { letter-spacing: 0.05em !important; }
+              .text-xs { font-size: 12px !important; }
+              .text-sm { font-size: 14px !important; }
+              .text-base { font-size: 16px !important; }
 
               /* Spacing & Sizes */
               .w-full { width: 100% !important; }
@@ -346,6 +372,7 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               .px-1\\.5 { padding-left: 6px !important; padding-right: 6px !important; }
               .px-2 { padding-left: 8px !important; padding-right: 8px !important; }
               .px-2\\.5 { padding-left: 10px !important; padding-right: 10px !important; }
+              .py-0\\.2 { padding-top: 1px !important; padding-bottom: 1px !important; }
               .py-0\\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
               .py-1 { padding-top: 4px !important; padding-bottom: 4px !important; }
               .pt-0\\.5 { padding-top: 2px !important; }
@@ -374,13 +401,16 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
               svg {
                 display: block !important;
                 width: 100% !important;
+                overflow: visible !important;
               }
 
               ${sheetPrintCss}
             </style>
           </head>
           <body>
-            ${printableContent}
+            <div style="width: 100%; height: 100%;">
+              ${printableContent}
+            </div>
           </body>
           </html>
         `;
@@ -394,7 +424,7 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
           setTimeout(() => {
             printFrame?.contentWindow?.focus();
             printFrame?.contentWindow?.print();
-          }, 150);
+          }, 250);
         };
 
         const images = doc.images;
@@ -590,40 +620,6 @@ export const KoliMarkingPrintModal: React.FC<KoliMarkingPrintModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
-      {/* Print Specific CSS in case of native window.print() */}
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
-          #printable-koli-area, #printable-koli-area * {
-            visibility: visible !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          #printable-koli-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #ffffff !important;
-          }
-          .koli-sheet {
-            page-break-after: always;
-            break-after: page;
-            height: 98vh !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-          .koli-label-page {
-            page-break-after: always;
-            break-after: page;
-          }
-        }
-      `}</style>
-
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header Modal */}
