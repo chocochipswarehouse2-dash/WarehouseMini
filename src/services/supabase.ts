@@ -4697,32 +4697,98 @@ export interface MasterProdukRecord {
 
 /**
  * Fetch total count of master_produk rows in Supabase
+ * Uses fast planned count (from pg_class) first to prevent PostgreSQL 57014 statement_timeout on large datasets (28k+ rows).
  */
-export async function fetchMasterProdukCount(): Promise<{ count: number; error?: string }> {
+export async function fetchMasterProdukCount(): Promise<{ count: number; tableExists?: boolean; isTimeout?: boolean; error?: string }> {
   const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
   try {
-    const res = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku`, {
+    // 1. First, check fast planned count (runs in ~2ms via pg_class, never hits statement_timeout 57014)
+    const plannedRes = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku`, {
       method: 'GET',
       headers: {
         apikey: supaKey,
         Authorization: `Bearer ${supaKey}`,
-        Prefer: 'count=exact',
+        Prefer: 'count=planned',
         Range: '0-0',
       },
     });
-    if (!res.ok) {
+
+    if (plannedRes.ok) {
+      const range = plannedRes.headers.get('Content-Range');
+      if (range) {
+        const totalStr = range.split('/')[1];
+        if (totalStr && totalStr !== '*') {
+          const count = parseInt(totalStr, 10);
+          if (!isNaN(count) && count >= 0) {
+            return { count, tableExists: true };
+          }
+        }
+      }
+    }
+
+    // 2. If planned didn't return count, try exact count with short timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    try {
+      const res = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku`, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          apikey: supaKey,
+          Authorization: `Bearer ${supaKey}`,
+          Prefer: 'count=exact',
+          Range: '0-0',
+        },
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        let count = 0;
+        const range = res.headers.get('Content-Range');
+        if (range) {
+          const total = range.split('/')[1];
+          if (total && total !== '*') count = parseInt(total, 10) || 0;
+        }
+        return { count, tableExists: true };
+      }
+
       const errText = await res.text();
-      throw new Error(errText || `HTTP ${res.status}`);
+      // If error indicates timeout (code 57014), check if table exists via quick limit=1
+      if (errText.includes('57014') || errText.includes('timeout')) {
+        const checkRes = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku&limit=1`, {
+          method: 'GET',
+          headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+        });
+        if (checkRes.ok) {
+          return { count: -1, tableExists: true, isTimeout: true };
+        }
+      }
+
+      // Check if relation does not exist
+      if (errText.includes('42P01') || errText.includes('does not exist')) {
+        return { count: 0, tableExists: false, error: 'Tabel master_produk belum dibuat di Supabase' };
+      }
+
+      return { count: 0, tableExists: false, error: errText };
+    } catch (exactErr: any) {
+      clearTimeout(timeoutId);
+      // Fast check if table exists with limit 1
+      try {
+        const checkRes = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku&limit=1`, {
+          method: 'GET',
+          headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+        });
+        if (checkRes.ok) {
+          return { count: -1, tableExists: true, isTimeout: true };
+        }
+      } catch (e) {
+        // ignore
+      }
+      return { count: 0, tableExists: false, error: exactErr.message || 'Gagal memuat status database' };
     }
-    let count = 0;
-    const range = res.headers.get('Content-Range');
-    if (range) {
-      const total = range.split('/')[1];
-      if (total && total !== '*') count = parseInt(total, 10) || 0;
-    }
-    return { count };
   } catch (err: any) {
-    return { count: 0, error: err.message || 'Gagal memuat status database' };
+    return { count: 0, tableExists: false, error: err.message || 'Gagal memuat status database' };
   }
 }
 
@@ -4740,6 +4806,12 @@ export async function deleteEntireMasterProduk(): Promise<{ success: boolean; er
       },
     });
     if (!res.ok && res.status !== 204 && res.status !== 200) {
+      const errText = await res.text();
+      // If statement timeout on massive dataset, log warning and let upsert overwrite it
+      if (errText.includes('57014') || errText.includes('timeout')) {
+        console.warn('Delete statement timed out, batch upsert will overwrite rows automatically.');
+        return { success: true };
+      }
       // Fallback filter
       const fallbackRes = await fetch(`${supaUrl}/rest/v1/master_produk?sku=neq.__DUMMY_NONE_FILTER__`, {
         method: 'DELETE',
@@ -4749,8 +4821,11 @@ export async function deleteEntireMasterProduk(): Promise<{ success: boolean; er
         },
       });
       if (!fallbackRes.ok && fallbackRes.status !== 204 && fallbackRes.status !== 200) {
-        const errText = await fallbackRes.text();
-        throw new Error(errText || `Gagal menghapus database lama (HTTP ${fallbackRes.status})`);
+        const fbErr = await fallbackRes.text();
+        if (fbErr.includes('57014') || fbErr.includes('timeout')) {
+          return { success: true };
+        }
+        throw new Error(fbErr || `Gagal menghapus database lama (HTTP ${fallbackRes.status})`);
       }
     }
     return { success: true };

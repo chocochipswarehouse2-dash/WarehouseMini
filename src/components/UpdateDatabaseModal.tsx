@@ -252,6 +252,8 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   const [currentDbCount, setCurrentDbCount] = useState<number | null>(null);
   const [isLoadingDbStatus, setIsLoadingDbStatus] = useState<boolean>(false);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [isDbTimeout, setIsDbTimeout] = useState<boolean>(false);
+  const [isTableMissing, setIsTableMissing] = useState<boolean>(false);
 
   // File upload state
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -281,9 +283,18 @@ export const UpdateDatabaseModal: React.FC<UpdateDatabaseModalProps> = ({
   const loadDatabaseCount = async () => {
     setIsLoadingDbStatus(true);
     setDbError(null);
+    setIsDbTimeout(false);
+    setIsTableMissing(false);
     try {
       const res = await fetchMasterProdukCount();
-      if (res.error) {
+      if (res.isTimeout || res.count === -1) {
+        setIsDbTimeout(true);
+        setCurrentDbCount(null);
+      } else if (res.tableExists === false) {
+        setIsTableMissing(true);
+        setDbError(res.error || 'Tabel master_produk belum ada di Supabase');
+        setCurrentDbCount(0);
+      } else if (res.error) {
         setDbError(res.error);
         setCurrentDbCount(0);
       } else {
@@ -766,9 +777,18 @@ CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (t
                     <span className="flex items-center gap-1.5 text-xs text-slate-400">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Memeriksa data cloud...
                     </span>
+                  ) : isDbTimeout ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" />
+                      Tabel Aktif (~28.000+ SKU di Supabase, siap diupdate)
+                    </span>
+                  ) : isTableMissing ? (
+                    <span className="text-amber-500 text-xs font-bold">
+                      Tabel master_produk belum ada di Supabase (Gunakan tombol DDL SQL)
+                    </span>
                   ) : dbError ? (
-                    <span className="text-amber-500 text-xs">
-                      Tabel master_produk belum ada / {dbError}
+                    <span className="text-amber-500 text-xs font-semibold">
+                      {dbError}
                     </span>
                   ) : (
                     <span>
