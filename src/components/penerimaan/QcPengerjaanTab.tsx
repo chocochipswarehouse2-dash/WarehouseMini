@@ -125,12 +125,24 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
     const currentUserName = session?.name || session?.username || '';
     const savedLocalJobs = getSavedQcJobsFromLocal();
 
-    // Filter mutasiRecords to only 'Penerimaan' or destination to Warehouse/Gudang
+    // Filter mutasiRecords: HANYA Surat Jalan Pengecekan Penerimaan (Barang masuk ke Gudang)
     const penerimaanSJRecords = (mutasiRecords || []).filter((rec) => {
-      const isExplicitPenerimaan = rec.tipe_import === 'Penerimaan';
+      // 1. Jika ada flag tipe_import eksplisit
+      if (rec.tipe_import === 'Pengiriman') return false;
+      if (rec.tipe_import === 'Penerimaan') return true;
+
+      // 2. Cek arah rute Source (Asal) dan Destination (Tujuan)
       const dest = (rec.destination || '').toLowerCase();
-      const isDestWarehouse = dest.includes('warehouse') || dest.includes('gudang') || dest.includes('pusat');
-      return isExplicitPenerimaan || (!rec.tipe_import && isDestWarehouse);
+      const src = (rec.source || '').toLowerCase();
+      
+      const isDestWarehouse = dest.includes('warehouse') || dest.includes('gudang') || dest.includes('pusat') || dest.includes('wh');
+      const isSourceWarehouse = src.includes('warehouse') || src.includes('gudang') || src.includes('pusat') || src.includes('wh');
+
+      // Jika asal gudang dan tujuan toko/outlet => ini PENGIRIMAN (jangan masukkan ke QC Mutasi)
+      if (isSourceWarehouse && !isDestWarehouse) return false;
+
+      // Jika tujuan adalah Gudang/Warehouse => ini PENERIMAAN (masuk ke QC Mutasi)
+      return isDestWarehouse;
     });
 
     const processedJobIds = new Set<string>();
