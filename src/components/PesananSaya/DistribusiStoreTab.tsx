@@ -4,7 +4,7 @@ import {
   AlertTriangle, Package, FileText, Trash2, ClipboardCheck, X,
   Minus, Plus, RotateCcw, ArrowUpDown, ScanLine, Download,
   Edit3, ArrowLeftRight, Check, Search, Filter, Layers, ListFilter,
-  Wifi, WifiOff, CloudOff
+  Wifi, WifiOff, CloudOff, ArrowDownToLine, Truck
 } from 'lucide-react';
 import {
   UserSession,

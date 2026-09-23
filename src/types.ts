@@ -502,6 +502,8 @@ export interface PenerimaanProduksiItem {
   kategori: string; // 'Lokal CMT' | 'Kargo'
   no_surat_jalan: string;
   kode_produksi: string;
+  nama_produk?: string;
+  sku?: string;
   warna: string;
   size: string;
   qty: number;
@@ -780,9 +782,12 @@ export interface PengecekanSJItem {
   destination: string;
   tanggal_sj: string;
   sku: string;
+  kode_produksi?: string;
   nama_produk: string;
+  warna?: string;
   size?: string;
   category?: string;
+  foto_url?: string;
   qty_sj: number;
   qty_scan: number;
   selisih: number;
