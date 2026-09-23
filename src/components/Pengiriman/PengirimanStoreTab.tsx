@@ -14,6 +14,7 @@ import {
   Clock,
   User,
   Box,
+  Package,
   Copy,
   QrCode,
   ArrowRight,
@@ -32,6 +33,7 @@ import {
   UploadCloud,
   Barcode as BarcodeIcon,
   Check,
+  Edit3,
   X,
 } from 'lucide-react';
 import {
@@ -49,8 +51,10 @@ import {
   processKirimStoreReports,
   deletePengirimanStoreReport,
   editPengirimanStoreReport,
+  editPengirimanStoreReportFull,
   cancelPengirimanStoreReport,
   generateKoliLabelsForReport,
+  markReportsLabelAsPrinted,
   getTodayDateString,
   getCurrentTimeString,
 } from '../../services/pengirimanStore';
@@ -125,7 +129,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   // --------------------------------------------------------------------------
   const [searchDispatched, setSearchDispatched] = useState<string>('');
   const [filterStoreDispatched, setFilterStoreDispatched] = useState<string>('');
+  const [filterLabelStatusDispatched, setFilterLabelStatusDispatched] = useState<'all' | 'printed' | 'unprinted'>('all');
   const [selectedDispatchedIds, setSelectedDispatchedIds] = useState<string[]>([]);
+
+  // Modal Edit Laporan Dispatched State
+  const [editingDispatchedReport, setEditingDispatchedReport] = useState<PengirimanStoreReport | null>(null);
+  const [editStoreTujuan, setEditStoreTujuan] = useState<string>('');
+  const [editItems, setEditItems] = useState<PengirimanStoreItem[]>([]);
+  const [isSavingEditDispatched, setIsSavingEditDispatched] = useState<boolean>(false);
 
   // --------------------------------------------------------------------------
   // 3. TAB KIRIM (SETUP PENGIRIMAN) STATE
@@ -139,7 +150,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   const [selectedStoreKirim, setSelectedStoreKirim] = useState<string>('');
   const [selectedReportIdsForKirim, setSelectedReportIdsForKirim] = useState<string[]>([]);
   const [tanggalKirim, setTanggalKirim] = useState<string>(getTodayDateString());
-  const [dikirimOleh, setDikirimOleh] = useState<string>('');
+  const [dikirimOleh, setDikirimOleh] = useState<string>(session?.name || '');
   const [catatanKirim, setCatatanKirim] = useState<string>('');
   const [isProcessingKirim, setIsProcessingKirim] = useState<boolean>(false);
 
@@ -228,6 +239,71 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     return reports.filter((r) => r.status === 'sent');
   }, [reports]);
 
+  /**
+   * Helper normalisasi pembanding nama / kode store secara fleksibel dan akurat (case-insensitive & alias-aware)
+   * Menyinkronkan kode 'GAIA' dari Master Produk dengan 'Gaia Pontianak', 'Gaia Bumi Raya City', dll.
+   */
+  const isSameStore = (a?: string, b?: string): boolean => {
+    if (!a || !b) return false;
+    const sA = a.trim().toLowerCase();
+    const sB = b.trim().toLowerCase();
+    if (sA === sB) return true;
+
+    const isGaia = (s: string) =>
+      s === 'gaia' || s === 'gaia pontianak' || s === 'gaia bumi raya city' || s === 'gaia mall';
+    if (isGaia(sA) && isGaia(sB)) return true;
+
+    const isBts = (s: string) => s === 'bts' || s === 'by the sea' || s === 'by the sea pik';
+    if (isBts(sA) && isBts(sB)) return true;
+
+    const isCpj = (s: string) => s === 'cpj' || s === 'central park' || s === 'central park jakarta';
+    if (isCpj(sA) && isCpj(sB)) return true;
+
+    const isCws = (s: string) => s === 'cws' || s === 'ciputra world' || s === 'ciputra world surabaya';
+    if (isCws(sA) && isCws(sB)) return true;
+
+    const isDpm = (s: string) => s === 'dpm' || s === 'deli park' || s === 'deli park medan';
+    if (isDpm(sA) && isDpm(sB)) return true;
+
+    const isGst = (s: string) => s === 'gst' || s === 'gading serpong' || s === 'gading serpong tangerang' || s === 'summarecon mall serpong' || s === 'sms';
+    if (isGst(sA) && isGst(sB)) return true;
+
+    const isLvl = (s: string) => s === 'lvl' || s === 'la vela' || s === 'la vela tangerang';
+    if (isLvl(sA) && isLvl(sB)) return true;
+
+    const isLmp = (s: string) => s === 'lmp' || s === 'lippo mall puri' || s === 'puri';
+    if (isLmp(sA) && isLmp(sB)) return true;
+
+    const isLws = (s: string) => s === 'lws' || s === 'living world' || s === 'living world tangerang';
+    if (isLws(sA) && isLws(sB)) return true;
+
+    const isMkg = (s: string) => s === 'mkg' || s === 'mall kelapa gading' || s === 'kelapa gading';
+    if (isMkg(sA) && isMkg(sB)) return true;
+
+    const isNsj = (s: string) => s === 'nsj' || s === 'neo soho' || s === 'neo soho jakarta';
+    if (isNsj(sA) && isNsj(sB)) return true;
+
+    const isPms = (s: string) => s === 'pms' || s === 'pakuwon mall' || s === 'pakuwon mall surabaya';
+    if (isPms(sA) && isPms(sB)) return true;
+
+    const isPhb = (s: string) => s === 'phb' || s === 'paskal' || s === 'paskal hyper square' || s === 'paskal hyper square bandung' || s === '23 paskal';
+    if (isPhb(sA) && isPhb(sB)) return true;
+
+    const isPim = (s: string) => s === 'pim' || s === 'puri indah mall' || s === 'pondok indah mall';
+    if (isPim(sA) && isPim(sB)) return true;
+
+    const isSpm = (s: string) => s === 'spm' || s === 'sun plaza' || s === 'sun plaza medan';
+    if (isSpm(sA) && isSpm(sB)) return true;
+
+    const isTp = (s: string) => s === 'tp' || s === 'tunjungan plaza' || s === 'tunjungan plaza surabaya';
+    if (isTp(sA) && isTp(sB)) return true;
+
+    const isPvj = (s: string) => s === 'pvj' || s === 'paris van java' || s === 'paris van java bandung';
+    if (isPvj(sA) && isPvj(sB)) return true;
+
+    return false;
+  };
+
   // Daftar store yang memiliki barang di antrean Dispatched
   const dispatchedStoresList = useMemo(() => {
     const map = new Map<string, { count: number; koli: number }>();
@@ -256,13 +332,13 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   // Saat selectedStoreKirim berubah, otomatis tampilkan dan centang seluruh dispatched toko tersebut
   const dispatchedForSelectedStore = useMemo(() => {
     if (!selectedStoreKirim) return [];
-    return dispatchedReports.filter((r) => r.store_tujuan === selectedStoreKirim);
+    return dispatchedReports.filter((r) => isSameStore(r.store_tujuan, selectedStoreKirim));
   }, [dispatchedReports, selectedStoreKirim]);
 
   useEffect(() => {
     if (selectedStoreKirim) {
       const idsForThisStore = dispatchedReports
-        .filter((r) => r.store_tujuan === selectedStoreKirim)
+        .filter((r) => isSameStore(r.store_tujuan, selectedStoreKirim))
         .map((r) => r.id);
       setSelectedReportIdsForKirim(idsForThisStore);
     } else {
@@ -504,10 +580,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         r.store_tujuan.toLowerCase().includes(searchDispatched.toLowerCase()) ||
         r.id.toLowerCase().includes(searchDispatched.toLowerCase()) ||
         r.items.some((it) => it.deskripsi.toLowerCase().includes(searchDispatched.toLowerCase()));
-      const matchStore = filterStoreDispatched === '' || r.store_tujuan === filterStoreDispatched;
-      return matchSearch && matchStore;
+      const matchStore = filterStoreDispatched === '' || isSameStore(r.store_tujuan, filterStoreDispatched);
+      const matchLabel =
+        filterLabelStatusDispatched === 'all' ||
+        (filterLabelStatusDispatched === 'printed' && r.is_label_printed) ||
+        (filterLabelStatusDispatched === 'unprinted' && !r.is_label_printed);
+      return matchSearch && matchStore && matchLabel;
     });
-  }, [dispatchedReports, searchDispatched, filterStoreDispatched]);
+  }, [dispatchedReports, searchDispatched, filterStoreDispatched, filterLabelStatusDispatched]);
 
   const handleToggleSelectDispatched = (id: string) => {
     setSelectedDispatchedIds((prev) =>
@@ -593,6 +673,111 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
     return selectedDispatchedObjectsForKirim.reduce((acc, r) => acc + r.total_koli, 0);
   }, [selectedDispatchedObjectsForKirim]);
 
+  // --------------------------------------------------------------------------
+  // EDIT LAPORAN DISPATCHED (FULL EDIT: STORE, ITEMS, QTY, KOLI)
+  // --------------------------------------------------------------------------
+  const handleOpenEditDispatched = (rep: PengirimanStoreReport) => {
+    setEditingDispatchedReport(rep);
+    setEditStoreTujuan(rep.store_tujuan);
+    setEditItems(
+      rep.items && rep.items.length > 0
+        ? JSON.parse(JSON.stringify(rep.items))
+        : [
+            {
+              id: `item-${Date.now()}-0`,
+              no_surat_jalan: '',
+              deskripsi: '',
+              qty: 1,
+              satuan: 'Pcs',
+              hitung_koli: 1,
+              keterangan: '',
+            },
+          ]
+    );
+  };
+
+  const handleUpdateEditItem = (idx: number, field: keyof PengirimanStoreItem, value: any) => {
+    setEditItems((prev) => {
+      const copy = [...prev];
+      const target = { ...copy[idx], [field]: value };
+      if (field === 'qty' || field === 'satuan') {
+        const rawQty = Math.max(1, Number(target.qty) || 1);
+        target.hitung_koli = target.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(rawQty));
+      }
+      copy[idx] = target;
+      return copy;
+    });
+  };
+
+  const handleAddEditItemRow = () => {
+    setEditItems((prev) => [
+      ...prev,
+      {
+        id: `item-${Date.now()}-${prev.length}`,
+        no_surat_jalan: '',
+        deskripsi: '',
+        qty: 1,
+        satuan: 'Pcs',
+        hitung_koli: 1,
+        keterangan: '',
+      },
+    ]);
+  };
+
+  const handleRemoveEditItemRow = (idx: number) => {
+    if (editItems.length <= 1) {
+      onShowToast('Laporan minimal harus memiliki 1 barang', 'warning');
+      return;
+    }
+    setEditItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSaveEditDispatched = async () => {
+    if (!editingDispatchedReport) return;
+    if (!editStoreTujuan.trim()) {
+      onShowToast('Nama store tujuan tidak boleh kosong', 'warning');
+      return;
+    }
+    if (editItems.length === 0) {
+      onShowToast('Minimal harus ada 1 barang', 'warning');
+      return;
+    }
+    for (let i = 0; i < editItems.length; i++) {
+      if (!editItems[i].deskripsi.trim()) {
+        onShowToast(`Baris #${i + 1}: Deskripsi barang tidak boleh kosong`, 'warning');
+        return;
+      }
+    }
+
+    setIsSavingEditDispatched(true);
+    try {
+      const res = await editPengirimanStoreReportFull(
+        editingDispatchedReport.id,
+        {
+          store_tujuan: editStoreTujuan.trim(),
+          items: editItems,
+        },
+        {
+          name: session?.name || 'Petugas Gudang',
+          username: session?.username || 'operator',
+        }
+      );
+
+      if (res.success && res.data) {
+        onShowToast(res.message, 'success');
+        const updatedData = res.data;
+        setReports((prev) => prev.map((r) => (r.id === updatedData.id ? updatedData : r)));
+        setEditingDispatchedReport(null);
+      } else {
+        onShowToast(res.message, 'error');
+      }
+    } catch (e: any) {
+      onShowToast(e.message || 'Gagal menyimpan perubahan', 'error');
+    } finally {
+      setIsSavingEditDispatched(false);
+    }
+  };
+
   // SUBMIT KIRIM -> CETAK SURAT JALAN -> MASUK HISTORI
   const handleSubmitKirim = async () => {
     if (!selectedStoreKirim) {
@@ -605,9 +790,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       return;
     }
 
+    const finalDikirimOleh = dikirimOleh.trim() || session?.name || 'Driver / Kurir Toko';
     if (!dikirimOleh.trim()) {
-      onShowToast('Isi nama petugas yang mengirim (Dikirim Oleh)', 'warning');
-      return;
+      setDikirimOleh(finalDikirimOleh);
     }
 
     setIsProcessingKirim(true);
@@ -616,7 +801,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         report_ids: selectedReportIdsForKirim,
         tanggal_kirim: tanggalKirim,
         waktu_kirim: getCurrentTimeString(),
-        dikirim_oleh: dikirimOleh.trim(),
+        dikirim_oleh: finalDikirimOleh,
         catatan: catatanKirim.trim(),
         pic_nama: session?.name || 'Petugas Gudang',
         pic_username: session?.username || 'operator',
@@ -624,18 +809,49 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
       if (res.success) {
         onShowToast(res.message, 'success');
-        const shippedReports = selectedDispatchedObjectsForKirim;
+        const shippedReportIds = [...selectedReportIdsForKirim];
+        const shippedReports = selectedDispatchedObjectsForKirim.map((r) => ({
+          ...r,
+          status: 'sent' as const,
+          tanggal_kirim: tanggalKirim,
+          waktu_kirim: getCurrentTimeString(),
+          dikirim_oleh: finalDikirimOleh,
+          catatan_kirim: catatanKirim.trim(),
+          trip_id: res.trip?.id,
+        }));
+
+        // Update state lokal langsung agar status produk berubah instan & tidak berkedip!
+        setReports((prev) =>
+          prev.map((r) => {
+            if (shippedReportIds.includes(r.id)) {
+              return {
+                ...r,
+                status: 'sent' as const,
+                tanggal_kirim: tanggalKirim,
+                waktu_kirim: getCurrentTimeString(),
+                dikirim_oleh: finalDikirimOleh,
+                catatan_kirim: catatanKirim.trim(),
+                trip_id: res.trip?.id,
+                updated_at: new Date().toISOString(),
+              };
+            }
+            return r;
+          })
+        );
 
         // Reset kirim form
         setSelectedReportIdsForKirim([]);
         setCatatanKirim('');
-        await loadReportsList();
 
-        // 1. Otomatis buka modal Cetak Surat Jalan Pengiriman!
+        // 1. Berpindah tab ke Histori Pengiriman & scroll ke atas
+        setActiveSubTab('histori');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // 2. Otomatis buka modal Cetak Surat Jalan Pengiriman!
         handleOpenSuratJalanPrint(shippedReports, res.trip);
 
-        // 2. Otomatis masuk ke tab Histori Pengiriman!
-        setActiveSubTab('histori');
+        // 3. Sync update ke server di latar belakang
+        loadReportsList();
       } else {
         onShowToast(res.message, 'error');
       }
@@ -782,6 +998,17 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       onShowToast('Tidak ada koli untuk dicetak labelnya', 'warning');
       return;
     }
+
+    // Tandai status sudah cetak label
+    markReportsLabelAsPrinted([rep.id]);
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === rep.id
+          ? { ...r, is_label_printed: true, label_printed_at: new Date().toISOString() }
+          : r
+      )
+    );
+
     setLabelsToPrint(lbls);
     setPrintModalTitle(`Cetak Label Koli: ${rep.store_tujuan} (${lbls.length} Koli)`);
     setPrintModalOpen(true);
@@ -793,7 +1020,9 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       return;
     }
     const allLabels: KoliMarkingLabel[] = [];
+    const repIds: string[] = [];
     reportsToPrint.forEach((rep) => {
+      repIds.push(rep.id);
       const labels = generateKoliLabelsForReport(rep);
       allLabels.push(...labels);
     });
@@ -802,6 +1031,16 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       onShowToast('Tidak ada koli untuk dicetak labelnya', 'warning');
       return;
     }
+
+    // Tandai seluruh laporan yang dicetak sebagai sudah cetak label
+    markReportsLabelAsPrinted(repIds);
+    setReports((prev) =>
+      prev.map((r) =>
+        repIds.includes(r.id)
+          ? { ...r, is_label_printed: true, label_printed_at: new Date().toISOString() }
+          : r
+      )
+    );
 
     setLabelsToPrint(allLabels);
     const storeNames = Array.from(new Set(reportsToPrint.map((r) => r.store_tujuan)));
@@ -824,7 +1063,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         (r.catatan_kirim && r.catatan_kirim.toLowerCase().includes(searchHistori.toLowerCase())) ||
         r.id.toLowerCase().includes(searchHistori.toLowerCase()) ||
         r.items.some((it) => it.deskripsi.toLowerCase().includes(searchHistori.toLowerCase()));
-      const matchStore = filterStoreHistori === '' || r.store_tujuan === filterStoreHistori;
+      const matchStore = filterStoreHistori === '' || isSameStore(r.store_tujuan, filterStoreHistori);
       return matchSearch && matchStore;
     });
   }, [sentReports, searchHistori, filterStoreHistori]);
@@ -1399,6 +1638,21 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   </option>
                 ))}
               </select>
+
+              {/* Filter Status Cetak Label */}
+              <select
+                value={filterLabelStatusDispatched}
+                onChange={(e) => setFilterLabelStatusDispatched(e.target.value as any)}
+                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
+              >
+                <option value="all">Semua Status Label</option>
+                <option value="unprinted">
+                  ⏳ Belum Cetak Label ({dispatchedReports.filter((r) => !r.is_label_printed).length})
+                </option>
+                <option value="printed">
+                  ✅ Sudah Cetak Label ({dispatchedReports.filter((r) => r.is_label_printed).length})
+                </option>
+              </select>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -1531,6 +1785,20 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                             <span className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
                               Dispatched
                             </span>
+                            {rep.is_label_printed ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700"
+                                title={`Label dicetak pada: ${rep.label_printed_at || 'Sebelumnya'}`}
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Sudah Cetak Label
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/80">
+                                <Printer className="w-3 h-3 text-amber-600 animate-pulse" />
+                                Belum Cetak Label
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                             {rep.tanggal_laporan} • PIC: {rep.pic_nama}
@@ -1615,24 +1883,40 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                     )}
 
                     {/* Actions */}
-                    <div className="flex items-center justify-between pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReport(rep)}
-                        className="text-xs text-rose-500 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Hapus
-                      </button>
+                    <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditDispatched(rep)}
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-300 dark:border-amber-700 flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Edit Rincian Barang / Toko Tujuan Laporan Ini"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReport(rep)}
+                          className="px-2.5 py-1.5 rounded-xl text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus</span>
+                        </button>
+                      </div>
 
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handlePrintLabelsForReport(rep)}
-                          className="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer"
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 cursor-pointer transition-colors ${
+                            rep.is_label_printed
+                              ? 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 border-slate-300 dark:border-slate-700'
+                              : 'text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 border-indigo-300 dark:border-indigo-800'
+                          }`}
                         >
                           <Printer className="w-3.5 h-3.5" />
-                          <span>Label Koli</span>
+                          <span>{rep.is_label_printed ? 'Cetak Ulang Label' : 'Cetak Label'}</span>
                         </button>
 
                         <button
@@ -1757,10 +2041,10 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                   ))}
                   {/* Toko lainnya dari master */}
                   {stores
-                    .filter((s) => !dispatchedStoresList.some((ds) => ds.storeName === s.nama))
+                    .filter((s) => !dispatchedStoresList.some((ds) => isSameStore(ds.storeName, s.nama)))
                     .map((s, idx) => (
                       <option key={s.id || idx} value={s.nama}>
-                        {s.nama} (0 Koli Ready)
+                        {s.nama}{s.kode && !s.nama.includes(s.kode) ? ` (${s.kode})` : ''} (0 Koli Ready)
                       </option>
                     ))}
                 </select>
@@ -1935,6 +2219,33 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                               </span>
                             </div>
                           ))}
+                        </div>
+
+                        {/* Footer Card: Label Status & Edit Button */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditDispatched(r);
+                            }}
+                            className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 hover:text-amber-700 font-bold hover:underline cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>Edit Laporan</span>
+                          </button>
+
+                          {r.is_label_printed ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                              Label Siap
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                              <Printer className="w-2.5 h-2.5 text-amber-600" />
+                              Belum Cetak Label
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
@@ -2539,6 +2850,256 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
               >
                 {isDeletingReport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                 <span>Hapus Permanen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ==================================================================== */}
+      {/* MODAL: EDIT LAPORAN DISPATCHED                                       */}
+      {/* ==================================================================== */}
+      {editingDispatchedReport && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-3xl w-full my-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-amber-600">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    Edit Laporan Dispatched
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">
+                    ID: {editingDispatchedReport.id} • Toko Asal:{' '}
+                    <strong>{editingDispatchedReport.store_tujuan}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setEditingDispatchedReport(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Toko Tujuan */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Store className="w-4 h-4 text-indigo-500" />
+                  Store Tujuan <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={stores.some((s) => s.nama === editStoreTujuan) ? editStoreTujuan : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__custom__') {
+                        setEditStoreTujuan(e.target.value);
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 outline-none"
+                  >
+                    {stores.map((s, sIdx) => (
+                      <option key={s.id || sIdx} value={s.nama}>
+                        {s.nama}
+                      </option>
+                    ))}
+                    <option value="__custom__">+ Input Nama Toko Lain...</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="Ketik nama store..."
+                    value={editStoreTujuan}
+                    onChange={(e) => setEditStoreTujuan(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Rincian Items */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-slate-800 dark:text-slate-200 uppercase text-xs flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-amber-500" />
+                    Daftar Barang ({editItems.length} Item)
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={handleAddEditItemRow}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah Barang</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {editItems.map((item, idx) => {
+                    const rowKoli =
+                      item.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(Number(item.qty) || 1));
+
+                    return (
+                      <div
+                        key={item.id || idx}
+                        className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-700/60 pb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-md bg-amber-500 text-white font-black text-[11px] flex items-center justify-center">
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">
+                              Barang #{idx + 1}
+                            </span>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                              {rowKoli} Koli
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditItemRow(idx)}
+                            disabled={editItems.length <= 1}
+                            className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 cursor-pointer"
+                            title="Hapus baris barang ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                          <div className="sm:col-span-4 space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500">
+                              No Surat Jalan
+                            </label>
+                            <input
+                              type="text"
+                              value={item.no_surat_jalan || ''}
+                              onChange={(e) =>
+                                handleUpdateEditItem(idx, 'no_surat_jalan', e.target.value)
+                              }
+                              placeholder="No SJ (Opsional)..."
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-5 space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500">
+                              Deskripsi Barang <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={item.deskripsi || ''}
+                              onChange={(e) =>
+                                handleUpdateEditItem(idx, 'deskripsi', e.target.value)
+                              }
+                              placeholder="Nama produk / barang..."
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold outline-none"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-3 grid grid-cols-2 gap-1.5">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500">Qty</label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={item.qty || 1}
+                                onChange={(e) =>
+                                  handleUpdateEditItem(
+                                    idx,
+                                    'qty',
+                                    Math.max(1, parseInt(e.target.value) || 1)
+                                  )
+                                }
+                                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-center outline-none"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500">Satuan</label>
+                              <select
+                                value={item.satuan}
+                                onChange={(e) =>
+                                  handleUpdateEditItem(idx, 'satuan', e.target.value as any)
+                                }
+                                className="w-full px-1.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold outline-none"
+                              >
+                                <option value="Pcs">Pcs</option>
+                                <option value="Koli">Koli</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500">
+                            Keterangan Tambahan
+                          </label>
+                          <input
+                            type="text"
+                            value={item.keterangan || ''}
+                            onChange={(e) =>
+                              handleUpdateEditItem(idx, 'keterangan', e.target.value)
+                            }
+                            placeholder="Catatan khusus, nomor seri, dll..."
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs outline-none"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Total Summary */}
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 rounded-xl flex items-center justify-between text-xs">
+                <span className="text-amber-800 dark:text-amber-300 font-bold">
+                  Total Dihitung Ulang:
+                </span>
+                <span className="font-black text-amber-900 dark:text-amber-200">
+                  {editItems.length} Item •{' '}
+                  {editItems.reduce(
+                    (acc, curr) =>
+                      acc + (curr.satuan === 'Pcs' ? 1 : Math.max(1, Math.round(Number(curr.qty) || 1))),
+                    0
+                  )}{' '}
+                  Koli
+                </span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingDispatchedReport(null)}
+                disabled={isSavingEditDispatched}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveEditDispatched}
+                disabled={isSavingEditDispatched}
+                className="px-5 py-2 rounded-xl text-xs font-black text-white bg-amber-600 hover:bg-amber-700 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingEditDispatched ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Simpan Perubahan</span>
               </button>
             </div>
           </div>

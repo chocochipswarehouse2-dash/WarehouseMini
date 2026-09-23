@@ -139,6 +139,8 @@ export async function fetchPengirimanStoreReports(): Promise<PengirimanStoreRepo
         no_polisi: d.no_polisi,
         catatan_kirim: d.catatan_kirim,
         audit_logs: typeof d.audit_logs === 'string' ? JSON.parse(d.audit_logs) : (d.audit_logs || []),
+        is_label_printed: Boolean(d.is_label_printed),
+        label_printed_at: d.label_printed_at || undefined,
         created_at: d.created_at || new Date().toISOString(),
         updated_at: d.updated_at || new Date().toISOString(),
       }));
@@ -462,28 +464,9 @@ export async function processKirimStoreReports(payload: {
     saveTripsToCache([tripRecord, ...cachedTrips]);
 
     // Sync Trip and matching Reports to Supabase
-    try {
-      // 1. Insert Trip to Supabase
-      await supabaseFetch('pengiriman_store_trips', 'POST', [
-        {
-          id: tripRecord.id,
-          tanggal_kirim: tripRecord.tanggal_kirim,
-          waktu_kirim: tripRecord.waktu_kirim,
-          dikirim_oleh: tripRecord.dikirim_oleh,
-          armada: tripRecord.armada || '',
-          no_polisi: tripRecord.no_polisi || '',
-          catatan_kirim: tripRecord.catatan || '',
-          status: 'in_transit',
-          report_ids: JSON.stringify(tripRecord.report_ids),
-          pic_nama: tripRecord.created_by_nama,
-          pic_username: tripRecord.created_by_username,
-          created_at: tripRecord.created_at,
-          updated_at: nowIso,
-        },
-      ]);
-
-      // 2. Update status of each dispatched report to 'sent'
-      for (const reportId of payload.report_ids) {
+    // 1. UPDATE STATUS OF REPORTS TO 'sent' FIRST (CRITICAL SO IT'S NOT LOST)
+    for (const reportId of payload.report_ids) {
+      try {
         await supabaseFetch(
           'pengiriman_store_reports',
           'PATCH',
@@ -500,9 +483,31 @@ export async function processKirimStoreReports(payload: {
           },
           `id=eq.${reportId}`
         );
+      } catch (repErr) {
+        console.warn(`Supabase update status report ${reportId} ke sent sync offline:`, repErr);
       }
-    } catch (e) {
-      console.warn('Supabase update status dispatched -> sent sync offline:', e);
+    }
+
+    // 2. Insert Trip to Supabase (Independent, failure here won't revert reports)
+    try {
+      await supabaseFetch('pengiriman_store_trips', 'POST', [
+        {
+          id: tripRecord.id,
+          tanggal_kirim: tripRecord.tanggal_kirim,
+          dikirim_oleh: tripRecord.dikirim_oleh,
+          armada: tripRecord.armada || '',
+          no_polisi: tripRecord.no_polisi || '',
+          catatan_kirim: tripRecord.catatan || '',
+          status: 'in_transit',
+          report_ids: JSON.stringify(tripRecord.report_ids),
+          pic_nama: tripRecord.created_by_nama,
+          pic_username: tripRecord.created_by_username,
+          created_at: tripRecord.created_at,
+          updated_at: nowIso,
+        },
+      ]);
+    } catch (tripErr) {
+      console.warn('Supabase insert pengiriman_store_trips sync offline (non-fatal):', tripErr);
     }
 
     return {
@@ -620,6 +625,156 @@ export async function editPengirimanStoreReport(
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal mengubah data pengiriman' };
+  }
+}
+
+/**
+ * Edit lengkap data pengiriman store di antrean Dispatched (Store tujuan, Item rincian, Foto, dll.)
+ */
+export async function editPengirimanStoreReportFull(
+  reportId: string,
+  updateData: {
+    store_tujuan?: string;
+    items?: PengirimanStoreItem[];
+    foto_urls?: string[];
+    tanggal_laporan?: string;
+  },
+  user: { name: string; username: string }
+): Promise<{ success: boolean; data?: PengirimanStoreReport; message: string }> {
+  try {
+    const cached = getCachedReports();
+    const target = cached.find((r) => r.id === reportId);
+    if (!target) {
+      return { success: false, message: 'Data laporan pengiriman tidak ditemukan' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const newItems = updateData.items || target.items;
+    const sanitizedItems: PengirimanStoreItem[] = newItems.map((item, idx) => {
+      const rawQty = Math.max(1, Number(item.qty) || 1);
+      const isPcs = item.satuan === 'Pcs';
+      const hitungKoli = isPcs ? 1 : Math.max(1, Math.round(rawQty));
+
+      return {
+        id: item.id || `item-${Date.now()}-${idx}`,
+        no_surat_jalan: item.no_surat_jalan?.trim() || 'Tidak ada no surat jalan',
+        deskripsi: item.deskripsi?.trim() || `Barang #${idx + 1}`,
+        qty: rawQty,
+        satuan: item.satuan || 'Pcs',
+        hitung_koli: hitungKoli,
+        keterangan: item.keterangan || '',
+        foto_barang: item.foto_barang,
+      };
+    });
+
+    const totalKoli = sanitizedItems.reduce((acc, curr) => acc + curr.hitung_koli, 0);
+
+    const auditEntry: PengirimanAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: nowIso,
+      user_nama: user.name,
+      user_username: user.username,
+      action: 'edit',
+      keterangan: `Mengedit data laporan dispatched: Store="${updateData.store_tujuan ?? target.store_tujuan}", Total=${sanitizedItems.length} item (${totalKoli} koli)`,
+      previous_data: {
+        store_tujuan: target.store_tujuan,
+        total_koli: target.total_koli,
+        items: target.items,
+      },
+      new_data: {
+        store_tujuan: updateData.store_tujuan ?? target.store_tujuan,
+        total_koli: totalKoli,
+        items: sanitizedItems,
+      },
+    };
+
+    const updatedReport: PengirimanStoreReport = {
+      ...target,
+      store_tujuan: updateData.store_tujuan ?? target.store_tujuan,
+      items: sanitizedItems,
+      total_item_count: sanitizedItems.length,
+      total_koli: totalKoli,
+      foto_urls: updateData.foto_urls ?? target.foto_urls,
+      tanggal_laporan: updateData.tanggal_laporan ?? target.tanggal_laporan,
+      audit_logs: [auditEntry, ...(target.audit_logs || [])],
+      updated_at: nowIso,
+    };
+
+    const updatedReports = cached.map((r) => (r.id === reportId ? updatedReport : r));
+    saveReportsToCache(updatedReports);
+
+    // Sync to Supabase
+    try {
+      await supabaseFetch(
+        'pengiriman_store_reports',
+        'PATCH',
+        {
+          store_tujuan: updatedReport.store_tujuan,
+          items: JSON.stringify(updatedReport.items),
+          total_item_count: updatedReport.total_item_count,
+          total_koli: updatedReport.total_koli,
+          foto_urls: JSON.stringify(updatedReport.foto_urls || []),
+          tanggal_laporan: updatedReport.tanggal_laporan,
+          audit_logs: JSON.stringify(updatedReport.audit_logs || []),
+          updated_at: nowIso,
+        },
+        `id=eq.${reportId}`
+      );
+    } catch (e) {
+      console.warn('Sync edit report ke Supabase tertunda (tersimpan lokal):', e);
+    }
+
+    return {
+      success: true,
+      data: updatedReport,
+      message: `Laporan ${reportId} berhasil diperbarui!`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || 'Gagal menyimpan perubahan laporan',
+    };
+  }
+}
+
+/**
+ * Tandai label koli laporan sudah dicetak
+ */
+export async function markReportsLabelAsPrinted(reportIds: string[]): Promise<void> {
+  if (!reportIds || reportIds.length === 0) return;
+  const nowIso = new Date().toISOString();
+
+  // 1. Update cache lokal
+  const cached = getCachedReports();
+  const updated = cached.map((r) => {
+    if (reportIds.includes(r.id)) {
+      return {
+        ...r,
+        is_label_printed: true,
+        label_printed_at: nowIso,
+        updated_at: nowIso,
+      };
+    }
+    return r;
+  });
+  saveReportsToCache(updated);
+
+  // 2. Sync ke Supabase di background
+  for (const rid of reportIds) {
+    try {
+      await supabaseFetch(
+        'pengiriman_store_reports',
+        'PATCH',
+        {
+          is_label_printed: true,
+          label_printed_at: nowIso,
+          updated_at: nowIso,
+        },
+        `id=eq.${rid}`
+      );
+    } catch (e) {
+      console.warn('Sync is_label_printed ke Supabase tertunda:', e);
+    }
   }
 }
 

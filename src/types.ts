@@ -1061,6 +1061,10 @@ export interface PengirimanStoreReport {
   no_polisi?: string;
   catatan_kirim?: string;
 
+  // Status Cetak Label Koli
+  is_label_printed?: boolean;
+  label_printed_at?: string;
+
   // Edit / Cancel & Audit Trail
   cancel_reason?: string;
   cancelled_at?: string;

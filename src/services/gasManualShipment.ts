@@ -3,20 +3,28 @@ import { supabaseFetch } from './supabase';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
-export const DEFAULT_OUTLETS: { nama: string; fulfillment: string }[] = [
-  { nama: 'Mall Kelapa Gading', fulfillment: 'Mall Kelapa Gading' },
-  { nama: 'La Vela Tangerang', fulfillment: 'La Vela Tangerang' },
-  { nama: 'Paskal Hyper Square Bandung', fulfillment: 'Paskal Hyper Square Bandung' },
-  { nama: 'Gading Serpong Tangerang', fulfillment: 'Gading Serpong Tangerang' },
-  { nama: 'Ciputra World Surabaya', fulfillment: 'Ciputra World Surabaya' },
-  { nama: 'Puri Indah Mall', fulfillment: 'Puri Indah Mall' },
-  { nama: 'By The Sea PIK', fulfillment: 'By The Sea PIK' },
-  { nama: 'Pakuwon Mall Surabaya', fulfillment: 'Pakuwon Mall Surabaya' },
-  { nama: 'Living World Tangerang', fulfillment: 'Living World Tangerang' },
-  { nama: 'Lippo Mall Puri', fulfillment: 'Lippo Mall Puri' },
-  { nama: 'Sun Plaza Medan', fulfillment: 'Sun Plaza Medan' },
-  { nama: 'Deli Park Medan', fulfillment: 'Deli Park Medan' },
-  { nama: 'Central Park Jakarta', fulfillment: 'Central Park Jakarta' },
+/**
+ * Daftar resmi store / outlet yang disinkronkan dengan Master Produk & DealPOS
+ */
+export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode?: string }[] = [
+  { nama: 'GAIA', fulfillment: 'Gaia Pontianak', kode: 'GAIA' },
+  { nama: 'Gaia Pontianak', fulfillment: 'Gaia Pontianak', kode: 'GAIA' },
+  { nama: 'By The Sea PIK', fulfillment: 'By The Sea PIK', kode: 'BTS' },
+  { nama: 'Central Park Jakarta', fulfillment: 'Central Park Jakarta', kode: 'CPJ' },
+  { nama: 'Ciputra World Surabaya', fulfillment: 'Ciputra World Surabaya', kode: 'CWS' },
+  { nama: 'Deli Park Medan', fulfillment: 'Deli Park Medan', kode: 'DPM' },
+  { nama: 'Gading Serpong Tangerang', fulfillment: 'Gading Serpong Tangerang', kode: 'GST' },
+  { nama: 'La Vela Tangerang', fulfillment: 'La Vela Tangerang', kode: 'LVL' },
+  { nama: 'Lippo Mall Puri', fulfillment: 'Lippo Mall Puri', kode: 'LMP' },
+  { nama: 'Living World Tangerang', fulfillment: 'Living World Tangerang', kode: 'LWS' },
+  { nama: 'Mall Kelapa Gading', fulfillment: 'Mall Kelapa Gading', kode: 'MKG' },
+  { nama: 'Neo Soho Jakarta', fulfillment: 'Neo Soho Jakarta', kode: 'NSJ' },
+  { nama: 'Pakuwon Mall Surabaya', fulfillment: 'Pakuwon Mall Surabaya', kode: 'PMS' },
+  { nama: 'Paris Van Java', fulfillment: 'Paris Van Java', kode: 'PVJ' },
+  { nama: 'Paskal Hyper Square Bandung', fulfillment: 'Paskal Hyper Square Bandung', kode: 'PHB' },
+  { nama: 'Puri Indah Mall', fulfillment: 'Puri Indah Mall', kode: 'PIM' },
+  { nama: 'Sun Plaza Medan', fulfillment: 'Sun Plaza Medan', kode: 'SPM' },
+  { nama: 'Tunjungan Plaza', fulfillment: 'Tunjungan Plaza', kode: 'TP' },
 ];
 
 export const DEFAULT_JASA_KIRIM: string[] = [
@@ -37,12 +45,34 @@ export async function fetchJasaKirimList(): Promise<string[]> {
   return DEFAULT_JASA_KIRIM;
 }
 
-export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfillment: string }[]> {
+export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfillment: string; kode?: string }[]> {
   try {
+    const result: { id?: string; nama: string; fulfillment: string; kode?: string }[] = [];
+    const seenNames = new Set<string>();
+
+    // 1. Ambil dari outlet_config jika ada
     const data = await supabaseFetch<any[]>('outlet_config', 'GET', null, 'select=*&order=nama.asc');
     if (data && data.length > 0) {
-      return data;
+      data.forEach(d => {
+        if (d.nama) {
+          const norm = d.nama.trim();
+          if (!seenNames.has(norm.toLowerCase())) {
+            seenNames.add(norm.toLowerCase());
+            result.push(d);
+          }
+        }
+      });
     }
+
+    // 2. Gabungkan dengan DEFAULT_OUTLETS (Master Produk & DealPOS)
+    DEFAULT_OUTLETS.forEach(d => {
+      if (!seenNames.has(d.nama.toLowerCase())) {
+        seenNames.add(d.nama.toLowerCase());
+        result.push(d);
+      }
+    });
+
+    return result;
   } catch (err) {
     console.warn('Error fetching outlets', err);
   }
