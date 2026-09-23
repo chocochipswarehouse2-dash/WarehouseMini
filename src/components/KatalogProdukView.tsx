@@ -79,16 +79,17 @@ const normalizeHeaderKey = (str: any): string => {
 };
 
 const COLUMN_ALIASES: Record<string, string[]> = {
-  nomor: ['no', 'nomor', 'id', 'num', 'number', 'noitem'],
-  deskripsi: ['deskripsi', 'namaproduk', 'nama', 'produk', 'namabarang', 'item', 'description', 'product', 'title', 'namaitem', 'artikel', 'deskripsiproduk'],
-  price: ['price', 'harga', 'hrg', 'hargajual', 'retailprice', 'hargasatuan', 'nominal', 'priceidr'],
+  nomor: ['no', 'nomor', 'id', 'num', 'number', 'noitem', 'nomodel', 'itemno'],
+  kode_produk: ['kodeproduk', 'kodebarang', 'kodeartikel', 'artikel', 'itemcode', 'model', 'kodemodel', 'kode', 'code', 'productcode', 'stylecode', 'style', 'kdproduk', 'kdbarang'],
+  deskripsi: ['namaproduk', 'namabarang', 'deskripsi', 'deskripsiproduk', 'nama', 'namamodel', 'namaitem', 'productname', 'description', 'title', 'produk', 'itemname', 'nmproduk', 'nmbarang'],
+  price: ['price', 'harga', 'hrg', 'hargajual', 'retailprice', 'hargasatuan', 'nominal', 'priceidr', 'tagprice'],
   warna: ['warna', 'color', 'colour', 'varian', 'variant', 'warnamotif', 'motif'],
   size: ['size', 'ukuran', 'sz', 'sizeukuran'],
-  sku: ['sku', 'kode', 'barcode', 'kodebarang', 'itemcode', 'kodesku', 'kodeproduk', 'barcodeproduk'],
+  sku: ['sku', 'barcode', 'kodesku', 'barcodeproduk', 'barcodesku', 'skubarcode', 'plu', 'upc', 'ean'],
   qty: ['qty', 'jumlah', 'stok', 'stock', 'quantity', 'total', 'stokfisik', 'qtyorder', 'kuantitas'],
   image_url: ['image', 'imageurl', 'gambar', 'foto', 'photo', 'url', 'linkfoto', 'linkgambar', 'fotoproduk'],
-  publish_online: ['publishonline', 'tglpublishonline', 'tanggalpublishonline', 'onlinepublish', 'tglonline', 'tanggalliveonline', 'launchingonline', 'online'],
-  publish_offline: ['publishoffline', 'tglpublishoffline', 'tanggalpublishoffline', 'offlinepublish', 'tgloffline', 'tanggalliveoffline', 'launchingoffline', 'publishstore', 'offline', 'store'],
+  publish_online: ['publishonline', 'tglpublishonline', 'tanggalpublishonline', 'onlinepublish', 'tglonline', 'tanggalliveonline', 'launchingonline', 'online', 'dateonline'],
+  publish_offline: ['publishoffline', 'tglpublishoffline', 'tanggalpublishoffline', 'offlinepublish', 'tgloffline', 'tanggalliveoffline', 'launchingoffline', 'publishstore', 'offline', 'store', 'dateoffline'],
 };
 
 // Palet warna badge dinamis per katalog
@@ -481,6 +482,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         };
 
         let currentItem: KatalogItem | null = null;
+        let currentKode = '';
+        let currentNama = '';
         const parsedItems: KatalogItem[] = [];
         let idCounter = 1;
         let lastWarna = '';
@@ -492,11 +495,12 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           if (isRowEmpty) continue;
 
           const no = getVal(row, 'nomor');
-          const deskripsi = getVal(row, 'deskripsi');
+          const kodeProduk = getVal(row, 'kode_produk');
+          const namaProduk = getVal(row, 'deskripsi');
           const priceRaw = getVal(row, 'price');
           let warna = getVal(row, 'warna');
-          const size = getVal(row, 'size');
-          const sku = getVal(row, 'sku');
+          let size = getVal(row, 'size');
+          let sku = getVal(row, 'sku');
           const qtyRaw = getVal(row, 'qty');
           const explicitImg = getVal(row, 'image_url');
           const pubOnline = getVal(row, 'publish_online');
@@ -511,22 +515,41 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             if (numOnly) priceClean = Number(numOnly).toLocaleString('id-ID');
           }
 
-          const isNumericNo = no && !isNaN(parseInt(no, 10)) && (!currentItem || currentItem.nomor !== no);
-          const isRealNameDesc =
-            deskripsi &&
-            isNaN(Number(deskripsi)) &&
-            (!currentItem || (currentItem.deskripsi && deskripsi.toLowerCase() !== currentItem.deskripsi.toLowerCase()));
-          const isNewProduct = !currentItem || isNumericNo || (isRealNameDesc && !currentItem.deskripsi);
+          // Tentukan Nama Produk Bersih yang konsisten
+          let computedProdName = '';
+          if (namaProduk && kodeProduk) {
+            if (namaProduk.toLowerCase().includes(kodeProduk.toLowerCase())) {
+              computedProdName = namaProduk;
+            } else {
+              computedProdName = `${kodeProduk} - ${namaProduk}`;
+            }
+          } else if (namaProduk) {
+            computedProdName = namaProduk;
+          } else if (kodeProduk) {
+            computedProdName = kodeProduk;
+          } else if (sku && !currentItem) {
+            computedProdName = `Produk ${sku}`;
+          }
 
-          if (isNewProduct && (isNumericNo || isRealNameDesc || sku || foundDrawingImg)) {
+          // Deteksi Produk Baru vs Baris Varian
+          const isExplicitNewNo = Boolean(no && !isNaN(parseInt(no, 10)) && (!currentItem || currentItem.nomor !== no));
+          const isNewDrawingImg = Boolean(foundDrawingImg && currentItem && currentItem.image_url && foundDrawingImg !== currentItem.image_url);
+          const isNewKode = Boolean(kodeProduk && currentKode && kodeProduk.toUpperCase() !== currentKode.toUpperCase());
+          const isNewNama = Boolean(namaProduk && currentNama && namaProduk.toUpperCase() !== currentNama.toUpperCase() && (!kodeProduk || isNewKode));
+
+          const isNewProduct = !currentItem || isExplicitNewNo || isNewDrawingImg || isNewKode || (isNewNama && isExplicitNewNo);
+
+          if (isNewProduct) {
             if (currentItem && currentItem.variants.length > 0) {
               parsedItems.push(currentItem);
             }
-            const prodName = deskripsi && isNaN(Number(deskripsi)) ? deskripsi : sku ? `Produk ${sku}` : '';
+
+            const initialName = computedProdName || (sku ? `Produk ${sku}` : `Item #${idCounter}`);
+
             currentItem = {
               id: `KAT-${Date.now()}-${idCounter++}`,
-              nomor: no || '',
-              deskripsi: prodName,
+              nomor: no || (currentItem ? String(Number(currentItem.nomor || 0) + 1) : '1'),
+              deskripsi: initialName,
               price: priceClean || '',
               variants: [],
               image_url: foundDrawingImg || '',
@@ -534,6 +557,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               publish_online: pubOnline || undefined,
               publish_offline: pubOffline || undefined,
             };
+            currentKode = kodeProduk;
+            currentNama = namaProduk;
             lastWarna = '';
           }
 
@@ -547,8 +572,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             if (foundDrawingImg && !currentItem.image_url) {
               currentItem.image_url = foundDrawingImg;
             }
-            if (deskripsi && isNaN(Number(deskripsi)) && (!currentItem.deskripsi || currentItem.deskripsi === '')) {
-              currentItem.deskripsi = deskripsi;
+            if (computedProdName && (!currentItem.deskripsi || currentItem.deskripsi.startsWith('Item #') || currentItem.deskripsi.startsWith('Produk '))) {
+              currentItem.deskripsi = computedProdName;
             }
             if (priceClean && !currentItem.price) {
               currentItem.price = priceClean;
@@ -559,15 +584,23 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               warna = lastWarna;
             }
 
-            if (sku || (warna && size) || (qty > 0 && sku)) {
+            // Normalisasi SKU jika kolom SKU kosong tapi ada Kode/Nama + Warna + Size
+            const cleanKodeForSku = currentKode || currentItem.deskripsi || 'ITEM';
+            const cleanWarnaForSku = (warna || 'ALL').trim().toUpperCase();
+            const cleanSizeForSku = (size || 'ALL').trim().toUpperCase();
+            const fallbackSku = `${cleanKodeForSku.replace(/[^a-zA-Z0-9]/g, '')}-${cleanWarnaForSku.replace(/[^a-zA-Z0-9]/g, '')}-${cleanSizeForSku.replace(/[^a-zA-Z0-9]/g, '')}`;
+
+            const finalSku = sku ? sku.trim() : fallbackSku;
+
+            if (finalSku || (warna && size) || qty > 0) {
               const isDuplicate = currentItem.variants.some(
-                (v) => v.sku && sku && v.sku.toUpperCase() === sku.toUpperCase()
+                (v) => v.sku && finalSku && v.sku.toUpperCase() === finalSku.toUpperCase() && v.size.toUpperCase() === (size || 'Default').toUpperCase()
               );
               if (!isDuplicate) {
                 currentItem.variants.push({
                   warna: warna || '-',
                   size: size || 'Default',
-                  sku: sku || '-',
+                  sku: finalSku,
                   qty: qty,
                 });
               }
