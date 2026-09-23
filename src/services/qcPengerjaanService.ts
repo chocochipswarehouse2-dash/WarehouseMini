@@ -112,6 +112,7 @@ export function calculateJobTotals(sizes: QcSizeTally[]): {
 
 /**
  * Ambil atau buat instance Job Card berdasarkan PenerimaanProduksiItem[] untuk 1 kode produksi di 1 Surat Jalan
+ * Mengelompokkan berdasarkan Varian (Warna + Size + SKU) secara presisi
  */
 export function buildOrGetQcJob(
   items: PenerimaanProduksiItem[],
@@ -123,46 +124,78 @@ export function buildOrGetQcJob(
   const savedJobs = getSavedQcJobsFromLocal();
   const existing = savedJobs[jobId];
 
-  // Agregat varian dari item penerimaan aktual
-  const sizeMap = new Map<string, number>();
+  // Agregat varian dari item penerimaan aktual per Warna + Size
+  interface VariantAgg {
+    warna: string;
+    size: string;
+    sku: string;
+    nama_produk: string;
+    qty_awal: number;
+  }
+  const variantMap = new Map<string, VariantAgg>();
   let primaryFoto = '';
   let kategori = 'Lokal CMT';
   let tanggalPenerimaan = '';
-  let warna = '';
+  let generalWarna = '';
   let keteranganPenerimaan = '';
 
   (items || []).forEach((it) => {
-    const s = (it.size || 'ALL SIZE').trim().toUpperCase();
-    sizeMap.set(s, (sizeMap.get(s) || 0) + (Number(it.qty) || 0));
+    const sName = (it.size || 'ALL SIZE').trim().toUpperCase();
+    const wName = (it.warna || '-').trim().toUpperCase();
+    const cleanKode = (it.kode_produksi || kodeProduksi).trim().toUpperCase();
+    const cleanSku = (it.sku || `${cleanKode}-${wName !== '-' ? wName : 'ALL'}-${sName}`).trim();
+    const namaProd = (it.nama_produk || `${cleanKode} (${wName !== '-' ? wName : ''})`).trim();
+    const key = `${wName}___${sName}`;
+
+    if (!variantMap.has(key)) {
+      variantMap.set(key, {
+        warna: wName,
+        size: sName,
+        sku: cleanSku,
+        nama_produk: namaProd,
+        qty_awal: 0,
+      });
+    }
+    const current = variantMap.get(key)!;
+    current.qty_awal += Number(it.qty) || 0;
+
     if (!primaryFoto && it.foto_url) primaryFoto = it.foto_url;
     if (it.kategori) kategori = it.kategori;
     if (it.tanggal_penerimaan) tanggalPenerimaan = it.tanggal_penerimaan;
-    if (!warna && it.warna) warna = it.warna;
+    if (!generalWarna && it.warna && it.warna !== '-') generalWarna = it.warna;
     if (!keteranganPenerimaan && it.keterangan) keteranganPenerimaan = it.keterangan;
   });
 
-  if (existing) {
-    // Sinkronkan jika ada size baru di surat jalan yang belum terdaftar di job
-    const existingSizesMap = new Map(existing.sizes.map((s) => [s.size.toUpperCase(), s]));
-    const mergedSizes: QcSizeTally[] = [];
+  const incomingSizes: QcSizeTally[] = Array.from(variantMap.values()).map((v) => ({
+    size: v.size,
+    warna: v.warna,
+    sku: v.sku,
+    nama_produk: v.nama_produk,
+    qty_awal: v.qty_awal,
+    qty_oke: 0,
+    qty_noda: 0,
+    qty_permak: 0,
+    qty_defect: 0,
+  }));
 
-    sizeMap.forEach((qtyAwal, sName) => {
-      const found = existingSizesMap.get(sName);
+  if (existing) {
+    // Sinkronkan data existing dengan varian terbaru (matching per Warna + Size atau SKU)
+    const existingMap = new Map(
+      existing.sizes.map((s) => [`${(s.warna || '-').toUpperCase()}___${(s.size || 'ALL SIZE').toUpperCase()}`, s])
+    );
+    const mergedSizes: QcSizeTally[] = incomingSizes.map((inc) => {
+      const key = `${(inc.warna || '-').toUpperCase()}___${(inc.size || 'ALL SIZE').toUpperCase()}`;
+      const found = existingMap.get(key);
       if (found) {
-        mergedSizes.push({
+        return {
           ...found,
-          qty_awal: qtyAwal, // update qty awal jika surat jalan diedit
-        });
-      } else {
-        mergedSizes.push({
-          size: sName,
-          qty_awal: qtyAwal,
-          qty_oke: 0,
-          qty_noda: 0,
-          qty_permak: 0,
-          qty_defect: 0,
-        });
+          warna: inc.warna,
+          sku: inc.sku || found.sku,
+          nama_produk: inc.nama_produk || found.nama_produk,
+          qty_awal: inc.qty_awal,
+        };
       }
+      return inc;
     });
 
     const totals = calculateJobTotals(mergedSizes);
@@ -170,25 +203,17 @@ export function buildOrGetQcJob(
       ...existing,
       source_type: 'PRODUKSI',
       foto_url: primaryFoto || existing.foto_url,
-      warna: warna || existing.warna,
+      warna: generalWarna || existing.warna || '-',
       kategori: kategori || existing.kategori,
       tanggal_penerimaan: tanggalPenerimaan || existing.tanggal_penerimaan,
+      keterangan_penerimaan: keteranganPenerimaan || existing.keterangan_penerimaan,
       sizes: mergedSizes,
       ...totals,
     };
   }
 
   // Buat Baru
-  const initialSizes: QcSizeTally[] = Array.from(sizeMap.entries()).map(([size, qty_awal]) => ({
-    size,
-    qty_awal,
-    qty_oke: 0,
-    qty_noda: 0,
-    qty_permak: 0,
-    qty_defect: 0,
-  }));
-
-  const initialTotals = calculateJobTotals(initialSizes);
+  const initialTotals = calculateJobTotals(incomingSizes);
 
   const initialPicList: string[] = [];
   if (currentUserName && currentUserName.trim()) {
@@ -199,7 +224,8 @@ export function buildOrGetQcJob(
     id: jobId,
     source_type: 'PRODUKSI',
     kode_produksi: kodeProduksi,
-    warna: warna || '-',
+    nama_produk: `${kodeProduksi} (${items.length} Varian)`,
+    warna: generalWarna || '-',
     no_surat_jalan: noSuratJalan,
     kategori,
     tanggal_penerimaan: tanggalPenerimaan || new Date().toISOString().slice(0, 10),
@@ -207,7 +233,7 @@ export function buildOrGetQcJob(
     keterangan_penerimaan: keteranganPenerimaan,
     pic_list: initialPicList,
     status: 'DRAFT',
-    sizes: initialSizes,
+    sizes: incomingSizes,
     ...initialTotals,
     foto_evidence: [],
     catatan_umum: '',
@@ -226,7 +252,7 @@ export function generateQcMutasiJobId(noSuratJalan: string, storeAsal?: string):
 }
 
 /**
- * Ekstraksi kode produksi, warna, dan size dari PengecekanSJItem
+ * Ekstraksi kode produksi, warna, dan size dari PengecekanSJItem secara akurat
  */
 export function extractProductInfoFromSJItem(item: { sku?: string; nama_produk?: string; warna?: string; size?: string }): {
   kode_produksi: string;
@@ -238,26 +264,35 @@ export function extractProductInfoFromSJItem(item: { sku?: string; nama_produk?:
   let warna = (item.warna || '').trim();
   let size = (item.size || '').trim();
 
-  // Pattern standard SKU: [KODE]-[WARNA]-[SIZE] e.g. "DRS-BLK-M" or "CCR004-NAVY-L"
-  const parts = sku.split('-');
-  let kode_produksi = sku;
+  const standardSizes = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL', '5XL', 'ALL SIZE', 'ALLSIZE', 'FS', 'FREE SIZE', 'FREE-SIZE'];
 
-  if (parts.length >= 3) {
-    size = size || parts[parts.length - 1].toUpperCase();
-    warna = warna || parts[parts.length - 2].toUpperCase();
-    kode_produksi = parts.slice(0, parts.length - 2).join('-');
-  } else if (parts.length === 2) {
-    size = size || parts[1].toUpperCase();
-    kode_produksi = parts[0];
-  } else if (!kode_produksi && nama) {
-    kode_produksi = nama;
+  // Jika size terisi deskripsi atau nama produk panjang (misal 'LANUNA TOP BLUE'), bersihkan!
+  if (size && (size.length > 8 || size.toUpperCase().includes('TOP') || size.toUpperCase().includes('DRESS') || size.toUpperCase().includes('PANTS') || size.toUpperCase().includes('SKIRT'))) {
+    size = '';
+  }
+
+  // Coba ekstrak dari SKU jika size belum ada
+  if (!size && sku) {
+    const parts = sku.split('-');
+    if (parts.length >= 3) {
+      const lastPart = parts[parts.length - 1].toUpperCase().trim();
+      if (standardSizes.includes(lastPart) || lastPart.length <= 4) {
+        size = lastPart;
+        warna = warna || parts[parts.length - 2].toUpperCase().trim();
+      }
+    } else if (parts.length === 2) {
+      const lastPart = parts[1].toUpperCase().trim();
+      if (standardSizes.includes(lastPart)) {
+        size = lastPart;
+      }
+    }
   }
 
   if (!size) size = 'ALL SIZE';
   if (!warna) warna = '-';
 
   return {
-    kode_produksi: kode_produksi || 'ITEM',
+    kode_produksi: sku || nama || 'ITEM',
     warna,
     size,
   };

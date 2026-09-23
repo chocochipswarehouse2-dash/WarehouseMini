@@ -518,13 +518,13 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* 4. WORKSPACE WORKBENCH: Tally Counter Cepat per Size */}
+      {/* 4. WORKSPACE WORKBENCH: Tally Counter Cepat per Varian */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
-        {/* Size Tab Switcher */}
+        {/* Size / Variant Tab Switcher */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              {job.source_type === 'MUTASI' ? 'Pilih Item / SKU untuk Tally:' : 'Pilih Size untuk Tally / Input Cepat:'}
+              Pilih Varian / SKU untuk Tally:
             </span>
             {activeSize && (
               <span className="text-xs text-slate-500 font-medium">
@@ -537,59 +537,71 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1.5">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
             {job.sizes.map((s, idx) => {
               const totalPeriksa = s.qty_oke + s.qty_noda + s.qty_permak + s.qty_defect;
               const isMatch = totalPeriksa === s.qty_awal;
+              const isSelected = selectedSizeIndex === idx;
+
               return (
                 <button
                   key={s.sku ? `${s.sku}_${s.size}_${idx}` : `${s.size}_${idx}`}
                   type="button"
                   onClick={() => setSelectedSizeIndex(idx)}
-                  className={`flex flex-col items-start px-3.5 py-2 rounded-xl font-bold transition-all shrink-0 cursor-pointer min-w-[100px] text-left ${
-                    selectedSizeIndex === idx
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-600/30'
-                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  className={`flex flex-col items-start px-3 py-2 rounded-xl font-bold transition-all shrink-0 cursor-pointer min-w-[110px] text-left border ${
+                    isSelected
+                      ? 'bg-indigo-600 border-indigo-700 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/40'
+                      : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full gap-1">
-                    <span className="text-xs font-black font-mono leading-tight truncate max-w-[120px]">
-                      {s.sku || s.size}
+                  <div className="flex items-center justify-between w-full gap-1.5">
+                    <span className="text-xs font-black font-mono leading-tight truncate max-w-[130px]">
+                      {s.warna && s.warna !== '-' ? `${s.warna} • ` : ''}{s.size}
                     </span>
                     {isMatch && totalPeriksa > 0 && (
                       <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
                     )}
                   </div>
-                  <span className="text-[10px] opacity-80 mt-0.5 truncate max-w-[120px]">
-                    Size {s.size} • {totalPeriksa}/{s.qty_awal}
+                  <span className={`text-[10px] mt-0.5 truncate max-w-[130px] ${isSelected ? 'text-indigo-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {s.sku ? s.sku : `Size ${s.size}`}
+                  </span>
+                  <span className={`text-[10px] font-extrabold mt-0.5 ${isSelected ? 'text-white' : totalPeriksa > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                    {totalPeriksa} / {s.qty_awal} pcs
                   </span>
                 </button>
               );
             })}
           </div>
 
-          {/* Active Item Banner for QC Mutasi */}
-          {job.source_type === 'MUTASI' && activeSize && (
-            <div className="mt-2.5 p-2.5 sm:p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
+          {/* Active Item Banner */}
+          {activeSize && (
+            <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between flex-wrap gap-2.5 text-xs">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <span className="font-mono font-black text-emerald-950 dark:text-emerald-200 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                  {activeSize.sku || activeSize.size}
+                <span className="font-mono font-black text-indigo-950 dark:text-indigo-200 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                  {activeSize.sku || `${job.kode_produksi}-${activeSize.size}`}
                 </span>
-                <span className="text-slate-700 dark:text-slate-300 font-bold truncate">
-                  {activeSize.nama_produk || 'Produk'}
-                </span>
-                <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded font-black text-[10px]">
-                  Size: {activeSize.size}
-                </span>
+                {activeSize.nama_produk && (
+                  <span className="text-slate-800 dark:text-slate-200 font-bold truncate">
+                    {activeSize.nama_produk}
+                  </span>
+                )}
                 {activeSize.warna && activeSize.warna !== '-' && (
-                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-medium text-[10px]">
+                  <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 rounded-md font-bold text-[11px] border border-amber-200 dark:border-amber-900">
                     Warna: {activeSize.warna}
                   </span>
                 )}
+                <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-300 rounded-md font-black text-[11px] border border-indigo-200 dark:border-indigo-900">
+                  Size: {activeSize.size}
+                </span>
               </div>
-              <span className="text-emerald-700 dark:text-emerald-300 font-extrabold text-[11px]">
-                Fisik Surat Jalan: {activeSize.qty_awal} pcs
-              </span>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="text-slate-600 dark:text-slate-400 font-medium">
+                  Fisik Awal: <strong className="text-slate-900 dark:text-white font-extrabold">{activeSize.qty_awal} pcs</strong>
+                </span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
+                  Selesai: {activeSize.qty_oke + activeSize.qty_noda + activeSize.qty_permak + activeSize.qty_defect} pcs
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -825,22 +837,30 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
         )}
       </div>
 
-      {/* 5. TABEL REKAPITULASI MATRIKS PER SIZE */}
+      {/* 5. TABEL REKAPITULASI MATRIKS PER VARIAN & SKU */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-              Tabel Rangkuman Hasil Pemeriksaan per Size
+              Tabel Rangkuman Hasil Pemeriksaan per Varian & SKU
             </h2>
           </div>
+          <span className="text-[11px] text-slate-500 font-semibold">
+            Total {job.sizes.length} Varian
+          </span>
         </div>
 
         <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th className="px-3 py-2.5">Size</th>
+                <th className="px-3 py-2.5">SKU / Item</th>
+                {job.source_type === 'MUTASI' && (
+                  <th className="px-3 py-2.5">Nama Produk</th>
+                )}
+                <th className="px-3 py-2.5">Warna</th>
+                <th className="px-3 py-2.5 text-center">Size</th>
                 <th className="px-3 py-2.5 text-right">Qty Awal</th>
                 <th className="px-3 py-2.5 text-right text-emerald-700 dark:text-emerald-400">Lolos (OKE)</th>
                 <th className="px-3 py-2.5 text-right text-amber-700 dark:text-amber-400">Noda</th>
@@ -859,7 +879,7 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
 
                 return (
                   <tr
-                    key={s.size}
+                    key={s.sku ? `${s.sku}_${s.size}_${idx}` : `${s.size}_${idx}`}
                     onClick={() => setSelectedSizeIndex(idx)}
                     className={`cursor-pointer transition-colors ${
                       isSelected
@@ -868,9 +888,28 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     }`}
                   >
                     <td className="px-3 py-2.5 font-black font-mono text-slate-900 dark:text-white">
-                      {s.size}
+                      {s.sku || `${job.kode_produksi}-${s.size}`}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-medium text-slate-700 dark:text-slate-300">
+                    {job.source_type === 'MUTASI' && (
+                      <td className="px-3 py-2.5 font-medium text-slate-700 dark:text-slate-300 max-w-[160px] truncate">
+                        {s.nama_produk || '-'}
+                      </td>
+                    )}
+                    <td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">
+                      {s.warna && s.warna !== '-' ? (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[11px] font-bold">
+                          {s.warna}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-black font-mono text-indigo-700 dark:text-indigo-300">
+                      <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900">
+                        {s.size}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-bold text-slate-800 dark:text-slate-200">
                       {s.qty_awal}
                     </td>
                     <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
@@ -922,8 +961,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
             </tbody>
             <tfoot className="bg-slate-100/80 dark:bg-slate-800/90 font-black border-t-2 border-slate-300 dark:border-slate-700">
               <tr>
-                <td className="px-3 py-2.5 text-slate-900 dark:text-white uppercase tracking-wider">
-                  TOTAL
+                <td
+                  colSpan={job.source_type === 'MUTASI' ? 4 : 3}
+                  className="px-3 py-2.5 text-slate-900 dark:text-white uppercase tracking-wider font-black"
+                >
+                  TOTAL ({job.sizes.length} Varian)
                 </td>
                 <td className="px-3 py-2.5 text-right">{totals.total_qty_awal}</td>
                 <td className="px-3 py-2.5 text-right text-emerald-600 dark:text-emerald-400">{totals.total_qty_oke}</td>

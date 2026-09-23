@@ -216,17 +216,19 @@ export const QcBeritaAcaraModal: React.FC<QcBeritaAcaraModalProps> = ({
             </div>
           </div>
 
-          {/* Tabel Rekapitulasi per Size */}
+          {/* Tabel Rekapitulasi per Varian & Size */}
           <div className="space-y-2">
             <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-              Tabel Rekapitulasi Rincian per Size
+              Tabel Rekapitulasi Rincian per Varian & SKU ({job.sizes.length} Varian)
             </h3>
             <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
                   <tr>
-                    <th className="px-3 py-2 text-center w-12">No</th>
-                    <th className="px-3 py-2">Size</th>
+                    <th className="px-3 py-2 text-center w-10">No</th>
+                    <th className="px-3 py-2">SKU / Item</th>
+                    <th className="px-3 py-2">Warna</th>
+                    <th className="px-3 py-2 text-center">Size</th>
                     <th className="px-3 py-2 text-right">Qty Awal</th>
                     <th className="px-3 py-2 text-right text-emerald-700 dark:text-emerald-400">OKE (Grade A)</th>
                     <th className="px-3 py-2 text-right text-amber-700 dark:text-amber-400">Noda</th>
@@ -243,9 +245,13 @@ export const QcBeritaAcaraModal: React.FC<QcBeritaAcaraModalProps> = ({
                     const selisih = totalPeriksa - s.qty_awal;
                     const sizeRate = totalPeriksa > 0 ? Math.round((s.qty_oke / totalPeriksa) * 1000) / 10 : 0;
                     return (
-                      <tr key={s.size} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                      <tr key={s.sku ? `${s.sku}_${s.size}_${idx}` : `${s.size}_${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                         <td className="px-3 py-2 text-center text-slate-400 font-mono">{idx + 1}</td>
-                        <td className="px-3 py-2 font-bold font-mono text-slate-800 dark:text-slate-200">{s.size}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-slate-900 dark:text-white">{s.sku || `${job.kode_produksi}-${s.size}`}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300 font-medium">
+                          {s.warna && s.warna !== '-' ? s.warna : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-center font-bold font-mono text-indigo-700 dark:text-indigo-300">{s.size}</td>
                         <td className="px-3 py-2 text-right font-medium">{s.qty_awal}</td>
                         <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">{s.qty_oke}</td>
                         <td className="px-3 py-2 text-right font-bold text-amber-600 dark:text-amber-400">{s.qty_noda}</td>
@@ -268,8 +274,8 @@ export const QcBeritaAcaraModal: React.FC<QcBeritaAcaraModalProps> = ({
                 </tbody>
                 <tfoot className="bg-slate-100/90 dark:bg-slate-800/90 font-black border-t-2 border-slate-300 dark:border-slate-700">
                   <tr>
-                    <td colSpan={2} className="px-3 py-2.5 text-slate-900 dark:text-white uppercase tracking-wider">
-                      TOTAL REKAP
+                    <td colSpan={4} className="px-3 py-2.5 text-slate-900 dark:text-white uppercase tracking-wider">
+                      TOTAL REKAP ({job.sizes.length} Varian)
                     </td>
                     <td className="px-3 py-2.5 text-right">{totals.total_qty_awal}</td>
                     <td className="px-3 py-2.5 text-right text-emerald-600 dark:text-emerald-400">{totals.total_qty_oke}</td>
