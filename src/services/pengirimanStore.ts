@@ -334,6 +334,14 @@ export async function savePengirimanStoreBatch(payload: {
       const totalKoli = itemsForStore.reduce((acc, curr) => acc + curr.hitung_koli, 0);
       const reportId = generateReportId();
 
+      // Kumpulkan foto spesifik hanya untuk store tujuan ini
+      const storePhotos = Array.from(
+        new Set([
+          ...itemsForStore.flatMap((it) => (it.foto_barang ? [it.foto_barang] : [])),
+          ...(payload.foto_urls && stores.length === 1 ? payload.foto_urls : []),
+        ])
+      );
+
       const rep: PengirimanStoreReport = {
         id: reportId,
         store_tujuan: storeName,
@@ -341,7 +349,7 @@ export async function savePengirimanStoreBatch(payload: {
         items: itemsForStore,
         total_item_count: itemsForStore.length,
         total_koli: totalKoli,
-        foto_urls: payload.foto_urls || [],
+        foto_urls: storePhotos.length > 0 ? storePhotos : payload.foto_urls || [],
         pic_nama: payload.pic_nama,
         pic_username: payload.pic_username,
         status: 'dispatched',
