@@ -56,7 +56,12 @@ import {
   compareKatalogBatches,
   sortKatalogItems,
   KatalogSortOrder,
+  isCodeLike,
+  cleanBaseProductName,
 } from './katalog/katalogStorage';
+import { cleanProductName } from '../utils/sortUtils';
+import { getAllProductsFromLocalDb } from '../services/localDb';
+import { getSupabaseClient } from '../services/supabase';
 import { KatalogUploadModal } from './katalog/KatalogUploadModal';
 import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { KatalogA4PrintModal } from './katalog/KatalogA4PrintModal';
@@ -182,6 +187,57 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
       setBatches(sorted);
       // Pilih semua katalog secara default
       setSelectedCatalogIds(sorted.map((b) => b.id));
+
+      // Auto-enrichment: Perbaiki data lama jika nama produk masih berupa kode produk (misal: CCT45, D1036, 1787)
+      const hasCodeLikeNames = sorted.some((b) =>
+        b.items.some((it) => isCodeLike(it.deskripsi) || !it.deskripsi)
+      );
+      if (hasCodeLikeNames) {
+        setTimeout(async () => {
+          try {
+            const localProds = await getAllProductsFromLocalDb();
+            const skuMap: Record<string, string> = {};
+            if (Array.isArray(localProds)) {
+              for (const p of localProds) {
+                const s = String(p.k || (p as any).sku || '').trim().toUpperCase();
+                const n = cleanProductName(String(p.p || (p as any).nama_produk || p.n || '').trim());
+                if (s && n && !isCodeLike(n)) skuMap[s] = n;
+              }
+            }
+
+            let hasChanged = false;
+            const updated = sorted.map((b) => {
+              let bChanged = false;
+              const nextItems = b.items.map((it) => {
+                if (isCodeLike(it.deskripsi) || !it.deskripsi) {
+                  const kode = it.kode_produk || (isCodeLike(it.deskripsi) ? it.deskripsi : '');
+                  for (const v of it.variants) {
+                    const s = (v.sku || '').trim().toUpperCase();
+                    if (s && skuMap[s]) {
+                      bChanged = true;
+                      hasChanged = true;
+                      return {
+                        ...it,
+                        kode_produk: kode || it.kode_produk,
+                        deskripsi: cleanBaseProductName(skuMap[s], v.warna),
+                      };
+                    }
+                  }
+                }
+                return it;
+              });
+              return bChanged ? { ...b, items: nextItems } : b;
+            });
+
+            if (hasChanged) {
+              setBatches(updated);
+              await persistKatalogBatches(updated);
+            }
+          } catch (autoErr) {
+            console.warn('Auto-repair katalog names warning:', autoErr);
+          }
+        }, 150);
+      }
     } catch (err) {
       console.error('Failed to load katalog batches:', err);
       onNotify('Gagal memuat katalog, menggunakan data lokal', 'error');
@@ -425,6 +481,43 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           throw new Error('File Excel tidak memiliki lembar kerja (sheet).');
         }
 
+        // 2b. Ekstrak data kamus dari Sheet MASTER / PRODUK bila tersedia di workbook
+        const masterWorkbookMap: Record<string, string> = {};
+        for (const sName of workbook.SheetNames) {
+          const ws = workbook.Sheets[sName];
+          if (!ws) continue;
+          const rows: any[][] = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          for (let r = 0; r < Math.min(rows.length, 10); r++) {
+            const row = rows[r];
+            if (!Array.isArray(row)) continue;
+            const kodeIdx = row.findIndex((c) => normalizeHeaderKey(c) === 'kode');
+            const nameIdx = row.findIndex((c) => {
+              const k = normalizeHeaderKey(c);
+              return k.includes('productname') || k.includes('namaproduk') || k === 'deskripsi';
+            });
+            const skuIdx = row.findIndex((c) => normalizeHeaderKey(c) === 'sku');
+            const variantIdx = row.findIndex((c) => {
+              const k = normalizeHeaderKey(c);
+              return k.includes('variant') || k.includes('warna');
+            });
+
+            if (nameIdx !== -1 && (kodeIdx !== -1 || skuIdx !== -1)) {
+              for (let i = r + 1; i < rows.length; i++) {
+                const dRow = rows[i];
+                if (!Array.isArray(dRow)) continue;
+                const rawName = String(dRow[nameIdx] || '').trim();
+                const vColor = variantIdx !== -1 ? String(dRow[variantIdx] || '').trim() : '';
+                const baseName = cleanBaseProductName(rawName, vColor) || rawName;
+                const kode = kodeIdx !== -1 ? String(dRow[kodeIdx] || '').trim().toUpperCase() : '';
+                const sku = skuIdx !== -1 ? String(dRow[skuIdx] || '').trim().toUpperCase() : '';
+                if (kode && baseName && !masterWorkbookMap['KODE:' + kode]) masterWorkbookMap['KODE:' + kode] = baseName;
+                if (sku && baseName && !masterWorkbookMap['SKU:' + sku]) masterWorkbookMap['SKU:' + sku] = baseName;
+              }
+              break;
+            }
+          }
+        }
+
         const chosenSheetName =
           workbook.SheetNames.find(
             (s) =>
@@ -495,8 +588,8 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           if (isRowEmpty) continue;
 
           const no = getVal(row, 'nomor');
-          const kodeProduk = getVal(row, 'kode_produk');
-          const namaProduk = getVal(row, 'deskripsi');
+          let kodeProduk = getVal(row, 'kode_produk');
+          let namaProduk = getVal(row, 'deskripsi');
           const priceRaw = getVal(row, 'price');
           let warna = getVal(row, 'warna');
           let size = getVal(row, 'size');
@@ -505,6 +598,16 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           const explicitImg = getVal(row, 'image_url');
           const pubOnline = getVal(row, 'publish_online');
           const pubOffline = getVal(row, 'publish_offline');
+
+          const hasVariantData = Boolean(priceRaw || warna || size || sku || qtyRaw);
+          const isExplicitNewNo = Boolean(no && !isNaN(parseInt(no, 10)) && (!currentItem || currentItem.nomor !== no));
+
+          // Deteksi baris header nomor produk (misal: NO: 1, DESKRIPSI: CCT45 / 1787 tanpa harga/sku/varian)
+          // Nilai tersebut sebenarnya adalah KODE PRODUK, bukan Nama Produk
+          if (isExplicitNewNo && !hasVariantData && namaProduk && isCodeLike(namaProduk)) {
+            if (!kodeProduk) kodeProduk = namaProduk;
+            namaProduk = '';
+          }
 
           const foundDrawingImg = rowImages[r] || rowImages[r - 1] || rowImages[r + 1] || explicitImg;
           const qty = parseInt(qtyRaw, 10) || 0;
@@ -515,40 +618,35 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             if (numOnly) priceClean = Number(numOnly).toLocaleString('id-ID');
           }
 
-          // Tentukan Nama Produk Bersih yang konsisten
+          // Prioritaskan Nama Produk yang sebenarnya, bukan kode produk
           let computedProdName = '';
-          if (namaProduk && kodeProduk) {
-            if (namaProduk.toLowerCase().includes(kodeProduk.toLowerCase())) {
-              computedProdName = namaProduk;
-            } else {
-              computedProdName = `${kodeProduk} - ${namaProduk}`;
-            }
+          if (namaProduk && !isCodeLike(namaProduk)) {
+            computedProdName = namaProduk;
+          } else if (kodeProduk && masterWorkbookMap['KODE:' + kodeProduk.toUpperCase()]) {
+            computedProdName = masterWorkbookMap['KODE:' + kodeProduk.toUpperCase()];
+          } else if (sku && masterWorkbookMap['SKU:' + sku.toUpperCase()]) {
+            computedProdName = cleanBaseProductName(masterWorkbookMap['SKU:' + sku.toUpperCase()], warna);
           } else if (namaProduk) {
             computedProdName = namaProduk;
-          } else if (kodeProduk) {
-            computedProdName = kodeProduk;
-          } else if (sku && !currentItem) {
-            computedProdName = `Produk ${sku}`;
           }
 
           // Deteksi Produk Baru vs Baris Varian
-          const isExplicitNewNo = Boolean(no && !isNaN(parseInt(no, 10)) && (!currentItem || currentItem.nomor !== no));
           const isNewDrawingImg = Boolean(foundDrawingImg && currentItem && currentItem.image_url && foundDrawingImg !== currentItem.image_url);
           const isNewKode = Boolean(kodeProduk && currentKode && kodeProduk.toUpperCase() !== currentKode.toUpperCase());
-          const isNewNama = Boolean(namaProduk && currentNama && namaProduk.toUpperCase() !== currentNama.toUpperCase() && (!kodeProduk || isNewKode));
 
-          const isNewProduct = !currentItem || isExplicitNewNo || isNewDrawingImg || isNewKode || (isNewNama && isExplicitNewNo);
+          const isNewProduct = !currentItem || isExplicitNewNo || (isNewDrawingImg && isExplicitNewNo) || isNewKode;
 
           if (isNewProduct) {
             if (currentItem && currentItem.variants.length > 0) {
               parsedItems.push(currentItem);
             }
 
-            const initialName = computedProdName || (sku ? `Produk ${sku}` : `Item #${idCounter}`);
+            const initialName = computedProdName || '';
 
             currentItem = {
               id: `KAT-${Date.now()}-${idCounter++}`,
               nomor: no || (currentItem ? String(Number(currentItem.nomor || 0) + 1) : '1'),
+              kode_produk: kodeProduk || '',
               deskripsi: initialName,
               price: priceClean || '',
               variants: [],
@@ -563,6 +661,9 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           }
 
           if (currentItem) {
+            if (kodeProduk && !currentItem.kode_produk) {
+              currentItem.kode_produk = kodeProduk;
+            }
             if (pubOnline && !currentItem.publish_online) {
               currentItem.publish_online = pubOnline;
             }
@@ -572,9 +673,26 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             if (foundDrawingImg && !currentItem.image_url) {
               currentItem.image_url = foundDrawingImg;
             }
-            if (computedProdName && (!currentItem.deskripsi || currentItem.deskripsi.startsWith('Item #') || currentItem.deskripsi.startsWith('Produk '))) {
-              currentItem.deskripsi = computedProdName;
+
+            // CRITICAL: Resolusi Nama Produk asli (utamakan nama produk, bukan kode produk)
+            if (namaProduk) {
+              if (!isCodeLike(namaProduk)) {
+                // Nama produk asli ditemukan pada baris data varian
+                currentItem.deskripsi = namaProduk;
+              } else if (!currentItem.deskripsi) {
+                if (!currentItem.kode_produk) currentItem.kode_produk = namaProduk;
+              }
             }
+
+            // Coba dari kamus MASTER workbook jika deskripsi masih kosong atau berupa kode
+            if (!currentItem.deskripsi || isCodeLike(currentItem.deskripsi)) {
+              if (currentItem.kode_produk && masterWorkbookMap['KODE:' + currentItem.kode_produk.toUpperCase()]) {
+                currentItem.deskripsi = masterWorkbookMap['KODE:' + currentItem.kode_produk.toUpperCase()];
+              } else if (sku && masterWorkbookMap['SKU:' + sku.toUpperCase()]) {
+                currentItem.deskripsi = cleanBaseProductName(masterWorkbookMap['SKU:' + sku.toUpperCase()], warna);
+              }
+            }
+
             if (priceClean && !currentItem.price) {
               currentItem.price = priceClean;
             }
@@ -585,7 +703,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             }
 
             // Normalisasi SKU jika kolom SKU kosong tapi ada Kode/Nama + Warna + Size
-            const cleanKodeForSku = currentKode || currentItem.deskripsi || 'ITEM';
+            const cleanKodeForSku = currentKode || currentItem.kode_produk || currentItem.deskripsi || 'ITEM';
             const cleanWarnaForSku = (warna || 'ALL').trim().toUpperCase();
             const cleanSizeForSku = (size || 'ALL').trim().toUpperCase();
             const fallbackSku = `${cleanKodeForSku.replace(/[^a-zA-Z0-9]/g, '')}-${cleanWarnaForSku.replace(/[^a-zA-Z0-9]/g, '')}-${cleanSizeForSku.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -615,6 +733,95 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         if (parsedItems.length === 0) {
           throw new Error('Tidak ada baris data produk yang valid ditemukan.');
         }
+
+        // 3. Fallback / Sinkronisasi Nama Produk dari master_produk (Local DB & Supabase)
+        // Jika ada produk yang deskripsinya masih kosong atau hanya berupa kode
+        const itemsNeedingName = parsedItems.filter(
+          (it) => !it.deskripsi || isCodeLike(it.deskripsi) || it.deskripsi.startsWith('Item #')
+        );
+
+        if (itemsNeedingName.length > 0) {
+          try {
+            // A. Cek dari IndexedDB localDb
+            const localProducts = await getAllProductsFromLocalDb();
+            const skuToLocalName: Record<string, string> = {};
+            if (Array.isArray(localProducts) && localProducts.length > 0) {
+              for (const p of localProducts) {
+                const s = String(p.k || (p as any).sku || '').trim().toUpperCase();
+                const n = cleanProductName(String(p.p || (p as any).nama_produk || p.n || '').trim());
+                if (s && n && !isCodeLike(n)) {
+                  skuToLocalName[s] = n;
+                }
+              }
+            }
+
+            for (const it of itemsNeedingName) {
+              if (!it.deskripsi || isCodeLike(it.deskripsi)) {
+                for (const v of it.variants) {
+                  const s = (v.sku || '').trim().toUpperCase();
+                  if (s && skuToLocalName[s]) {
+                    it.deskripsi = cleanBaseProductName(skuToLocalName[s], v.warna);
+                    break;
+                  }
+                }
+              }
+            }
+
+            // B. Jika masih ada yang belum ditemukan, query Supabase master_produk
+            const stillMissing = parsedItems.filter(
+              (it) => !it.deskripsi || isCodeLike(it.deskripsi) || it.deskripsi.startsWith('Item #')
+            );
+            if (stillMissing.length > 0) {
+              const skusToFetch = Array.from(
+                new Set(
+                  stillMissing
+                    .flatMap((it) => it.variants.map((v) => (v.sku || '').trim()))
+                    .filter((s) => s.length > 0)
+                )
+              );
+
+              if (skusToFetch.length > 0) {
+                const supa = getSupabaseClient();
+                const { data: dbRows } = await supa
+                  .from('master_produk')
+                  .select('sku, nama_produk')
+                  .in('sku', skusToFetch.slice(0, 100));
+
+                if (Array.isArray(dbRows) && dbRows.length > 0) {
+                  const skuToDbName: Record<string, string> = {};
+                  for (const r of dbRows) {
+                    const s = String(r.sku || '').trim().toUpperCase();
+                    const n = cleanProductName(String(r.nama_produk || '').trim());
+                    if (s && n && !isCodeLike(n)) {
+                      skuToDbName[s] = n;
+                    }
+                  }
+
+                  for (const it of stillMissing) {
+                    if (!it.deskripsi || isCodeLike(it.deskripsi)) {
+                      for (const v of it.variants) {
+                        const s = (v.sku || '').trim().toUpperCase();
+                        if (s && skuToDbName[s]) {
+                          it.deskripsi = cleanBaseProductName(skuToDbName[s], v.warna);
+                          break;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch (lookupErr) {
+            console.warn('Lookup nama produk ke master_produk error:', lookupErr);
+          }
+        }
+
+        // Final sanitize deskripsi: jangan biarkan kosong
+        parsedItems.forEach((it, idx) => {
+          if (!it.deskripsi) {
+            it.deskripsi = it.kode_produk || `Produk #${it.nomor || idx + 1}`;
+          }
+        });
 
         // Buka modal upload untuk menentukan nama katalog & pilihan new / replace
         setParsedUploadItems(parsedItems);
@@ -2010,9 +2217,16 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
         <div className="p-4 space-y-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-2">
-                {item.deskripsi || 'Produk Tanpa Nama'}
-              </h2>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 leading-snug line-clamp-2">
+                  {item.deskripsi || 'Produk Tanpa Nama'}
+                </h2>
+                {item.kode_produk && item.kode_produk !== item.deskripsi && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                    {item.kode_produk}
+                  </span>
+                )}
+              </div>
               <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
                 Rp {item.price || '-'}
               </div>

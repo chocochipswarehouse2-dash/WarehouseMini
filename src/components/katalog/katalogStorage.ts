@@ -141,6 +141,7 @@ export function parseStoredKatalogBatches(rawStr: string | null | undefined): Ka
         is_hidden: Boolean(b.is_hidden),
         items: sortKatalogItems((b.items || []).map((it: any) => ({
           ...it,
+          kode_produk: it.kode_produk || '',
           catalog_id: it.catalog_id || b.id || `batch-${idx + 1}`,
           catalog_name: it.catalog_name || b.name || `Katalog ${idx + 1}`,
           is_hidden: Boolean(it.is_hidden),
@@ -472,3 +473,42 @@ export function extractCatalogNameFromFilename(filename: string): string {
   
   return clean.replace(/upload|katalog|offline|master/gi, '').trim() || clean;
 }
+
+/**
+ * Deteksi apakah sebuah string adalah kode produk / kode SKU / nomor dummy
+ * (contoh: "1787", "CCT45", "D1036", "26187", "26168", "914", "Item #1")
+ * daripada nama produk deskriptif seperti "Quisera Top", "Saveria Top".
+ */
+export function isCodeLike(str: any): boolean {
+  if (!str) return false;
+  const s = String(str).trim();
+  if (!s) return false;
+  // Placeholder item/produk
+  if (/^Item\s*#/i.test(s) || /^Produk\s+/i.test(s)) return true;
+  // Jika mengandung spasi dan bukan placeholder, biasanya sudah berupa nama produk (misal: Quisera Top)
+  if (s.includes(' ')) return false;
+  // Angka murni (misal: 1787, 914, 26187, 26168)
+  if (/^\d+$/.test(s)) return true;
+  // Alfanumerik pendek gabungan huruf dan angka tanpa spasi (misal: CCT45, D1036, B2-10)
+  if (/[a-zA-Z]/.test(s) && /\d/.test(s) && /^[A-Za-z0-9\-_.]+$/.test(s) && s.length <= 15) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Membersihkan nama varian/warna dari nama produk lengkap
+ * Contoh: "Quisera Top Brown" + warna "Brown" -> "Quisera Top"
+ */
+export function cleanBaseProductName(name: string, variantColor?: string): string {
+  if (!name) return '';
+  let clean = String(name).trim();
+  if (variantColor && variantColor !== '-' && variantColor.toLowerCase() !== 'default') {
+    const vRegex = new RegExp('\\s+' + variantColor.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+    clean = clean.replace(vRegex, '').trim();
+  }
+  // Hapus dobel spasi atau strip trailing
+  clean = clean.replace(/\s{2,}/g, ' ').replace(/\s*-\s*$/, '').trim();
+  return clean;
+}
+

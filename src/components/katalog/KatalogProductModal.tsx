@@ -303,6 +303,7 @@ export const KatalogProductModal: React.FC<KatalogProductModalProps> = ({
     const finalItem: KatalogItem = {
       id: mode === 'edit' && itemToEdit ? itemToEdit.id : `KAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       nomor: nomor.trim(),
+      kode_produk: itemToEdit?.kode_produk || undefined,
       deskripsi: cleanDeskripsi,
       price: price.trim(),
       image_url: imageUrl.trim(),

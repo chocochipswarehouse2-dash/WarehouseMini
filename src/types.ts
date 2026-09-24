@@ -44,6 +44,7 @@ export interface KatalogVariant {
 export interface KatalogItem {
   id: string;
   nomor: string;
+  kode_produk?: string;
   deskripsi: string;
   price: string | number;
   variants: KatalogVariant[];

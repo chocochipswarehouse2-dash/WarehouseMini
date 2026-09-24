@@ -242,6 +242,11 @@ export const KatalogUploadModal: React.FC<KatalogUploadModalProps> = ({
                       <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
                         {it.deskripsi || 'Tanpa Nama'}
                       </span>
+                      {it.kode_produk && it.kode_produk !== it.deskripsi && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                          {it.kode_produk}
+                        </span>
+                      )}
                     </div>
                     <div className="text-right text-slate-500 dark:text-slate-400 shrink-0">
                       <span className="font-semibold text-slate-700 dark:text-slate-300">
