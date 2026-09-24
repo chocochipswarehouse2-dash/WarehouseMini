@@ -4,27 +4,27 @@ import { supabaseFetch } from './supabase';
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
 /**
- * Daftar resmi store / outlet yang disinkronkan dengan Master Produk & DealPOS
+ * Daftar resmi store / outlet yang disinkronkan langsung dengan Master Produk (dealpos_channels.b)
+ * Tidak ada store yang dikarang di luar data Master Produk.
  */
-export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode?: string }[] = [
+export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode: string }[] = [
   { nama: 'GAIA', fulfillment: 'Gaia Pontianak', kode: 'GAIA' },
-  { nama: 'Gaia Pontianak', fulfillment: 'Gaia Pontianak', kode: 'GAIA' },
-  { nama: 'By The Sea PIK', fulfillment: 'By The Sea PIK', kode: 'BTS' },
-  { nama: 'Central Park Jakarta', fulfillment: 'Central Park Jakarta', kode: 'CPJ' },
-  { nama: 'Ciputra World Surabaya', fulfillment: 'Ciputra World Surabaya', kode: 'CWS' },
-  { nama: 'Deli Park Medan', fulfillment: 'Deli Park Medan', kode: 'DPM' },
-  { nama: 'Gading Serpong Tangerang', fulfillment: 'Gading Serpong Tangerang', kode: 'GST' },
-  { nama: 'La Vela Tangerang', fulfillment: 'La Vela Tangerang', kode: 'LVL' },
-  { nama: 'Lippo Mall Puri', fulfillment: 'Lippo Mall Puri', kode: 'LMP' },
-  { nama: 'Living World Tangerang', fulfillment: 'Living World Tangerang', kode: 'LWS' },
-  { nama: 'Mall Kelapa Gading', fulfillment: 'Mall Kelapa Gading', kode: 'MKG' },
-  { nama: 'Neo Soho Jakarta', fulfillment: 'Neo Soho Jakarta', kode: 'NSJ' },
-  { nama: 'Pakuwon Mall Surabaya', fulfillment: 'Pakuwon Mall Surabaya', kode: 'PMS' },
-  { nama: 'Paris Van Java', fulfillment: 'Paris Van Java', kode: 'PVJ' },
-  { nama: 'Paskal Hyper Square Bandung', fulfillment: 'Paskal Hyper Square Bandung', kode: 'PHB' },
-  { nama: 'Puri Indah Mall', fulfillment: 'Puri Indah Mall', kode: 'PIM' },
-  { nama: 'Sun Plaza Medan', fulfillment: 'Sun Plaza Medan', kode: 'SPM' },
-  { nama: 'Tunjungan Plaza', fulfillment: 'Tunjungan Plaza', kode: 'TP' },
+  { nama: 'BTS', fulfillment: 'By The Sea PIK', kode: 'BTS' },
+  { nama: 'CPJ', fulfillment: 'Central Park Jakarta', kode: 'CPJ' },
+  { nama: 'CWS', fulfillment: 'Ciputra World Surabaya', kode: 'CWS' },
+  { nama: 'DPM', fulfillment: 'Deli Park Medan', kode: 'DPM' },
+  { nama: 'GST', fulfillment: 'Gading Serpong Tangerang', kode: 'GST' },
+  { nama: 'LMP', fulfillment: 'Lippo Mall Puri', kode: 'LMP' },
+  { nama: 'LVL', fulfillment: 'La Vela Tangerang', kode: 'LVL' },
+  { nama: 'LWS', fulfillment: 'Living World Tangerang', kode: 'LWS' },
+  { nama: 'MKG', fulfillment: 'Mall Kelapa Gading', kode: 'MKG' },
+  { nama: 'NSJ', fulfillment: 'Neo Soho Jakarta', kode: 'NSJ' },
+  { nama: 'PHB', fulfillment: 'Paskal Hyper Square Bandung', kode: 'PHB' },
+  { nama: 'PIM', fulfillment: 'Pondok Indah Mall', kode: 'PIM' },
+  { nama: 'PMS', fulfillment: 'Pakuwon Mall Surabaya', kode: 'PMS' },
+  { nama: 'SPM', fulfillment: 'Sun Plaza Medan', kode: 'SPM' },
+  { nama: 'TP', fulfillment: 'Tunjungan Plaza Surabaya', kode: 'TP' },
+  { nama: 'KYTE', fulfillment: 'Kyte', kode: 'KYTE' },
 ];
 
 export const DEFAULT_JASA_KIRIM: string[] = [

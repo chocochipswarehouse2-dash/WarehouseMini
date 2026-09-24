@@ -38,24 +38,24 @@ export function getSubmitTimestamp(): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-// Generate unique Report ID: DSP-YYMMDD-XXXX
+// Generate unique Surat Jalan Barang ID: SJB-YYMMDD-XXXX
 export function generateReportId(): string {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const rand = Math.floor(1000 + Math.random() * 9000);
-  return `DSP-${yy}${mm}${dd}-${rand}`;
+  return `SJB-${yy}${mm}${dd}-${rand}`;
 }
 
-// Generate unique Trip ID: TRIP-YYMMDD-XXXX
+// Generate unique Surat Jalan Pengiriman ID (Batch Manifest): SJP-YYMMDD-XXXX
 export function generateTripId(): string {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const rand = Math.floor(1000 + Math.random() * 9000);
-  return `TRIP-${yy}${mm}${dd}-${rand}`;
+  return `SJP-${yy}${mm}${dd}-${rand}`;
 }
 
 // ==============================================================================
@@ -856,6 +856,424 @@ export async function cancelPengirimanStoreReport(
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal membatalkan pengiriman' };
+  }
+}
+
+/**
+ * Batalkan seluruh Surat Jalan Pengiriman (Trip / Batch).
+ * Seluruh Surat Jalan Barang di dalamnya otomatis kembali ke status 'dispatched'
+ * dan muncul kembali di antrean siap kirim.
+ */
+export async function cancelSuratJalanPengirimanTrip(
+  tripId: string,
+  reason: string,
+  user: { name: string; username?: string }
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cachedTrips = getCachedTrips();
+    const cachedReports = getCachedReports();
+    const nowIso = new Date().toISOString();
+
+    const targetTrip = cachedTrips.find((t) => t.id === tripId);
+    const affectedReportIds = new Set<string>();
+
+    if (targetTrip?.report_ids && Array.isArray(targetTrip.report_ids)) {
+      targetTrip.report_ids.forEach((id) => affectedReportIds.add(id));
+    }
+    // Also include any reports referencing this trip_id
+    cachedReports.forEach((r) => {
+      if (r.trip_id === tripId) affectedReportIds.add(r.id);
+    });
+
+    const auditEntry: PengirimanAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: nowIso,
+      user_nama: user.name,
+      user_username: user.username || 'operator',
+      action: 'cancel',
+      keterangan: `Surat Jalan Pengiriman ${tripId} dibatalkan. Alasan: ${reason || 'Tidak ada alasan'}. Seluruh barang otomatis dikembalikan ke status Dispatched.`,
+      new_data: { status: 'dispatched' },
+    };
+
+    // 1. Revert all member reports back to 'dispatched'
+    const updatedReports = cachedReports.map((r) => {
+      if (affectedReportIds.has(r.id)) {
+        return {
+          ...r,
+          status: 'dispatched' as const,
+          trip_id: undefined,
+          tanggal_kirim: undefined,
+          waktu_kirim: undefined,
+          dikirim_oleh: undefined,
+          cancel_reason: reason,
+          cancelled_at: nowIso,
+          cancelled_by: user.name,
+          audit_logs: [auditEntry, ...(r.audit_logs || [])],
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+    saveReportsToCache(updatedReports);
+
+    // 2. Mark Trip as cancelled
+    const updatedTrips = cachedTrips.map((t) => {
+      if (t.id === tripId) {
+        return {
+          ...t,
+          status: 'cancelled' as const,
+          cancel_reason: reason,
+          cancelled_at: nowIso,
+          cancelled_by: user.name,
+          report_ids: [],
+          total_koli: 0,
+        };
+      }
+      return t;
+    });
+    saveTripsToCache(updatedTrips);
+
+    // 3. Sync to Supabase
+    for (const repId of affectedReportIds) {
+      try {
+        await supabaseFetch(
+          'pengiriman_store_reports',
+          'PATCH',
+          {
+            status: 'dispatched',
+            trip_id: null,
+            updated_at: nowIso,
+          },
+          `id=eq.${repId}`
+        );
+      } catch (e) {
+        console.warn(`Gagal sync cancel report ${repId} ke Supabase:`, e);
+      }
+    }
+
+    try {
+      await supabaseFetch(
+        'pengiriman_store_trips',
+        'PATCH',
+        {
+          status: 'cancelled',
+          updated_at: nowIso,
+        },
+        `id=eq.${tripId}`
+      );
+    } catch (e) {
+      console.warn(`Gagal sync cancel trip ${tripId} ke Supabase:`, e);
+    }
+
+    return {
+      success: true,
+      message: `Surat Jalan Pengiriman ${tripId} berhasil dibatalkan. ${affectedReportIds.size} laporan barang telah dikembalikan ke status Dispatched!`,
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal membatalkan Surat Jalan Pengiriman' };
+  }
+}
+
+/**
+ * Keluarkan satu laporan barang dari Surat Jalan Pengiriman.
+ * Barang yang dikeluarkan otomatis kembali ke status 'dispatched'.
+ */
+export async function removeReportFromSuratJalanPengiriman(
+  tripId: string,
+  reportId: string,
+  reason: string,
+  user: { name: string; username?: string }
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cachedTrips = getCachedTrips();
+    const cachedReports = getCachedReports();
+    const nowIso = new Date().toISOString();
+
+    const targetReport = cachedReports.find((r) => r.id === reportId);
+    if (!targetReport) {
+      return { success: false, message: 'Laporan barang tidak ditemukan' };
+    }
+
+    const auditEntry: PengirimanAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: nowIso,
+      user_nama: user.name,
+      user_username: user.username || 'operator',
+      action: 'cancel',
+      keterangan: `Barang dikeluarkan dari Surat Jalan Pengiriman ${tripId}. Alasan: ${reason || 'Dibatalkan kirim'}. Otomatis kembali ke antrean Dispatched.`,
+      new_data: { status: 'dispatched' },
+    };
+
+    // 1. Revert report to dispatched
+    const updatedReports = cachedReports.map((r) => {
+      if (r.id === reportId) {
+        return {
+          ...r,
+          status: 'dispatched' as const,
+          trip_id: undefined,
+          tanggal_kirim: undefined,
+          waktu_kirim: undefined,
+          dikirim_oleh: undefined,
+          cancel_reason: reason,
+          cancelled_at: nowIso,
+          cancelled_by: user.name,
+          audit_logs: [auditEntry, ...(r.audit_logs || [])],
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+    saveReportsToCache(updatedReports);
+
+    // 2. Update Trip
+    const updatedTrips = cachedTrips.map((t) => {
+      if (t.id === tripId) {
+        const nextReportIds = (t.report_ids || []).filter((id) => id !== reportId);
+        const nextKoli = Math.max(0, (t.total_koli || 0) - targetReport.total_koli);
+        return {
+          ...t,
+          report_ids: nextReportIds,
+          total_koli: nextKoli,
+          status: nextReportIds.length === 0 ? ('cancelled' as const) : t.status,
+        };
+      }
+      return t;
+    });
+    saveTripsToCache(updatedTrips);
+
+    // 3. Sync to Supabase
+    try {
+      await supabaseFetch(
+        'pengiriman_store_reports',
+        'PATCH',
+        {
+          status: 'dispatched',
+          trip_id: null,
+          updated_at: nowIso,
+        },
+        `id=eq.${reportId}`
+      );
+    } catch (e) {
+      console.warn(`Gagal sync revert report ${reportId} ke Supabase:`, e);
+    }
+
+    try {
+      const remainingTrip = updatedTrips.find((t) => t.id === tripId);
+      if (remainingTrip) {
+        await supabaseFetch(
+          'pengiriman_store_trips',
+          'PATCH',
+          {
+            report_ids: JSON.stringify(remainingTrip.report_ids),
+            total_koli: remainingTrip.total_koli,
+            status: remainingTrip.status,
+            updated_at: nowIso,
+          },
+          `id=eq.${tripId}`
+        );
+      }
+    } catch (e) {
+      console.warn(`Gagal sync update trip ${tripId} ke Supabase:`, e);
+    }
+
+    return {
+      success: true,
+      message: `Barang ${reportId} berhasil dikeluarkan dan otomatis kembali ke tab Dispatched!`,
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengeluarkan barang dari pengiriman' };
+  }
+}
+
+/**
+ * Edit Surat Jalan Pengiriman (Tanggal Kirim, Driver / Kurir, Catatan, Armada, serta mengeluarkan barang tertentu).
+ */
+export async function editSuratJalanPengirimanTrip(
+  tripId: string,
+  updateData: {
+    tanggal_kirim?: string;
+    dikirim_oleh?: string;
+    armada?: string;
+    no_polisi?: string;
+    catatan?: string;
+    removeReportIds?: string[];
+  },
+  user: { name: string; username?: string }
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cachedTrips = getCachedTrips();
+    const cachedReports = getCachedReports();
+    const nowIso = new Date().toISOString();
+
+    const targetTrip = cachedTrips.find((t) => t.id === tripId);
+    if (!targetTrip) {
+      return { success: false, message: 'Surat Jalan Pengiriman tidak ditemukan' };
+    }
+
+    const removeSet = new Set(updateData.removeReportIds || []);
+
+    // 1. If any reports are to be removed, revert them to 'dispatched'
+    if (removeSet.size > 0) {
+      for (const repId of removeSet) {
+        await removeReportFromSuratJalanPengiriman(tripId, repId, 'Dikeluarkan saat edit Surat Jalan Pengiriman', user);
+      }
+    }
+
+    // Refresh caches after potential removals
+    const freshTrips = getCachedTrips();
+    const freshReports = getCachedReports();
+
+    // 2. Update remaining member reports
+    const memberReports = freshReports.filter(
+      (r) => (targetTrip.report_ids?.includes(r.id) || r.trip_id === tripId) && !removeSet.has(r.id)
+    );
+
+    const updatedReports = freshReports.map((r) => {
+      if (memberReports.some((m) => m.id === r.id)) {
+        return {
+          ...r,
+          tanggal_kirim: updateData.tanggal_kirim ?? r.tanggal_kirim,
+          dikirim_oleh: updateData.dikirim_oleh ?? r.dikirim_oleh,
+          armada: updateData.armada ?? r.armada,
+          no_polisi: updateData.no_polisi ?? r.no_polisi,
+          catatan_kirim: updateData.catatan ?? r.catatan_kirim,
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+    saveReportsToCache(updatedReports);
+
+    // 3. Update Trip
+    const updatedTrips = freshTrips.map((t) => {
+      if (t.id === tripId) {
+        return {
+          ...t,
+          tanggal_kirim: updateData.tanggal_kirim ?? t.tanggal_kirim,
+          dikirim_oleh: updateData.dikirim_oleh ?? t.dikirim_oleh,
+          armada: updateData.armada ?? t.armada,
+          no_polisi: updateData.no_polisi ?? t.no_polisi,
+          catatan: updateData.catatan ?? t.catatan,
+          updated_at: nowIso,
+        };
+      }
+      return t;
+    });
+    saveTripsToCache(updatedTrips);
+
+    // Sync to Supabase
+    for (const rep of memberReports) {
+      try {
+        await supabaseFetch(
+          'pengiriman_store_reports',
+          'PATCH',
+          {
+            tanggal_kirim: updateData.tanggal_kirim ?? rep.tanggal_kirim,
+            dikirim_oleh: updateData.dikirim_oleh ?? rep.dikirim_oleh,
+            armada: updateData.armada ?? rep.armada,
+            no_polisi: updateData.no_polisi ?? rep.no_polisi,
+            catatan_kirim: updateData.catatan ?? rep.catatan_kirim,
+            updated_at: nowIso,
+          },
+          `id=eq.${rep.id}`
+        );
+      } catch (e) {
+        console.warn(`Sync update report ${rep.id} ke Supabase:`, e);
+      }
+    }
+
+    try {
+      await supabaseFetch(
+        'pengiriman_store_trips',
+        'PATCH',
+        {
+          tanggal_kirim: updateData.tanggal_kirim,
+          dikirim_oleh: updateData.dikirim_oleh,
+          armada: updateData.armada,
+          no_polisi: updateData.no_polisi,
+          catatan_kirim: updateData.catatan,
+          updated_at: nowIso,
+        },
+        `id=eq.${tripId}`
+      );
+    } catch (e) {
+      console.warn(`Sync update trip ${tripId} ke Supabase:`, e);
+    }
+
+    return {
+      success: true,
+      message: `Surat Jalan Pengiriman ${tripId} berhasil diperbarui!`,
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengubah Surat Jalan Pengiriman' };
+  }
+}
+
+/**
+ * Hapus / Batalkan barang di antrean Dispatched.
+ * Status diubah menjadi 'cancelled' sehingga tidak masuk ke list Kirim dan tidak hilang dari audit trail.
+ */
+export async function cancelDispatchedReport(
+  reportId: string,
+  reason: string,
+  user: { name: string; username?: string }
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cached = getCachedReports();
+    const target = cached.find((r) => r.id === reportId);
+    if (!target) {
+      return { success: false, message: 'Laporan barang tidak ditemukan' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const auditEntry: PengirimanAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: nowIso,
+      user_nama: user.name,
+      user_username: user.username || 'operator',
+      action: 'cancel',
+      keterangan: `Laporan di antrean Dispatched dibatalkan (Cancel). Alasan: ${reason || 'Dibatalkan oleh staf'}. Barang tidak dimasukkan ke pengiriman.`,
+      previous_data: { status: target.status },
+      new_data: { status: 'cancelled' },
+    };
+
+    const updated = cached.map((r) => {
+      if (r.id === reportId) {
+        return {
+          ...r,
+          status: 'cancelled' as const,
+          cancel_reason: reason || 'Dibatalkan dari antrean Dispatched',
+          cancelled_at: nowIso,
+          cancelled_by: user.name,
+          audit_logs: [auditEntry, ...(r.audit_logs || [])],
+          updated_at: nowIso,
+        };
+      }
+      return r;
+    });
+
+    saveReportsToCache(updated);
+
+    try {
+      await supabaseFetch(
+        'pengiriman_store_reports',
+        'PATCH',
+        {
+          status: 'cancelled',
+          updated_at: nowIso,
+        },
+        `id=eq.${reportId}`
+      );
+    } catch (e) {
+      console.warn('Sync cancel dispatched report ke Supabase:', e);
+    }
+
+    return {
+      success: true,
+      message: `Laporan ${reportId} berhasil dibatalkan (Status: Cancelled). Barang tidak masuk ke list kirim.`,
+    };
+  } catch (e: any) {
+    return { success: false, message: e.message || 'Gagal membatalkan laporan dispatched' };
   }
 }
 
