@@ -52,6 +52,8 @@ import {
 } from '../types';
 import { PenerimaanProductCardItem } from './penerimaan/PenerimaanProductCardItem';
 import { QcPengerjaanTab } from './penerimaan/QcPengerjaanTab';
+import { ProduksiSpreadsheetView } from './penerimaan/ProduksiSpreadsheetView';
+import { HitungUlangModal } from './penerimaan/HitungUlangModal';
 import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -183,12 +185,23 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // View Mode: 'card' (1 Kartu = 1 No. Surat Jalan) atau 'table' (1 Baris = 1 Varian)
-  const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
+  // Hitung Ulang Modal State
+  const [isHitungUlangModalOpen, setIsHitungUlangModalOpen] = useState<boolean>(false);
+  const [hitungUlangTargetKode, setHitungUlangTargetKode] = useState<string>('');
+  const [hitungUlangTargetTanggal, setHitungUlangTargetTanggal] = useState<string>('all');
+
+  const handleOpenHitungUlang = (kode?: string, tanggal?: string) => {
+    setHitungUlangTargetKode(kode || '');
+    setHitungUlangTargetTanggal(tanggal || 'all');
+    setIsHitungUlangModalOpen(true);
+  };
+
+  // View Mode: 'matrix' (Spreadsheet Excel Matrix), 'card' (1 Kartu = 1 No. Surat Jalan), atau 'table' (1 Baris = 1 Varian)
+  const [viewMode, setViewMode] = useState<'matrix' | 'card' | 'table'>(() => {
     try {
-      return (localStorage.getItem('wms_penerimaan_view_mode') as 'card' | 'table') || 'card';
+      return (localStorage.getItem('wms_penerimaan_view_mode') as 'matrix' | 'card' | 'table') || 'matrix';
     } catch {
-      return 'card';
+      return 'matrix';
     }
   });
   const [cardPage, setCardPage] = useState<number>(1);
@@ -1776,13 +1789,29 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           </div>
 
-          {/* View Mode Switcher: Kartu Produk per Surat Jalan vs Tabel */}
+          {/* View Mode Switcher: Spreadsheet Excel vs Kartu Produk vs Tabel Detail */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Mode Tampilan:
               </span>
-              <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('matrix');
+                    try { localStorage.setItem('wms_penerimaan_view_mode', 'matrix'); } catch {}
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    viewMode === 'matrix'
+                      ? 'bg-rose-500 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Format Spreadsheet Excel Produksi (Identik Google Sheets)"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>📊 Spreadsheet Excel (Master)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -1811,7 +1840,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   }`}
                 >
                   <List className="w-3.5 h-3.5" />
-                  <span>Tabel ({filteredData.length} Baris)</span>
+                  <span>Tabel Detail ({filteredData.length} Baris)</span>
                 </button>
               </div>
             </div>
@@ -1819,25 +1848,45 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <span className="hidden sm:inline">Format:</span>
               <span className="font-semibold text-slate-700 dark:text-slate-300">
-                {viewMode === 'card'
+                {viewMode === 'matrix'
+                  ? 'Master Spreadsheet: Grouping Kode, UP, Foto, Warna, Size, Matrix Tanggal & Kesimpulan'
+                  : viewMode === 'card'
                   ? '1 Surat Jalan berisi Kartu-Kartu Produk (1 Produk = 1 Kartu)'
                   : '1 Baris = 1 Varian Produk (Tabel Detail)'}
               </span>
             </div>
           </div>
 
-          {/* Conditional View: Card vs Table */}
-          {viewMode === 'card' ? (
+          {/* Conditional View: Matrix Spreadsheet vs Card vs Table */}
+          {viewMode === 'matrix' ? (
+            <ProduksiSpreadsheetView
+              dataList={dataList}
+              productCatalog={productCatalog}
+              onOpenLightbox={(img) => setLightboxImage(img)}
+              onShowToast={onShowToast}
+              onOpenHitungUlang={handleOpenHitungUlang}
+            />
+          ) : viewMode === 'card' ? (
             /* Card View Layout: 1 Surat Jalan Container = Kumpulan Kartu Produk (1 Produk = 1 Kode Produk) */
             <div className="space-y-4">
               {/* Quick Toolbar for SJ Cards */}
               {suratJalanGroups.length > 0 && !isLoading && (
-                <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+                <div className="flex items-center justify-between px-1 text-xs text-slate-500 flex-wrap gap-2">
                   <span>
                     Menampilkan <strong className="text-slate-700 dark:text-slate-200">{paginatedCards.length}</strong> dari{' '}
                     <strong className="text-slate-700 dark:text-slate-200">{suratJalanGroups.length}</strong> Surat Jalan
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenHitungUlang()}
+                      className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-rose-200 dark:border-rose-800 cursor-pointer"
+                      title="Buka Lembar Verifikasi & Hitung Ulang Fisik"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Lembar Hitung Ulang</span>
+                    </button>
+                    <span>•</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -1953,6 +2002,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
                             {/* Action Buttons */}
                             <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenHitungUlang(group.items[0]?.kode_produksi, group.tanggal_penerimaan)}
+                                className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition cursor-pointer"
+                                title="Buka Lembar Verifikasi & Hitung Ulang Fisik SJ ini"
+                              >
+                                <Layers className="w-4 h-4" />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handlePrintSJ(group)}
@@ -2086,9 +2143,25 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           ) : (
             /* Unified Table */
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1 text-xs text-slate-500 flex-wrap gap-2">
+                <span>
+                  Menampilkan <strong className="text-slate-700 dark:text-slate-200">{filteredData.length}</strong> baris varian produk
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleOpenHitungUlang()}
+                  className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-rose-200 dark:border-rose-800 cursor-pointer"
+                  title="Buka Lembar Verifikasi & Hitung Ulang Fisik"
+                >
+                  <Layers className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Lembar Hitung Ulang Fisik</span>
+                </button>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider text-[11px]">
                     <th className="py-3 px-3.5">Tanggal</th>
@@ -2218,6 +2291,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
+                              onClick={() => handleOpenHitungUlang(row.kode_produksi, row.tanggal_penerimaan)}
+                              className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                              title="Buka Lembar Hitung Ulang untuk Kode ini"
+                            >
+                              <Layers className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handlePrintSJ(row.no_surat_jalan)}
                               disabled={isGeneratingPdf}
                               className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition cursor-pointer"
@@ -2309,6 +2390,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           </div>
         </div>
       </div>
+    </div>
           )}
         </div>
       )}
@@ -3508,6 +3590,35 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         onClose={() => setBarcodeModalTarget(null)}
         item={barcodeModalTarget}
         onNotify={(msg, type) => onShowToast(msg, type)}
+      />
+
+      {/* MODAL LEMBAR VERIFIKASI & HITUNG ULANG FISIK */}
+      <HitungUlangModal
+        isOpen={isHitungUlangModalOpen}
+        onClose={() => setIsHitungUlangModalOpen(false)}
+        dataList={dataList}
+        initialKodeProduksi={hitungUlangTargetKode}
+        initialTanggal={hitungUlangTargetTanggal}
+        onShowToast={onShowToast}
+        onApplyReCountToData={(updatedItems) => {
+          // Update in local state & database
+          setDataList((prev) => {
+            const next = prev.map((item) => {
+              const matched = updatedItems.find(
+                (u) =>
+                  u.kode_produksi === item.kode_produksi &&
+                  u.warna === item.warna &&
+                  u.size === item.size &&
+                  u.tanggal_penerimaan === item.tanggal_penerimaan
+              );
+              return matched ? { ...item, ...matched } : item;
+            });
+            try {
+              localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        }}
       />
     </div>
   );

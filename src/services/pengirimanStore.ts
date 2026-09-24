@@ -287,6 +287,7 @@ export async function savePengirimanStoreBatch(payload: {
     satuan: 'Pcs' | 'Koli';
     keterangan?: string;
     foto_barang?: string;
+    foto_urls?: string[];
   }>;
   foto_urls?: string[];
   pic_nama: string;
@@ -301,7 +302,7 @@ export async function savePengirimanStoreBatch(payload: {
     const nowIso = new Date().toISOString();
 
     // Kelompokkan items per store_tujuan
-    const storeGroups: Record<string, PengirimanStoreItem[]> = {};
+    const storeGroups: Record<string, (PengirimanStoreItem & { _item_photos?: string[] })[]> = {};
 
     payload.items.forEach((item, idx) => {
       const storeName = item.store_tujuan?.trim() || 'Store Belum Ditentukan';
@@ -323,6 +324,7 @@ export async function savePengirimanStoreBatch(payload: {
         hitung_koli: hitungKoli,
         keterangan: item.keterangan || '',
         foto_barang: item.foto_barang || '',
+        _item_photos: item.foto_urls || (item.foto_barang ? [item.foto_barang] : []),
       });
     });
 
@@ -334,22 +336,25 @@ export async function savePengirimanStoreBatch(payload: {
       const totalKoli = itemsForStore.reduce((acc, curr) => acc + curr.hitung_koli, 0);
       const reportId = generateReportId();
 
-      // Kumpulkan foto spesifik hanya untuk store tujuan ini
+      // Kumpulkan foto spesifik HANYA milik store tujuan ini
       const storePhotos = Array.from(
         new Set([
-          ...itemsForStore.flatMap((it) => (it.foto_barang ? [it.foto_barang] : [])),
+          ...itemsForStore.flatMap((it) => it._item_photos || []),
           ...(payload.foto_urls && stores.length === 1 ? payload.foto_urls : []),
         ])
-      );
+      ).filter(Boolean);
+
+      // Hapus properti internal _item_photos sebelum disimpan
+      const sanitizedItems: PengirimanStoreItem[] = itemsForStore.map(({ _item_photos, ...rest }) => rest);
 
       const rep: PengirimanStoreReport = {
         id: reportId,
         store_tujuan: storeName,
         tanggal_laporan: timestampLaporan,
-        items: itemsForStore,
-        total_item_count: itemsForStore.length,
+        items: sanitizedItems,
+        total_item_count: sanitizedItems.length,
         total_koli: totalKoli,
-        foto_urls: storePhotos.length > 0 ? storePhotos : payload.foto_urls || [],
+        foto_urls: storePhotos,
         pic_nama: payload.pic_nama,
         pic_username: payload.pic_username,
         status: 'dispatched',

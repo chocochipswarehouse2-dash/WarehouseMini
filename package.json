@@ -21,6 +21,7 @@
     "canvas-confetti": "^1.9.4",
     "date-fns": "^4.4.0",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.12.3",

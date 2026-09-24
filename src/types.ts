@@ -508,6 +508,8 @@ export interface PenerimaanProduksiItem {
   warna: string;
   size: string;
   qty: number;
+  qty_retur?: number;
+  tanggal_retur?: string;
   foto_url?: string;
   keterangan?: string;
   operator: string;

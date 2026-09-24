@@ -182,8 +182,22 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
       setUpTujuan('Warehouse');
     } else if (kategoriProduk === 'Mutasi Antar Store') {
       setIsCustomUpTujuan(false);
-      const otherStore = stores.find((s) => s.nama !== selectedStore);
-      setUpTujuan(otherStore ? otherStore.nama : 'Store Tujuan');
+      setUpTujuan((prev) => {
+        // Pertahankan jika user sudah memilih store tujuan yang valid dan bukan asal store
+        if (
+          prev &&
+          prev !== 'Warehouse' &&
+          prev !== 'Store Tujuan' &&
+          prev !== 'GA (General Affair)' &&
+          prev !== 'Finance/Accounting' &&
+          prev !== selectedStore &&
+          stores.some((s) => s.nama === prev)
+        ) {
+          return prev;
+        }
+        const otherStore = stores.find((s) => s.nama !== selectedStore);
+        return otherStore ? otherStore.nama : 'Store Tujuan';
+      });
     } else {
       // Jika kategori kustom baru ditambahkan oleh user
       setIsCustomUpTujuan(false);
@@ -552,6 +566,7 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
               satuan: (item.satuanQty === 'Koli' ? 'Koli' : 'Pcs') as 'Pcs' | 'Koli',
               keterangan: `[Penerimaan Mutasi Antar Store dari ${selectedStore}] ${item.keterangan || ''}`.trim(),
               foto_barang: item.fotoUrls && item.fotoUrls.length > 0 ? item.fotoUrls[0] : '',
+              foto_urls: item.fotoUrls || [],
             }));
 
             const dispatchRes = await savePengirimanStoreBatch({
