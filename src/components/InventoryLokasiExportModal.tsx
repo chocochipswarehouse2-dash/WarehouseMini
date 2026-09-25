@@ -36,6 +36,12 @@ import {
   Hash,
 } from 'lucide-react';
 import { StockRealtimeItem, ProductItem, UserSession } from '../types';
+import {
+  resolveProductName,
+  resolveProductDisplaySize,
+  extractSizeFromSku,
+  cleanProductName,
+} from '../utils/sortUtils';
 
 export interface LocationStockItem {
   sku: string;
@@ -267,9 +273,143 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
     return map;
   }, [stockList]);
 
-  // Map of Location Items Grouped By Location
+  // Comprehensive catalog dictionary (including props + local storage caches)
+  const masterProductLookup = useMemo(() => {
+    const map = new Map<string, { nama: string; size: string; rawItem?: any }>();
+    const prefixMap = new Map<string, string>(); // maps prefix (e.g. F26ITN806) to base name
+
+    const addEntry = (rawSku?: string, rawName?: string, rawSize?: string, itemObj?: any) => {
+      const sku = (rawSku || '').trim().toUpperCase();
+      if (!sku) return;
+      const cleanName = cleanProductName((rawName || '').trim());
+      const isNameValid =
+        cleanName &&
+        cleanName.toUpperCase() !== sku &&
+        cleanName.toUpperCase().replace(/\s+/g, '') !== sku.replace(/\s+/g, '');
+      const size = (rawSize || '').trim();
+
+      if (isNameValid) {
+        if (!map.has(sku) || !map.get(sku)?.nama) {
+          map.set(sku, { nama: cleanName, size, rawItem: itemObj });
+        }
+        // Also map stripped / normalized SKU
+        const noPunct = sku.replace(/[\s-_]+/g, '');
+        if (!map.has(noPunct)) {
+          map.set(noPunct, { nama: cleanName, size, rawItem: itemObj });
+        }
+        // Save prefix (e.g. first 9-10 chars or without last size letter)
+        if (sku.length >= 7) {
+          const prefix2 = sku.slice(0, -2);
+          if (!prefixMap.has(prefix2)) prefixMap.set(prefix2, cleanName);
+          const prefix1 = sku.slice(0, -1);
+          if (!prefixMap.has(prefix1)) prefixMap.set(prefix1, cleanName);
+        }
+      } else if (!map.has(sku)) {
+        map.set(sku, { nama: '', size, rawItem: itemObj });
+      }
+    };
+
+    // A. From productCatalog prop
+    if (Array.isArray(productCatalog)) {
+      productCatalog.forEach((p) => {
+        addEntry(p.k, p.p || p.n || (p as any).nama_produk || (p as any).nama, p.s, p);
+      });
+    }
+
+    // B. From localStorage product caches
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const cacheKeys = [
+        'wms_product_cache',
+        'wms_master_produk',
+        'wms_dealpos_products',
+        'wms_catalog_cache',
+        'wms_offline_products',
+      ];
+      for (const k of cacheKeys) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((it: any) => {
+                const sku = it.k || it.sku || it.kode || it.barcode;
+                const name = it.p || it.n || it.nama_produk || it.nama || it.product_name;
+                const size = it.s || it.size || it.ukuran;
+                addEntry(sku, name, size, it);
+              });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    return { map, prefixMap };
+  }, [productCatalog]);
+
+  // Map of Location Items Grouped By Location with guaranteed resolved Product Names & Sizes
   const itemsByLocation = useMemo(() => {
     const result = new Map<string, LocationStockItem[]>();
+
+    const resolveBestName = (sku: string, rawName?: string): string => {
+      const cleanSku = (sku || '').trim().toUpperCase();
+      const cleanRaw = cleanProductName((rawName || '').trim());
+      const isRawValid =
+        cleanRaw &&
+        cleanRaw.toUpperCase() !== cleanSku &&
+        cleanRaw.toUpperCase().replace(/\s+/g, '') !== cleanSku.replace(/\s+/g, '');
+
+      // 1. Direct match in master catalog lookup
+      const cat =
+        masterProductLookup.map.get(cleanSku) ||
+        masterProductLookup.map.get(cleanSku.replace(/[\s-_]+/g, ''));
+      if (cat?.nama) {
+        return cat.nama;
+      }
+
+      // 2. Existing record name if valid
+      if (isRawValid) {
+        return cleanRaw;
+      }
+
+      // 3. Check resolveProductName utility
+      const resolved = resolveProductName(cleanSku, rawName, cat?.rawItem);
+      if (
+        resolved &&
+        resolved.toUpperCase() !== cleanSku &&
+        resolved.toUpperCase().replace(/\s+/g, '') !== cleanSku.replace(/\s+/g, '')
+      ) {
+        return resolved;
+      }
+
+      // 4. Prefix fallback (e.g. F26ITN806 from F26ITN806YL)
+      if (cleanSku.length >= 7) {
+        const p2 = masterProductLookup.prefixMap.get(cleanSku.slice(0, -2));
+        if (p2) return p2;
+        const p1 = masterProductLookup.prefixMap.get(cleanSku.slice(0, -1));
+        if (p1) return p1;
+      }
+
+      return isRawValid ? cleanRaw : cleanSku;
+    };
+
+    const resolveBestSize = (sku: string, rawSize?: string): string => {
+      const cleanSku = (sku || '').trim().toUpperCase();
+      const cat =
+        masterProductLookup.map.get(cleanSku) ||
+        masterProductLookup.map.get(cleanSku.replace(/[\s-_]+/g, ''));
+      const resolved = resolveProductDisplaySize(cleanSku, rawSize, cat?.size);
+      if (resolved && resolved.toUpperCase() !== 'DEFAULT' && resolved !== '-') {
+        return resolved;
+      }
+      const fromSku = extractSizeFromSku(cleanSku);
+      if (fromSku && fromSku !== '-' && fromSku.toUpperCase() !== 'DEFAULT') {
+        return fromSku;
+      }
+      if (rawSize && rawSize.toUpperCase() !== 'DEFAULT' && rawSize !== '-') {
+        return rawSize;
+      }
+      return 'ALL';
+    };
 
     selectedLocations.forEach((targetLoc) => {
       const locKey = targetLoc.trim();
@@ -287,15 +427,30 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
         if (!sku) return;
 
         const qty = Number(s.sisa_stok || s.qty || 0);
+        const resolvedName = resolveBestName(sku, s.nama_produk || s.nama);
+        const resolvedSize = resolveBestSize(sku, s.size || s.ukuran);
+
         const existing = itemMap.get(sku);
         if (existing) {
           existing.qty += qty;
           if (!existing.area && s.area) existing.area = s.area;
+          if (
+            (!existing.nama_produk || existing.nama_produk === existing.sku) &&
+            resolvedName !== sku
+          ) {
+            existing.nama_produk = resolvedName;
+          }
+          if (
+            (!existing.size || existing.size === '-' || existing.size === 'ALL') &&
+            resolvedSize !== 'ALL'
+          ) {
+            existing.size = resolvedSize;
+          }
         } else {
           itemMap.set(sku, {
             sku,
-            nama_produk: s.nama_produk || s.nama || '',
-            size: s.size || s.ukuran || '-',
+            nama_produk: resolvedName,
+            size: resolvedSize,
             lokasi: locKey,
             area: s.area || '',
             qty,
@@ -311,10 +466,24 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
           const sku = String(p.k || '').trim().toUpperCase();
           if (!sku) return;
 
+          const catName = p.n || p.p || (p as any).nama_produk || (p as any).nama || '';
+          const resolvedName = resolveBestName(sku, catName);
+          const resolvedSize = resolveBestSize(sku, p.s);
+
           const inMap = itemMap.get(sku);
           if (inMap) {
-            if (!inMap.nama_produk) inMap.nama_produk = p.n || p.p || '';
-            if (!inMap.size || inMap.size === '-') inMap.size = p.s || '-';
+            if (
+              (!inMap.nama_produk || inMap.nama_produk === inMap.sku) &&
+              resolvedName !== sku
+            ) {
+              inMap.nama_produk = resolvedName;
+            }
+            if (
+              (!inMap.size || inMap.size === '-' || inMap.size === 'ALL') &&
+              resolvedSize !== 'ALL'
+            ) {
+              inMap.size = resolvedSize;
+            }
             return;
           }
 
@@ -331,8 +500,8 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
                     : parseInt(String(locEntry || '').split(':')[1], 10) || 0;
                 itemMap.set(sku, {
                   sku,
-                  nama_produk: p.n || p.p || '',
-                  size: p.s || '-',
+                  nama_produk: resolvedName,
+                  size: resolvedSize,
                   lokasi: locKey,
                   area: '',
                   qty,
@@ -353,7 +522,7 @@ export const InventoryLokasiExportModal: React.FC<InventoryLokasiExportModalProp
     });
 
     return result;
-  }, [selectedLocations, stockList, productCatalog, globalStockBySku]);
+  }, [selectedLocations, stockList, productCatalog, globalStockBySku, masterProductLookup]);
 
   // Flat Combined Items Across all selected locations
   const allSelectedLocationItems = useMemo(() => {

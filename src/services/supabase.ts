@@ -5716,75 +5716,8 @@ export async function upsertRosterShiftForCuti(cuti: PerijinanCutiRecord): Promi
 }
 
 // ------------------------------------------------------------
-// MODUL QUALITY CONTROL (QC) - FETCH, SAVE, DELETE DENGAN DUAL-LAYER CLOUD SYNC
+// MODUL QUALITY CONTROL (QC) - FETCH, SAVE, DELETE DENGAN DEDICATED TABLE
 // ------------------------------------------------------------
-
-/**
- * Konversi objek QcReport menjadi format baris log_produk (type='QC_INSPEKSI')
- * Sebagai fallback handal jika tabel dedicated qc_reports belum dieksekusi di Supabase.
- */
-function qcReportToLogProduk(report: QcReport): any {
-  return {
-    type: 'QC_INSPEKSI',
-    invoice: report.report_no,
-    sku: report.sku || report.kode_produksi || 'QC-ITEM',
-    nama_produk: report.nama_produk || report.sku || 'QC Produk',
-    size: report.size || '-',
-    area: 'QC',
-    lokasi: report.lokasi_barang || 'Area QC',
-    qty: Math.max(1, Number(report.qty_diperiksa) || 1),
-    operator: report.pic_qc || 'Operator QC',
-    keterangan: [
-      `Status: ${report.status}`,
-      report.sumber_batch ? `Sumber: ${report.sumber_batch}` : '',
-      report.kategori_rusak ? `Kerusakan: ${report.kategori_rusak}` : '',
-      report.detail_kerusakan || '',
-      report.catatan || '',
-    ].filter(Boolean).join(' | '),
-    raw_payload: JSON.stringify(report),
-    created_at: report.created_at || new Date().toISOString(),
-  };
-}
-
-/**
- * Parse baris log_produk (type='QC_INSPEKSI') kembali ke objek QcReport
- */
-function logProdukToQcReport(log: any): QcReport | null {
-  if (!log) return null;
-  if (log.raw_payload) {
-    try {
-      const parsed = JSON.parse(log.raw_payload);
-      if (parsed && (parsed.report_no || parsed.sku)) {
-        return {
-          ...parsed,
-          id: log.id || parsed.id,
-          created_at: parsed.created_at || log.created_at,
-        };
-      }
-    } catch {}
-  }
-
-  // Fallback rekonstruksi jika raw_payload tidak valid
-  const ket = log.keterangan || '';
-  const isReject = ket.includes('REJECT') || log.type === 'REJECT';
-  return {
-    id: log.id,
-    report_no: log.invoice || `QC-LOG-${log.id}`,
-    tanggal: log.created_at || new Date().toISOString(),
-    sku: log.sku,
-    nama_produk: log.nama_produk,
-    size: log.size || '-',
-    sumber_batch: 'Gudang Fisik',
-    status: isReject ? 'REJECT' : 'OKE',
-    qty_diperiksa: Number(log.qty) || 1,
-    qty_oke: isReject ? 0 : Number(log.qty) || 1,
-    qty_reject: isReject ? Number(log.qty) || 1 : 0,
-    foto_urls: [],
-    catatan: ket,
-    pic_qc: log.operator || 'Operator QC',
-    created_at: log.created_at,
-  };
-}
 
 let memoryQcReportsCache: QcReport[] | null = null;
 let memoryQcReportsLastFetch = 0;
@@ -5795,9 +5728,8 @@ export function invalidateQcReportsCache(): void {
 }
 
 /**
- * Memuat seluruh riwayat laporan QC dari Supabase (dengan in-memory & local cache).
- * Menggabungkan tabel 'qc_reports' dan fallback 'log_produk' (type='QC_INSPEKSI')
- * sehingga laporan dapat langsung terlihat oleh semua user/admin di seluruh perangkat.
+ * Memuat seluruh riwayat laporan QC dari Supabase (tabel dedicated 'qc_reports' & local cache).
+ * Laporan QC terisolasi dan TIDAK masuk ke Mutasi Log (log_produk).
  */
 export async function fetchQcReportsFromSupabase(forceRefresh = false): Promise<QcReport[]> {
   // 1. In-memory cache check (fresh within 5 minutes)
@@ -5821,45 +5753,30 @@ export async function fetchQcReportsFromSupabase(forceRefresh = false): Promise<
 
   const mergedMap = new Map<string, QcReport>();
 
-  // 2. Ambil dari tabel dedicated qc_reports & fallback log_produk secara paralel untuk performa cepat
+  // 3. Ambil dari tabel dedicated qc_reports
   try {
-    const [qcRes, logRes] = await Promise.allSettled([
-      supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, 'order=created_at.desc&limit=2000'),
-      supabaseFetch<any[]>('log_produk', 'GET', undefined, 'type=eq.QC_INSPEKSI&order=created_at.desc&limit=2000'),
-    ]);
-
-    if (qcRes.status === 'fulfilled' && Array.isArray(qcRes.value)) {
-      for (const item of qcRes.value) {
+    const qcRes = await supabaseFetch<QcReport[]>('qc_reports', 'GET', undefined, 'order=created_at.desc&limit=2000');
+    if (Array.isArray(qcRes)) {
+      for (const item of qcRes) {
         if (item && item.report_no) {
           mergedMap.set(item.report_no, item);
         }
       }
     }
-
-    if (logRes.status === 'fulfilled' && Array.isArray(logRes.value)) {
-      for (const row of logRes.value) {
-        const parsed = logProdukToQcReport(row);
-        if (parsed && parsed.report_no && !mergedMap.has(parsed.report_no)) {
-          mergedMap.set(parsed.report_no, parsed);
-        }
-      }
-    }
   } catch (err) {
-    console.warn('Gagal memuat QC reports secara paralel dari Supabase:', err);
+    console.warn('Gagal memuat QC reports dari Supabase:', err);
   }
 
-  // Jika berhasil mengambil data dari server, jadikan data server sebagai sumber kebenaran (authoritative)
-  // namun pertahankan data offline/pending (id > 1000000000)
-  
-    const remoteReportNos = new Set(Array.from(mergedMap.keys()));
-    const offlinePending = localData.filter((r) => 
-      typeof r.id === 'number' && r.id > 1000000000 && !remoteReportNos.has(r.report_no)
-    );
+  // Gabungkan dengan data lokal offline jika ada
+  const remoteReportNos = new Set(Array.from(mergedMap.keys()));
+  const offlinePending = localData.filter((r) => 
+    typeof r.id === 'number' && r.id > 1000000000 && !remoteReportNos.has(r.report_no)
+  );
 
-    for (const offline of offlinePending) {
-      mergedMap.set(offline.report_no, offline);
-    }
-  
+  for (const offline of offlinePending) {
+    mergedMap.set(offline.report_no, offline);
+  }
+
   const finalResults = Array.from(mergedMap.values()).sort(
     (a, b) => new Date(b.created_at || b.tanggal || 0).getTime() - new Date(a.created_at || a.tanggal || 0).getTime()
   );
@@ -5894,20 +5811,17 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
   });
 
   let savedBatch: QcReport[] = [...preparedReports];
-  let insertedToSupabase = false;
 
-  // Jalur 1: Coba simpan ke tabel dedicated qc_reports
+  // Simpan ke tabel dedicated qc_reports (tidak masuk ke log_produk / Mutasi Log)
   try {
     const res = await supabaseFetch<QcReport[]>('qc_reports', 'POST', preparedReports, '', true);
     if (res && Array.isArray(res) && res.length > 0) {
       savedBatch = res;
-      insertedToSupabase = true;
     }
   } catch (err: any) {
     const errMsg = String(err?.message || err);
     console.warn('Gagal insert ke dedicated qc_reports, mencoba adaptasi skema:', errMsg);
 
-    // Jika tabel ada tapi kolom tidak sesuai (misal tipe_identifikasi/kode_produksi)
     if (!errMsg.includes('404') && !errMsg.includes('PGRST205')) {
       try {
         const sanitized = preparedReports.map((r) => {
@@ -5921,7 +5835,6 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
         const res2 = await supabaseFetch<QcReport[]>('qc_reports', 'POST', sanitized, '', true);
         if (res2 && Array.isArray(res2) && res2.length > 0) {
           savedBatch = res2;
-          insertedToSupabase = true;
         }
       } catch (err2) {
         console.warn('Percobaan adaptasi skema qc_reports gagal:', err2);
@@ -5929,30 +5842,7 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
     }
   }
 
-  // Jalur 2: Fallback penyimpanan Cloud langsung ke 'log_produk' (type='QC_INSPEKSI')
-  // Menjamin data 100% tersimpan di Supabase walau tabel dedicated belum dibuat!
-  if (!insertedToSupabase) {
-    try {
-      const logRows = preparedReports.map(qcReportToLogProduk);
-      const resLog = await supabaseFetch<any[]>('log_produk', 'POST', logRows, '', true);
-      if (resLog && Array.isArray(resLog) && resLog.length > 0) {
-        insertedToSupabase = true;
-        console.log(`Berhasil menyimpan ${resLog.length} laporan QC ke Supabase via cloud log (QC_INSPEKSI)`);
-      }
-    } catch (errLog) {
-      console.warn('Percobaan batch log_produk gagal, mencoba per baris:', errLog);
-      for (const rep of preparedReports) {
-        try {
-          await supabaseFetch<any[]>('log_produk', 'POST', [qcReportToLogProduk(rep)], '', true);
-          insertedToSupabase = true;
-        } catch (singleErr) {
-          console.error('Gagal simpan baris QC ke log_produk:', singleErr);
-        }
-      }
-    }
-  }
-
-  // Jalur 3: Update local cache
+  // Update local cache
   try {
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
     let list: QcReport[] = cachedStr ? JSON.parse(cachedStr) : [];
@@ -5962,7 +5852,7 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
     localStorage.setItem('wms_local_qc_reports', JSON.stringify(list));
   } catch {}
 
-  // Jalur 4: Dispatch event agar komponen lain update secara reaktif
+  // Dispatch event agar komponen lain update secara reaktif
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(new CustomEvent('wms_qc_reports_updated', { detail: savedBatch }));
@@ -5973,13 +5863,11 @@ export async function saveQcReportsBatchToSupabase(reports: QcReport[]): Promise
 }
 
 /**
- * Update data laporan QC di Supabase (baik di tabel qc_reports maupun log_produk)
+ * Update data laporan QC di Supabase (tabel dedicated qc_reports)
  */
 export async function updateQcReportInSupabase(updatedReport: QcReport): Promise<boolean> {
   const reportNo = updatedReport.report_no;
   if (!reportNo) return false;
-
-  let updatedInSupabase = false;
 
   // 1. Coba update ke tabel dedicated qc_reports
   try {
@@ -6008,15 +5896,12 @@ export async function updateQcReportInSupabase(updatedReport: QcReport): Promise
       updated_at: new Date().toISOString(),
     };
 
-    const res = await supabaseFetch(
+    await supabaseFetch(
       'qc_reports',
       'PATCH',
       payload,
       `report_no=eq.${encodeURIComponent(reportNo)}`
     );
-    if (res !== null) {
-      updatedInSupabase = true;
-    }
   } catch (err: any) {
     const errMsg = String(err?.message || err);
     if (!errMsg.includes('404') && !errMsg.includes('PGRST205')) {
@@ -6048,23 +5933,11 @@ export async function updateQcReportInSupabase(updatedReport: QcReport): Promise
           sanitized,
           `report_no=eq.${encodeURIComponent(reportNo)}`
         );
-        updatedInSupabase = true;
       } catch (errSanitize) {}
     }
   }
 
-  // 2. Update juga di log_produk jika tersimpan via fallback QC_INSPEKSI
-  try {
-    const logPayload = qcReportToLogProduk(updatedReport);
-    await supabaseFetch(
-      'log_produk',
-      'PATCH',
-      logPayload,
-      `type=eq.QC_INSPEKSI&invoice=eq.${encodeURIComponent(reportNo)}`
-    );
-  } catch (errLog) {}
-
-  // 3. Update cache lokal
+  // 2. Update cache lokal
   try {
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
     if (cachedStr) {
@@ -6079,7 +5952,7 @@ export async function updateQcReportInSupabase(updatedReport: QcReport): Promise
     }
   } catch {}
 
-  // 4. Dispatch update event
+  // 3. Dispatch update event
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(
@@ -6092,7 +5965,7 @@ export async function updateQcReportInSupabase(updatedReport: QcReport): Promise
 }
 
 /**
- * Hapus laporan QC dari Supabase (baik di tabel qc_reports maupun log_produk)
+ * Hapus laporan QC dari Supabase (tabel dedicated qc_reports)
  * Serta secara otomatis menghapus tiket perbaikan/defect terkait (Cascade Delete)
  */
 export async function deleteQcReportFromSupabase(
@@ -6156,13 +6029,7 @@ export async function deleteQcReportFromSupabase(
     } catch (err) {}
   }
 
-  // 3. Hapus juga dari log_produk jika tersimpan via fallback QC_INSPEKSI
-  try {
-    const logQuery = `type=eq.QC_INSPEKSI&invoice=eq.${encodeURIComponent(sReportNo)}`;
-    await supabaseFetch('log_produk', 'DELETE', undefined, logQuery);
-  } catch (err) {}
-
-  // 4. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari Supabase
+  // 3. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari Supabase
   try {
     await supabaseFetch(
       'perbaikan_tickets',
@@ -6187,7 +6054,7 @@ export async function deleteQcReportFromSupabase(
     }
   }
 
-  // 5. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari local cache
+  // 4. CASCADE DELETE: Hapus tiket perbaikan & defect terkait dari local cache
   try {
     const cachedTickets = localStorage.getItem('wms_local_perbaikan_tickets');
     if (cachedTickets) {
@@ -6202,27 +6069,22 @@ export async function deleteQcReportFromSupabase(
     }
   } catch {}
 
-  // 6. Hapus dari cache lokal QC
+  // 5. Hapus dari cache lokal QC
   try {
     const cachedStr = localStorage.getItem('wms_local_qc_reports');
     if (cachedStr) {
       const list: QcReport[] = JSON.parse(cachedStr);
-      const filtered = list.filter((r) => {
-        if (r.report_no && r.report_no === sReportNo) return false;
-        if (targetId && r.id === targetId) return false;
-        if (r.id && String(r.id) === sReportNo) return false;
-        return true;
-      });
+      const filtered = list.filter((r) => r.report_no !== sReportNo && (!targetId || r.id !== targetId));
       localStorage.setItem('wms_local_qc_reports', JSON.stringify(filtered));
     }
   } catch {}
 
-  // 7. Dispatch event ke window agar LaporanQcView dan PerbaikanView ter-refresh seketika
+  // 6. Dispatch delete event
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(
         new CustomEvent('wms_qc_reports_updated', {
-          detail: { deleted: sReportNo, deletedTicketNo: linkedTicketNo },
+          detail: { deletedReportNo: sReportNo, deletedTicketNo: linkedTicketNo },
         })
       );
       window.dispatchEvent(

@@ -193,9 +193,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setFetchError(null);
     try {
       const data = await fetchRecentLogs();
+      const filtered = (data || []).filter(
+        (item) => item && item.type !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
+      );
       // Deduplicate by ID
       const unique = Array.from(
-        new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
+        new Map(filtered.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
       );
       setLogs(unique);
     } catch (e: any) {
@@ -215,8 +218,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setFetchError(null);
     try {
       const data = await fetchRecentLogs();
+      const filtered = (data || []).filter(
+        (item) => item && item.type !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
+      );
       const unique = Array.from(
-        new Map(data.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
+        new Map(filtered.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
       );
       setLogs(unique);
       if (onNotify) onNotify(`Muat ulang penuh selesai — ${unique.length} baris dimuat.`, 'success');
@@ -236,16 +242,19 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setIsServerSearching(true);
     try {
       const data = await fetchLogsBySearch(searchQuery.trim(), 1000);
-      if (data && data.length > 0) {
+      const filteredData = (data || []).filter(
+        (item) => item && item.type !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
+      );
+      if (filteredData && filteredData.length > 0) {
         // Merge with existing logs and deduplicate
-        const merged = [...logs, ...data];
+        const merged = [...logs, ...filteredData];
         const unique = Array.from(
           new Map(merged.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
         );
         // Sort descending by created_at
         unique.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setLogs(unique);
-        if (onNotify) onNotify(`Ditemukan ${data.length} hasil dari server.`, 'success');
+        if (onNotify) onNotify(`Ditemukan ${filteredData.length} hasil dari server.`, 'success');
       } else {
         if (onNotify) onNotify('Tidak ditemukan hasil tambahan di database.', 'info');
       }
@@ -283,6 +292,9 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   // Filtered logs
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
+      // Ignore QC inspections or non-inventory logs
+      if (log.type === 'QC_INSPEKSI' || String(log.type).startsWith('QC_')) return false;
+
       // Source Filter (Scan via WA vs Scan via Web App)
       if (sourceFilter !== 'ALL') {
         const src = getLogSource(log);
