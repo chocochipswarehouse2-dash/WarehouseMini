@@ -56,6 +56,7 @@ import {
   isWarehouseLocation,
   supabaseFetch,
   insertPickingListRowsToSupabase,
+  isDummyProduct,
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import {
@@ -63,7 +64,18 @@ import {
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
-import { sortAlphabeticalAndSize, fuzzySearchMultiple, fuzzySearch, partialSearchMatch, extractSizeFromSku, formatProductNameWithSize } from '../utils/sortUtils';
+import {
+  sortAlphabeticalAndSize,
+  fuzzySearchMultiple,
+  fuzzySearch,
+  partialSearchMatch,
+  extractSizeFromSku,
+  formatProductNameWithSize,
+  cleanProductName,
+  resolveProductName,
+  resolveProductDisplaySize,
+} from '../utils/sortUtils';
+import { isCorruptedSku } from '../utils/anomalyUtils';
 import { isSuperadmin, hasPermission } from '../services/permissions';
 
 interface ProductLocationInfo {
@@ -500,16 +512,29 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const skuMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
     const nameMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
 
+    // Fast indexed catalog dictionary
+    const catDict = new Map<string, ProductItem>();
+    (productCatalog || []).forEach((p) => {
+      if (!p || isDummyProduct(p)) return;
+      const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      if (!k || isCorruptedSku(k)) return;
+      catDict.set(k, p);
+    });
+
     // 1. Process ChannelStocks first (direct realtime from stok_real_fisik)
     channelStocks.forEach((cs) => {
       const skuUpper = (cs.sku || '').toUpperCase().trim();
-      if (!skuUpper) return;
+      if (!skuUpper || isCorruptedSku(skuUpper) || isDummyProduct({ k: skuUpper, p: cs.produk } as any)) return;
+      
+      const catItem = catDict.get(skuUpper);
+      const cleanName = resolveProductName(skuUpper, cs.produk, catItem);
+      const cleanSize = resolveProductDisplaySize(skuUpper, cs.size, catItem?.s) || 'ALL';
+
       const total = typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0));
-      const effectiveSize = (cs.size && cs.size !== 'ALL' && cs.size !== '-') ? cs.size : extractSizeFromSku(cs.sku);
       const itemData = {
-        sku: cs.sku,
-        produk: cs.produk || cs.sku,
-        size: effectiveSize && effectiveSize !== '-' ? effectiveSize : (cs.size || 'ALL'),
+        sku: skuUpper,
+        produk: cleanName,
+        size: cleanSize,
         lokasi: cs.whLocStr || cs.locStr || 'Warehouse',
         stok: Math.max(0, total),
         whQty: cs.whQty || 0,
@@ -525,19 +550,21 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     });
 
     // 2. Merge with productCatalog (from master_produk / catalog)
-    const combinedCatalog = productCatalog;
-    combinedCatalog.forEach((p) => {
-      const skuUpper = (p.k || '').toUpperCase().trim();
-      if (!skuUpper) return;
+    (productCatalog || []).forEach((p) => {
+      if (!p || isDummyProduct(p)) return;
+      const skuUpper = (p.k || (p as any).sku || '').toUpperCase().trim();
+      if (!skuUpper || isCorruptedSku(skuUpper)) return;
       
-      const effectiveSize = (p.s && p.s !== 'ALL' && p.s !== '-') ? p.s : extractSizeFromSku(p.k || '');
+      const cleanName = resolveProductName(skuUpper, p.p, p);
+      const cleanSize = resolveProductDisplaySize(skuUpper, p.s) || 'ALL';
+
       const existing = skuMap.get(skuUpper);
       if (existing) {
-        if (existing.produk === skuUpper && p.p && p.p !== skuUpper) {
-          existing.produk = p.p;
+        if ((existing.produk === skuUpper || existing.produk.length > cleanName.length) && cleanName !== skuUpper) {
+          existing.produk = cleanName;
         }
-        if ((!existing.size || existing.size === 'ALL' || existing.size === '-') && effectiveSize && effectiveSize !== '-') {
-          existing.size = effectiveSize;
+        if ((!existing.size || existing.size === 'ALL' || existing.size === '-') && cleanSize !== 'ALL') {
+          existing.size = cleanSize;
         }
         return;
       }
@@ -550,9 +577,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0)));
 
       const itemData = {
-        sku: p.k || '',
-        produk: p.p || p.k || '',
-        size: effectiveSize && effectiveSize !== '-' ? effectiveSize : (p.s || 'ALL'),
+        sku: skuUpper,
+        produk: cleanName,
+        size: cleanSize,
         lokasi: p.lokasi || 'Warehouse',
         stok: Math.max(0, stok || 0),
         whQty: 0,

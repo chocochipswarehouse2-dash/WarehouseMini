@@ -32,10 +32,13 @@ import {
   ShoppingBag,
   ExternalLink,
   Printer,
+  ShieldAlert,
 } from 'lucide-react';
 import { StockRealtimeItem, ProductItem, UserSession } from '../types';
 import { saveInventoryStocksToLocalDb, getAllInventoryStocksFromLocalDb } from '../services/localDb';
 import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
+import { InventoryAnomalyModal } from './InventoryAnomalyModal';
+import { isCorruptedSku, scanAnomalies } from '../utils/anomalyUtils';
 import {
   fetchAllStockRealtime,
   fetchSupabaseStokFisikDirect,
@@ -222,6 +225,15 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // Lokasi Export & Print PDF Modal State
   const [isLokasiExportModalOpen, setIsLokasiExportModalOpen] = useState<boolean>(false);
   const [selectedExportLocation, setSelectedExportLocation] = useState<string>('CC001');
+
+  // Anomaly Hub Diagnostics Modal State
+  const [isAnomalyModalOpen, setIsAnomalyModalOpen] = useState<boolean>(false);
+
+  // Scan anomalies from catalog & stock for badge counter
+  const anomalyItems = useMemo(() => {
+    return scanAnomalies(productCatalog, stockList);
+  }, [productCatalog, stockList]);
+  const anomalyCount = anomalyItems.length;
 
   const handleOpenLokasiExport = (locName?: string) => {
     if (locName) {
@@ -513,7 +525,19 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       const lokasi = String(sRow.lokasi || '').trim();
       const area = String(sRow.area || '').trim();
       const qty = Number(sRow.sisa_stok) || 0;
-      if (!sku || qty === 0 || isDummyProduct({ k: sku, p: sRow.nama_produk } as any) || sku.startsWith('#') || sku.includes('#') || sku.startsWith('*') || sku.startsWith('•') || sku === 'KOLI' || sku === 'BOX') return;
+      if (
+        !sku ||
+        qty === 0 ||
+        isCorruptedSku(sku) ||
+        isDummyProduct({ k: sku, p: sRow.nama_produk } as any) ||
+        sku.startsWith('#') ||
+        sku.includes('#') ||
+        sku.startsWith('*') ||
+        sku.startsWith('•') ||
+        sku === 'KOLI' ||
+        sku === 'BOX'
+      )
+        return;
 
       if (!skuStockMap[sku]) {
         skuStockMap[sku] = {
@@ -824,7 +848,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     productCatalog.forEach((item) => {
       if (!item || isDummyProduct(item)) return;
       const sku = String(item.k || item.sku || '').trim().toUpperCase();
-      if (!sku || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
+      if (!sku || isCorruptedSku(sku) || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
       seenSkus.add(sku);
       result.push(normalizeRow(item, sku, skuStockMap[sku]));
     });
@@ -2090,6 +2114,27 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               <MapPin className="w-3.5 h-3.5" />
               <Printer className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">LOKASI & PRINT</span>
+            </button>
+
+            {/* PUSAT DIAGNOSTIK & PERBAIKAN ANOMALI DATA */}
+            <button
+              type="button"
+              id="btnAnomalyModal"
+              onClick={() => setIsAnomalyModalOpen(true)}
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-none shadow-xs ${
+                anomalyCount > 0
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                  : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+              }`}
+              title="Pusat Diagnostik & Solusi Perbaikan Anomali Data"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ANOMALI DATA</span>
+              {anomalyCount > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-black bg-rose-600 text-white rounded-full leading-none animate-pulse">
+                  {anomalyCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -3383,6 +3428,20 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         currentLocations={currentLocations}
         session={session}
         onNotify={onNotify}
+      />
+
+      {/* ========================================================
+          MODAL PUSAT DIAGNOSTIK & PEMBERSIHAN ANOMALI DATA
+          ======================================================== */}
+      <InventoryAnomalyModal
+        isOpen={isAnomalyModalOpen}
+        onClose={() => setIsAnomalyModalOpen(false)}
+        productCatalog={productCatalog}
+        stockList={stockList}
+        userSession={session}
+        onDataFixed={() => {
+          loadStockData(true);
+        }}
       />
     </div>
   );

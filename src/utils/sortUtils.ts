@@ -150,14 +150,15 @@ export function formatProductNameWithSize(name: string, size?: string): string {
 }
 /**
  * Cleans up duplicated product names often found in bad legacy data 
- * e.g., "Narcissa Top Brown (S) - NARCISSA TOP BROWN (S) - NARCISSA..."
+ * e.g., "Genevive Shorts Black (M) - GENEVIVE SHORTS BLACK (M) - GENEVIVE SHORTS BLACK (M)"
+ * or "Narcissa Top Brown (S) - NARCISSA TOP BROWN (S) - NARCISSA..."
  * or nested repetitive size patterns like "Nami Shorts Black (Size: Nami Shorts Black (XXL))".
  */
 export function cleanProductName(name: string): string {
   if (!name) return '';
   let cleaned = name.trim();
 
-  // Strip (Size: ... anything ...) until balanced
+  // 1. Strip (Size: ... anything ...) until balanced
   while (cleaned.includes('(Size:')) {
     const idx = cleaned.indexOf('(Size:');
     let depth = 0;
@@ -180,15 +181,49 @@ export function cleanProductName(name: string): string {
     cleaned = cleaned.trim();
   }
 
-  const parts = cleaned.split(' - ');
-  if (parts.length > 1) {
-    const first = parts[0].trim().toLowerCase();
-    const second = parts[1].trim().toLowerCase();
-    if (first === second || second.startsWith(first) || first.startsWith(second)) {
-      cleaned = parts[0].trim();
+  // 2. Comprehensive deduplication of multi-segment repetitive names (e.g. A - A - A)
+  const separatorRegex = /\s*[-–—|]\s*/;
+  if (separatorRegex.test(cleaned)) {
+    const rawParts = cleaned.split(separatorRegex).map((p) => p.trim()).filter(Boolean);
+    if (rawParts.length > 1) {
+      // Normalizer helper: strips parentheses, spaces, punctuation, case
+      const normalizeSeg = (s: string) =>
+        s.toLowerCase().replace(/[\(\)\[\]\-_/]/g, ' ').replace(/\s+/g, ' ').trim();
+
+      const uniqueParts: string[] = [];
+      const seenNormalized: string[] = [];
+
+      for (const part of rawParts) {
+        const norm = normalizeSeg(part);
+        if (!norm) continue;
+
+        const isDuplicate = seenNormalized.some(
+          (seen) =>
+            seen === norm ||
+            (seen.length > 4 && norm.length > 4 && (seen.startsWith(norm) || norm.startsWith(seen)))
+        );
+
+        if (!isDuplicate) {
+          uniqueParts.push(part);
+          seenNormalized.push(norm);
+        }
+      }
+
+      if (uniqueParts.length > 0) {
+        // Prioritize segment with mixed case (Title Case) over ALL-CAPS
+        const mixedCasePart = uniqueParts.find((p) => /[A-Z]/.test(p) && /[a-z]/.test(p));
+        cleaned = mixedCasePart || uniqueParts[0];
+      }
     }
   }
-  return cleaned.replace(/\s{2,}/g, ' ').trim();
+
+  // 3. Remove trailing duplicate size parentheses (e.g. "(M) (M)" -> "(M)")
+  cleaned = cleaned.replace(/\s*\(([A-Z0-9/ ]+)\)\s*\(\1\)/gi, ' ($1)');
+
+  // 4. Remove redundant double whitespace
+  cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+
+  return cleaned;
 }
 
 /**

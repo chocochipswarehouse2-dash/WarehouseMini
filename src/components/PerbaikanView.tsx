@@ -53,10 +53,18 @@ import {
   recordPerbaikanStockMutation,
   getSupabaseClient,
   fetchSupabaseStokFisikDirect,
+  isDummyProduct,
 } from '../services/supabase';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { getUserPersonName, formatOperatorWithPersonName } from '../utils/userResolver';
 import { ThermalStickerModal, isLocationMatch } from './ThermalStickerModal';
+import {
+  cleanProductName,
+  resolveProductName,
+  resolveProductDisplaySize,
+  extractSizeFromSku,
+} from '../utils/sortUtils';
+import { isCorruptedSku } from '../utils/anomalyUtils';
 
 interface PerbaikanViewProps {
   session: UserSession | null;
@@ -476,7 +484,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     for (let i = 0; i < productCatalog.length; i++) {
       const p = productCatalog[i];
       if (p && p.k) {
-        map.set(p.k.toUpperCase().trim(), p);
+        const cleanSku = String(p.k).trim().toUpperCase();
+        if (!cleanSku || isCorruptedSku(cleanSku) || isDummyProduct(p)) continue;
+        map.set(cleanSku, p);
       }
     }
     return map;
@@ -493,12 +503,14 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     const result: ProductItem[] = [];
     for (let i = 0; i < productCatalog.length; i++) {
       const p = productCatalog[i];
-      if (!p) continue;
+      if (!p || !p.k) continue;
       const kUpper = p.k.toUpperCase();
+      if (isCorruptedSku(kUpper) || isDummyProduct(p)) continue;
+
       const pUpper = (p.p || p.n || '').toUpperCase();
       if (kUpper.includes(q) || pUpper.includes(q)) {
         result.push(p);
-        if (result.length >= 5) break; // Berhenti langsung begitu 5 item ditemukan
+        if (result.length >= 8) break; // Berhenti langsung begitu 8 item ditemukan
       }
     }
     return result;
@@ -534,16 +546,16 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
         if (tahap) {
           const skuKey = String(s.sku || '').trim().toUpperCase();
+          if (isCorruptedSku(skuKey)) return;
+
           const namaFromCatalog = catalogSkuMap.get(skuKey);
-          const rawNama = String(s.nama_produk || '').trim();
-          // Jika nama = SKU (artinya VIEW tidak ada nama), lookup dari katalog
-          const nama = (rawNama && rawNama.toUpperCase() !== skuKey)
-            ? rawNama
-            : (namaFromCatalog?.p || (namaFromCatalog?.nama_produk as string) || skuKey);
+          const nama = resolveProductName(skuKey, s.nama_produk, namaFromCatalog);
+          const size = resolveProductDisplaySize(skuKey, s.size, namaFromCatalog?.s) || s.size || '-';
+
           result.push({
             sku: s.sku,
             nama,
-            size: s.size,
+            size,
             lokasi: s.lokasi,
             qty: q,
             tahap,
@@ -556,7 +568,11 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     if (Array.isArray(productCatalog) && productCatalog.length > 0) {
       for (let i = 0; i < productCatalog.length; i++) {
         const p = productCatalog[i];
-        if (!p) continue;
+        if (!p || !p.k || isCorruptedSku(p.k) || isDummyProduct(p)) continue;
+
+        const cleanSku = String(p.k).trim().toUpperCase();
+        const cleanName = resolveProductName(cleanSku, p.p, p);
+        const cleanSize = resolveProductDisplaySize(cleanSku, p.s) || p.s || '-';
 
         if (Array.isArray(p.locList) && p.locList.length > 0) {
           p.locList.forEach((l) => {
@@ -569,10 +585,10 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
             if (tahap) {
               const already = result.some(
-                (r) => r.sku.toUpperCase() === p.k.toUpperCase() && r.lokasi.toUpperCase() === locStr && r.tahap === tahap
+                (r) => r.sku.toUpperCase() === cleanSku && r.lokasi.toUpperCase() === locStr && r.tahap === tahap
               );
               if (!already) {
-                result.push({ sku: p.k, nama: p.p || p.n || p.k, size: p.s, lokasi: locStr, qty: q > 0 ? q : 1, tahap });
+                result.push({ sku: cleanSku, nama: cleanName, size: cleanSize, lokasi: locStr, qty: q > 0 ? q : 1, tahap });
               }
             }
           });
@@ -599,10 +615,10 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
 
             if (tahap) {
               const already = result.some(
-                (r) => r.sku.toUpperCase() === p.k.toUpperCase() && r.lokasi.toUpperCase() === locStr && r.tahap === tahap
+                (r) => r.sku.toUpperCase() === cleanSku && r.lokasi.toUpperCase() === locStr && r.tahap === tahap
               );
               if (!already) {
-                result.push({ sku: p.k, nama: p.p || p.n || p.k, size: p.s, lokasi: locStr, qty: p.q && p.q > 0 ? p.q : 1, tahap });
+                result.push({ sku: cleanSku, nama: cleanName, size: cleanSize, lokasi: locStr, qty: p.q && p.q > 0 ? p.q : 1, tahap });
               }
             }
           });
@@ -611,7 +627,7 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     }
 
     return result;
-  }, [productCatalog, stokFisikList]);
+  }, [productCatalog, stokFisikList, catalogSkuMap]);
 
   // Statistics KPI
   const stats = useMemo(() => {

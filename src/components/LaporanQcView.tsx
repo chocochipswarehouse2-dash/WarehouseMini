@@ -56,12 +56,19 @@ import {
   updateQcReportInSupabase,
   savePerbaikanTicketToSupabase,
   QC_REPORTS_SUPABASE_DDL_SQL,
+  isDummyProduct,
 } from '../services/supabase';
 import { getAllProductsFromLocalDb } from '../services/localDb';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { ThermalStickerModal } from './ThermalStickerModal';
 import { Printer, LayoutGrid, Table } from 'lucide-react';
+import {
+  cleanProductName,
+  resolveProductName,
+  resolveProductDisplaySize,
+} from '../utils/sortUtils';
+import { isCorruptedSku } from '../utils/anomalyUtils';
 
 interface LaporanQcViewProps {
   session: UserSession | null;
@@ -440,21 +447,35 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   const combinedCatalog = useMemo(() => {
     const map = new Map<string, ProductItem>();
 
+    const insertToMap = (p: ProductItem) => {
+      if (!p || isDummyProduct(p)) return;
+      const key = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      if (!key || isCorruptedSku(key)) return;
+
+      const cleanName = resolveProductName(key, p.p, p);
+      const cleanSize = resolveProductDisplaySize(key, p.s) || p.s || '-';
+
+      map.set(key, {
+        ...p,
+        k: key,
+        p: cleanName,
+        nama_produk: cleanName,
+        s: cleanSize,
+        size: cleanSize,
+      });
+    };
+
     // 1. IndexedDB products
     if (Array.isArray(localDbCatalog)) {
       for (const p of localDbCatalog) {
-        if (!p) continue;
-        const key = String(p.k || p.sku || '').trim().toUpperCase();
-        if (key) map.set(key, p);
+        insertToMap(p);
       }
     }
 
     // 2. Prop productCatalog from parent
     if (Array.isArray(productCatalog)) {
       for (const p of productCatalog) {
-        if (!p) continue;
-        const key = String(p.k || p.sku || '').trim().toUpperCase();
-        if (key) map.set(key, p);
+        insertToMap(p);
       }
     }
 
@@ -466,9 +487,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             for (const p of parsed) {
-              if (!p) continue;
-              const key = String(p.k || p.sku || '').trim().toUpperCase();
-              if (key) map.set(key, p);
+              insertToMap(p);
             }
           }
         }

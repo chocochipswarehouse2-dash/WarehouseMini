@@ -194,7 +194,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     try {
       const data = await fetchRecentLogs();
       const filtered = (data || []).filter(
-        (item) => item && item.type !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
+        (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
       // Deduplicate by ID
       const unique = Array.from(
@@ -219,7 +219,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     try {
       const data = await fetchRecentLogs();
       const filtered = (data || []).filter(
-        (item) => item && item.type !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
+        (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
       const unique = Array.from(
         new Map(filtered.map((item) => [item.id || `${item.invoice}_${item.sku}_${item.created_at}`, item])).values()
@@ -243,7 +243,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     try {
       const data = await fetchLogsBySearch(searchQuery.trim(), 1000);
       const filteredData = (data || []).filter(
-        (item) => item && item.type !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
+        (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
       if (filteredData && filteredData.length > 0) {
         // Merge with existing logs and deduplicate
@@ -293,7 +293,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
       // Ignore QC inspections or non-inventory logs
-      if (log.type === 'QC_INSPEKSI' || String(log.type).startsWith('QC_')) return false;
+      if (String(log.type) === 'QC_INSPEKSI' || String(log.type).startsWith('QC_')) return false;
 
       // Source Filter (Scan via WA vs Scan via Web App)
       if (sourceFilter !== 'ALL') {

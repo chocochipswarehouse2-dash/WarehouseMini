@@ -59,8 +59,14 @@ export function isDummyProduct(item: ProductItem | null | undefined): boolean {
     return true;
   }
 
-  // Filter out WhatsApp formatting, order notes, and broadcast message headers
+  // Filter out WhatsApp formatting, order notes, dashes, and broadcast message headers
   if (
+    sku.startsWith('-') ||
+    sku.startsWith('–') ||
+    sku.startsWith('—') ||
+    sku.startsWith('_') ||
+    sku.startsWith('~') ||
+    sku.startsWith('.') ||
     sku.startsWith('*') ||
     sku.startsWith('•') ||
     sku.startsWith('📋') ||
@@ -69,13 +75,19 @@ export function isDummyProduct(item: ProductItem | null | undefined): boolean {
     sku.startsWith('🔢') ||
     sku.includes('━') ||
     sku.startsWith('ORDER ') ||
+    sku.includes('PRE ORDER') ||
+    sku.includes('PRE-ORDER') ||
+    sku.startsWith('PO ') ||
+    sku.includes('PEMBELIAN PRODUK') ||
+    sku.includes('ORDER 14 HARI') ||
     sku.includes('TUGAS PICKING') ||
     sku.includes('DAFTAR BARANG') ||
     sku.includes('NO SJ:') ||
     sku.includes('ASAL:') ||
     sku.includes('TUJUAN:') ||
     name.includes('mohon picker') ||
-    name.includes('sent via fonnte')
+    name.includes('sent via fonnte') ||
+    (sku.length > 35 && (sku.match(/\s/g) || []).length >= 2)
   ) {
     return true;
   }
