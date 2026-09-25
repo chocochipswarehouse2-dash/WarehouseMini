@@ -281,10 +281,13 @@ export function resolveProductName(
   // 3. Fallback to localStorage product cache if available in browser
   if (cleanSku && typeof window !== 'undefined' && window.localStorage) {
     try {
-      const cacheRaw = localStorage.getItem('wms_product_cache');
-      if (cacheRaw) {
+      const cacheKeys = ['wms_product_cache', 'wms_master_produk', 'wms_dealpos_products', 'wms_catalog_cache'];
+      for (const cKey of cacheKeys) {
+        const cacheRaw = localStorage.getItem(cKey);
+        if (!cacheRaw) continue;
         const cacheList = JSON.parse(cacheRaw);
         if (Array.isArray(cacheList)) {
+          // Exact match first
           const found = cacheList.find(
             (p: any) =>
               (p.k && p.k.trim().toUpperCase() === cleanSku) ||
@@ -295,6 +298,19 @@ export function resolveProductName(
           );
           if (foundName && foundName.toUpperCase() !== cleanSku) {
             return foundName;
+          }
+
+          // Prefix match (same product model with different size code e.g. 26EBH358BN)
+          if (cleanSku.length >= 6) {
+            const prefix = cleanSku.slice(0, -2);
+            const prefixFound = cacheList.find((p: any) => {
+              const k = String(p.k || p.sku || '').trim().toUpperCase();
+              return k.startsWith(prefix) && p.p && p.p.toUpperCase() !== k;
+            });
+            if (prefixFound) {
+              const pName = cleanProductName((prefixFound.p || prefixFound.nama_produk || prefixFound.n || '').trim());
+              if (pName) return pName;
+            }
           }
         }
       }

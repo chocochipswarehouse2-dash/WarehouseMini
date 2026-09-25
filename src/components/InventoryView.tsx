@@ -54,7 +54,14 @@ import {
 } from '../services/supabase';
 import { globalRealtimeStore } from '../services/store';
 import { hasPermission } from '../services/permissions';
-import { partialSearchMatch, sortAlphabeticalAndSize , cleanProductName } from '../utils/sortUtils';
+import {
+  partialSearchMatch,
+  sortAlphabeticalAndSize,
+  cleanProductName,
+  resolveProductName,
+  resolveProductDisplaySize,
+  extractSizeFromSku,
+} from '../utils/sortUtils';
 
 // ========================================================
 // DEFINISI KONSTANTA KOLOM AREA SESUAI SPESIFIKASI WMS
@@ -226,6 +233,24 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const [isLokasiExportModalOpen, setIsLokasiExportModalOpen] = useState<boolean>(false);
   const [selectedExportLocation, setSelectedExportLocation] = useState<string>('CC001');
 
+  // Multi-location popover toggle state (per SKU)
+  const [activeLocPopoverSku, setActiveLocPopoverSku] = useState<string | null>(null);
+
+  // Close multi-location popover on click outside or escape
+  useEffect(() => {
+    if (!activeLocPopoverSku) return;
+    const handleClose = () => setActiveLocPopoverSku(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveLocPopoverSku(null);
+    };
+    window.addEventListener('click', handleClose);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeLocPopoverSku]);
+
   // Anomaly Hub Diagnostics Modal State
   const [isAnomalyModalOpen, setIsAnomalyModalOpen] = useState<boolean>(false);
 
@@ -234,6 +259,47 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return scanAnomalies(productCatalog, stockList);
   }, [productCatalog, stockList]);
   const anomalyCount = anomalyItems.length;
+
+  // Helper to parse and sort locations cleanly
+  const parseNormalizedLocations = (locList?: (string | { lokasi: string; qty?: number })[]) => {
+    if (!Array.isArray(locList) || locList.length === 0) return [];
+    const map = new Map<string, { cleanLocName: string; qty: number; isNeg: boolean; displayStr: string }>();
+
+    locList.forEach((loc) => {
+      let cleanLocName = '';
+      let qty = 0;
+      if (typeof loc === 'object' && loc !== null) {
+        cleanLocName = String(loc.lokasi || '').trim();
+        qty = Number(loc.qty ?? 0);
+      } else {
+        const parts = String(loc || '').split(':');
+        cleanLocName = String(parts[0] || '').trim();
+        qty = parseInt(parts[1], 10) || 0;
+      }
+      if (!cleanLocName || cleanLocName === '-') return;
+
+      if (map.has(cleanLocName)) {
+        const existing = map.get(cleanLocName)!;
+        existing.qty += qty;
+        existing.isNeg = existing.qty < 0;
+        existing.displayStr = `${cleanLocName} (${existing.qty})`;
+      } else {
+        map.set(cleanLocName, {
+          cleanLocName,
+          qty,
+          isNeg: qty < 0,
+          displayStr: qty ? `${cleanLocName} (${qty})` : cleanLocName,
+        });
+      }
+    });
+
+    const parsed = Array.from(map.values());
+    parsed.sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      return a.cleanLocName.localeCompare(b.cleanLocName);
+    });
+    return parsed;
+  };
 
   const handleOpenLokasiExport = (locName?: string) => {
     if (locName) {
@@ -797,8 +863,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         );
       });
 
-      const produk = String(row?.p || row?.produk || row?.nama_produk || mapped?.nama_produk || sku);
-      const size = String(row?.s || row?.size || mapped?.size || '-');
+      const rawNameCandidate = row?.p || row?.produk || row?.nama_produk || mapped?.nama_produk;
+      const produk = resolveProductName(sku, rawNameCandidate, row);
+      const rawSizeCandidate = row?.s || row?.size || mapped?.size;
+      const size = resolveProductDisplaySize(sku, rawSizeCandidate, row?.s) || '-';
 
       let sTot = 0;
       STORE_COLS.forEach((c) => (sTot += singleVals[c] || 0));
@@ -1354,7 +1422,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const showStore = isAreaActive('STORE');
     const showOnline = isAreaActive('ONLINE');
 
-    let totalWidth = 260 + 55 + 130 + 90 + 75;
+    let totalWidth = 240 + 140 + 55 + 130 + 90 + 75;
     if (showGudang) totalWidth += 5 * 88;
     if (showOffline) totalWidth += OFFLINE_COLS.length * 44;
     if (showStore) totalWidth += STORE_COLS.length * 44;
@@ -1368,13 +1436,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px] font-bold border-b border-slate-200 dark:border-slate-800 shadow-xs">
             {/* Top Header Row */}
             <tr>
-              <th rowSpan={2} className="p-3 w-[260px] min-w-[260px] border-r border-slate-200 dark:border-slate-800 align-middle">
+              {/* 1. NAMA PRODUK */}
+              <th rowSpan={2} className="p-3 w-[240px] min-w-[240px] border-r border-slate-200 dark:border-slate-800 align-middle">
                 <button
                   type="button"
                   onClick={() => handleToggleColumnSort('NAME')}
-                  className="flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-extrabold uppercase"
+                  className="flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-extrabold uppercase cursor-pointer"
                 >
-                  <span>PRODUK &amp; LOKASI</span>
+                  <span>NAMA PRODUK</span>
                   {sortOption === 'NAME_ASC' ? (
                     <ArrowUp className="w-3 h-3 text-amber-500" />
                   ) : sortOption === 'NAME_DESC' ? (
@@ -1384,14 +1453,23 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   )}
                 </button>
               </th>
+
+              {/* 2. LOKASI RAK (KOLOM DEDIKASI SENDIRI) */}
+              <th rowSpan={2} className="p-2.5 w-[140px] min-w-[140px] text-center border-r border-slate-200 dark:border-slate-800 align-middle">
+                <span className="font-extrabold uppercase text-slate-700 dark:text-slate-200">LOKASI RAK</span>
+              </th>
+
+              {/* 3. SIZE */}
               <th rowSpan={2} className="p-2.5 w-[55px] min-w-[55px] text-center border-r border-slate-200 dark:border-slate-800 align-middle">
                 SIZE
               </th>
+
+              {/* 4. CODE (SKU) */}
               <th rowSpan={2} className="p-3 w-[130px] min-w-[130px] border-r border-slate-200 dark:border-slate-800 align-middle">
                 <button
                   type="button"
                   onClick={() => handleToggleColumnSort('SKU')}
-                  className="flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-extrabold uppercase"
+                  className="flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-extrabold uppercase cursor-pointer"
                 >
                   <span>CODE (SKU)</span>
                   {sortOption === 'SKU_ASC' ? (
@@ -1485,43 +1563,140 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
               const displaySize = item.size && item.size.toUpperCase() !== 'DEFAULT' ? item.size : 'ALL';
               return (
                 <tr key={`${item.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-[#161F30] transition-colors">
-                  {/* Produk & Lokasi */}
-                  <td className="p-3 border-r border-slate-100 dark:border-slate-800/60 max-w-[260px]">
+                  {/* 1. Nama Produk */}
+                  <td className="p-3 border-r border-slate-100 dark:border-slate-800/60 max-w-[240px]">
                     <div className="font-bold text-slate-900 dark:text-slate-100 text-xs leading-snug break-words">
                       {item.produk}
                     </div>
-                    {item.locStr && item.locStr !== '-' && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {item.locList.map((loc, lIdx) => {
-                          const lStr = typeof loc === 'object' && loc !== null ? `${loc.lokasi}${loc.qty ? ` (${loc.qty})` : ''}` : String(loc);
-                          const cleanLocName = typeof loc === 'object' && loc !== null ? String(loc.lokasi || '').trim() : String(loc || '').split(':')[0].trim();
-                          return (
+                  </td>
+
+                  {/* 2. Lokasi Rak (Dedicated Column with Smart Progressive Disclosure) */}
+                  <td className="p-2 border-r border-slate-100 dark:border-slate-800/60 min-w-[150px] align-middle">
+                    {(() => {
+                      const locs = parseNormalizedLocations(item.locList);
+                      if (locs.length === 0) {
+                        return <span className="text-[11px] text-slate-400 italic block text-center">-</span>;
+                      }
+
+                      const primaryLocs = locs.slice(0, 2);
+                      const remainingCount = locs.length - 2;
+                      const isPopoverOpen = activeLocPopoverSku === item.sku;
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {primaryLocs.map((loc, lIdx) => (
                             <button
                               key={lIdx}
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenLokasiExport(cleanLocName);
+                                handleOpenLokasiExport(loc.cleanLocName);
                               }}
-                              className="text-[9.5px] px-1.5 py-0.2 bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-600 hover:text-amber-800 dark:text-slate-400 dark:hover:text-amber-300 rounded font-mono border border-slate-200 hover:border-amber-300 dark:border-slate-700 inline-flex items-center gap-0.5 transition-colors cursor-pointer"
-                              title={`Klik untuk ekspor / cetak data lokasi ${cleanLocName}`}
+                              className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold border inline-flex items-center gap-0.5 transition-colors cursor-pointer ${
+                                loc.isNeg
+                                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/25'
+                                  : 'bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-700 hover:text-amber-800 dark:text-slate-300 dark:hover:text-amber-300 border-slate-200 hover:border-amber-300 dark:border-slate-700'
+                              }`}
+                              title={`Klik untuk ekspor / cetak data lokasi ${loc.cleanLocName} (${loc.qty} pcs)`}
                             >
-                              📍 {lStr}
+                              <MapPin className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                              <span>{loc.cleanLocName}</span>
+                              {loc.qty !== 0 && (
+                                <span className="text-[8.5px] font-normal opacity-80">({loc.qty})</span>
+                              )}
                             </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                          ))}
+
+                          {remainingCount > 0 && (
+                            <div className="relative inline-block">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveLocPopoverSku(isPopoverOpen ? null : item.sku);
+                                }}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/15 hover:bg-amber-500/25 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-500/40 inline-flex items-center gap-0.5 transition-colors cursor-pointer shadow-2xs"
+                                title={`Produk ini tersebar di ${locs.length} lokasi rak berbeda. Klik untuk rincian.`}
+                              >
+                                <span>+{remainingCount}</span>
+                                <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-150 ${isPopoverOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {/* Floating Popover Tray */}
+                              {isPopoverOpen && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute z-50 left-0 top-full mt-1 w-60 p-2.5 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-1 duration-150"
+                                >
+                                  <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                      <span className="font-bold text-slate-800 dark:text-slate-200 text-[11px] truncate">
+                                        Semua Lokasi ({locs.length})
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveLocPopoverSku(null)}
+                                      className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  <div className="max-h-48 overflow-y-auto space-y-1 pr-0.5 custom-scrollbar">
+                                    {locs.map((l, lIdx) => (
+                                      <div
+                                        key={lIdx}
+                                        className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-100 dark:border-slate-800 transition-colors"
+                                      >
+                                        <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                                            {l.cleanLocName}
+                                          </span>
+                                          <span
+                                            className={`text-[9.5px] px-1.5 py-0.2 rounded font-mono ${
+                                              l.isNeg
+                                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 font-bold'
+                                                : 'bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                            }`}
+                                          >
+                                            {l.qty} pcs
+                                          </span>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveLocPopoverSku(null);
+                                            handleOpenLokasiExport(l.cleanLocName);
+                                          }}
+                                          className="text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 hover:text-amber-600 dark:text-slate-300 dark:hover:text-amber-300 inline-flex items-center gap-1 shadow-2xs cursor-pointer hover:border-amber-300"
+                                          title={`Ekspor / Cetak Label Rak ${l.cleanLocName}`}
+                                        >
+                                          <Printer className="w-2.5 h-2.5" />
+                                          <span>Cetak</span>
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
 
-                  {/* Size */}
+                  {/* 3. Size */}
                   <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60">
                     <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                       {displaySize}
                     </span>
                   </td>
 
-                  {/* SKU / Code */}
+                  {/* 4. SKU / Code */}
                   <td className="p-3 border-r border-slate-100 dark:border-slate-800/60">
                     <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/70 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
                       {item.sku}
@@ -1651,28 +1826,103 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
                     {item.produk}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                       {item.sku}
                     </span>
-                    {item.locStr && item.locStr !== '-' && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const firstLoc = item.locList?.[0]
-                            ? typeof item.locList[0] === 'object'
-                              ? (item.locList[0] as any).lokasi
-                              : String(item.locList[0]).split(':')[0]
-                            : '';
-                          handleOpenLokasiExport(firstLoc);
-                        }}
-                        className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:text-amber-500 font-mono flex items-center gap-0.5 cursor-pointer underline-offset-2 hover:underline"
-                        title="Klik untuk ekspor / cetak data lokasi rak ini"
-                      >
-                        📍 {item.locStr}
-                      </button>
-                    )}
+                    {(() => {
+                      const locs = parseNormalizedLocations(item.locList);
+                      if (locs.length === 0) return null;
+
+                      const primaryLocs = locs.slice(0, 2);
+                      const remainingCount = locs.length - 2;
+                      const isPopoverOpen = activeLocPopoverSku === `${item.sku}_card`;
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {primaryLocs.map((loc, lIdx) => (
+                            <button
+                              key={lIdx}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenLokasiExport(loc.cleanLocName);
+                              }}
+                              className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold border inline-flex items-center gap-0.5 transition-colors cursor-pointer ${
+                                loc.isNeg
+                                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                                  : 'bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-700 hover:text-amber-800 dark:text-slate-300 dark:hover:text-amber-300 border-slate-200 hover:border-amber-300 dark:border-slate-700'
+                              }`}
+                              title={`Klik untuk ekspor / cetak lokasi ${loc.cleanLocName}`}
+                            >
+                              <MapPin className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                              <span>{loc.cleanLocName}</span>
+                              {loc.qty !== 0 && (
+                                <span className="text-[8.5px] font-normal opacity-80">({loc.qty})</span>
+                              )}
+                            </button>
+                          ))}
+
+                          {remainingCount > 0 && (
+                            <div className="relative inline-block">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveLocPopoverSku(isPopoverOpen ? null : `${item.sku}_card`);
+                                }}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/15 hover:bg-amber-500/25 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-500/40 inline-flex items-center gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <span>+{remainingCount} lagi</span>
+                                <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-150 ${isPopoverOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {isPopoverOpen && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute z-50 left-0 top-full mt-1 w-56 p-2 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl text-xs"
+                                >
+                                  <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-100 dark:border-slate-800">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 text-[10.5px]">
+                                      Semua Lokasi ({locs.length})
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveLocPopoverSku(null)}
+                                      className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <div className="max-h-40 overflow-y-auto space-y-1">
+                                    {locs.map((l, lIdx) => (
+                                      <div
+                                        key={lIdx}
+                                        className="flex items-center justify-between p-1 rounded bg-slate-50 dark:bg-slate-800/60 text-[10.5px]"
+                                      >
+                                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                          {l.cleanLocName} ({l.qty} pcs)
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveLocPopoverSku(null);
+                                            handleOpenLokasiExport(l.cleanLocName);
+                                          }}
+                                          className="text-[9.5px] px-1 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 hover:text-amber-600"
+                                        >
+                                          Cetak
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 

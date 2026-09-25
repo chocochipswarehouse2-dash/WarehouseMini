@@ -1589,12 +1589,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500">
-                          <th className="text-left px-3 py-2.5 font-bold">SKU / Produk</th>
-                          <th className="text-center px-3 py-2.5 font-bold w-16">Qty SJ</th>
-                          <th className="text-center px-3 py-2.5 font-bold w-28">Qty Scan</th>
-                          <th className="text-center px-3 py-2.5 font-bold w-16">Selisih</th>
-                          <th className="text-center px-3 py-2.5 font-bold w-20">Status</th>
+                        <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
+                          <th className="text-left px-3.5 py-3 font-extrabold min-w-[200px]">Nama Produk</th>
+                          <th className="text-center px-2 py-3 font-extrabold w-16">Size</th>
+                          <th className="text-left px-3 py-3 font-extrabold min-w-[140px]">SKU</th>
+                          <th className="text-center px-3 py-3 font-extrabold w-20">Qty SJ</th>
+                          <th className="text-center px-3 py-3 font-extrabold w-32">Qty Scan</th>
+                          <th className="text-center px-3 py-3 font-extrabold w-20">Selisih</th>
+                          <th className="text-center px-3 py-3 font-extrabold w-24">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1606,25 +1608,47 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                         }).map(item => (
                           <tr
                             key={item.sku}
-                            className={`transition-colors ${
+                            className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 ${
                               item.status === 'COCOK'  ? 'bg-emerald-50/40 dark:bg-emerald-950/10' :
                               item.status === 'KURANG' ? 'bg-rose-50/40 dark:bg-rose-950/10' :
                               item.status === 'LEBIH'  ? 'bg-amber-50/40 dark:bg-amber-950/10' : ''
                             }`}
                           >
-                            <td className="px-3 py-2.5">
-                              <div className="font-bold text-slate-800 dark:text-white font-mono text-[11px]">{item.sku}</div>
-                              <div className="text-slate-400 text-[10px] truncate max-w-[200px]">{item.nama_produk}</div>
+                            {/* 1. Nama Produk */}
+                            <td className="px-3.5 py-3 min-w-[200px] align-middle">
+                              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs leading-snug break-words">
+                                {item.nama_produk}
+                              </div>
                             </td>
-                            <td className="px-3 py-2.5 text-center font-bold text-slate-700 dark:text-slate-200">{item.qty_sj}</td>
-                            <td className="px-3 py-2.5 text-center">
-                              <div className="flex items-center justify-center gap-1">
+
+                            {/* 2. Size */}
+                            <td className="px-2 py-3 text-center align-middle w-16">
+                              <span className="inline-block px-2 py-0.5 rounded-md font-mono text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                {item.size || '-'}
+                              </span>
+                            </td>
+
+                            {/* 3. SKU */}
+                            <td className="px-3 py-3 min-w-[140px] align-middle">
+                              <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100/70 dark:bg-slate-800/80 px-2 py-1 rounded-md border border-slate-200/80 dark:border-slate-700/80">
+                                {item.sku}
+                              </span>
+                            </td>
+
+                            {/* 4. Qty SJ */}
+                            <td className="px-3 py-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 text-xs align-middle">
+                              {item.qty_sj}
+                            </td>
+
+                            {/* 5. Qty Scan */}
+                            <td className="px-3 py-3 text-center align-middle">
+                              <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan - 1)}
-                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
                                 >
-                                  <Minus className="w-2.5 h-2.5" />
+                                  <Minus className="w-3 h-3" />
                                 </button>
                                 <input
                                   type="number"
@@ -1634,27 +1658,31 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                     const val = e.target.value;
                                     handleManualQty(item.sku, val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0));
                                   }}
-                                  className="w-11 text-center font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-0.5"
+                                  className="w-12 text-center font-mono font-black bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none border border-slate-300 dark:border-slate-600 rounded-lg text-xs py-1 shadow-2xs"
                                   min={0}
                                 />
                                 <button
                                   type="button"
                                   onClick={() => handleManualQty(item.sku, item.qty_scan + 1)}
-                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
                                 >
-                                  <Plus className="w-2.5 h-2.5" />
+                                  <Plus className="w-3 h-3" />
                                 </button>
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-center">
-                              <span className={`font-extrabold ${
+
+                            {/* 6. Selisih */}
+                            <td className="px-3 py-3 text-center align-middle">
+                              <span className={`font-mono font-black text-xs ${
                                 item.selisih === 0 ? 'text-emerald-500' :
                                 item.selisih < 0  ? 'text-rose-500' : 'text-amber-500'
                               }`}>
                                 {item.selisih > 0 ? `+${item.selisih}` : item.selisih}
                               </span>
                             </td>
-                            <td className="px-3 py-2.5 text-center">
+
+                            {/* 7. Status */}
+                            <td className="px-3 py-3 text-center align-middle">
                               <StatusBadge status={item.status} />
                             </td>
                           </tr>
@@ -2420,19 +2448,20 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
-                                <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-400">
-                                  <th className="text-left px-3 py-2 font-bold">SKU</th>
-                                  <th className="text-left px-3 py-2 font-bold">Nama Produk</th>
-                                  <th className="text-center px-3 py-2 font-bold w-16">SJ</th>
-                                  <th className="text-center px-3 py-2 font-bold w-24">Terima</th>
-                                  <th className="text-center px-3 py-2 font-bold w-16">Selisih</th>
-                                  <th className="text-center px-3 py-2 font-bold w-20">Status</th>
+                                <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[10px]">
+                                  <th className="text-left px-3 py-2 font-extrabold min-w-[200px]">Nama Produk</th>
+                                  <th className="text-center px-2 py-2 font-extrabold w-16">Size</th>
+                                  <th className="text-left px-3 py-2 font-extrabold min-w-[130px]">SKU</th>
+                                  <th className="text-center px-3 py-2 font-extrabold w-16">SJ</th>
+                                  <th className="text-center px-3 py-2 font-extrabold w-24">Terima</th>
+                                  <th className="text-center px-3 py-2 font-extrabold w-16">Selisih</th>
+                                  <th className="text-center px-3 py-2 font-extrabold w-20">Status</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {(isEditing && editFormData ? editFormData.items : rec.items).length === 0 ? (
                                   <tr>
-                                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">
+                                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">
                                       Belum ada rincian item SKU pada surat jalan ini.
                                     </td>
                                   </tr>
@@ -2448,28 +2477,34 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                                           item.status_item === 'LEBIH'  ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                                         }
                                       >
-                                        <td className="px-3 py-2 font-mono text-[10px] text-slate-700 dark:text-slate-300 font-bold">
-                                          {item.sku}
-                                          {item.is_unexpected && (
-                                            <span className="block text-[8px] text-amber-600 font-sans font-bold">LEBIHAN DI LUAR SJ</span>
-                                          )}
-                                        </td>
-                                        <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[200px]">
-                                          <div className="font-medium truncate flex items-center gap-1.5">
-                                            <span className="truncate">{item.nama_produk}</span>
-                                            {item.size && (
-                                              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded shrink-0">
-                                                {item.size}
-                                              </span>
-                                            )}
+                                        {/* 1. Nama Produk */}
+                                        <td className="px-3 py-2 text-slate-900 dark:text-slate-100 min-w-[200px] align-middle">
+                                          <div className="font-bold text-xs leading-snug break-words">
+                                            {item.nama_produk}
                                           </div>
                                           {item.category && (
-                                            <div className="text-[9px] text-slate-400 font-normal truncate">{item.category}</div>
+                                            <div className="text-[9.5px] text-slate-400 font-normal truncate mt-0.5">{item.category}</div>
                                           )}
                                         </td>
-                                      <td className="px-3 py-2 text-center font-bold text-slate-700 dark:text-slate-300">
-                                        {item.qty_sj}
-                                      </td>
+                                        {/* 2. Size */}
+                                        <td className="px-2 py-2 text-center align-middle w-16">
+                                          <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                                            {item.size || '-'}
+                                          </span>
+                                        </td>
+                                        {/* 3. SKU */}
+                                        <td className="px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300 font-bold min-w-[130px] align-middle">
+                                          <span className="bg-slate-100/70 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200/80 dark:border-slate-700/80 inline-block">
+                                            {item.sku}
+                                          </span>
+                                          {item.is_unexpected && (
+                                            <span className="block text-[8.5px] text-amber-600 font-sans font-extrabold mt-0.5">LEBIHAN DI LUAR SJ</span>
+                                          )}
+                                        </td>
+                                        {/* 4. Qty SJ */}
+                                        <td className="px-3 py-2 text-center font-bold text-slate-700 dark:text-slate-300">
+                                          {item.qty_sj}
+                                        </td>
                                       <td className="px-3 py-2 text-center font-bold">
                                         {isEditing && editFormData ? (
                                           <input
