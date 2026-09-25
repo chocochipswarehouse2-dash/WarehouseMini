@@ -54,6 +54,7 @@ import {
 } from '../../services/penerimaanBarang';
 import { savePengirimanStoreBatch } from '../../services/pengirimanStore';
 import { CameraWatermarkModal } from './CameraWatermarkModal';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 export interface DraftMutasiItem {
   id: string;
@@ -778,21 +779,19 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                   </button>
                 </div>
 
-                <select
-                  required
+                <SearchableSelect
+                  options={stores.map((s) => ({
+                    value: s.nama,
+                    label: s.nama,
+                    secondaryLabel: (s as any).kode ? `Kode: ${(s as any).kode}` : undefined,
+                  }))}
                   value={selectedStore}
-                  onChange={(e) => setSelectedStore(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold text-slate-800 dark:text-slate-100"
-                >
-                  <option value="" disabled>
-                    -- Pilih Asal Store --
-                  </option>
-                  {stores.map((s, idx) => (
-                    <option key={s.id || idx} value={s.nama}>
-                      {s.nama}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedStore(val)}
+                  placeholder="-- Pilih Asal Store --"
+                  searchPlaceholder="Ketik nama atau kode toko..."
+                  allowCustom={true}
+                  size="md"
+                />
               </div>
 
               {/* 3. No Surat Jalan Utama / Default */}
@@ -896,20 +895,18 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                   </button>
                 </div>
 
-                <select
-                  required
+                <SearchableSelect
+                  options={kategoriList.map((cat) => ({
+                    value: cat,
+                    label: cat === 'Lainnya (Manual)' ? '✍️ Lainnya (Manual)' : cat,
+                  }))}
                   value={kategoriProduk}
-                  onChange={(e) => {
-                    setKategoriProduk(e.target.value);
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800 dark:text-slate-100"
-                >
-                  {kategoriList.map((cat, idx) => (
-                    <option key={idx} value={cat}>
-                      {cat === 'Lainnya (Manual)' ? '✍️ Lainnya (Manual)' : cat}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setKategoriProduk(val)}
+                  placeholder="Pilih Kategori Produk..."
+                  searchPlaceholder="Cari atau tambah kategori..."
+                  allowCustom={true}
+                  size="md"
+                />
 
                 {kategoriProduk === 'Lainnya (Manual)' && (
                   <input
@@ -986,18 +983,20 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                 </div>
               ) : kategoriProduk === 'Mutasi Antar Store' ? (
                 <div className="space-y-1">
-                  <p className="text-[11px] text-slate-500">Pilih Store Tujuan mutasi:</p>
-                  <select
+                  <p className="text-[11px] text-slate-500 font-medium">Pilih Store Tujuan mutasi:</p>
+                  <SearchableSelect
+                    options={stores.map((s) => ({
+                      value: s.nama,
+                      label: s.nama,
+                      secondaryLabel: (s as any).kode ? `Kode: ${(s as any).kode}` : undefined,
+                    }))}
                     value={upTujuan}
-                    onChange={(e) => setUpTujuan(e.target.value)}
-                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {stores.map((s, idx) => (
-                      <option key={s.id || idx} value={s.nama}>
-                        Store: {s.nama}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setUpTujuan(val)}
+                    placeholder="Pilih Store Tujuan Mutasi..."
+                    searchPlaceholder="Cari toko..."
+                    allowCustom={true}
+                    size="md"
+                  />
                 </div>
               ) : (
                 <div className="flex items-center justify-between p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
@@ -1344,26 +1343,28 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Filter Kategori */}
-              <select
-                value={filterKategori}
-                onChange={(e) => setFilterKategori(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
-              >
-                <option value="">Semua Kategori</option>
-                {kategoriList.map((c, i) => (
-                  <option key={i} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+              {/* Filter Kategori (Searchable) */}
+              <div className="min-w-[180px]">
+                <SearchableSelect
+                  options={[
+                    { value: '', label: 'Semua Kategori' },
+                    ...kategoriList.map((c) => ({ value: c, label: c })),
+                  ]}
+                  value={filterKategori}
+                  onChange={(val) => setFilterKategori(val)}
+                  placeholder="Filter Kategori"
+                  searchPlaceholder="Cari kategori..."
+                  allowCustom={false}
+                  size="sm"
+                />
+              </div>
 
               {/* Filter Date */}
               <input
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
+                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none h-[34px]"
               />
               {(filterDate || filterKategori || searchQuery) && (
                 <button

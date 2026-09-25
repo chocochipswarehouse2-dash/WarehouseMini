@@ -28,6 +28,7 @@ import {
   generateManifestId,
 } from '../../services/pengirimanPaket';
 import { CourierManifestPrintModal } from './CourierManifestPrintModal';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 interface PengirimanPaketTabProps {
   session?: UserSession | null;
@@ -265,31 +266,20 @@ export const PengirimanPaketTab: React.FC<PengirimanPaketTabProps> = ({
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-              {/* Ekspedisi Dropdown */}
+              {/* Ekspedisi Dropdown (Searchable) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                   Pilih Ekspedisi / Kurir
                 </label>
-                <select
+                <SearchableSelect
+                  options={DEFAULT_EKSPEDISI_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
                   value={ekspedisi}
-                  onChange={(e) => setEkspedisi(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  {DEFAULT_EKSPEDISI_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                {ekspedisi === 'Lainnya' && (
-                  <input
-                    type="text"
-                    placeholder="Ketik nama ekspedisi manual..."
-                    value={customEkspedisi}
-                    onChange={(e) => setCustomEkspedisi(e.target.value)}
-                    className="mt-2 w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                )}
+                  onChange={(val) => setEkspedisi(val)}
+                  placeholder="Pilih atau cari ekspedisi..."
+                  searchPlaceholder="Ketik nama ekspedisi / kurir..."
+                  allowCustom={true}
+                  size="md"
+                />
               </div>
 
               {/* Tanggal Kirim */}

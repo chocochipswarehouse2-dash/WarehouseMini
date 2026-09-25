@@ -38,6 +38,7 @@ import {
   deleteEkspedisi,
 } from '../../services/penerimaanBarang';
 import { CameraWatermarkModal } from './CameraWatermarkModal';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 interface PenerimaanPaketTabProps {
   session: UserSession | null;
@@ -354,21 +355,15 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                 </button>
               </div>
 
-              <select
-                required
+              <SearchableSelect
+                options={ekspedisiList.map((eksp) => ({ value: eksp, label: eksp }))}
                 value={selectedEkspedisi}
-                onChange={(e) => setSelectedEkspedisi(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800 dark:text-slate-100"
-              >
-                <option value="" disabled>
-                  -- Pilih Ekspedisi --
-                </option>
-                {ekspedisiList.map((eksp, idx) => (
-                  <option key={idx} value={eksp}>
-                    {eksp}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedEkspedisi(val)}
+                placeholder="-- Pilih Ekspedisi --"
+                searchPlaceholder="Ketik nama ekspedisi..."
+                allowCustom={true}
+                size="md"
+              />
             </div>
           </div>
 
@@ -560,24 +555,26 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
             </div>
 
             <div className="flex items-center gap-2">
-              <select
-                value={filterEkspedisi}
-                onChange={(e) => setFilterEkspedisi(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
-              >
-                <option value="">Semua Ekspedisi</option>
-                {ekspedisiList.map((eksp, idx) => (
-                  <option key={idx} value={eksp}>
-                    {eksp}
-                  </option>
-                ))}
-              </select>
+              <div className="min-w-[180px]">
+                <SearchableSelect
+                  options={[
+                    { value: '', label: 'Semua Ekspedisi' },
+                    ...ekspedisiList.map((eksp) => ({ value: eksp, label: eksp })),
+                  ]}
+                  value={filterEkspedisi}
+                  onChange={(val) => setFilterEkspedisi(val)}
+                  placeholder="Filter Ekspedisi"
+                  searchPlaceholder="Cari ekspedisi..."
+                  allowCustom={false}
+                  size="sm"
+                />
+              </div>
 
               <input
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
+                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none h-[34px]"
               />
               {(filterDate || filterEkspedisi) && (
                 <button

@@ -9,6 +9,7 @@ import {
   Maximize2,
   Minimize2,
   Info,
+  Loader2,
 } from 'lucide-react';
 import { PengirimanStoreReport, PengirimanStoreTrip } from '../../types';
 
@@ -32,6 +33,7 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
 }) => {
   const printAreaRef = useRef<HTMLDivElement>(null);
   const [layoutMode, setLayoutMode] = useState<PrintLayoutMode>('auto');
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
 
   if (!isOpen || reports.length === 0) return null;
 
@@ -47,13 +49,255 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
 
   const stores = Object.keys(storeGroups);
 
+  // Standar Isolated IFrame Print (Reliable across Desktop, Mobile, & iFrames)
   const handlePrint = () => {
-    window.print();
+    setIsPrinting(true);
+    try {
+      const iframeId = 'surat-jalan-direct-print-frame';
+      let printFrame = document.getElementById(iframeId) as HTMLIFrameElement | null;
+      if (printFrame) {
+        document.body.removeChild(printFrame);
+      }
+      printFrame = document.createElement('iframe');
+      printFrame.id = iframeId;
+      printFrame.style.position = 'fixed';
+      printFrame.style.top = '-9999px';
+      printFrame.style.left = '-9999px';
+      printFrame.style.width = '100%';
+      printFrame.style.height = '100%';
+      printFrame.style.border = 'none';
+      document.body.appendChild(printFrame);
+
+      const printableContent = printAreaRef.current?.innerHTML || '';
+      const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
+
+      if (doc) {
+        const fullHtml = `
+          <!DOCTYPE html>
+          <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <title>Surat Jalan Pengiriman - Chocochips</title>
+            <style>
+              * {
+                box-sizing: border-box !important;
+                margin: 0;
+                padding: 0;
+                visibility: visible !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+              }
+              html, body {
+                background: #ffffff !important;
+                color: #000000 !important;
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+                width: 100% !important;
+                height: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              @page {
+                size: A4 portrait;
+                margin: 4mm 6mm;
+              }
+              .surat-jalan-print-page {
+                page-break-after: always !important;
+                break-after: page !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                box-sizing: border-box !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: #ffffff !important;
+                width: 200mm !important;
+              }
+              .surat-jalan-print-page:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+              }
+              .surat-jalan-a5-double-page {
+                height: 282mm !important;
+                min-height: 282mm !important;
+                max-height: 285mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+              }
+              .surat-jalan-a4-single-page {
+                height: 282mm !important;
+                min-height: 282mm !important;
+                max-height: 285mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+              }
+
+              /* Flex & Grid Layout Utilities */
+              .flex { display: flex !important; }
+              .flex-col { flex-direction: column !important; }
+              .flex-row { flex-direction: row !important; }
+              .flex-wrap { flex-wrap: wrap !important; }
+              .flex-1 { flex: 1 1 0% !important; }
+              .items-center { align-items: center !important; }
+              .items-start { align-items: flex-start !important; }
+              .items-end { align-items: flex-end !important; }
+              .justify-between { justify-content: space-between !important; }
+              .justify-center { justify-content: center !important; }
+              .shrink-0 { flex-shrink: 0 !important; }
+
+              .grid { display: grid !important; }
+              .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+              .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+              .gap-1 { gap: 4px !important; }
+              .gap-1\\.5 { gap: 6px !important; }
+              .gap-2 { gap: 8px !important; }
+              .gap-3 { gap: 12px !important; }
+              .gap-4 { gap: 16px !important; }
+              .gap-6 { gap: 24px !important; }
+
+              /* Borders & Colors */
+              .border { border: 1px solid #000000 !important; }
+              .border-2 { border: 2px solid #000000 !important; }
+              .border-t { border-top: 1px solid #000000 !important; }
+              .border-t-2 { border-top: 2px solid #000000 !important; }
+              .border-b { border-bottom: 1px solid #000000 !important; }
+              .border-b-2 { border-bottom: 2px solid #000000 !important; }
+              .border-black { border-color: #000000 !important; }
+              .border-dashed { border-style: dashed !important; }
+              .border-slate-200 { border-color: #e2e8f0 !important; }
+              .border-slate-300 { border-color: #cbd5e1 !important; }
+              .border-slate-400 { border-color: #94a3b8 !important; }
+
+              .rounded-xs { border-radius: 2px !important; }
+              .rounded-sm { border-radius: 4px !important; }
+              .rounded-md { border-radius: 6px !important; }
+              .rounded-lg { border-radius: 8px !important; }
+              .rounded-xl { border-radius: 12px !important; }
+
+              .bg-white { background-color: #ffffff !important; }
+              .bg-slate-50 { background-color: #f8fafc !important; }
+              .bg-slate-100 { background-color: #f1f5f9 !important; }
+              .text-black { color: #000000 !important; }
+              .text-white { color: #ffffff !important; }
+              .text-slate-400 { color: #94a3b8 !important; }
+              .text-slate-500 { color: #64748b !important; }
+              .text-slate-600 { color: #475569 !important; }
+              .text-slate-700 { color: #334155 !important; }
+              .text-slate-800 { color: #1e293b !important; }
+              .text-slate-900 { color: #0f172a !important; }
+
+              /* Table Specific */
+              table { width: 100% !important; border-collapse: collapse !important; }
+              th, td { border: 1px solid #000000 !important; vertical-align: middle !important; }
+              th { background-color: #f1f5f9 !important; }
+
+              /* Typography */
+              .font-normal { font-weight: 400 !important; }
+              .font-medium { font-weight: 500 !important; }
+              .font-semibold { font-weight: 600 !important; }
+              .font-bold { font-weight: 700 !important; }
+              .font-black { font-weight: 900 !important; }
+              .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
+              .uppercase { text-transform: uppercase !important; }
+              .italic { font-style: italic !important; }
+              .text-center { text-align: center !important; }
+              .text-right { text-align: right !important; }
+              .text-left { text-align: left !important; }
+              .truncate { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+
+              /* Sizes */
+              .w-full { width: 100% !important; }
+              .w-6 { width: 24px !important; }
+              .w-8 { width: 32px !important; }
+              .w-10 { width: 40px !important; }
+              .w-12 { width: 48px !important; }
+              .w-16 { width: 64px !important; }
+              .w-20 { width: 80px !important; }
+              .w-22 { width: 88px !important; }
+              .w-24 { width: 96px !important; }
+              .w-28 { width: 112px !important; }
+              .w-32 { width: 128px !important; }
+              .w-36 { width: 144px !important; }
+              .h-9 { height: 36px !important; }
+              .h-16 { height: 64px !important; }
+              .w-3\\.5 { width: 14px !important; }
+              .h-3\\.5 { height: 14px !important; }
+              .w-4 { width: 16px !important; }
+              .h-4 { height: 16px !important; }
+
+              /* Spacing */
+              .p-1 { padding: 4px !important; }
+              .p-1\\.5 { padding: 6px !important; }
+              .p-2 { padding: 8px !important; }
+              .p-3 { padding: 12px !important; }
+              .p-4 { padding: 16px !important; }
+              .p-6 { padding: 24px !important; }
+              .px-1 { padding-left: 4px !important; padding-right: 4px !important; }
+              .px-1\\.5 { padding-left: 6px !important; padding-right: 6px !important; }
+              .px-2 { padding-left: 8px !important; padding-right: 8px !important; }
+              .px-3 { padding-left: 12px !important; padding-right: 12px !important; }
+              .py-0\\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+              .py-1 { padding-top: 4px !important; padding-bottom: 4px !important; }
+              .py-1\\.5 { padding-top: 6px !important; padding-bottom: 6px !important; }
+              .py-2 { padding-top: 8px !important; padding-bottom: 8px !important; }
+              .py-2\\.5 { padding-top: 10px !important; padding-bottom: 10px !important; }
+              .mt-0\\.5 { margin-top: 2px !important; }
+              .mt-1 { margin-top: 4px !important; }
+              .mt-1\\.5 { margin-top: 6px !important; }
+              .mt-2 { margin-top: 8px !important; }
+              .mt-4 { margin-top: 16px !important; }
+              .mb-1\\.5 { margin-bottom: 6px !important; }
+              .mb-2 { margin-bottom: 8px !important; }
+              .mb-3 { margin-bottom: 12px !important; }
+              .my-2 { margin-top: 8px !important; margin-bottom: 8px !important; }
+              .pb-0\\.5 { padding-bottom: 2px !important; }
+              .pb-1 { padding-bottom: 4px !important; }
+              .pb-1\\.5 { padding-bottom: 6px !important; }
+              .pb-2 { padding-bottom: 8px !important; }
+              .pb-2\\.5 { padding-bottom: 10px !important; }
+              .pt-1 { padding-top: 4px !important; }
+              .pt-2 { padding-top: 8px !important; }
+              .space-y-1 > * + * { margin-top: 4px !important; }
+            </style>
+          </head>
+          <body>
+            ${printableContent}
+          </body>
+          </html>
+        `;
+
+        doc.open();
+        doc.write(fullHtml);
+        doc.close();
+
+        setTimeout(() => {
+          try {
+            printFrame?.contentWindow?.focus();
+            printFrame?.contentWindow?.print();
+          } catch (err) {
+            console.warn('Iframe print focus error, falling back to window.print():', err);
+            window.print();
+          } finally {
+            setIsPrinting(false);
+          }
+        }, 300);
+      } else {
+        window.print();
+        setIsPrinting(false);
+      }
+    } catch (e) {
+      console.warn('Direct iframe print error, using fallback:', e);
+      window.print();
+      setIsPrinting(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
-      {/* Print Specific CSS */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+      {/* Print Specific CSS for direct system fallback */}
       <style>{`
         @media print {
           body * {
@@ -73,7 +317,7 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
           }
           @page {
             size: A4 portrait;
-            margin: 6mm 8mm;
+            margin: 4mm 6mm;
           }
           .surat-jalan-print-page {
             page-break-after: always !important;
@@ -90,13 +334,13 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
             break-after: auto !important;
           }
           .surat-jalan-a5-double-page {
-            height: 285mm !important;
+            height: 282mm !important;
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
           }
           .surat-jalan-a4-single-page {
-            min-height: 285mm !important;
+            min-height: 282mm !important;
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
@@ -128,8 +372,18 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handlePrint}
+              disabled={isPrinting}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isPrinting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+              <span>Cetak Sekarang</span>
+            </button>
+
+            <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -433,7 +687,7 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
                       className="surat-jalan-print-page surat-jalan-a5-double-page bg-white text-black p-4 rounded-xl border border-slate-400 shadow-xl mb-6"
                       style={{
                         width: '210mm',
-                        minHeight: '285mm',
+                        minHeight: '282mm',
                         boxSizing: 'border-box',
                         display: 'flex',
                         flexDirection: 'column',
@@ -477,7 +731,7 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
                 <div
                   className="bg-white text-black p-6 rounded-xs border border-slate-300 flex flex-col justify-between"
                   style={{
-                    height: '285mm',
+                    height: '282mm',
                     fontSize: '11px',
                     fontFamily: 'system-ui, -apple-system, sans-serif',
                     lineHeight: '1.35',
@@ -665,7 +919,7 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
                       className="surat-jalan-print-page surat-jalan-a4-single-page bg-white text-black p-4 rounded-xl border border-slate-400 shadow-xl mb-4"
                       style={{
                         width: '210mm',
-                        minHeight: '285mm',
+                        minHeight: '282mm',
                         boxSizing: 'border-box',
                       }}
                     >
@@ -686,7 +940,7 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
                       className="surat-jalan-print-page surat-jalan-a4-single-page bg-white text-black p-4 rounded-xl border border-slate-400 shadow-xl mb-4"
                       style={{
                         width: '210mm',
-                        minHeight: '285mm',
+                        minHeight: '282mm',
                         boxSizing: 'border-box',
                       }}
                     >
@@ -732,10 +986,11 @@ export const SuratJalanPrintModal: React.FC<SuratJalanPrintModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer transition active:scale-95"
+              disabled={isPrinting}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-50"
             >
-              <Printer className="w-4 h-4" />
-              <span>Cetak Surat Jalan Sekarang</span>
+              {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              <span>{isPrinting ? 'Menyiapkan Cetak...' : 'Cetak Surat Jalan Sekarang'}</span>
             </button>
           </div>
         </div>

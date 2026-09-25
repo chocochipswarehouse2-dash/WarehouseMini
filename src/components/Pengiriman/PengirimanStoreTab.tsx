@@ -36,6 +36,7 @@ import {
   Edit3,
   X,
   Undo2,
+  Sparkles,
 } from 'lucide-react';
 import {
   UserSession,
@@ -69,6 +70,7 @@ import { uploadMultipleImagesToGdrive } from '../../services/gdriveUpload';
 import { compressImage } from '../../utils/imageCompressor';
 import { KoliMarkingPrintModal } from './KoliMarkingPrintModal';
 import { SuratJalanPrintModal } from './SuratJalanPrintModal';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 interface PengirimanStoreTabProps {
   session?: UserSession | null;
@@ -166,7 +168,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   // 2. DISPATCHED TAB STATE
   // --------------------------------------------------------------------------
   const [searchDispatched, setSearchDispatched] = useState<string>('');
-  const [filterStoreDispatched, setFilterStoreDispatched] = useState<string>('');
+  const [filterStoreDispatched, setFilterStoreDispatched] = useState<string[]>([]);
   const [filterLabelStatusDispatched, setFilterLabelStatusDispatched] = useState<'all' | 'printed' | 'unprinted'>('all');
   const [selectedDispatchedIds, setSelectedDispatchedIds] = useState<string[]>([]);
 
@@ -175,6 +177,15 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   const [editStoreTujuan, setEditStoreTujuan] = useState<string>('');
   const [editItems, setEditItems] = useState<PengirimanStoreItem[]>([]);
   const [isSavingEditDispatched, setIsSavingEditDispatched] = useState<boolean>(false);
+
+  // Multi-Store Fast Batch Generator State (Form Laporan)
+  const [isMultiStoreModalOpen, setIsMultiStoreModalOpen] = useState<boolean>(false);
+  const [multiStoreSelected, setMultiStoreSelected] = useState<string[]>([]);
+  const [multiStoreDeskripsi, setMultiStoreDeskripsi] = useState<string>('');
+  const [multiStoreNoSJ, setMultiStoreNoSJ] = useState<string>('');
+  const [multiStoreQty, setMultiStoreQty] = useState<number>(1);
+  const [multiStoreSatuan, setMultiStoreSatuan] = useState<SatuanPengirimanStore>('Koli');
+  const [multiStoreKeterangan, setMultiStoreKeterangan] = useState<string>('');
 
   // --------------------------------------------------------------------------
   // 3. TAB KIRIM (SETUP PENGIRIMAN) STATE
@@ -201,7 +212,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   // - Histori log audit edit / cancel
   // --------------------------------------------------------------------------
   const [searchHistori, setSearchHistori] = useState<string>('');
-  const [filterStoreHistori, setFilterStoreHistori] = useState<string>('');
+  const [filterStoreHistori, setFilterStoreHistori] = useState<string[]>([]);
   const [selectedDetailReport, setSelectedDetailReport] = useState<PengirimanStoreReport | null>(null);
 
   // Modals for Histori: Edit, Cancel, Audit History
@@ -408,6 +419,42 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         keterangan: '',
       },
     ]);
+  };
+
+  const handleGenerateMultiStoreRows = () => {
+    if (multiStoreSelected.length === 0) {
+      onShowToast('Pilih minimal 1 store tujuan terlebih dahulu', 'warning');
+      return;
+    }
+    if (!multiStoreDeskripsi.trim()) {
+      onShowToast('Deskripsi barang wajib diisi', 'warning');
+      return;
+    }
+
+    const newRows: ItemInputRow[] = multiStoreSelected.map((st, idx) => ({
+      tempId: `multi-${Date.now()}-${idx}-${Math.random()}`,
+      storeTujuan: st,
+      noSuratJalan: multiStoreNoSJ.trim(),
+      deskripsi: multiStoreDeskripsi.trim(),
+      qty: Math.max(1, multiStoreQty),
+      satuan: multiStoreSatuan,
+      keterangan: multiStoreKeterangan.trim(),
+    }));
+
+    // Jika baris pertama masih kosong default, replace atau gabungkan
+    setItemRows((prev) => {
+      const isFirstEmpty =
+        prev.length === 1 && !prev[0].deskripsi && !prev[0].noSuratJalan;
+      return isFirstEmpty ? newRows : [...prev, ...newRows];
+    });
+
+    onShowToast(`Berhasil menambahkan ${newRows.length} baris untuk toko terpilih`, 'success');
+    setIsMultiStoreModalOpen(false);
+    setMultiStoreSelected([]);
+    setMultiStoreDeskripsi('');
+    setMultiStoreNoSJ('');
+    setMultiStoreQty(1);
+    setMultiStoreKeterangan('');
   };
 
   const handleDuplicateRow = (index: number) => {
@@ -622,7 +669,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         r.store_tujuan.toLowerCase().includes(searchDispatched.toLowerCase()) ||
         r.id.toLowerCase().includes(searchDispatched.toLowerCase()) ||
         r.items.some((it) => it.deskripsi.toLowerCase().includes(searchDispatched.toLowerCase()));
-      const matchStore = filterStoreDispatched === '' || isSameStore(r.store_tujuan, filterStoreDispatched);
+
+      const matchStore =
+        !filterStoreDispatched ||
+        filterStoreDispatched.length === 0 ||
+        (Array.isArray(filterStoreDispatched)
+          ? filterStoreDispatched.some((fs) => isSameStore(r.store_tujuan, fs))
+          : isSameStore(r.store_tujuan, filterStoreDispatched));
+
       const matchLabel =
         filterLabelStatusDispatched === 'all' ||
         (filterLabelStatusDispatched === 'printed' && r.is_label_printed) ||
@@ -1376,7 +1430,13 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
             )
         );
 
-      const matchStore = filterStoreHistori === '' || isSameStore(b.storeTujuan, filterStoreHistori);
+      const matchStore =
+        !filterStoreHistori ||
+        filterStoreHistori.length === 0 ||
+        (Array.isArray(filterStoreHistori)
+          ? filterStoreHistori.some((fs) => isSameStore(b.storeTujuan, fs))
+          : isSameStore(b.storeTujuan, filterStoreHistori));
+
       return matchSearch && matchStore;
     });
   }, [historiBatches, searchHistori, filterStoreHistori]);
@@ -1391,7 +1451,14 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         (r.catatan_kirim && r.catatan_kirim.toLowerCase().includes(searchHistori.toLowerCase())) ||
         r.id.toLowerCase().includes(searchHistori.toLowerCase()) ||
         r.items.some((it) => it.deskripsi.toLowerCase().includes(searchHistori.toLowerCase()));
-      const matchStore = filterStoreHistori === '' || isSameStore(r.store_tujuan, filterStoreHistori);
+
+      const matchStore =
+        !filterStoreHistori ||
+        filterStoreHistori.length === 0 ||
+        (Array.isArray(filterStoreHistori)
+          ? filterStoreHistori.some((fs) => isSameStore(r.store_tujuan, fs))
+          : isSameStore(r.store_tujuan, filterStoreHistori));
+
       return matchSearch && matchStore;
     });
   }, [sentReports, searchHistori, filterStoreHistori]);
@@ -1523,20 +1590,32 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
           {/* Rows List */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-indigo-500" />
                 Daftar Barang Dikirim ({itemRows.length} Baris)
               </span>
 
-              <button
-                type="button"
-                onClick={handleAddRow}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-center gap-1 transition-all cursor-pointer shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Tambah Barang
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMultiStoreModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 border border-blue-200 dark:border-blue-800/60 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  title="Tambah 1 jenis barang ke beberapa toko sekaligus"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>⚡ Multi Toko (Multi-Choice)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Baris</span>
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -1584,51 +1663,29 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                      {/* Store Tujuan */}
+                      {/* Store Tujuan (Drop Search) */}
                       <div className="sm:col-span-4 space-y-1">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
                           <Store className="w-3 h-3 text-indigo-500" />
                           Store Tujuan <span className="text-rose-500">*</span>
                         </label>
-                        {!row.isCustomStore ? (
-                          <select
-                            value={row.storeTujuan}
-                            onChange={(e) => {
-                              if (e.target.value === '__custom__') {
-                                handleUpdateRow(index, 'isCustomStore', true);
-                                handleUpdateRow(index, 'customStoreInput', '');
-                              } else {
-                                handleUpdateRow(index, 'storeTujuan', e.target.value);
-                              }
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-200 outline-none"
-                          >
-                            {stores.map((s, sIdx) => (
-                              <option key={s.id || sIdx} value={s.nama}>
-                                {s.nama}
-                              </option>
-                            ))}
-                            <option value="__custom__">+ Toko Lainnya (Manual)...</option>
-                          </select>
-                        ) : (
-                          <div className="flex gap-1">
-                            <input
-                              type="text"
-                              placeholder="Nama store tujuan..."
-                              value={row.customStoreInput || ''}
-                              onChange={(e) => handleUpdateRow(index, 'customStoreInput', e.target.value)}
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-indigo-400 rounded-lg text-xs font-bold outline-none"
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateRow(index, 'isCustomStore', false)}
-                              className="px-2 py-1 text-[10px] text-slate-500 hover:bg-slate-200 rounded-lg"
-                            >
-                              Batal
-                            </button>
-                          </div>
-                        )}
+                        <SearchableSelect
+                          options={stores.map((s) => ({
+                            value: s.nama,
+                            label: s.nama,
+                            secondaryLabel: (s as any).kode ? `Kode: ${(s as any).kode}` : undefined,
+                          }))}
+                          value={row.isCustomStore ? row.customStoreInput : row.storeTujuan}
+                          onChange={(val) => {
+                            handleUpdateRow(index, 'isCustomStore', false);
+                            handleUpdateRow(index, 'storeTujuan', val);
+                            handleUpdateRow(index, 'customStoreInput', '');
+                          }}
+                          placeholder="Cari Store..."
+                          searchPlaceholder="Ketik nama / kode toko..."
+                          allowCustom={true}
+                          size="sm"
+                        />
                       </div>
 
                       {/* No Surat Jalan */}
@@ -1954,33 +2011,52 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 />
               </div>
 
-              <select
-                value={filterStoreDispatched}
-                onChange={(e) => setFilterStoreDispatched(e.target.value)}
-                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
-              >
-                <option value="">Semua Store Tujuan</option>
-                {stores.map((s, idx) => (
-                  <option key={s.id || idx} value={s.nama}>
-                    {s.nama}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full sm:w-auto min-w-[220px]">
+                <SearchableSelect
+                  multiple={true}
+                  options={stores.map((s) => {
+                    const countInDispatched = dispatchedReports.filter((r) => isSameStore(r.store_tujuan, s.nama)).length;
+                    return {
+                      value: s.nama,
+                      label: s.nama,
+                      badge: countInDispatched > 0 ? `${countInDispatched} Lap` : undefined,
+                      badgeColor: 'amber' as const,
+                    };
+                  })}
+                  value={filterStoreDispatched}
+                  onChange={(val) => setFilterStoreDispatched(val)}
+                  placeholder="Filter Store (Multi-Choice)"
+                  searchPlaceholder="Cari toko..."
+                  size="sm"
+                  icon={<Store className="w-3.5 h-3.5" />}
+                />
+              </div>
 
               {/* Filter Status Cetak Label */}
-              <select
-                value={filterLabelStatusDispatched}
-                onChange={(e) => setFilterLabelStatusDispatched(e.target.value as any)}
-                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
-              >
-                <option value="all">Semua Status Label</option>
-                <option value="unprinted">
-                  ⏳ Belum Cetak Label ({dispatchedReports.filter((r) => !r.is_label_printed).length})
-                </option>
-                <option value="printed">
-                  ✅ Sudah Cetak Label ({dispatchedReports.filter((r) => r.is_label_printed).length})
-                </option>
-              </select>
+              <div className="w-full sm:w-auto min-w-[180px]">
+                <SearchableSelect
+                  options={[
+                    { value: 'all', label: 'Semua Status Label' },
+                    {
+                      value: 'unprinted',
+                      label: 'Belum Cetak Label',
+                      badge: dispatchedReports.filter((r) => !r.is_label_printed).length,
+                      badgeColor: 'amber',
+                    },
+                    {
+                      value: 'printed',
+                      label: 'Sudah Cetak Label',
+                      badge: dispatchedReports.filter((r) => r.is_label_printed).length,
+                      badgeColor: 'emerald',
+                    },
+                  ]}
+                  value={filterLabelStatusDispatched}
+                  onChange={(val) => setFilterLabelStatusDispatched(val as any)}
+                  placeholder="Status Label"
+                  allowCustom={false}
+                  size="sm"
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -2349,36 +2425,39 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
             {/* FORM SETUP KIRIM */}
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
-              {/* 1. Pilih Store Tujuan */}
+              {/* 1. Pilih Store Tujuan (Searchable Dropdown) */}
               <div className="sm:col-span-6 space-y-1">
                 <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1">
                   <Store className="w-4 h-4 text-blue-600" />
                   Pilih Store Tujuan <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <SearchableSelect
+                  options={[
+                    ...dispatchedStoresList.map((ds) => ({
+                      value: ds.storeName,
+                      label: ds.storeName,
+                      badge: `${ds.koli} Koli Ready`,
+                      badgeColor: 'emerald' as const,
+                      secondaryLabel: `${ds.count} Laporan Dispatched`,
+                    })),
+                    ...stores
+                      .filter((s) => !dispatchedStoresList.some((ds) => isSameStore(ds.storeName, s.nama)))
+                      .map((s) => ({
+                        value: s.nama,
+                        label: s.nama,
+                        secondaryLabel: (s as any).kode ? `Kode: ${(s as any).kode}` : undefined,
+                        badge: '0 Koli',
+                        badgeColor: 'slate' as const,
+                      })),
+                  ]}
                   value={selectedStoreKirim}
-                  onChange={(e) => setSelectedStoreKirim(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-2 border-blue-400 dark:border-blue-600 rounded-xl text-xs font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">-- Pilih Toko Cabang Tujuan --</option>
-                  {/* Prioritaskan toko yang memiliki barang dispatched */}
-                  {dispatchedStoresList.map((ds) => (
-                    <option key={ds.storeName} value={ds.storeName}>
-                      {ds.storeName} ({ds.koli} Koli Ready - {ds.count} Laporan)
-                    </option>
-                  ))}
-                  {/* Toko lainnya dari master */}
-                  {stores
-                    .filter((s) => !dispatchedStoresList.some((ds) => isSameStore(ds.storeName, s.nama)))
-                    .map((s, idx) => {
-                      const storeCode = (s as any).kode;
-                      return (
-                        <option key={s.id || idx} value={s.nama}>
-                          {s.nama}{storeCode && !s.nama.includes(storeCode) ? ` (${storeCode})` : ''} (0 Koli Ready)
-                        </option>
-                      );
-                    })}
-                </select>
+                  onChange={(val) => setSelectedStoreKirim(val)}
+                  placeholder="-- Cari atau Pilih Toko Cabang Tujuan --"
+                  searchPlaceholder="Ketik nama atau kode toko..."
+                  allowCustom={true}
+                  size="md"
+                  buttonClassName="border-2 border-blue-400 dark:border-blue-600 font-black text-slate-900 dark:text-white"
+                />
                 <div className="text-[11px] text-slate-400">
                   Saat store dipilih, seluruh barang yang ready kirim di toko ini otomatis muncul di bawah.
                 </div>
@@ -2735,18 +2814,26 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 />
               </div>
 
-              <select
-                value={filterStoreHistori}
-                onChange={(e) => setFilterStoreHistori(e.target.value)}
-                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
-              >
-                <option value="">Semua Store Tujuan</option>
-                {stores.map((s, idx) => (
-                  <option key={s.id || idx} value={s.nama}>
-                    {s.nama}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full sm:w-auto min-w-[220px]">
+                <SearchableSelect
+                  multiple={true}
+                  options={stores.map((s) => {
+                    const countInHistori = historiBatches.filter((b) => isSameStore(b.storeTujuan, s.nama)).length;
+                    return {
+                      value: s.nama,
+                      label: s.nama,
+                      badge: countInHistori > 0 ? `${countInHistori} SJ` : undefined,
+                      badgeColor: 'blue' as const,
+                    };
+                  })}
+                  value={filterStoreHistori}
+                  onChange={(val) => setFilterStoreHistori(val)}
+                  placeholder="Filter Store (Multi-Choice)"
+                  searchPlaceholder="Cari toko..."
+                  size="sm"
+                  icon={<Store className="w-3.5 h-3.5" />}
+                />
+              </div>
             </div>
 
             <div className="text-xs font-bold text-slate-500">
@@ -3345,38 +3432,25 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
 
             {/* Body */}
             <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
-              {/* Toko Tujuan */}
+              {/* Toko Tujuan (Searchable Dropdown) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Store className="w-4 h-4 text-indigo-500" />
                   Store Tujuan <span className="text-rose-500">*</span>
                 </label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={stores.some((s) => s.nama === editStoreTujuan) ? editStoreTujuan : '__custom__'}
-                    onChange={(e) => {
-                      if (e.target.value !== '__custom__') {
-                        setEditStoreTujuan(e.target.value);
-                      }
-                    }}
-                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 outline-none"
-                  >
-                    {stores.map((s, sIdx) => (
-                      <option key={s.id || sIdx} value={s.nama}>
-                        {s.nama}
-                      </option>
-                    ))}
-                    <option value="__custom__">+ Input Nama Toko Lain...</option>
-                  </select>
-
-                  <input
-                    type="text"
-                    placeholder="Ketik nama store..."
-                    value={editStoreTujuan}
-                    onChange={(e) => setEditStoreTujuan(e.target.value)}
-                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
+                <SearchableSelect
+                  options={stores.map((s) => ({
+                    value: s.nama,
+                    label: s.nama,
+                    secondaryLabel: (s as any).kode ? `Kode: ${(s as any).kode}` : undefined,
+                  }))}
+                  value={editStoreTujuan}
+                  onChange={(val) => setEditStoreTujuan(val)}
+                  placeholder="Pilih Store Tujuan..."
+                  searchPlaceholder="Ketik nama store..."
+                  allowCustom={true}
+                  size="md"
+                />
               </div>
 
               {/* Rincian Items */}
@@ -4108,6 +4182,158 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
                 )}
                 <span>Konfirmasi Batal Kirim</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL: INPUT MULTI-TOKO SEKALIGUS (MULTI-CHOICE BATCH GENERATOR)     */}
+      {/* ==================================================================== */}
+      {isMultiStoreModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-xl flex flex-col overflow-hidden my-4">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    Input Cepat Multi-Toko Sekaligus
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Pilih beberapa toko sekaligus untuk otomatis membuat baris pengiriman
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMultiStoreModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto max-h-[70vh]">
+              {/* Multi-Store Dropdown */}
+              <div className="space-y-1.5">
+                <label className="font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Store className="w-4 h-4 text-indigo-500" />
+                  Pilih Toko Tujuan (Bisa Pilih Banyak) <span className="text-rose-500">*</span>
+                </label>
+                <SearchableSelect
+                  multiple={true}
+                  options={stores.map((s) => ({
+                    value: s.nama,
+                    label: s.nama,
+                    secondaryLabel: (s as any).kode ? `Kode: ${(s as any).kode}` : undefined,
+                  }))}
+                  value={multiStoreSelected}
+                  onChange={(val) => setMultiStoreSelected(val)}
+                  placeholder="Pilih Toko-Toko Tujuan..."
+                  searchPlaceholder="Ketik nama atau kode toko..."
+                  size="md"
+                />
+                <div className="text-[11px] text-slate-400">
+                  {multiStoreSelected.length > 0
+                    ? `${multiStoreSelected.length} toko terpilih. Akan dibuat ${multiStoreSelected.length} baris barang.`
+                    : 'Gunakan tombol "Pilih Semua" atau centang beberapa toko sekaligus.'}
+                </div>
+              </div>
+
+              {/* Deskripsi Barang */}
+              <div className="space-y-1.5">
+                <label className="font-black text-slate-800 dark:text-slate-200">
+                  Deskripsi / Nama Barang <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={multiStoreDeskripsi}
+                  onChange={(e) => setMultiStoreDeskripsi(e.target.value)}
+                  placeholder="Contoh: Paket Brosur Marketing Q3 / Display Banner..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* No Surat Jalan */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">No. Surat Jalan</label>
+                  <input
+                    type="text"
+                    value={multiStoreNoSJ}
+                    onChange={(e) => setMultiStoreNoSJ(e.target.value)}
+                    placeholder="Opsional..."
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono outline-none"
+                  />
+                </div>
+
+                {/* Qty per Toko */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Qty Tiap Toko</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={multiStoreQty}
+                    onChange={(e) => setMultiStoreQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-center outline-none"
+                  />
+                </div>
+
+                {/* Satuan */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Satuan</label>
+                  <select
+                    value={multiStoreSatuan}
+                    onChange={(e) => setMultiStoreSatuan(e.target.value as any)}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold outline-none"
+                  >
+                    <option value="Koli">Koli</option>
+                    <option value="Pcs">Pcs</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Keterangan */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 dark:text-slate-300">Keterangan Tambahan</label>
+                <input
+                  type="text"
+                  value={multiStoreKeterangan}
+                  onChange={(e) => setMultiStoreKeterangan(e.target.value)}
+                  placeholder="Catatan untuk serah terima / driver (opsional)..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-xs outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+              <div className="text-xs text-slate-500 font-medium">
+                Total: <strong>{multiStoreSelected.length} baris</strong> akan dibuat
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMultiStoreModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateMultiStoreRows}
+                  disabled={multiStoreSelected.length === 0 || !multiStoreDeskripsi.trim()}
+                  className="px-5 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambahkan {multiStoreSelected.length} Baris</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
