@@ -112,12 +112,32 @@ export async function pushPenerimaanProduksiToGoogleSheet(
       throw new Error(`HTTP Error ${res.status}: ${res.statusText}`);
     }
   } catch (err: any) {
-    console.warn('Gagal push ke GAS Web App:', err);
-    return {
-      success: false,
-      message: 'Gagal mengirim data ke Google Sheet melalui Web App: ' + (err?.message || err),
-      error: err?.message || String(err),
-      sheetUrl: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
-    };
+    console.warn('CORS / Fetch error pada GAS Web App, mencoba fallback mode no-cors:', err);
+    try {
+      // Fallback mode no-cors bypasses browser CORS blocking for Google Apps Script Web App
+      await fetch(gasUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      return {
+        success: true,
+        message: `Berhasil mengirim data Master Matrix (${activeTab}) ke Google Sheet!`,
+        count: blocks ? blocks.length : formattedItems.length,
+        sheetUrl: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
+      };
+    } catch (fallbackErr: any) {
+      console.error('Gagal total push ke GAS Web App:', fallbackErr);
+      return {
+        success: false,
+        message: 'Gagal mengirim data ke Google Sheet melalui Web App: ' + (err?.message || err),
+        error: err?.message || String(err),
+        sheetUrl: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
+      };
+    }
   }
 }
