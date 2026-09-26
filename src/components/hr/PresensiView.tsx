@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { UserSession, PresensiRecord, RosterShiftRecord, MasterShiftRecord } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
-import { getUserPersonName } from '../../utils/userResolver';
+import { getUserPersonName, getUserNik } from '../../utils/userResolver';
 import {
   fetchPresensiToday,
   fetchPresensiRange,
@@ -73,7 +73,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const [upcomingRoster, setUpcomingRoster] = useState<RosterShiftRecord[]>([]);
   const [shifts, setShifts] = useState<MasterShiftRecord[]>([]);
 
-  const userNik = session?.nik || (session?.username && session.username.startsWith('WH') ? session.username : 'WH0001');
+  const userNik = getUserNik(session);
 
   // Helper for ISO-compliant time string (HH:mm:ss with colons)
   const getFormatTime = (d: Date = new Date()): string => {
@@ -145,9 +145,11 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       const nowTime = getFormatTime();
       const currentRoster = upcomingRoster.find((r) => r.tanggal === todayIso);
       const shiftName = currentRoster?.shift || 'Shift 1';
+      const staffFullName = session?.name || getUserPersonName(userNik, userNik);
 
       const payload: Partial<PresensiRecord> = {
         nik: userNik,
+        nama: staffFullName,
         tanggal: todayIso,
         shift: shiftName,
         status: 'Hadir',
@@ -176,8 +178,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     setSubmitting(true);
     try {
       const nowTime = getFormatTime();
+      const staffFullName = session?.name || todayPresensi.nama || getUserPersonName(userNik, userNik);
       const payload: Partial<PresensiRecord> = {
         ...todayPresensi,
+        nama: staffFullName,
         jam_pulang: nowTime,
         catatan: (todayPresensi.catatan || '') + ` | Pulang (${nowTime})`,
       };
@@ -561,7 +565,11 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   <tr key={r.id || i}>
                     <td className="p-3">{r.tanggal}</td>
                     <td className="p-3">{r.nik}</td>
-                    <td className="p-3">{r.nama || r.nik}</td>
+                    <td className="p-3">
+                      {r.nama && r.nama.trim().toLowerCase() !== r.nik.trim().toLowerCase()
+                        ? r.nama
+                        : getUserPersonName(r.nik, r.nama || r.nik)}
+                    </td>
                     
                     {editingPresensiId === r.id ? (
                       <>

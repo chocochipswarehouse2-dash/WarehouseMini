@@ -258,6 +258,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
   // On-demand delta cache for DealPOS channels
   const [dealposDeltaMap, setDealposDeltaMap] = useState<Record<string, any>>({});
+  const lastFetchedSearchTerm = useRef<string>('');
+  const fetchedDealposSkusRef = useRef<Set<string>>(new Set());
 
   // KPI Modal Drilldown State
   const [kpiModal, setKpiModal] = useState<KpiModalType>(null);
@@ -506,7 +508,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // On-demand delta fetch for searched SKUs to guarantee instant accuracy
   useEffect(() => {
     const term = deferredSearch.trim().toLowerCase();
-    if (!term || term.length < 2) return;
+    if (!term || term.length < 2) {
+      lastFetchedSearchTerm.current = '';
+      return;
+    }
+    if (lastFetchedSearchTerm.current === term) return;
+    lastFetchedSearchTerm.current = term;
 
     // Find matching SKUs in productCatalog
     const matchingSkus = productCatalog
@@ -538,8 +545,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     });
 
     // Also fetch DealPOS channels on-demand for searched items if not yet loaded
-    const missingDealposSkus = matchingSkus.filter((sku) => !dealposDeltaMap[sku]);
+    const missingDealposSkus = matchingSkus.filter((sku) => !dealposDeltaMap[sku] && !fetchedDealposSkusRef.current.has(sku));
     if (missingDealposSkus.length > 0) {
+      missingDealposSkus.forEach((s) => fetchedDealposSkusRef.current.add(s));
       fetchMasterProductDealposChannelsBySkus(missingDealposSkus).then((res) => {
         if (res && Object.keys(res).length > 0) {
           setDealposDeltaMap((prev) => ({ ...prev, ...res }));
@@ -548,7 +556,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         console.warn('Search delta dealpos fetch failed:', err);
       });
     }
-  }, [deferredSearch, productCatalog, stockList, dealposDeltaMap]);
+  }, [deferredSearch, productCatalog]);
 
   // Helper string formatter for locations
   const formatLocationString = (locList?: (string | { lokasi: string; qty?: number })[]) => {
@@ -1025,7 +1033,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     const slice = filteredInventory.slice(0, 30);
     for (let i = 0; i < slice.length; i++) {
       const it = slice[i];
-      if (!dealposDeltaMap[it.sku]) {
+      if (!dealposDeltaMap[it.sku] && !fetchedDealposSkusRef.current.has(it.sku)) {
         const hasDp = (it.komparasi.MAP.dp || 0) > 0 ||
                       (it.komparasi.PERMAK.dp || 0) > 0 ||
                       (it.komparasi.LIVE.dp || 0) > 0 ||
@@ -1044,6 +1052,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
   useEffect(() => {
     if (visibleSkusNeedingDealpos.length === 0) return;
+    visibleSkusNeedingDealpos.forEach((s) => fetchedDealposSkusRef.current.add(s));
     let isMounted = true;
     const timer = setTimeout(() => {
       fetchMasterProductDealposChannelsBySkus(visibleSkusNeedingDealpos).then((res) => {

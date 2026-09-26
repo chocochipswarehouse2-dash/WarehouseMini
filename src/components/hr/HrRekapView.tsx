@@ -28,6 +28,7 @@ import {
   fetchCutiRecords,
   fetchRosterShiftList,
 } from '../../services/supabase';
+import { getUserPersonName } from '../../utils/userResolver';
 
 interface HrRekapViewProps {
   session: UserSession | null;
@@ -843,7 +844,11 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                         {p.tanggal}
                       </td>
                       <td className="py-3 px-3">
-                        <div className="font-extrabold text-slate-900 dark:text-white">{p.nama || p.nik}</div>
+                        <div className="font-extrabold text-slate-900 dark:text-white">
+                          {p.nama && p.nama.trim().toLowerCase() !== p.nik.trim().toLowerCase()
+                            ? p.nama
+                            : getUserPersonName(p.nik, p.nama || p.nik)}
+                        </div>
                         <div className="text-[10px] text-slate-400 font-mono">NIK: {p.nik}</div>
                       </td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-300 font-semibold">

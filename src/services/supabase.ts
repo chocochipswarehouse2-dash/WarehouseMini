@@ -4919,7 +4919,17 @@ export async function fetchPresensiToday(nik: string, dateStr: string): Promise<
       null,
       `nik=eq.${encodeURIComponent(nik)}&tanggal=eq.${encodeURIComponent(dateStr)}&limit=1`
     );
-    return data && data.length > 0 ? data[0] : null;
+    if (data && data.length > 0) {
+      const r = data[0];
+      const resolvedNama = (r.nama && r.nama.trim() && r.nama.trim().toLowerCase() !== r.nik.trim().toLowerCase())
+        ? r.nama
+        : getUserPersonName(r.nik, r.nama || r.nik);
+      return {
+        ...r,
+        nama: resolvedNama,
+      };
+    }
+    return null;
   } catch (err) {
     console.warn('fetchPresensiToday error:', err);
     return null;
@@ -4931,24 +4941,101 @@ export async function fetchPresensiToday(nik: string, dateStr: string): Promise<
  */
 export async function submitPresensiRecord(record: Partial<PresensiRecord>): Promise<PresensiRecord | null> {
   const sb = getSupabaseClient();
-  const sanitized = { ...record };
-  if (sanitized.jam_masuk) {
-    sanitized.jam_masuk = sanitized.jam_masuk.replace(/\./g, ':');
-  }
-  if (sanitized.jam_pulang) {
-    sanitized.jam_pulang = sanitized.jam_pulang.replace(/\./g, ':');
+  const rawNik = record.nik ? String(record.nik).trim().toUpperCase() : '';
+  const rawTanggal = record.tanggal ? String(record.tanggal).trim() : '';
+
+  if (!rawNik || !rawTanggal) {
+    throw new Error('NIK dan Tanggal presensi wajib diisi');
   }
 
-  const { data, error } = await sb
+  const cleanPayload: Record<string, any> = {
+    nik: rawNik,
+    tanggal: rawTanggal,
+    shift: record.shift || 'Shift 1',
+    status: record.status || 'Hadir',
+    jam_masuk: record.jam_masuk ? String(record.jam_masuk).replace(/\./g, ':') : null,
+    jam_pulang: record.jam_pulang ? String(record.jam_pulang).replace(/\./g, ':') : null,
+    catatan: record.catatan || null,
+  };
+
+  // 1. Check existing record for this (nik, tanggal)
+  const { data: existingList, error: fetchErr } = await sb
     .from('presensi')
-    .upsert(sanitized, { onConflict: 'nik,tanggal' })
-    .select()
-    .single();
+    .select('id,nik,tanggal,shift,status,jam_masuk,jam_pulang,catatan')
+    .eq('nik', rawNik)
+    .eq('tanggal', rawTanggal)
+    .limit(1);
 
-  if (error) {
-    throw new Error(error.message);
+  if (fetchErr) {
+    console.warn('fetch existing presensi warn:', fetchErr);
   }
-  return data;
+
+  const existing = existingList && existingList.length > 0 ? existingList[0] : null;
+
+  let resultData: any = null;
+
+  if (existing) {
+    // Update existing record
+    const updatePayload: Record<string, any> = {
+      ...cleanPayload,
+      jam_masuk: cleanPayload.jam_masuk || existing.jam_masuk,
+      jam_pulang: cleanPayload.jam_pulang || existing.jam_pulang,
+      shift: cleanPayload.shift || existing.shift,
+      status: cleanPayload.status || existing.status,
+      catatan: cleanPayload.catatan !== null ? cleanPayload.catatan : existing.catatan,
+    };
+    const { data: updated, error: updErr } = await sb
+      .from('presensi')
+      .update(updatePayload)
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (updErr) {
+      console.error('update presensi error:', updErr);
+      throw new Error(updErr.message);
+    }
+    resultData = updated;
+  } else {
+    // Insert new record
+    let { data: inserted, error: insErr } = await sb
+      .from('presensi')
+      .insert(cleanPayload)
+      .select()
+      .single();
+
+    if (insErr && (insErr.code === '23505' || String(insErr.message).includes('presensi_pkey'))) {
+      // Sequence gap fallback: query max id and insert with explicit next ID
+      const { data: maxRow } = await sb.from('presensi').select('id').order('id', { ascending: false }).limit(1);
+      const nextId = (maxRow && maxRow[0]?.id ? maxRow[0].id : 300) + 1;
+      const resFallback = await sb
+        .from('presensi')
+        .insert({ ...cleanPayload, id: nextId })
+        .select()
+        .single();
+      if (resFallback.error) {
+        console.error('insert fallback error:', resFallback.error);
+        throw new Error(resFallback.error.message);
+      }
+      inserted = resFallback.data;
+    } else if (insErr) {
+      console.error('insert presensi error:', insErr);
+      throw new Error(insErr.message);
+    }
+    resultData = inserted;
+  }
+
+  if (resultData) {
+    const resolvedNama = (record.nama && record.nama.trim() && record.nama.trim().toLowerCase() !== resultData.nik.toLowerCase())
+      ? record.nama.trim()
+      : getUserPersonName(resultData.nik, record.nama || resultData.nik);
+    return {
+      ...resultData,
+      nama: resolvedNama,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -5191,7 +5278,15 @@ export async function fetchPresensiRange(
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }
     const data = await supabaseFetch<PresensiRecord[]>('presensi', 'GET', null, query);
-    return data || [];
+    if (data && Array.isArray(data)) {
+      return data.map((r) => ({
+        ...r,
+        nama: (r.nama && r.nama.trim() && r.nama.trim().toLowerCase() !== r.nik.trim().toLowerCase())
+          ? r.nama
+          : getUserPersonName(r.nik, r.nama || r.nik),
+      }));
+    }
+    return [];
   } catch (err) {
     console.warn('fetchPresensiRange error:', err);
     return [];

@@ -21,7 +21,7 @@ import {
   submitCutiRecord,
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
-import { getUserPersonName } from '../../utils/userResolver';
+import { getUserPersonName, getUserNik } from '../../utils/userResolver';
 
 interface LemburCutiViewProps {
   session: UserSession | null;
@@ -49,7 +49,7 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
   const [cutiReason, setCutiReason] = useState<string>('');
   const [submittingCuti, setSubmittingCuti] = useState<boolean>(false);
 
-  const userNik = session?.nik || (session?.username && session.username.startsWith('WH') ? session.username : 'WH0001');
+  const userNik = getUserNik(session);
   const userName = session?.name || getUserPersonName(session?.username) || 'Karyawan';
 
   const isAdmin = isSuperadmin(session) || hasPermission(session, 'menu_hr_approval');

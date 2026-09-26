@@ -160,3 +160,43 @@ export function formatOperatorWithPersonName(rawOperator?: string | null): strin
   // Direct lookup
   return getUserPersonName(trimmed);
 }
+
+/**
+ * Resolves a UserSession, username, or identifier to the correct standardized NIK (e.g. "WH0004").
+ */
+export function getUserNik(sessionOrUser?: { nik?: string | null; username?: string | null } | string | null): string {
+  if (!sessionOrUser) return 'WH0001';
+
+  if (typeof sessionOrUser === 'object') {
+    if (sessionOrUser.nik && sessionOrUser.nik.trim()) {
+      return sessionOrUser.nik.trim().toUpperCase();
+    }
+    const u = (sessionOrUser.username || '').trim().toLowerCase();
+    if (u.startsWith('wh')) {
+      const num = u.replace(/\D/g, '');
+      if (num) {
+        return `WH${num.padStart(4, '0')}`;
+      }
+      return u.toUpperCase();
+    }
+    if (u === 'yesinta') return 'WH0004';
+    if (u === 'sasi') return 'WH0002';
+    if (u === 'irma') return 'WH0003';
+    if (u === 'nanang') return 'WH0010';
+    return 'WH0001';
+  }
+
+  const clean = String(sessionOrUser).trim().toLowerCase();
+  if (clean.startsWith('wh')) {
+    const num = clean.replace(/\D/g, '');
+    if (num) {
+      return `WH${num.padStart(4, '0')}`;
+    }
+    return clean.toUpperCase();
+  }
+  if (clean === 'yesinta') return 'WH0004';
+  if (clean === 'sasi') return 'WH0002';
+  if (clean === 'irma') return 'WH0003';
+  if (clean === 'nanang') return 'WH0010';
+  return 'WH0001';
+}
