@@ -62,6 +62,14 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   // Modal WhatsApp Template untuk PIC Store kirim ke Customer
   const [waModalOrder, setWaModalOrder] = useState<ManualShipmentOrder | null>(null);
   const [copiedResi, setCopiedResi] = useState<string | null>(null);
+  const [copiedUpdateMsg, setCopiedUpdateMsg] = useState<boolean>(false);
+
+  // Modal Konfirmasi & Salin Pesan Pembaruan (Diff Log)
+  const [updateSuccessModal, setUpdateSuccessModal] = useState<{
+    order: ManualShipmentOrder;
+    message: string;
+    changes: string[];
+  } | null>(null);
 
   // Helper Clipboard dengan fallback aman
   const copyToClipboard = async (text: string, successMsg: string) => {
@@ -142,7 +150,247 @@ Kakak dapat memantau status pengiriman paket melalui website resmi atau aplikasi
 Terima kasih banyak atas kepercayaannya! Semoga paket lekas sampai dan bermanfaat ya Kak. ✨🙏`;
   };
 
-  // State untuk cetak in-page A6 & Picking List (100% kompatibel di HP / mobile dan desktop tanpa popup blocker)
+  /**
+   * Helper Cerdas: Deteksi seluruh poin perubahan data (Diff Summary)
+   * Mendeteksi: Ganti produk, ganti qty, ganti fulfilment, ganti alamat, ekspedisi, dll.
+   */
+  const generateOrderUpdateDiff = (oldOrder: ManualShipmentOrder, newOrder: ManualShipmentOrder): string[] => {
+    const changes: string[] = [];
+
+    // 1. Data Penerima & Alamat
+    if ((oldOrder.alamat_tujuan || '').trim() !== (newOrder.alamat_tujuan || '').trim()) {
+      changes.push(`📍 *Alamat Pengiriman Diubah:*
+    • Semula: ${oldOrder.alamat_tujuan || '(Kosong)'}
+    • Menjadi: *${newOrder.alamat_tujuan || '(Kosong)'}*`);
+    }
+
+    if ((oldOrder.nama_tujuan || '').trim() !== (newOrder.nama_tujuan || '').trim()) {
+      changes.push(`👤 *Nama Penerima:* ${oldOrder.nama_tujuan || '-'} ➡️ *${newOrder.nama_tujuan || '-'}*`);
+    }
+
+    if ((oldOrder.no_telp_tujuan || '').trim() !== (newOrder.no_telp_tujuan || '').trim()) {
+      changes.push(`📱 *No. Telp Penerima:* ${oldOrder.no_telp_tujuan || '-'} ➡️ *${newOrder.no_telp_tujuan || '-'}*`);
+    }
+
+    // 2. Ekspedisi / Jasa Kirim & DealPOS
+    if ((oldOrder.jasa_kirim || '').trim() !== (newOrder.jasa_kirim || '').trim()) {
+      changes.push(`🚚 *Jasa Kirim / Ekspedisi:* ${oldOrder.jasa_kirim || '-'} ➡️ *${newOrder.jasa_kirim || '-'}*`);
+    }
+
+    const oldDealpos = Array.isArray(oldOrder.no_transaksi_pengirim)
+      ? oldOrder.no_transaksi_pengirim.join(', ')
+      : (oldOrder.no_transaksi_pengirim || '');
+    const newDealpos = Array.isArray(newOrder.no_transaksi_pengirim)
+      ? newOrder.no_transaksi_pengirim.join(', ')
+      : (newOrder.no_transaksi_pengirim || '');
+    if (oldDealpos.trim() !== newDealpos.trim()) {
+      changes.push(`🏷️ *No. Transaksi DealPOS:* ${oldDealpos || '-'} ➡️ *${newDealpos || '-'}*`);
+    }
+
+    if ((oldOrder.notes_paket || '').trim() !== (newOrder.notes_paket || '').trim()) {
+      changes.push(`📝 *Catatan Paket:* ${oldOrder.notes_paket || '(Kosong)'} ➡️ *${newOrder.notes_paket || '(Kosong)'}*`);
+    }
+
+    if ((oldOrder.pic_store || '').trim() !== (newOrder.pic_store || '').trim()) {
+      changes.push(`👨‍💼 *PIC Store:* ${oldOrder.pic_store || '-'} ➡️ *${newOrder.pic_store || '-'}*`);
+    }
+
+    if (oldOrder.status !== newOrder.status) {
+      changes.push(`📊 *Status Pesanan:* ${oldOrder.status} ➡️ *${newOrder.status}*`);
+    }
+
+    if ((oldOrder.no_resi || '').trim() !== (newOrder.no_resi || '').trim()) {
+      changes.push(`📦 *No. Resi:* ${oldOrder.no_resi || '(Belum Ada)'} ➡️ *${newOrder.no_resi || '(Belum Ada)'}*`);
+    }
+
+    // 3. Perubahan Produk, Qty, dan Fulfilment
+    const oldItems = oldOrder.items || [];
+    const newItems = newOrder.items || [];
+
+    const matchedOldIdx = new Set<number>();
+    const matchedNewIdx = new Set<number>();
+
+    // Step A: Match by id
+    oldItems.forEach((oldIt, oIdx) => {
+      if (!oldIt.id) return;
+      const nIdx = newItems.findIndex((newIt, idx) => !matchedNewIdx.has(idx) && newIt.id === oldIt.id);
+      if (nIdx !== -1) {
+        matchedOldIdx.add(oIdx);
+        matchedNewIdx.add(nIdx);
+        const newIt = newItems[nIdx];
+
+        const oldSku = (oldIt.sku || '').trim().toUpperCase();
+        const newSku = (newIt.sku || '').trim().toUpperCase();
+        const oldName = (oldIt.nama_produk || '').trim();
+        const newName = (newIt.nama_produk || '').trim();
+
+        if (oldSku !== newSku || oldName !== newName) {
+          changes.push(`🔄 *Produk Diganti:*
+    • Semula: *${oldIt.sku || '-'}* (${oldIt.nama_produk}) [Qty: ${oldIt.qty} pcs, Fulfilment: ${oldIt.fulfillment || 'Gudang'}]
+    • Menjadi: *${newIt.sku || '-'}* (${newIt.nama_produk}) [Qty: ${newIt.qty} pcs, Fulfilment: ${newIt.fulfillment || 'Gudang'}]`);
+        } else {
+          if (Number(oldIt.qty) !== Number(newIt.qty)) {
+            changes.push(`🔢 *Perubahan Qty [${newIt.sku || newIt.nama_produk}]:* ${oldIt.qty} pcs ➡️ *${newIt.qty} pcs*`);
+          }
+          if ((oldIt.fulfillment || '').trim().toLowerCase() !== (newIt.fulfillment || '').trim().toLowerCase()) {
+            changes.push(`🏢 *Perubahan Fulfilment [${newIt.sku || newIt.nama_produk}]:* "${oldIt.fulfillment || 'Gudang'}" ➡️ *"${newIt.fulfillment || 'Gudang'}"*`);
+          }
+          if ((oldIt.size || '').trim() !== (newIt.size || '').trim()) {
+            changes.push(`📏 *Perubahan Size [${newIt.sku || newIt.nama_produk}]:* ${oldIt.size || '-'} ➡️ *${newIt.size || '-'}*`);
+          }
+        }
+      }
+    });
+
+    // Step B: Match remaining by SKU
+    oldItems.forEach((oldIt, oIdx) => {
+      if (matchedOldIdx.has(oIdx)) return;
+      const nIdx = newItems.findIndex((newIt, idx) =>
+        !matchedNewIdx.has(idx) &&
+        oldIt.sku &&
+        newIt.sku &&
+        oldIt.sku.trim().toUpperCase() === newIt.sku.trim().toUpperCase()
+      );
+      if (nIdx !== -1) {
+        matchedOldIdx.add(oIdx);
+        matchedNewIdx.add(nIdx);
+        const newIt = newItems[nIdx];
+        if (Number(oldIt.qty) !== Number(newIt.qty)) {
+          changes.push(`🔢 *Perubahan Qty [${newIt.sku}]:* ${oldIt.qty} pcs ➡️ *${newIt.qty} pcs*`);
+        }
+        if ((oldIt.fulfillment || '').trim().toLowerCase() !== (newIt.fulfillment || '').trim().toLowerCase()) {
+          changes.push(`🏢 *Perubahan Fulfilment [${newIt.sku}]:* "${oldIt.fulfillment || 'Gudang'}" ➡️ *"${newIt.fulfillment || 'Gudang'}"*`);
+        }
+        if ((oldIt.size || '').trim() !== (newIt.size || '').trim()) {
+          changes.push(`📏 *Perubahan Size [${newIt.sku}]:* ${oldIt.size || '-'} ➡️ *${newIt.size || '-'}*`);
+        }
+      }
+    });
+
+    // Step C: If equal unmatched count 1-on-1, detect as swap
+    const unmatchedOld = oldItems.filter((_, idx) => !matchedOldIdx.has(idx));
+    const unmatchedNew = newItems.filter((_, idx) => !matchedNewIdx.has(idx));
+
+    if (unmatchedOld.length === 1 && unmatchedNew.length === 1) {
+      const oldIt = unmatchedOld[0];
+      const newIt = unmatchedNew[0];
+      changes.push(`🔄 *Produk Diganti:*
+    • Semula: *${oldIt.sku || '-'}* (${oldIt.nama_produk}) [Qty: ${oldIt.qty} pcs, Fulfilment: ${oldIt.fulfillment || 'Gudang'}]
+    • Menjadi: *${newIt.sku || '-'}* (${newIt.nama_produk}) [Qty: ${newIt.qty} pcs, Fulfilment: ${newIt.fulfillment || 'Gudang'}]`);
+    } else {
+      unmatchedOld.forEach((oldIt) => {
+        changes.push(`❌ *Hapus Produk:* *${oldIt.sku || '-'}* (${oldIt.nama_produk}) — Qty: ${oldIt.qty} pcs, Fulfilment: ${oldIt.fulfillment || 'Gudang'}`);
+      });
+      unmatchedNew.forEach((newIt) => {
+        changes.push(`➕ *Tambah Produk Baru:* *${newIt.sku || '-'}* (${newIt.nama_produk}) — Qty: *${newIt.qty} pcs*, Fulfilment: *${newIt.fulfillment || 'Gudang'}*`);
+      });
+    }
+
+    if (changes.length === 0) {
+      changes.push(`ℹ️ Konfirmasi pembaruan data pesanan (tanpa perbedaan nilai field utama).`);
+    }
+
+    return changes;
+  };
+
+  /**
+   * Format Pesan WhatsApp Pembaruan Pesanan (Sangat Lengkap & Jelas)
+   */
+  const formatOrderUpdateMessage = (
+    oldOrder: ManualShipmentOrder,
+    newOrder: ManualShipmentOrder,
+    changes: string[],
+    editorName: string
+  ): string => {
+    const dealposStr = Array.isArray(newOrder.no_transaksi_pengirim)
+      ? newOrder.no_transaksi_pengirim.join(', ')
+      : (newOrder.no_transaksi_pengirim || '-');
+
+    const totalQty = (newOrder.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+    const orderId = newOrder.no_transaksi_customer || newOrder.no_pesanan || '-';
+
+    const itemsListStr = (newOrder.items || [])
+      .map((it, idx) => {
+        const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` | Size: ${it.size}` : '';
+        const fulStr = it.fulfillment ? ` | Fulfilment: *${it.fulfillment}*` : '';
+        return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: *${it.qty} pcs*${sizeStr}${fulStr})`;
+      })
+      .join('\n');
+
+    const changesText = changes.map((c) => `• ${c}`).join('\n');
+
+    return `✏️ *PEMBARUAN DATA PESANAN MANUAL SHIPMENT*
+--------------------------------------------
+Halo Tim *${newOrder.nama_pengirim}*, terdapat pembaruan data pada pesanan manual shipment di sistem WMS Gudang:
+
+📌 *INFORMASI PESANAN:*
+• *Order ID / No. Pesanan:* ${orderId}
+• *Store Pengirim:* ${newOrder.nama_pengirim} (PIC: ${newOrder.pic_store || '-'})
+• *No. DealPOS:* ${dealposStr}
+• *Diperbarui Oleh:* ${editorName}
+• *Waktu Update:* ${new Date().toLocaleString('id-ID')}
+
+🔄 *POIN-POIN PERUBAHAN DATA:*
+${changesText}
+
+📋 *RINCIAN LENGKAP PESANAN TERKINI (FINAL STATE):*
+• *Nama Penerima:* ${newOrder.nama_tujuan}
+• *No. Telp Customer:* ${newOrder.no_telp_tujuan || '-'}
+• *Alamat Pengiriman:* ${newOrder.alamat_tujuan || '-'}
+• *Jasa Kirim:* ${newOrder.jasa_kirim || '-'}
+• *No. Resi:* ${newOrder.no_resi || 'Menunggu Resi'}
+• *Status Pesanan:* ${newOrder.status || 'diterima'}
+
+📦 *Daftar Produk Akhir (${totalQty} Pcs):*
+${itemsListStr}
+${newOrder.notes_paket ? `\n📝 *Catatan Paket:* ${newOrder.notes_paket}` : ''}
+
+⚠️ *MOHON DICEK KEMBALI:*
+Silakan periksa kembali rincian pembaruan di atas untuk memastikan kesesuaian fisik dan sistem. Jika terdapat pertanyaan atau perubahan lanjutan, segera hubungi Tim Admin Gudang sebelum paket diproses kirim.
+
+Terima kasih!
+_WMS Warehouse System_`;
+  };
+
+  /**
+   * Format Rincian Lengkap Pesanan (Full Summary WA)
+   */
+  const formatOrderFullSummary = (order: ManualShipmentOrder): string => {
+    const dealposStr = Array.isArray(order.no_transaksi_pengirim)
+      ? order.no_transaksi_pengirim.join(', ')
+      : (order.no_transaksi_pengirim || '-');
+
+    const totalQty = (order.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+    const orderId = order.no_transaksi_customer || order.no_pesanan || '-';
+
+    const itemsListStr = (order.items || [])
+      .map((it, idx) => {
+        const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` | Size: ${it.size}` : '';
+        const fulStr = it.fulfillment ? ` | Fulfilment: *${it.fulfillment}*` : '';
+        return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: *${it.qty} pcs*${sizeStr}${fulStr})`;
+      })
+      .join('\n');
+
+    return `📦 *RINCIAN PESANAN MANUAL SHIPMENT*
+--------------------------------------------
+• *Order ID / No. Pesanan:* ${orderId}
+• *Store Pengirim:* ${order.nama_pengirim} (PIC: ${order.pic_store || '-'})
+• *No. DealPOS:* ${dealposStr}
+• *Jasa Kirim:* ${order.jasa_kirim || '-'}
+• *No. Resi:* ${order.no_resi || 'Menunggu Resi'}
+• *Status:* ${order.status || 'diterima'}
+
+👤 *Data Penerima (Customer):*
+• *Nama Tujuan:* ${order.nama_tujuan}
+• *No. Telp:* ${order.no_telp_tujuan || '-'}
+• *Alamat:* ${order.alamat_tujuan || '-'}
+
+📦 *Daftar Produk (${totalQty} Pcs):*
+${itemsListStr}
+${order.notes_paket ? `\n📝 *Catatan Paket:* ${order.notes_paket}` : ''}
+
+_WMS Warehouse System_`;
+  };
   const [printPayload, setPrintPayload] = useState<{
     mode: 'LABEL' | 'PICKING';
     orders: ManualShipmentOrder[];
@@ -447,28 +695,17 @@ Terima kasih banyak atas kepercayaannya! Semoga paket lekas sampai dan bermanfaa
           : (orderData.no_transaksi_pengirim || '-');
 
         if (editingOrder) {
-          // Pesan Notifikasi Perubahan Data
-          const updateMsg = `✏️ *PEMBARUAN DATA PESANAN MANUAL SHIPMENT*
---------------------------------------------
-Halo Tim *${orderData.nama_pengirim}*, terdapat pembaruan data pada pesanan manual shipment Anda di sistem WMS Gudang:
+          // Pesan Notifikasi Perubahan Data Lengkap & Terstruktur (Diff Log)
+          const editorName = session?.name || getUserPersonName(session?.username) || 'Admin Gudang';
+          const changes = generateOrderUpdateDiff(editingOrder, orderData);
+          const updateMsg = formatOrderUpdateMessage(editingOrder, orderData, changes, editorName);
 
-📋 *Rincian Pesanan Terupdate:*
-• *Order ID / No. Pesanan:* ${orderData.no_transaksi_customer || orderData.no_pesanan}
-• *Store Pengirim:* ${orderData.nama_pengirim}
-• *PIC Store:* ${orderData.pic_store || '-'}
-• *No. DealPOS:* ${dealposStr}
-• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}
-• *Nama Customer:* ${orderData.nama_tujuan}
-• *No. Telp Customer:* ${orderData.no_telp_tujuan || '-'}
-• *Alamat Tujuan:* ${orderData.alamat_tujuan || '-'}
-• *Total Produk:* ${totalQty} Pcs
-• *Status:* ${orderData.status || '-'}
-• *No. Resi:* ${orderData.no_resi || 'Belum ada'}
-
-⚠️ *Mohon konfirmasi dan pastikan perubahan data di atas sudah sesuai.*
-
-Terima kasih!
-_WMS Warehouse System_`;
+          // Buka popup modal sukses update dengan preview pesan siap salin
+          setUpdateSuccessModal({
+            order: orderData,
+            message: updateMsg,
+            changes,
+          });
 
           sendFonnteMessage(orderData.no_telp_store, updateMsg)
             .then((res) => {
@@ -1069,6 +1306,18 @@ _WMS Warehouse System_`;
                     <Printer className="w-3.5 h-3.5 mr-1.5" />
                     Print Label
                   </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const summary = formatOrderFullSummary(order);
+                      copyToClipboard(summary, 'Rincian lengkap pesanan (format WA) berhasil disalin!');
+                    }}
+                    className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-xs border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
+                    title="Salin Rincian Pesanan Lengkap untuk WhatsApp"
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-1.5 text-indigo-600" />
+                    Salin Rincian (WA)
+                  </button>
                   {userIsAdmin && (
                     <>
                       <button 
@@ -1175,7 +1424,15 @@ _WMS Warehouse System_`;
                       <div key={idx} className="text-sm text-slate-700 dark:text-slate-300 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
                         <div>
                           <div className="font-semibold text-indigo-600 dark:text-indigo-400">{item.nama_produk}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">SKU: {item.sku} {item.size && item.size !== 'ALL' && item.size !== '-' ? `| Size: ${item.size}` : ''}</div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex-wrap">
+                            <span>SKU: {item.sku}</span>
+                            {item.size && item.size !== 'ALL' && item.size !== '-' && <span>| Size: {item.size}</span>}
+                            {item.fulfillment && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                Fulfilment: {item.fulfillment}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="font-bold bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">x{item.qty}</div>
                       </div>
@@ -2206,6 +2463,127 @@ _WMS Warehouse System_`;
                 <button
                   type="button"
                   onClick={() => setWaModalOrder(null)}
+                  className="px-3.5 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Preview & Salin Pesan Pembaruan Data (Diff Log) */}
+      {updateSuccessModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-indigo-50/80 dark:bg-indigo-950/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-xs">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-white">
+                    Pembaruan Pesanan Berhasil Disimpan
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Pesan notifikasi pembaruan lengkap &amp; siap dikirim / disalin ke WhatsApp
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUpdateSuccessModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              {/* Highlight Poin-Poin Perubahan */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+                  🔍 Ringkasan Perubahan Terdeteksi ({updateSuccessModal.changes.length} Poin):
+                </span>
+                <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                  {updateSuccessModal.changes.map((ch, idx) => (
+                    <div key={idx} className="flex items-start gap-2 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                      <span className="text-indigo-600 font-bold shrink-0">•</span>
+                      <span className="leading-relaxed whitespace-pre-wrap">{ch}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Textarea Template WA */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>Format Pesan WhatsApp Pembaruan (Siap Kirim):</span>
+                  <span className="text-[10px] font-normal text-slate-400">Dapat diedit sebelum disalin</span>
+                </label>
+                <textarea
+                  id="update-msg-textarea"
+                  defaultValue={updateSuccessModal.message}
+                  rows={10}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed select-all"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const ta = document.getElementById('update-msg-textarea') as HTMLTextAreaElement | null;
+                  const textToCopy = ta ? ta.value : updateSuccessModal.message;
+                  copyToClipboard(textToCopy, 'Pesan pembaruan pesanan berhasil disalin!');
+                  setCopiedUpdateMsg(true);
+                  setTimeout(() => setCopiedUpdateMsg(false), 2500);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                {copiedUpdateMsg ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedUpdateMsg ? 'Tersalin ke Clipboard!' : 'Salin Pesan Pembaruan'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {updateSuccessModal.order.no_telp_store && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ta = document.getElementById('update-msg-textarea') as HTMLTextAreaElement | null;
+                      const textToSend = ta ? ta.value : updateSuccessModal.message;
+                      const cleanPhone = getCleanCustomerPhone(updateSuccessModal.order.no_telp_store);
+                      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(textToSend)}`, '_blank');
+                    }}
+                    className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Kirim WA Store</span>
+                  </button>
+                )}
+                {updateSuccessModal.order.no_telp_tujuan && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ta = document.getElementById('update-msg-textarea') as HTMLTextAreaElement | null;
+                      const textToSend = ta ? ta.value : updateSuccessModal.message;
+                      const cleanPhone = getCleanCustomerPhone(updateSuccessModal.order.no_telp_tujuan);
+                      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(textToSend)}`, '_blank');
+                    }}
+                    className="px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Kirim WA Customer</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setUpdateSuccessModal(null)}
                   className="px-3.5 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Tutup

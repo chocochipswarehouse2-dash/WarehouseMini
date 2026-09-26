@@ -39,6 +39,10 @@ import {
   QrCode,
   EyeOff,
   CheckSquare,
+  Palette,
+  Minus,
+  Tag,
+  CopyCheck,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -89,7 +93,142 @@ export interface SuratJalanGroup {
   qrCodeUrl?: string;
 }
 
-const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'ALL SIZE', 'FREE SIZE', 'Default'];
+export const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'ALL SIZE', 'FREE SIZE', 'Default'];
+
+export const getNextSize = (currentSize: string): string => {
+  const idx = STANDARD_SIZES.findIndex((s) => s.toUpperCase() === (currentSize || '').toUpperCase());
+  if (idx !== -1 && idx < STANDARD_SIZES.length - 1) {
+    return STANDARD_SIZES[idx + 1];
+  }
+  return 'L';
+};
+
+export const POPULAR_COLORS = [
+  'BLACK',
+  'WHITE',
+  'NAVY',
+  'BEIGE',
+  'SAGE',
+  'CREAM',
+  'MOCCA',
+  'BROWN',
+  'MAROON',
+  'GREY',
+  'DUSTY PINK',
+  'TERRACOTTA',
+  'DENIM',
+  'OLIVE',
+];
+
+export interface FormVariantSize {
+  id: string;
+  size: string;
+  qty: number | string;
+}
+
+export interface FormVariantWarna {
+  id: string;
+  warna: string;
+  sizes: FormVariantSize[];
+}
+
+export interface FormProductBlock {
+  id: string | number;
+  kode_produksi: string;
+  catatan?: string;
+  foto_url?: string;
+  warnas: FormVariantWarna[];
+}
+
+export function createNewProductBlock(): FormProductBlock {
+  return {
+    id: `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    kode_produksi: '',
+    catatan: '',
+    foto_url: '',
+    warnas: [
+      {
+        id: `warna_${Date.now()}_0`,
+        warna: '',
+        sizes: [
+          { id: `sz_${Date.now()}_0`, size: 'S', qty: 1 },
+          { id: `sz_${Date.now()}_1`, size: 'M', qty: 1 },
+          { id: `sz_${Date.now()}_2`, size: 'L', qty: 1 },
+        ],
+      },
+    ],
+  };
+}
+
+export function convertBlocksToHierarchical(rawBlocks: any[]): FormProductBlock[] {
+  if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
+    return [createNewProductBlock()];
+  }
+
+  return rawBlocks.map((b, bIdx) => {
+    // Jika sudah dalam format warnas
+    if (Array.isArray(b.warnas) && b.warnas.length > 0) {
+      return {
+        id: b.id || `prod_${Date.now()}_${bIdx}`,
+        kode_produksi: b.kode_produksi || '',
+        catatan: b.catatan || '',
+        foto_url: b.foto_url || '',
+        warnas: b.warnas.map((w: any, wIdx: number) => ({
+          id: w.id || `warna_${Date.now()}_${wIdx}`,
+          warna: w.warna || '',
+          sizes:
+            Array.isArray(w.sizes) && w.sizes.length > 0
+              ? w.sizes.map((s: any, sIdx: number) => ({
+                  id: s.id || `sz_${Date.now()}_${sIdx}`,
+                  size: s.size || 'S',
+                  qty: s.qty ?? 1,
+                }))
+              : [{ id: `sz_${Date.now()}_0`, size: 'S', qty: 1 }],
+        })),
+      };
+    }
+
+    // Jika dari format legacy flat variants: [{ warna, size, qty }]
+    const warnaMap = new Map<string, FormVariantSize[]>();
+    const warnasOrder: string[] = [];
+
+    if (Array.isArray(b.variants)) {
+      b.variants.forEach((v: any, vIdx: number) => {
+        const wName = (v.warna || '').trim().toUpperCase();
+        if (!warnaMap.has(wName)) {
+          warnaMap.set(wName, []);
+          warnasOrder.push(wName);
+        }
+        warnaMap.get(wName)!.push({
+          id: `sz_${Date.now()}_${vIdx}`,
+          size: v.size || 'S',
+          qty: v.qty ?? 1,
+        });
+      });
+    }
+
+    if (warnasOrder.length === 0) {
+      warnasOrder.push('');
+      warnaMap.set('', [
+        { id: `sz_${Date.now()}_0`, size: 'S', qty: 1 },
+        { id: `sz_${Date.now()}_1`, size: 'M', qty: 1 },
+        { id: `sz_${Date.now()}_2`, size: 'L', qty: 1 },
+      ]);
+    }
+
+    return {
+      id: b.id || `prod_${Date.now()}_${bIdx}`,
+      kode_produksi: b.kode_produksi || '',
+      catatan: b.catatan || '',
+      foto_url: b.foto_url || '',
+      warnas: warnasOrder.map((wName, wIdx) => ({
+        id: `warna_${Date.now()}_${wIdx}`,
+        warna: wName,
+        sizes: warnaMap.get(wName) || [{ id: `sz_${Date.now()}_0`, size: 'S', qty: 1 }],
+      })),
+    };
+  });
+}
 
 export interface ProductModelGroup {
   key: string;
@@ -252,20 +391,12 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [formNoSuratJalan, setFormNoSuratJalan] = useState<string>(() => initialFormDraft?.formNoSuratJalan || '');
   const [formKeteranganGlobal, setFormKeteranganGlobal] = useState<string>(() => initialFormDraft?.formKeteranganGlobal || '');
 
-  // Form State: Product Blocks
-  const [productBlocks, setProductBlocks] = useState<PenerimaanProdukBlock[]>(() => {
+  // Form State: Product Blocks (Hierarki: Kode Produksi -> Varian Warna -> Varian Size & Qty)
+  const [productBlocks, setProductBlocks] = useState<FormProductBlock[]>(() => {
     if (initialFormDraft?.productBlocks && Array.isArray(initialFormDraft.productBlocks) && initialFormDraft.productBlocks.length > 0) {
-      return initialFormDraft.productBlocks;
+      return convertBlocksToHierarchical(initialFormDraft.productBlocks);
     }
-    return [
-      {
-        id: Date.now(),
-        kode_produksi: '',
-        catatan: '',
-        foto_url: '',
-        variants: [{ warna: '', size: 'S', qty: 1 }],
-      },
-    ];
+    return [createNewProductBlock()];
   });
 
   // Auto-Save in-progress draft to localStorage
@@ -273,7 +404,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     const hasData = Boolean(
       formNoSuratJalan.trim() ||
       formKeteranganGlobal.trim() ||
-      productBlocks.some(b => b.kode_produksi.trim() || (b.variants && b.variants.some(v => v.warna.trim())))
+      productBlocks.some(b => b.kode_produksi.trim() || (b.warnas && b.warnas.some(w => w.warna.trim())))
     );
     if (hasData) {
       const timer = setTimeout(() => {
@@ -297,7 +428,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       const hasData = Boolean(
         formNoSuratJalan.trim() ||
-        productBlocks.some(b => b.kode_produksi.trim() || (b.variants && b.variants.some(v => v.warna.trim())))
+        productBlocks.some(b => b.kode_produksi.trim() || (b.warnas && b.warnas.some(w => w.warna.trim())))
       );
       if (hasData) {
         e.preventDefault();
@@ -664,18 +795,15 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     });
   };
 
-  // Form Product Blocks Management
+  // ========================================================
+  // Form Product Blocks Management (Hierarkis)
+  // Level 1: Kode Produksi
+  // Level 2: Varian Warna (1 Kode -> banyak Warna)
+  // Level 3: Varian Size & Qty (1 Warna -> banyak Size)
+  // ========================================================
+
   const addProductBlock = () => {
-    setProductBlocks((prev) => [
-      ...prev,
-      {
-        id: Date.now() + Math.random(),
-        kode_produksi: '',
-        catatan: '',
-        foto_url: '',
-        variants: [{ warna: '', size: 'S', qty: 1 }],
-      },
-    ]);
+    setProductBlocks((prev) => [...prev, createNewProductBlock()]);
   };
 
   const removeProductBlock = (index: number) => {
@@ -699,30 +827,95 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     });
   };
 
-  // Variant Helpers with Auto Next-Size Suggestion
-  const getNextSize = (currentSize: string): string => {
-    const s = currentSize.trim().toUpperCase();
-    const idx = STANDARD_SIZES.indexOf(s);
-    if (idx >= 0 && idx < STANDARD_SIZES.length - 1) {
-      return STANDARD_SIZES[idx + 1];
-    }
-    return 'M';
-  };
-
-  const addVariantToBlock = (blockIndex: number) => {
+  // Level 2: Warna Handlers
+  const addWarnaToBlock = (blockIndex: number, copyFromWarnaIndex?: number) => {
     setProductBlocks((prev) => {
       const next = [...prev];
       const target = next[blockIndex];
       if (!target) return prev;
 
-      const lastVariant = target.variants[target.variants.length - 1];
-      const lastSize = lastVariant ? lastVariant.size : 'S';
-      const lastWarna = lastVariant ? lastVariant.warna : '';
-      const nextSize = getNextSize(lastSize);
+      let newSizes: FormVariantSize[] = [
+        { id: `sz_${Date.now()}_0`, size: 'S', qty: 1 },
+        { id: `sz_${Date.now()}_1`, size: 'M', qty: 1 },
+        { id: `sz_${Date.now()}_2`, size: 'L', qty: 1 },
+      ];
 
-      target.variants.push({
-        warna: lastWarna,
-        size: nextSize,
+      // Jika menduplikat dari warna sebelumnya
+      if (typeof copyFromWarnaIndex === 'number' && target.warnas[copyFromWarnaIndex]) {
+        const sourceWarna = target.warnas[copyFromWarnaIndex];
+        newSizes = sourceWarna.sizes.map((s, idx) => ({
+          id: `sz_${Date.now()}_${idx}`,
+          size: s.size,
+          qty: s.qty,
+        }));
+      }
+
+      target.warnas.push({
+        id: `warna_${Date.now()}_${target.warnas.length}`,
+        warna: '',
+        sizes: newSizes,
+      });
+
+      return next;
+    });
+  };
+
+  const removeWarnaFromBlock = (blockIndex: number, warnaIndex: number) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target || target.warnas.length <= 1) {
+        onShowToast('Minimal harus ada 1 varian warna untuk setiap kode produk.', 'warning');
+        return prev;
+      }
+      target.warnas = target.warnas.filter((_, idx) => idx !== warnaIndex);
+      return next;
+    });
+  };
+
+  const updateWarnaName = (blockIndex: number, warnaIndex: number, val: string) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target || !target.warnas[warnaIndex]) return prev;
+      target.warnas[warnaIndex] = {
+        ...target.warnas[warnaIndex],
+        warna: val.toUpperCase(),
+      };
+      return next;
+    });
+  };
+
+  // Level 3: Size & Qty Handlers
+  const getNextSuggestedSize = (currentSizes: FormVariantSize[]): string => {
+    const existing = new Set(currentSizes.map((s) => s.size.toUpperCase()));
+    for (const sz of STANDARD_SIZES) {
+      if (!existing.has(sz.toUpperCase())) {
+        return sz;
+      }
+    }
+    return 'XL';
+  };
+
+  const addSizeToWarna = (blockIndex: number, warnaIndex: number, specificSize?: string) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target || !target.warnas[warnaIndex]) return prev;
+
+      const w = target.warnas[warnaIndex];
+      const sizeToAdd = specificSize || getNextSuggestedSize(w.sizes);
+
+      // Cek apakah size sudah ada
+      const existingIdx = w.sizes.findIndex((s) => s.size.toUpperCase() === sizeToAdd.toUpperCase());
+      if (existingIdx !== -1) {
+        onShowToast(`Ukuran ${sizeToAdd} sudah ada pada warna ini.`, 'info');
+        return prev;
+      }
+
+      w.sizes.push({
+        id: `sz_${Date.now()}_${w.sizes.length}`,
+        size: sizeToAdd,
         qty: 1,
       });
 
@@ -730,58 +923,84 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     });
   };
 
-  const removeVariantFromBlock = (blockIndex: number, variantIndex: number) => {
+  const removeSizeFromWarna = (blockIndex: number, warnaIndex: number, sizeIndex: number) => {
     setProductBlocks((prev) => {
       const next = [...prev];
       const target = next[blockIndex];
-      if (!target || target.variants.length <= 1) {
-        onShowToast('Minimal harus ada 1 baris varian untuk setiap kode produk.', 'warning');
+      if (!target || !target.warnas[warnaIndex]) return prev;
+
+      const w = target.warnas[warnaIndex];
+      if (w.sizes.length <= 1) {
+        onShowToast('Minimal harus ada 1 ukuran pada setiap warna.', 'warning');
         return prev;
       }
-      target.variants = target.variants.filter((_, idx) => idx !== variantIndex);
+
+      w.sizes = w.sizes.filter((_, idx) => idx !== sizeIndex);
       return next;
     });
   };
 
-  const updateVariantInBlock = (
+  const updateSizeField = (
     blockIndex: number,
-    variantIndex: number,
-    field: keyof PenerimaanVariantItem,
+    warnaIndex: number,
+    sizeIndex: number,
+    field: 'size' | 'qty',
     val: string | number
   ) => {
     setProductBlocks((prev) => {
       const next = [...prev];
       const target = next[blockIndex];
-      if (!target || !target.variants[variantIndex]) return prev;
+      if (!target || !target.warnas[warnaIndex] || !target.warnas[warnaIndex].sizes[sizeIndex]) return prev;
 
-      const v = { ...target.variants[variantIndex] };
+      const s = { ...target.warnas[warnaIndex].sizes[sizeIndex] };
       if (field === 'qty') {
-        v.qty = val === '' ? ('' as any) : Math.max(0, parseInt(String(val), 10) || 0);
-      } else if (field === 'warna') {
-        v.warna = String(val).toUpperCase();
+        s.qty = val === '' ? ('' as any) : Math.max(0, parseInt(String(val), 10) || 0);
       } else {
-        (v as any)[field] = String(val);
+        s.size = String(val).trim();
       }
-      target.variants[variantIndex] = v;
+      target.warnas[warnaIndex].sizes[sizeIndex] = s;
       return next;
     });
   };
 
-  // Form Summary live calculation
+  const adjustSizeQty = (
+    blockIndex: number,
+    warnaIndex: number,
+    sizeIndex: number,
+    delta: number
+  ) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target || !target.warnas[warnaIndex] || !target.warnas[warnaIndex].sizes[sizeIndex]) return prev;
+
+      const s = { ...target.warnas[warnaIndex].sizes[sizeIndex] };
+      const currentQty = Number(s.qty) || 0;
+      s.qty = Math.max(1, currentQty + delta);
+      target.warnas[warnaIndex].sizes[sizeIndex] = s;
+      return next;
+    });
+  };
+
+  // Form Summary live calculation (Hierarkis)
   const formSummary = useMemo(() => {
     let totalKode = 0;
+    let totalWarna = 0;
     let totalVariants = 0;
     let totalPcs = 0;
 
     for (const b of productBlocks) {
       if (b.kode_produksi.trim()) totalKode++;
-      for (const v of b.variants) {
-        totalVariants++;
-        totalPcs += Number(v.qty) || 0;
+      for (const w of b.warnas) {
+        if (w.warna.trim()) totalWarna++;
+        for (const s of w.sizes) {
+          totalVariants++;
+          totalPcs += Number(s.qty) || 0;
+        }
       }
     }
 
-    return { totalKode, totalVariants, totalPcs };
+    return { totalKode, totalWarna, totalVariants, totalPcs };
   }, [productBlocks]);
 
   // Reset Form
@@ -789,15 +1008,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     setFormTanggal(new Date().toISOString().split('T')[0]);
     setFormNoSuratJalan('');
     setFormKeteranganGlobal('');
-    setProductBlocks([
-      {
-        id: Date.now(),
-        kode_produksi: '',
-        catatan: '',
-        foto_url: '',
-        variants: [{ warna: '', size: 'S', qty: 1 }],
-      },
-    ]);
+    setProductBlocks([createNewProductBlock()]);
     try {
       localStorage.removeItem('wms_penerimaan_produksi_form_draft');
     } catch {}
@@ -812,7 +1023,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       return;
     }
 
-    // Validate product blocks
+    // Validate product blocks and flatten to PenerimaanProdukBlock
     const cleanedBlocks: PenerimaanProdukBlock[] = [];
     for (let i = 0; i < productBlocks.length; i++) {
       const b = productBlocks[i];
@@ -822,25 +1033,40 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         return;
       }
 
-      for (let j = 0; j < b.variants.length; j++) {
-        const v = b.variants[j];
-        if (!v.warna.trim()) {
-          onShowToast(`Warna pada ${kode} baris #${j + 1} belum diisi!`, 'warning');
+      const flattenedVariants: PenerimaanVariantItem[] = [];
+      for (let wIdx = 0; wIdx < b.warnas.length; wIdx++) {
+        const w = b.warnas[wIdx];
+        const warnaName = w.warna.trim();
+        if (!warnaName) {
+          onShowToast(`Warna pada ${kode} (Warna #${wIdx + 1}) belum diisi!`, 'warning');
           return;
         }
-        if (!v.qty || Number(v.qty) < 1) {
-          onShowToast(`Qty pada ${kode} (${v.warna} / ${v.size}) minimal 1 pcs!`, 'warning');
+        if (!w.sizes || w.sizes.length === 0) {
+          onShowToast(`Warna "${warnaName}" pada ${kode} belum memiliki varian size!`, 'warning');
           return;
+        }
+        for (let sIdx = 0; sIdx < w.sizes.length; sIdx++) {
+          const s = w.sizes[sIdx];
+          const sizeName = (s.size || 'Default').trim();
+          const qtyNum = Number(s.qty) || 0;
+          if (qtyNum < 1) {
+            onShowToast(`Qty pada ${kode} (${warnaName} / ${sizeName}) minimal 1 pcs!`, 'warning');
+            return;
+          }
+          flattenedVariants.push({
+            warna: warnaName.toUpperCase(),
+            size: sizeName,
+            qty: qtyNum,
+          });
         }
       }
 
       cleanedBlocks.push({
-        ...b,
+        id: b.id,
         kode_produksi: kode.toUpperCase(),
-        variants: b.variants.map((v) => ({
-          ...v,
-          qty: Math.max(1, Number(v.qty) || 1),
-        })),
+        catatan: b.catatan,
+        foto_url: b.foto_url,
+        variants: flattenedVariants,
       });
     }
 
@@ -1437,78 +1663,97 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Multi-Product Batch Blocks */}
-          <div className="space-y-3 sm:space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400" />
-                <h2 className="text-xs sm:text-base font-black text-slate-900 dark:text-white">
-                  2. Daftar Produk
-                </h2>
+          {/* Card 2: Hierarchical Product -> Warna -> Size Batch Blocks */}
+          <div className="space-y-4 sm:space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0 shadow-xs">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>2. Input Produk, Varian Warna &amp; Ukuran</span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                      {productBlocks.length} Kode
+                    </span>
+                  </h2>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Hierarki: <strong>1 Kode Produksi</strong> ➔ <strong>Banyak Warna</strong> ➔ <strong>Banyak Size</strong> (Cepat &amp; Praktis via HP)
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={addProductBlock}
-                className="inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition shadow-xs cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-sm transition cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah Produk</span>
+                <Plus className="w-4 h-4" />
+                <span>Tambah Produk (Kode Baru)</span>
               </button>
             </div>
 
-            {productBlocks.map((block, blockIdx) => (
-              <div
-                key={block.id}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-5 shadow-xs transition-all hover:border-slate-300 dark:hover:border-slate-700"
-              >
-                {/* Block Header */}
-                <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-black">
-                      {blockIdx + 1}
-                    </span>
-                    <span className="text-sm font-black text-slate-900 dark:text-white">
-                      Produk #{blockIdx + 1}
-                    </span>
+            {productBlocks.map((block, blockIdx) => {
+              const blockTotalPcs = block.warnas.reduce(
+                (sum, w) => sum + w.sizes.reduce((sSum, s) => sSum + (Number(s.qty) || 0), 0),
+                0
+              );
+              const filledWarnaCount = block.warnas.filter((w) => w.warna.trim()).length;
+
+              return (
+                <div
+                  key={block.id}
+                  className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 dark:hover:border-emerald-600/60 rounded-2xl p-3.5 sm:p-5 shadow-xs transition-all space-y-4"
+                >
+                  {/* Block Header (Level 1: Produk) */}
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
+                        {blockIdx + 1}
+                      </span>
+                      <div>
+                        <span className="text-sm font-black text-slate-900 dark:text-white">
+                          Produk #{blockIdx + 1}
+                        </span>
+                        {block.kode_produksi && (
+                          <span className="ml-2 px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            {block.kode_produksi}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60">
+                        Total: <strong>{blockTotalPcs} Pcs</strong> • {filledWarnaCount || block.warnas.length} Warna
+                      </span>
+
+                      {productBlocks.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeProductBlock(blockIdx)}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Hapus Kode</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {productBlocks.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeProductBlock(blockIdx)}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-primary-600 dark:text-primary-400 hover:text-primary-700 hover:bg-primary-50 dark:hover:bg-primary-950/40 px-2 py-1 rounded-lg transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Hapus Kode</span>
-                    </button>
-                  )}
-                </div>
+                  {/* Block Details (Kode, Catatan, Foto) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    {/* Foto Upload Column */}
+                    <div className="lg:col-span-4 flex flex-col justify-start">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                        Foto Produk (Kamera HP / Upload)
+                      </label>
 
-                {/* Block Body */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                  {/* Foto Upload Column */}
-                  <div className="lg:col-span-3 flex flex-col items-center justify-center">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 self-start">
-                      Foto Produk
-                    </label>
-
-                    {block.foto_url ? (
-                      <div className="relative group w-full h-44 rounded-xl overflow-hidden border-2 border-emerald-400 dark:border-emerald-600 shadow-sm bg-slate-100 dark:bg-slate-800">
-                        <img
-                          src={block.foto_url}
-                          alt="Foto Produk"
-                          className="w-full h-full object-cover cursor-pointer"
-                          onClick={() =>
-                            setLightboxImage({
-                              url: block.foto_url!,
-                              title: block.kode_produksi || `Produk #${blockIdx + 1}`,
-                              subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
-                            })
-                          }
-                        />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                          <button
-                            type="button"
+                      {block.foto_url ? (
+                        <div className="relative group w-full h-36 sm:h-40 rounded-xl overflow-hidden border-2 border-emerald-400 dark:border-emerald-600 shadow-xs bg-slate-100 dark:bg-slate-800">
+                          <img
+                            src={block.foto_url}
+                            alt="Foto Produk"
+                            className="w-full h-full object-cover cursor-pointer"
                             onClick={() =>
                               setLightboxImage({
                                 url: block.foto_url!,
@@ -1516,75 +1761,82 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                 subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
                               })
                             }
-                            className="p-2 rounded-lg bg-white/90 text-slate-800 hover:bg-white shadow"
-                            title="Perbesar"
-                          >
-                            <Maximize2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateProductBlockPhoto(blockIdx, '')}
-                            className="p-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 shadow"
-                            title="Hapus Foto"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLightboxImage({
+                                  url: block.foto_url!,
+                                  title: block.kode_produksi || `Produk #${blockIdx + 1}`,
+                                  subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
+                                })
+                              }
+                              className="p-2 rounded-lg bg-white/90 text-slate-800 hover:bg-white shadow cursor-pointer"
+                              title="Perbesar"
+                            >
+                              <Maximize2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateProductBlockPhoto(blockIdx, '')}
+                              className="p-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 shadow cursor-pointer"
+                              title="Hapus Foto"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                            handleImageUpload(e.dataTransfer.files[0], blockIdx);
-                          }
-                        }}
-                        className="w-full h-44 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 bg-slate-50 dark:bg-slate-800/50 flex flex-col items-center justify-center p-4 text-center transition"
-                      >
-                        <Camera className="w-8 h-8 text-slate-400 mb-2" />
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Foto Produk (Drop / Paste)
-                        </span>
-                        <span className="text-[10px] text-slate-400 mb-3">
-                          Tarik foto atau gunakan tombol di bawah
-                        </span>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startWebcam(blockIdx, false)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-                          >
-                            <Camera className="w-3.5 h-3.5" />
-                            <span>Kamera</span>
-                          </button>
-
-                          <label className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 cursor-pointer shadow-sm">
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Pilih File</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleImageUpload(e.target.files[0], blockIdx);
-                                }
-                              }}
-                            />
-                          </label>
+                      ) : (
+                        <div
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                              handleImageUpload(e.dataTransfer.files[0], blockIdx);
+                            }
+                          }}
+                          className="w-full min-h-[110px] sm:min-h-[130px] rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 bg-slate-50 dark:bg-slate-800/40 flex flex-col items-center justify-center p-3 text-center transition"
+                        >
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <Camera className="w-4 h-4 text-emerald-600" />
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Foto Produk
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startWebcam(blockIdx, false)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-xs cursor-pointer"
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>Buka Kamera HP</span>
+                            </button>
+                            <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 cursor-pointer shadow-xs">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Pilih File</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    handleImageUpload(e.target.files[0], blockIdx);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  {/* Kode Produksi & Varian Table Column */}
-                  <div className="lg:col-span-9 space-y-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* Kode Produksi & Catatan Column */}
+                    <div className="lg:col-span-8 space-y-3">
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Kode Produksi <span className="text-primary-500">*</span>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Kode Produksi <span className="text-rose-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -1592,126 +1844,257 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                           value={block.kode_produksi}
                           onChange={(e) => updateProductBlockField(blockIdx, 'kode_produksi', e.target.value)}
                           required
-                          className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-mono font-bold text-slate-900 dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Catatan Khusus Produk
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Catatan Khusus Produk (Opsional)
                         </label>
                         <input
                           type="text"
-                          placeholder="Contoh: Kancing cadangan terpisah, jahit tepi"
+                          placeholder="Contoh: Kancing cadangan terpisah, jahit tepi khusus"
                           value={block.catatan || ''}
                           onChange={(e) => updateProductBlockField(blockIdx, 'catatan', e.target.value)}
-                          className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* Varian Table */}
-                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-                      <div className="bg-slate-100 dark:bg-slate-800 px-3.5 py-2 flex items-center justify-between border-b border-slate-200 dark:border-slate-700">
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                          Rincian Varian (Warna, Size &amp; Qty)
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-500">
-                          Total: {block.variants.reduce((a, b) => a + (Number(b.qty) || 0), 0)} pcs
+                  {/* Level 2: Section Varian Warna */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <Palette className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        <h3 className="text-xs sm:text-sm font-black text-slate-800 dark:text-white">
+                          Varian Warna &amp; Ukuran
+                        </h3>
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          (1 Kode bisa beberapa warna, 1 warna bisa beberapa size)
                         </span>
                       </div>
 
-                      <div className="p-3 space-y-2">
-                        {block.variants.map((v, vIdx) => (
+                      <button
+                        type="button"
+                        onClick={() => addWarnaToBlock(blockIdx)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Tambah Warna Baru</span>
+                      </button>
+                    </div>
+
+                    {/* Loop Daftar Warna */}
+                    <div className="space-y-3">
+                      {block.warnas.map((w, wIdx) => {
+                        const warnaTotalPcs = w.sizes.reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
+                        const existingSizes = new Set(w.sizes.map((s) => s.size.toUpperCase()));
+
+                        return (
                           <div
-                            key={vIdx}
-                            className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200/70 dark:border-slate-700/60"
+                            key={w.id}
+                            className="bg-slate-50/90 dark:bg-slate-800/60 rounded-xl border border-slate-200/90 dark:border-slate-700/80 p-3 sm:p-4 space-y-3 transition-all"
                           >
-                            {/* Warna */}
-                            <div className="flex-1 min-w-[120px]">
-                              <input
-                                type="text"
-                                placeholder="Warna (cth: BLACK)"
-                                value={v.warna}
-                                onChange={(e) =>
-                                  updateVariantInBlock(blockIdx, vIdx, 'warna', e.target.value)
-                                }
-                                required
-                                className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white uppercase focus:ring-1 focus:ring-emerald-500"
-                              />
+                            {/* Header Warna (Row 1) */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80 dark:border-slate-700/60">
+                              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10.5px] font-black uppercase shrink-0">
+                                  Warna #{wIdx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  placeholder="Ketik Nama Warna (cth: BLACK, WHITE, SAGE GREEN)"
+                                  value={w.warna}
+                                  onChange={(e) => updateWarnaName(blockIdx, wIdx, e.target.value)}
+                                  required
+                                  className="w-full max-w-xs px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-indigo-500"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
+                                  Subtotal: <strong>{warnaTotalPcs} Pcs</strong>
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() => addWarnaToBlock(blockIdx, wIdx)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 px-2 py-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 transition cursor-pointer"
+                                  title="Duplikat susunan size ini ke warna baru"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Duplikat ke Warna Baru</span>
+                                </button>
+
+                                {block.warnas.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeWarnaFromBlock(blockIdx, wIdx)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-md transition cursor-pointer"
+                                    title="Hapus Warna ini"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            {/* Size */}
-                            <div className="w-28">
-                              <select
-                                value={v.size}
-                                onChange={(e) =>
-                                  updateVariantInBlock(blockIdx, vIdx, 'size', e.target.value)
-                                }
-                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-emerald-500"
-                              >
-                                {STANDARD_SIZES.map((sz) => (
-                                  <option key={sz} value={sz}>
-                                    {sz}
-                                  </option>
+                            {/* Preset Warna Populer (Quick Tap di HP) */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                                Pilihan Cepat:
+                              </span>
+                              {POPULAR_COLORS.map((col) => {
+                                const isCurrent = w.warna.toUpperCase() === col;
+                                return (
+                                  <button
+                                    key={col}
+                                    type="button"
+                                    onClick={() => updateWarnaName(blockIdx, wIdx, col)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase transition cursor-pointer ${
+                                      isCurrent
+                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                        : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {col}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Level 3: Varian Size & Qty (Di dalam Warna) */}
+                            <div className="space-y-2 pt-1">
+                              {/* Quick Size Chips Header */}
+                              <div className="flex items-center justify-between flex-wrap gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10.5px] font-bold text-slate-600 dark:text-slate-300">
+                                    Tambah Ukuran:
+                                  </span>
+                                  {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'ALL SIZE'].map((sz) => {
+                                    const hasSize = existingSizes.has(sz.toUpperCase());
+                                    return (
+                                      <button
+                                        key={sz}
+                                        type="button"
+                                        onClick={() => addSizeToWarna(blockIdx, wIdx, sz)}
+                                        className={`px-2 py-0.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                          hasSize
+                                            ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        <span>{hasSize ? '✓' : '+'}</span>
+                                        <span>{sz}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => addSizeToWarna(blockIdx, wIdx)}
+                                  className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>+ Tambah Size Lain</span>
+                                </button>
+                              </div>
+
+                              {/* Size Cards Grid (Ramah Jempol HP) */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {w.sizes.map((s, sIdx) => (
+                                  <div
+                                    key={s.id}
+                                    className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2 sm:p-2.5 flex items-center justify-between gap-2 shadow-2xs"
+                                  >
+                                    {/* Size Badge & Selector */}
+                                    <div className="flex items-center gap-1.5 min-w-[75px]">
+                                      <span className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-black text-xs flex items-center justify-center border border-emerald-300 dark:border-emerald-700">
+                                        {s.size}
+                                      </span>
+                                      <select
+                                        value={s.size}
+                                        onChange={(e) =>
+                                          updateSizeField(blockIdx, wIdx, sIdx, 'size', e.target.value)
+                                        }
+                                        className="text-xs font-bold text-slate-800 dark:text-slate-200 bg-transparent border-0 focus:ring-0 p-0 cursor-pointer"
+                                      >
+                                        {STANDARD_SIZES.map((sz) => (
+                                          <option key={sz} value={sz}>
+                                            {sz}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    {/* Stepper Qty (HP-Friendly Thumb Buttons) */}
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => adjustSizeQty(blockIdx, wIdx, sIdx, -1)}
+                                        className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 text-slate-700 dark:text-slate-200 font-black text-sm flex items-center justify-center cursor-pointer transition-transform"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={1}
+                                        value={s.qty}
+                                        onFocus={(e) => e.target.select()}
+                                        onChange={(e) =>
+                                          updateSizeField(blockIdx, wIdx, sIdx, 'qty', e.target.value)
+                                        }
+                                        onBlur={() => {
+                                          if (s.qty === '' || Number(s.qty) < 1) {
+                                            updateSizeField(blockIdx, wIdx, sIdx, 'qty', 1);
+                                          }
+                                        }}
+                                        className="w-14 sm:w-16 h-8 text-center text-xs sm:text-sm font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-emerald-500"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => adjustSizeQty(blockIdx, wIdx, sIdx, 1)}
+                                        className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 text-slate-700 dark:text-slate-200 font-black text-sm flex items-center justify-center cursor-pointer transition-transform"
+                                      >
+                                        +
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => adjustSizeQty(blockIdx, wIdx, sIdx, 10)}
+                                        className="hidden sm:flex px-1.5 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold items-center justify-center border border-emerald-200/80 cursor-pointer"
+                                        title="Tambah 10 pcs"
+                                      >
+                                        +10
+                                      </button>
+                                    </div>
+
+                                    {/* Delete Size */}
+                                    {w.sizes.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeSizeFromWarna(blockIdx, wIdx, sIdx)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                                        title="Hapus Size ini"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
                                 ))}
-                              </select>
+                              </div>
                             </div>
-
-                            {/* Qty */}
-                            <div className="w-24">
-                              <input
-                                type="number"
-                                min={1}
-                                value={v.qty}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) =>
-                                  updateVariantInBlock(blockIdx, vIdx, 'qty', e.target.value)
-                                }
-                                onBlur={() => {
-                                  if (v.qty === '' || Number(v.qty) < 1) {
-                                    updateVariantInBlock(blockIdx, vIdx, 'qty', 1);
-                                  }
-                                }}
-                                required
-                                className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-black text-center text-slate-900 dark:text-white focus:ring-1 focus:ring-emerald-500"
-                              />
-                            </div>
-
-                            {/* Action */}
-                            {block.variants.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeVariantFromBlock(blockIdx, vIdx)}
-                                className="p-1.5 text-primary-500 hover:text-primary-700 hover:bg-primary-50 dark:hover:bg-primary-950/50 rounded-lg transition"
-                                title="Hapus Varian"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
                           </div>
-                        ))}
-
-                        {/* Add Variant Button */}
-                        <div className="pt-1">
-                          <button
-                            type="button"
-                            onClick={() => addVariantToBlock(blockIdx)}
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 py-1 px-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>
-                              Tambah Varian (
-                              {getNextSize(block.variants[block.variants.length - 1]?.size || 'S')})
-                            </span>
-                          </button>
-                        </div>
-                      </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Action Bar & Summary Footer */}
@@ -1719,7 +2102,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-bold text-slate-500">Ringkasan Input:</span>
               <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                {formSummary.totalKode} Kode • {formSummary.totalVariants} Varian • {formSummary.totalPcs} Pcs
+                {formSummary.totalKode} Kode • {formSummary.totalWarna} Warna • {formSummary.totalVariants} Ukuran • {formSummary.totalPcs} Pcs
               </span>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10.5px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60" title="Draft tersimpan otomatis offline di perangkat. Aman jika reload atau tertutup.">
                 <CheckCircle2 className="w-3 h-3 text-blue-500" />
