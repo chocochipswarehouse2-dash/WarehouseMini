@@ -1,11 +1,8 @@
 /**
- * WMS PRODUKSI GOOGLE SPREADSHEET SYNC (MASTER SPREADSHEET MATRIX FORMAT - LARGE PHOTO SIZE)
- * =======================================================================================
+ * WMS PRODUKSI GOOGLE SPREADSHEET SYNC (MASTER SPREADSHEET MATRIX FORMAT - CLEAN DATE HEADERS & CATATAN)
+ * ================================================================================================
  * Spreadsheet ID : 1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk
  * Script ID      : 1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb
- *
- * Menulis hasil input & tabel matriks produksi ke Google Sheet persis seperti
- * format spreadsheet master bergambar besar (NO | CODE | PRODUCT NAME | UP | PHOTO | COLOR | SIZE | DATANG | RETUR | TOTAL DATANG NET)
  */
 
 var TARGET_PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
@@ -64,14 +61,14 @@ function handlePushPenerimaanProduksi(data) {
         }
         row1Vals.push('TOTAL DATANG (NET)');
 
-        // Header Row 2
+        // Header Row 2 (KOSONGKAN JIKA TIDAK ADA TANGGAL PENERIMAAN)
         var row2Vals = ['', '', '', '', '', '', ''];
         for (var d1 = 0; d1 < numDateCols; d1++) {
-          row2Vals.push(dateSlots[d1] ? formatDateHeader(dateSlots[d1]) : ('Tgl ' + (d1 + 1)));
+          row2Vals.push(dateSlots[d1] ? formatDateHeader(dateSlots[d1]) : '');
         }
         if (isCMT) {
           for (var r1 = 0; r1 < numReturCols; r1++) {
-            row2Vals.push(returSlots[r1] ? formatDateHeader(returSlots[r1]) : ('Ret ' + (r1 + 1)));
+            row2Vals.push(returSlots[r1] ? formatDateHeader(returSlots[r1]) : '');
           }
         }
         row2Vals.push(''); // Total Datang Net span
@@ -120,15 +117,13 @@ function handlePushPenerimaanProduksi(data) {
         var startDataRowIndex = currentRow;
         var colorGroups = block.colorGroups || [];
 
-        // Total subrows calculation for row height allocation
         var totalSubRowsInBlock = 0;
         for (var cgIdx = 0; cgIdx < colorGroups.length; cgIdx++) {
           totalSubRowsInBlock += Math.max(1, (colorGroups[cgIdx].sizes || []).length);
         }
 
-        // Row height allocation so total block height is ~220px to 250px for large image display!
-        var targetBlockHeightPx = Math.max(220, totalSubRowsInBlock * 38);
-        var calculatedRowHeight = Math.max(38, Math.floor(targetBlockHeightPx / Math.max(1, totalSubRowsInBlock)));
+        var targetBlockHeightPx = Math.max(320, totalSubRowsInBlock * 32);
+        var calculatedRowHeight = Math.max(32, Math.floor(targetBlockHeightPx / Math.max(1, totalSubRowsInBlock)));
 
         for (var c = 0; c < colorGroups.length; c++) {
           var cg = colorGroups[c];
@@ -192,7 +187,7 @@ function handlePushPenerimaanProduksi(data) {
             sheet.getRange(startDataRowIndex, totalCols, numBlockRows, 1).merge(); // NET
           }
 
-          // Add Photo Formula in Photo Cell using Mode 1 (=IMAGE(url, 1) preserves aspect ratio perfectly inside large cell!)
+          // Add Photo Formula
           var rawPhotoUrl = String(block.photoUrl || '').trim();
           if (rawPhotoUrl && (rawPhotoUrl.indexOf('http://') === 0 || rawPhotoUrl.indexOf('https://') === 0)) {
             sheet.getRange(startDataRowIndex, 5).setFormula('=IMAGE("' + rawPhotoUrl + '", 1)');
@@ -206,15 +201,38 @@ function handlePushPenerimaanProduksi(data) {
           blockDataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
         }
 
+        // TULIS BARIS CATATAN/KETERANGAN JIKA ADA
+        var blockCatatan = String(block.catatan || block.keterangan || '').trim();
+        if (blockCatatan) {
+          var noteRowIndex = currentRow;
+          var noteRowVals = ['CATATAN / KETERANGAN:', blockCatatan];
+          for (var nc = 2; nc < totalCols; nc++) noteRowVals.push('');
+
+          sheet.getRange(noteRowIndex, 1, 1, noteRowVals.length).setValues([noteRowVals]);
+          sheet.getRange(noteRowIndex, 2, 1, totalCols - 1).merge();
+
+          var noteRange = sheet.getRange(noteRowIndex, 1, 1, totalCols);
+          noteRange.setFontSize(8.5);
+          noteRange.setFontWeight('bold');
+          noteRange.setFontColor('#92400E');
+          noteRange.setBackground('#FEF3C7');
+          noteRange.setVerticalAlignment('middle');
+          noteRange.setHorizontalAlignment('left');
+          noteRange.setBorder(true, true, true, true, true, true, '#FDE68A', SpreadsheetApp.BorderStyle.SOLID);
+          sheet.setRowHeight(noteRowIndex, 22);
+
+          currentRow++;
+        }
+
         currentRow += 2; // Spacer gap between product blocks
       }
 
-      // Adjust column widths for Master Matrix (PHOTO column 5 width set to 260px for LARGE photo!)
+      // Adjust column widths for Master Matrix
       sheet.setColumnWidth(1, 45);  // NO
       sheet.setColumnWidth(2, 90);  // CODE
       sheet.setColumnWidth(3, 160); // PRODUCT NAME
       sheet.setColumnWidth(4, 90);  // UP
-      sheet.setColumnWidth(5, 260); // PHOTO (Large photo column width 260px!)
+      sheet.setColumnWidth(5, 360); // PHOTO (Large 360px wide photo column!)
       sheet.setColumnWidth(6, 110); // COLOR
       sheet.setColumnWidth(7, 70);  // SIZE
 
@@ -225,7 +243,7 @@ function handlePushPenerimaanProduksi(data) {
 
       return {
         success: true,
-        message: 'Sukses menulis ' + blocks.length + ' Master Tabel Kode Produk (Foto Besar) ke Google Sheet (' + targetSheetName + ')!',
+        message: 'Sukses menulis ' + blocks.length + ' Master Tabel Kode Produk ke Google Sheet (' + targetSheetName + ')!',
         count: blocks.length,
         sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit#gid=' + sheet.getSheetId()
       };

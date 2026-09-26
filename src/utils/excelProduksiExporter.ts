@@ -200,12 +200,12 @@ export async function exportProduksiToModernExcel(
 
     const totalCols = 7 + numDateCols + (isCMT ? numReturCols : 0) + 1;
 
-    // Set Column Widths for Large & Clear Image Display (Col E width 42 = ~260px wide!)
+    // Set Column Widths for Large & Clear Image Display (Col E width 54 = ~350px wide!)
     worksheet.getColumn(1).width = 6;  // NO
     worksheet.getColumn(2).width = 12; // CODE
     worksheet.getColumn(3).width = 22; // PRODUCT NAME
     worksheet.getColumn(4).width = 12; // UP / Vendor
-    worksheet.getColumn(5).width = 42; // PHOTO (Large photo column width!)
+    worksheet.getColumn(5).width = 54; // PHOTO (Large photo column width!)
     worksheet.getColumn(6).width = 16; // COLOR
     worksheet.getColumn(7).width = 10; // SIZE
 
@@ -294,9 +294,9 @@ export async function exportProduksiToModernExcel(
 
     const startDataRowIndex = currentRow;
 
-    // Height calculation: Allocate total row height for product block to at least 220px to 260px!
-    const targetBlockHeight = Math.max(220, totalSubRows * 36);
-    const rowHeightAllocated = Math.max(36, Math.floor(targetBlockHeight / totalSubRows));
+    // Height calculation: Allocate total row height for product block to at least 320px!
+    const targetBlockHeight = Math.max(320, totalSubRows * 32);
+    const rowHeightAllocated = Math.max(32, Math.floor(targetBlockHeight / totalSubRows));
 
     for (let cIdx = 0; cIdx < block.colorGroups.length; cIdx++) {
       const colorGroup = block.colorGroups[cIdx];

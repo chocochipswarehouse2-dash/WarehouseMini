@@ -68,6 +68,7 @@ import {
   hapusPenerimaanProduksiSingleRowFromSupabase,
   getSupabaseClient,
   syncOfflinePenerimaanProduksi,
+  cleanMismatchedPenerimaanNotesInSupabase,
 } from '../services/supabase';
 import { compressImage } from '../utils/imageCompressor';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
@@ -501,6 +502,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const loadData = async () => {
     setIsLoading(true);
     try {
+      // Auto-cleanup any mismatched global notes (e.g. BIS Florence accidentally copied to other codes)
+      await cleanMismatchedPenerimaanNotesInSupabase();
+
       const res = await fetchPenerimaanProduksiFromSupabase({
         kategori: filterKategori !== 'Semua' ? filterKategori : undefined,
         startDate: filterStartDate || undefined,
@@ -1311,7 +1315,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           size: (it.size || 'Default').trim(),
           qty: Math.max(1, Number(it.qty) || 1),
           foto_url: it.foto_url || '',
-          keterangan: (it.keterangan || editingBatch.keterangan || '').trim(),
+          keterangan: (it.keterangan || '').trim(),
           operator: it.operator || session?.name || 'Operator',
         })),
       };

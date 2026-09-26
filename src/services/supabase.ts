@@ -6822,6 +6822,54 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
 }
 
 /**
+ * Clean up mismatched notes (e.g. BIS Florence copied to all products under SJ-KARGOCHN 2509-01 12 KOLI)
+ */
+export async function cleanMismatchedPenerimaanNotesInSupabase(): Promise<number> {
+  let cleanedCount = 0;
+
+  // 1. Update in Supabase database
+  try {
+    await supabaseFetch(
+      'penerimaan_produksi',
+      'PATCH',
+      { keterangan: '' },
+      `no_surat_jalan=eq.SJ-KARGOCHN%202509-01%2012%20KOLI&kode_produksi=neq.2508&keterangan=eq.BIS%20Florence`
+    );
+  } catch (err) {
+    console.warn('Gagal patch Supabase cleanup:', err);
+  }
+
+  // 2. Update in LocalStorage & In-Memory Cache
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      const list: PenerimaanProduksiItem[] = JSON.parse(cached);
+      const newList = list.map((item) => {
+        const sj = (item.no_surat_jalan || '').trim().toUpperCase();
+        const kp = (item.kode_produksi || '').trim().toUpperCase();
+        const ket = (item.keterangan || '').trim();
+
+        if (
+          (sj === 'SJ-KARGOCHN 2509-01 12 KOLI' && kp !== '2508' && (ket === 'BIS Florence' || ket.includes('BIS Florence'))) ||
+          (kp !== '2508' && ket === 'BIS Florence')
+        ) {
+          cleanedCount++;
+          return { ...item, keterangan: '' };
+        }
+        return item;
+      });
+
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(newList));
+    }
+  } catch (err) {
+    console.warn('Gagal update local cache cleanup:', err);
+  }
+
+  memoryPenerimaanProduksiCache = null; // Clear memory cache
+  return cleanedCount;
+}
+
+/**
  * Simpan Batch Penerimaan Produksi ke Supabase & Google Apps Script mirror
  */
 export async function simpanBatchPenerimaanProduksiToSupabase(
@@ -6837,7 +6885,7 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
     for (const prod of payload.produk_list) {
       const kode = (prod.kode_produksi || '').trim().toUpperCase();
       const fotoUrl = prod.foto_url || payload.foto_url || '';
-      const catatanProd = (prod.catatan || payload.keterangan || '').trim();
+      const catatanProd = (prod.catatan || '').trim();
 
       for (const v of prod.variants) {
         const qty = Math.max(1, Number(v.qty) || 1);
@@ -6867,7 +6915,7 @@ export async function simpanBatchPenerimaanProduksiToSupabase(
         size: (it.size || 'Default').trim(),
         qty: Math.max(1, Number(it.qty) || 1),
         foto_url: it.foto_url || payload.foto_url || '',
-        keterangan: (it.keterangan || payload.keterangan || '').trim(),
+        keterangan: (it.keterangan || '').trim(),
         operator: it.operator || targetOperator,
         created_at: it.created_at || nowStr,
       });

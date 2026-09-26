@@ -19,6 +19,7 @@ import {
   CheckSquare,
   Square,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
@@ -57,6 +58,7 @@ export interface MatrixProductBlock {
   upVendor: string; // Optional UP
   kategori: string; // 'Lokal CMT' | 'Kargo'
   photoUrl?: string; // Hasil upload GDrive
+  catatan?: string; // Catatan / Keterangan khusus produk
   colorGroups: MatrixColorGroup[];
   dateSlots: string[]; // 10 slots of arrival dates
   returDateSlots?: string[]; // 5 slots of return dates (for CMT)
@@ -170,17 +172,22 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       const photoUrl = items.find((i) => i.foto_url && i.foto_url.trim().length > 0)?.foto_url;
       const firstItem = items[0];
 
-      // Clean UP / Catatan Vendor extraction (Avoid hardcoding "BIS Florence" to all items)
+      // Clean UP / Vendor & Product Name logic based on Tab
       let upVendor = '';
-      if (firstItem) {
-        if (firstItem.kategori === 'Lokal CMT') {
-          upVendor = 'BIS';
-        } else if (firstItem.keterangan) {
-          const ket = firstItem.keterangan.trim();
-          if (ket.toUpperCase().startsWith('UP:')) {
-            upVendor = ket.substring(3).trim();
-          } else if (ket !== firstItem.nama_produk) {
-            upVendor = ket;
+      let productName = '';
+
+      if (activeTab === 'Kargo') {
+        // Riwayat Penerimaan Kargo: UP dan Product Name selalu KOSONG!
+        upVendor = '';
+        productName = '';
+      } else {
+        // Tab CMT
+        productName = firstItem?.nama_produk || '';
+        if (firstItem) {
+          if (firstItem.kategori === 'Lokal CMT') {
+            upVendor = 'BIS';
+          } else if (firstItem.keterangan && firstItem.keterangan.trim().toUpperCase().startsWith('UP:')) {
+            upVendor = firstItem.keterangan.trim().substring(3).trim();
           }
         }
       }
@@ -301,6 +308,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
       const totalNet = Math.max(0, totalDatang - (isCMT ? totalRetur : 0));
 
+      // Extract catatan / keterangan khusus produk
+      const distinctNotes = Array.from(
+        new Set(items.map((i) => (i.keterangan || i.catatan || '').trim()).filter(Boolean))
+      );
+      const catatan = distinctNotes.join(' | ');
+
       // Kesimpulan metrics
       const savedM = customMetrics[code] || {
         kg: Math.round(totalNet * 0.28 * 10) / 10,
@@ -316,10 +329,11 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         id: code,
         rowNumber: rowNumber++,
         code,
-        productName: firstItem?.nama_produk || '',
+        productName,
         upVendor,
         kategori: targetCategory,
         photoUrl,
+        catatan,
         colorGroups,
         dateSlots,
         returDateSlots,
@@ -1305,6 +1319,30 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                         <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
                       </>
                     )}
+
+                    {/* DISPLAY CATATAN / KETERANGAN DATA */}
+                    {isEditingThisBlock ? (
+                      <div className="flex items-center gap-1.5 ml-1">
+                        <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <input
+                          type="text"
+                          placeholder="Edit catatan produk ini..."
+                          value={block.catatan || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setBlocks((prev) =>
+                              prev.map((b) => (b.id === block.id ? { ...b, catatan: val } : b))
+                            );
+                          }}
+                          className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded text-xs text-amber-900 dark:text-amber-200 outline-none w-48 sm:w-64"
+                        />
+                      </div>
+                    ) : block.catatan ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 rounded-lg text-[11px] font-medium ml-1">
+                        <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span><strong>Catatan:</strong> {block.catatan}</span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Mode Edit & Save Controls */}
@@ -1446,7 +1484,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                             }`}
                             title={isEditingThisBlock ? 'Klik untuk ubah tanggal datang' : undefined}
                           >
-                            {dStr ? formatDateHeader(dStr) : <span className="text-slate-400 font-normal">Tgl {idx + 1}</span>}
+                            {dStr ? (
+                              formatDateHeader(dStr)
+                            ) : isEditingThisBlock ? (
+                              <span className="text-rose-600 dark:text-rose-400 font-normal hover:underline">+ Tgl</span>
+                            ) : (
+                              ''
+                            )}
                           </th>
                         ))}
 
@@ -1465,7 +1509,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                               }`}
                               title={isEditingThisBlock ? 'Klik untuk ubah tanggal retur' : undefined}
                             >
-                              {rStr ? formatDateHeader(rStr) : <span className="text-red-400/80 font-normal">Ret {rIdx + 1}</span>}
+                              {rStr ? (
+                                formatDateHeader(rStr)
+                              ) : isEditingThisBlock ? (
+                                <span className="text-red-600 dark:text-red-400 font-normal hover:underline">+ Ret</span>
+                              ) : (
+                                ''
+                              )}
                             </th>
                           ))}
                       </tr>
@@ -1563,7 +1613,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                   className="p-2 text-center align-middle bg-slate-50/50 dark:bg-slate-850/50"
                                 >
                                   {block.photoUrl ? (
-                                    <div className="relative group w-48 h-48 sm:w-56 sm:h-56 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
+                                    <div className="relative group w-64 h-64 sm:w-80 sm:h-80 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
                                       <img
                                         src={block.photoUrl}
                                         alt={block.code}
