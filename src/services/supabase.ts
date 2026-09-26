@@ -5079,6 +5079,258 @@ export async function fetchMasterShiftList(): Promise<MasterShiftRecord[]> {
 }
 
 /**
+ * Save or update a single master shift definition
+ */
+export async function saveMasterShift(record: Partial<MasterShiftRecord>): Promise<MasterShiftRecord> {
+  const sb = getSupabaseClient();
+  const payload: Record<string, any> = {
+    nama_shift: record.nama_shift?.trim(),
+    jam_masuk: record.jam_masuk ? String(record.jam_masuk).replace(/\./g, ':') : '08:00',
+    jam_pulang: record.jam_pulang ? String(record.jam_pulang).replace(/\./g, ':') : '17:00',
+    toleransi: Number(record.toleransi) || 15,
+    status: record.status || 'Aktif',
+  };
+
+  if (record.id) {
+    const { data, error } = await sb
+      .from('master_shift')
+      .update(payload)
+      .eq('id', record.id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  } else {
+    const { data, error } = await sb
+      .from('master_shift')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+}
+
+/**
+ * Helper to calculate lateness against scheduled shift time
+ */
+export function calculateLatenessStatus(
+  actualTimeStr?: string | null,
+  scheduledTimeStr?: string | null,
+  toleranceMinutes = 15
+): { status: 'Hadir' | 'Terlambat'; minutesLate: number } {
+  if (!actualTimeStr || !scheduledTimeStr) {
+    return { status: 'Hadir', minutesLate: 0 };
+  }
+  const [actH, actM] = actualTimeStr.split(':').map((n) => parseInt(n, 10));
+  const [schH, schM] = scheduledTimeStr.split(':').map((n) => parseInt(n, 10));
+  if (isNaN(actH) || isNaN(actM) || isNaN(schH) || isNaN(schM)) {
+    return { status: 'Hadir', minutesLate: 0 };
+  }
+  const actTotal = actH * 60 + actM;
+  const schTotal = schH * 60 + schM;
+  const diff = actTotal - schTotal;
+  if (diff > toleranceMinutes) {
+    return { status: 'Terlambat', minutesLate: diff };
+  }
+  return { status: 'Hadir', minutesLate: 0 };
+}
+
+/**
+ * Save or update a single roster shift schedule & auto-sync presensi lateness calculation
+ */
+export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promise<RosterShiftRecord> {
+  const sb = getSupabaseClient();
+  const rawNik = (record.nik || '').trim().toUpperCase();
+  const rawTanggal = (record.tanggal || '').trim();
+  const cleanShift = (record.shift || 'Shift 1').trim();
+
+  if (!rawNik) throw new Error('NIK karyawan wajib diisi');
+  if (!rawTanggal) throw new Error('Tanggal shift wajib diisi');
+
+  // Determine standard shift times if empty
+  let jamMasuk = record.jam_masuk ? String(record.jam_masuk).replace(/\./g, ':').trim() : '';
+  let jamPulang = record.jam_pulang ? String(record.jam_pulang).replace(/\./g, ':').trim() : '';
+
+  if (!jamMasuk && !jamPulang) {
+    const sLower = cleanShift.toLowerCase();
+    if (sLower.includes('shift 1') || sLower === '1') {
+      jamMasuk = '08:00';
+      jamPulang = '17:00';
+    } else if (sLower.includes('shift 2') || sLower === '2') {
+      jamMasuk = '09:00';
+      jamPulang = '18:00';
+    } else if (sLower.includes('shift 3') || sLower === '3') {
+      jamMasuk = '12:00';
+      jamPulang = '21:00';
+    }
+  }
+
+  const cleanPayload: Record<string, any> = {
+    nik: rawNik,
+    tanggal: rawTanggal,
+    shift: cleanShift,
+    jam_masuk: jamMasuk || null,
+    jam_pulang: jamPulang || null,
+    keterangan: record.keterangan ? String(record.keterangan).trim() : null,
+  };
+
+  let resultData: any = null;
+
+  if (record.id) {
+    // Direct update by ID
+    const { data, error } = await sb
+      .from('roster_shift')
+      .update(cleanPayload)
+      .eq('id', record.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('saveRosterShift update error:', error);
+      throw new Error(error.message);
+    }
+    resultData = data;
+  } else {
+    // Check if record for (nik, tanggal) already exists
+    const { data: existingList } = await sb
+      .from('roster_shift')
+      .select('id')
+      .eq('nik', rawNik)
+      .eq('tanggal', rawTanggal)
+      .limit(1);
+
+    if (existingList && existingList.length > 0) {
+      const { data, error } = await sb
+        .from('roster_shift')
+        .update(cleanPayload)
+        .eq('id', existingList[0].id)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      resultData = data;
+    } else {
+      let { data: inserted, error: insErr } = await sb
+        .from('roster_shift')
+        .insert(cleanPayload)
+        .select()
+        .single();
+
+      if (insErr && (insErr.code === '23505' || String(insErr.message).includes('roster_shift_pkey'))) {
+        const { data: maxRow } = await sb.from('roster_shift').select('id').order('id', { ascending: false }).limit(1);
+        const nextId = (maxRow && maxRow[0]?.id ? maxRow[0].id : 500) + 1;
+        const resFallback = await sb
+          .from('roster_shift')
+          .insert({ ...cleanPayload, id: nextId })
+          .select()
+          .single();
+        if (resFallback.error) throw new Error(resFallback.error.message);
+        inserted = resFallback.data;
+      } else if (insErr) {
+        throw new Error(insErr.message);
+      }
+      resultData = inserted;
+    }
+  }
+
+  // AUTO-SYNC PRESENSI: Update existing attendance record status & lateness for this staff & date
+  try {
+    const { data: presensiRows } = await sb
+      .from('presensi')
+      .select('*')
+      .eq('nik', rawNik)
+      .eq('tanggal', rawTanggal)
+      .limit(1);
+
+    if (presensiRows && presensiRows.length > 0) {
+      const pRecord = presensiRows[0];
+      const isOff = cleanShift.toLowerCase().includes('libur') || cleanShift.toLowerCase().includes('off');
+      const isCuti = cleanShift.toLowerCase().includes('cuti') || cleanShift.toLowerCase().includes('izin');
+
+      let newStatus = pRecord.status;
+      let newCatatan = pRecord.catatan || '';
+
+      if (isOff) {
+        newStatus = 'Libur';
+      } else if (isCuti) {
+        newStatus = cleanShift;
+      } else if (pRecord.jam_masuk) {
+        // Recalculate late status against scheduled start time
+        const schedStart = jamMasuk || '08:00';
+        const calc = calculateLatenessStatus(pRecord.jam_masuk, schedStart, 15);
+        newStatus = calc.status;
+        
+        // Update late note cleanly
+        const baseNote = (newCatatan || '').replace(/\s*\|\s*Terlambat \d+ mnt[^\n]*/gi, '').replace(/Terlambat \d+ mnt[^\n]*/gi, '').trim();
+        if (calc.status === 'Terlambat') {
+          newCatatan = baseNote ? `${baseNote} | Terlambat ${calc.minutesLate} mnt (Shift ${cleanShift})` : `Terlambat ${calc.minutesLate} mnt (Shift ${cleanShift})`;
+        } else {
+          newCatatan = baseNote;
+        }
+      }
+
+      await sb
+        .from('presensi')
+        .update({
+          shift: cleanShift,
+          status: newStatus,
+          catatan: newCatatan || null,
+        })
+        .eq('id', pRecord.id);
+    }
+  } catch (syncErr) {
+    console.warn('Auto-sync presensi lateness on roster shift update warn:', syncErr);
+  }
+
+  return resultData as RosterShiftRecord;
+}
+
+/**
+ * Batch save/import roster shift schedules (CSV Import or multi-staff assignment)
+ */
+export async function batchSaveRosterShifts(
+  records: Partial<RosterShiftRecord>[]
+): Promise<{ success: number; failed: number; errors: string[] }> {
+  const sb = getSupabaseClient();
+  let successCount = 0;
+  let failCount = 0;
+  const errorLogs: string[] = [];
+
+  for (const record of records) {
+    try {
+      await saveRosterShift(record);
+      successCount++;
+    } catch (err: any) {
+      failCount++;
+      errorLogs.push(`${record.nik || 'Unknown'} (${record.tanggal || '-'}): ${err.message || String(err)}`);
+    }
+  }
+
+  return {
+    success: successCount,
+    failed: failCount,
+    errors: errorLogs,
+  };
+}
+
+/**
+ * Delete a roster shift entry by ID
+ */
+export async function deleteRosterShift(id: number): Promise<boolean> {
+  const sb = getSupabaseClient();
+  const { error } = await sb
+    .from('roster_shift')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('deleteRosterShift error:', error);
+    throw new Error(error.message);
+  }
+  return true;
+}
+
+/**
  * Fetch lembur records (optionally filtered by NIK)
  */
 export async function fetchLemburRecords(nik?: string): Promise<LemburRecord[]> {
@@ -5229,13 +5481,48 @@ export async function fetchKaryawanDirectory(): Promise<KaryawanRecord[]> {
  */
 export async function upsertKaryawanRecord(karyawan: Partial<KaryawanRecord>): Promise<{ success: boolean; message?: string }> {
   try {
-    if (!karyawan.nik || !karyawan.nama) {
+    const rawNik = (karyawan.nik || '').trim().toUpperCase();
+    const rawNama = (karyawan.nama || '').trim();
+
+    if (!rawNik || !rawNama) {
       return { success: false, message: 'NIK dan Nama Karyawan wajib diisi' };
     }
-    const payload = {
-      ...karyawan,
+
+    // Helper to sanitize date: null if empty string or invalid syntax
+    const cleanDate = (d: any): string | null => {
+      if (!d || typeof d !== 'string' || !d.trim()) return null;
+      const val = d.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+      return null;
+    };
+
+    const cleanStr = (s: any): string | null => {
+      if (!s || typeof s !== 'string' || !s.trim()) return null;
+      return s.trim();
+    };
+
+    const payload: Record<string, any> = {
+      nik: rawNik,
+      nama: rawNama,
+      divisi: karyawan.divisi?.trim() || 'Warehouse',
+      username: karyawan.username?.trim() || rawNik,
+      password: karyawan.password?.trim() || '123456',
+      role: karyawan.role?.trim() || 'user',
+      gaji_pokok: Number(karyawan.gaji_pokok) || 0,
+      tunjangan: Number(karyawan.tunjangan) || 0,
+      rate_lembur: Number(karyawan.rate_lembur) || 10000,
+      saldo_kasbon: Number(karyawan.saldo_kasbon) || 0,
+      email: cleanStr(karyawan.email),
+      no_hp: cleanStr(karyawan.no_hp),
+      tgl_lahir: cleanDate(karyawan.tgl_lahir),
+      tgl_bergabung: cleanDate(karyawan.tgl_bergabung),
+      alamat: cleanStr(karyawan.alamat),
+      hobi: cleanStr((karyawan as any).hobi),
+      kontak_darurat: cleanStr(karyawan.kontak_darurat),
+      foto: cleanStr(karyawan.foto),
       updated_at: new Date().toISOString(),
     };
+
     const res = await supabaseFetch<any[]>('karyawan', 'POST', payload, 'on_conflict=nik', true);
     if (res && Array.isArray(res) && res.length === 0) {
       throw new Error("Akses ditolak (RLS) atau gagal menyimpan data.");
