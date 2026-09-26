@@ -280,6 +280,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
   }, [activeSJ, activeItems, unexpectedItems, activeLocation, rekapCatatan]);
 
+  // Proteksi reload / tab close / force-close saat proses picking aktif sedang berlangsung
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeSJ) {
+        const hasPicked = activeItems.some((it) => (it.qty_picked || 0) > 0) || unexpectedItems.length > 0;
+        if (hasPicked) {
+          e.preventDefault();
+          e.returnValue = 'Proses picking sedang berlangsung. Sesi picking Anda tersimpan di penyimpanan lokal, yakin ingin me-reload?';
+          return e.returnValue;
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeSJ, activeItems, unexpectedItems]);
+
   // Autofocus scanner input whenever in picking workspace
   useEffect(() => {
     if (activeSJ && !isRekapModalOpen && inputMode === 'fisik') {

@@ -567,3 +567,100 @@ export async function deleteSJDraftFromDb(id: string): Promise<void> {
   }
 }
 
+// --- GENERIC WORK STATUS & OFFLINE PROTECTION HELPERS ---
+
+/**
+ * Save an active work-in-progress draft with dual redundancy (IndexedDB + localStorage)
+ * Guarantees zero data loss on force-close or abrupt page reload
+ */
+export async function saveWorkDraft<T = any>(key: string, data: T): Promise<void> {
+  // 1. Instant synchronous localStorage backup
+  try {
+    localStorage.setItem(`wms_draft_${key}`, JSON.stringify(data));
+  } catch (e) {
+    console.warn(`localStorage draft save for ${key} failed:`, e);
+  }
+
+  // 2. Persistent IndexedDB meta backup (no size quota limits)
+  try {
+    await setLocalDbMeta(`draft_${key}`, data);
+  } catch (e) {
+    console.warn(`IndexedDB draft save for ${key} failed:`, e);
+  }
+}
+
+/**
+ * Load an active work-in-progress draft
+ */
+export async function loadWorkDraft<T = any>(key: string): Promise<T | null> {
+  // Try localStorage first for instant 0ms restoration
+  try {
+    const raw = localStorage.getItem(`wms_draft_${key}`);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {}
+
+  // Fallback to IndexedDB
+  try {
+    const fromDb = await getLocalDbMeta<T>(`draft_${key}`);
+    if (fromDb) return fromDb;
+  } catch {}
+
+  return null;
+}
+
+/**
+ * Clear a completed work draft after successful submit
+ */
+export async function clearWorkDraft(key: string): Promise<void> {
+  try {
+    localStorage.removeItem(`wms_draft_${key}`);
+  } catch {}
+
+  try {
+    const db = await getLocalDb();
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').delete(`draft_${key}`);
+  } catch {}
+}
+
+// --- OFFLINE PEMINJAMAN QUEUE ---
+const CACHE_KEY_OFFLINE_PEMINJAMAN = 'wms_offline_queue_peminjaman';
+
+export function getPendingOfflinePeminjaman(): any[] {
+  try {
+    return JSON.parse(localStorage.getItem(CACHE_KEY_OFFLINE_PEMINJAMAN) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function savePendingOfflinePeminjaman(record: any): void {
+  try {
+    const existing = getPendingOfflinePeminjaman();
+    const updated = [record, ...existing.filter((r: any) => r.noPeminjaman !== record.noPeminjaman)];
+    localStorage.setItem(CACHE_KEY_OFFLINE_PEMINJAMAN, JSON.stringify(updated));
+  } catch (err) {
+    console.warn('Gagal menyimpan antrean offline peminjaman:', err);
+  }
+}
+
+export function clearPendingOfflinePeminjaman(): void {
+  try {
+    localStorage.removeItem(CACHE_KEY_OFFLINE_PEMINJAMAN);
+  } catch {}
+}
+
+export function getPendingOfflineProduksiCount(): number {
+  try {
+    const raw = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (!raw) return 0;
+    const items = JSON.parse(raw);
+    if (!Array.isArray(items)) return 0;
+    return items.filter((it: any) => typeof it.id === 'string' && it.id.startsWith('local_')).length;
+  } catch {
+    return 0;
+  }
+}
+

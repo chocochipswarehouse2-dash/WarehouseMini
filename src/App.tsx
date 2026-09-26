@@ -39,6 +39,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ThemePickerModal } from './components/ThemePickerModal';
 import { LogoPreviewModal } from './components/LogoPreviewModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
+import { OfflineProtectionBar } from './components/OfflineProtectionBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
 import {
@@ -539,7 +540,16 @@ export default function App() {
   // Scan states
   const [scannerActiveTab, setScannerActiveTab] = useState<'scan' | 'recap'>('scan');
   const [scanMode, setScanMode] = useState<ScanMode>('fisik');
-  const [scannedData, setScannedData] = useState<ScannedItem[]>([]);
+  const [scannedData, setScannedData] = useState<ScannedItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('wms_active_staging_scans');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [currentCategory, setCurrentCategory] = useState<CategoryType>('SO');
   const [currentLocation, setCurrentLocation] = useState<string>('');
   const [keterangan, setKeterangan] = useState<string>('');
@@ -548,6 +558,30 @@ export default function App() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [showQuickTags, setShowQuickTags] = useState<boolean>(true);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+
+  // Auto-backup staging scanned items to localStorage to prevent data loss on reload or force-close
+  useEffect(() => {
+    try {
+      if (scannedData.length > 0) {
+        localStorage.setItem('wms_active_staging_scans', JSON.stringify(scannedData));
+      } else {
+        localStorage.removeItem('wms_active_staging_scans');
+      }
+    } catch {}
+  }, [scannedData]);
+
+  // BeforeUnload guard to prevent losing scanned data on accidental tab close or reload
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (scannedData.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'Terdapat data hasil scan yang belum disimpan ke Database. Data telah tersimpan di draft lokal, yakin ingin menutup atau me-reload?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [scannedData]);
 
   // Synchronous refs to prevent stale closure during camera barcode callbacks
   const currentCategoryRef = useRef<CategoryType>(currentCategory);
@@ -1579,6 +1613,9 @@ export default function App() {
 
       {/* Main App Container (Page Content) */}
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
+        {/* Offline Connection & Work Protection Banner */}
+        <OfflineProtectionBar onNotify={(msg, type) => showToast(msg, type)} />
+
         {/* Floating Mobile Sidebar Toggle */}
         <button
           type="button"

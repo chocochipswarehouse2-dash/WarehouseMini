@@ -292,6 +292,22 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
     return () => clearTimeout(timer);
   }, [batchSumber, batchTanggal, batchGdriveLink, batchCatatan, variants]);
 
+  // BeforeUnload guard to prevent accidental tab closing or reload during QC inspection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasContent = variants.some(
+        (v) => v.sku.trim() || v.nama_produk.trim() || v.photos.length > 0 || v.detail_kerusakan.trim()
+      );
+      if (hasContent) {
+        e.preventDefault();
+        e.returnValue = 'Pemeriksaan QC sedang diinput. Data tersimpan di draft lokal, yakin ingin me-reload?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [variants]);
+
   const handleClearDraft = () => {
     try {
       localStorage.removeItem('wms_qc_form_draft');

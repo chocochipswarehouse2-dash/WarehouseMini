@@ -72,14 +72,60 @@ export const STORE_COLS = [
   'LMP', 'MKG', 'BTS', 'CPJ', 'CWS', 'LWS', 'DPM', 'PHB', 'PMS', 'NSJ', 'PIM', 'SPM', 'GAIA', 'GST', 'LVL',
 ] as const;
 export const ONLINE_COLS = ['WEB', 'SHP', 'TPD', 'TTK', 'LZD', 'WOO'] as const;
+export const ALL_AREA_COLS = [...OFFLINE_COLS, ...STORE_COLS, ...ONLINE_COLS] as const;
 
 export type AreaFilterType = 'ALL' | 'GUDANG' | 'STORE' | 'ONLINE' | 'OFFLINE';
+
+// Helper to parse and sort locations cleanly (static for zero per-render overhead)
+export const parseNormalizedLocations = (locList?: (string | { lokasi: string; qty?: number })[]) => {
+  if (!Array.isArray(locList) || locList.length === 0) return [];
+  const map = new Map<string, { cleanLocName: string; qty: number; isNeg: boolean; displayStr: string }>();
+
+  for (let i = 0; i < locList.length; i++) {
+    const loc = locList[i];
+    let cleanLocName = '';
+    let qty = 0;
+    if (typeof loc === 'object' && loc !== null) {
+      cleanLocName = String(loc.lokasi || '').trim();
+      qty = Number(loc.qty ?? 0);
+    } else {
+      const parts = String(loc || '').split(':');
+      cleanLocName = String(parts[0] || '').trim();
+      qty = parseInt(parts[1], 10) || 0;
+    }
+    if (!cleanLocName || cleanLocName === '-') continue;
+
+    const existing = map.get(cleanLocName);
+    if (existing) {
+      existing.qty += qty;
+      existing.isNeg = existing.qty < 0;
+      existing.displayStr = `${cleanLocName} (${existing.qty})`;
+    } else {
+      map.set(cleanLocName, {
+        cleanLocName,
+        qty,
+        isNeg: qty < 0,
+        displayStr: qty ? `${cleanLocName} (${qty})` : cleanLocName,
+      });
+    }
+  }
+
+  const parsed = Array.from(map.values());
+  if (parsed.length > 1) {
+    parsed.sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      return a.cleanLocName.localeCompare(b.cleanLocName);
+    });
+  }
+  return parsed;
+};
 
 export interface NormalizedInventoryItem {
   sku: string;
   produk: string;
   size: string;
   locList: (string | { lokasi: string; qty?: number })[];
+  parsedLocs?: { cleanLocName: string; qty: number; isNeg: boolean; displayStr: string }[];
   locStr: string;
   komparasi: {
     MAP: { fisik: number; dp: number };
@@ -259,47 +305,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return scanAnomalies(productCatalog, stockList);
   }, [productCatalog, stockList]);
   const anomalyCount = anomalyItems.length;
-
-  // Helper to parse and sort locations cleanly
-  const parseNormalizedLocations = (locList?: (string | { lokasi: string; qty?: number })[]) => {
-    if (!Array.isArray(locList) || locList.length === 0) return [];
-    const map = new Map<string, { cleanLocName: string; qty: number; isNeg: boolean; displayStr: string }>();
-
-    locList.forEach((loc) => {
-      let cleanLocName = '';
-      let qty = 0;
-      if (typeof loc === 'object' && loc !== null) {
-        cleanLocName = String(loc.lokasi || '').trim();
-        qty = Number(loc.qty ?? 0);
-      } else {
-        const parts = String(loc || '').split(':');
-        cleanLocName = String(parts[0] || '').trim();
-        qty = parseInt(parts[1], 10) || 0;
-      }
-      if (!cleanLocName || cleanLocName === '-') return;
-
-      if (map.has(cleanLocName)) {
-        const existing = map.get(cleanLocName)!;
-        existing.qty += qty;
-        existing.isNeg = existing.qty < 0;
-        existing.displayStr = `${cleanLocName} (${existing.qty})`;
-      } else {
-        map.set(cleanLocName, {
-          cleanLocName,
-          qty,
-          isNeg: qty < 0,
-          displayStr: qty ? `${cleanLocName} (${qty})` : cleanLocName,
-        });
-      }
-    });
-
-    const parsed = Array.from(map.values());
-    parsed.sort((a, b) => {
-      if (b.qty !== a.qty) return b.qty - a.qty;
-      return a.cleanLocName.localeCompare(b.cleanLocName);
-    });
-    return parsed;
-  };
 
   const handleOpenLokasiExport = (locName?: string) => {
     if (locName) {
@@ -772,17 +777,16 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         liveFisik = shpFisik + ttkFisik;
       }
 
-      const locStr = formatLocationString(locList);
+      const parsedLocs = (locList && locList.length > 0) ? parseNormalizedLocations(locList) : [];
+      const locStr = parsedLocs.length > 0 ? parsedLocs.map(l => l.displayStr).join(', ') : '-';
 
-      // 2. DealPOS channels: merge from row, mapped, and dealposDeltaMap
-      const dpDelta = dealposDeltaMap[sku];
-      const dpRaw = (row?.dealpos_channels || dpDelta || mapped?.dealpos_channels || {}) as any;
+      // 2. DealPOS channels
+      const dpRaw = (row?.dealpos_channels || mapped?.dealpos_channels || {}) as any;
 
       const d = {
         ...(typeof dpRaw === 'object' && !Array.isArray(dpRaw) ? dpRaw : {}),
         ...(typeof dpRaw?.d === 'object' ? dpRaw.d : {}),
         ...(typeof row?.d === 'object' ? row.d : {}),
-        ...(typeof dpDelta?.d === 'object' ? dpDelta.d : {}),
       } as Record<string, number>;
 
       const b = {
@@ -790,8 +794,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         ...(typeof dpRaw?.cabang === 'object' ? dpRaw.cabang : {}),
         ...(typeof dpRaw?.b === 'object' ? dpRaw.b : {}),
         ...(typeof row?.b === 'object' ? row.b : {}),
-        ...(typeof dpDelta?.cabang === 'object' ? dpDelta.cabang : {}),
-        ...(typeof dpDelta?.b === 'object' ? dpDelta.b : {}),
       } as Record<string, number>;
 
       const mapDp = Number(
@@ -852,7 +854,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       );
 
       const singleVals: { [key: string]: number } = {};
-      [...OFFLINE_COLS, ...STORE_COLS, ...ONLINE_COLS].forEach((code) => {
+      ALL_AREA_COLS.forEach((code) => {
         singleVals[code] = Number(
           b[code] ??
           d[code] ??
@@ -887,6 +889,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         produk,
         size,
         locList,
+        parsedLocs,
         locStr,
         komparasi: {
           MAP: { fisik: mapFisik, dp: mapDp },
@@ -923,7 +926,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
     // Produk di luar master_produk tidak boleh ditampilkan di inventori
     return result;
-  }, [productCatalog, stockList, dealposDeltaMap]);
+  }, [productCatalog, stockList]);
 
   // ========================================================
   // 3. FILTERING & SORTING LOGIC (OPTIMIZED WITH FAST COMPARATORS)
@@ -1016,11 +1019,12 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return sorted;
   }, [normalizedInventory, deferredSearch, sortOption, onlyWithStock]);
 
-  // Auto-enrich visible items with DealPOS channels if not yet present
+  // Auto-enrich visible items with DealPOS channels if not yet present (debounced & capped to 30)
   const visibleSkusNeedingDealpos = useMemo(() => {
     const skus: string[] = [];
-    const slice = filteredInventory.slice(0, 60);
-    for (const it of slice) {
+    const slice = filteredInventory.slice(0, 30);
+    for (let i = 0; i < slice.length; i++) {
+      const it = slice[i];
       if (!dealposDeltaMap[it.sku]) {
         const hasDp = (it.komparasi.MAP.dp || 0) > 0 ||
                       (it.komparasi.PERMAK.dp || 0) > 0 ||
@@ -1035,25 +1039,30 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         }
       }
     }
-    return skus.slice(0, 50);
+    return skus;
   }, [filteredInventory, dealposDeltaMap]);
 
   useEffect(() => {
     if (visibleSkusNeedingDealpos.length === 0) return;
     let isMounted = true;
-    fetchMasterProductDealposChannelsBySkus(visibleSkusNeedingDealpos).then((res) => {
-      if (isMounted && res && Object.keys(res).length > 0) {
-        setDealposDeltaMap((prev) => ({ ...prev, ...res }));
-      }
-    }).catch(() => {});
+    const timer = setTimeout(() => {
+      fetchMasterProductDealposChannelsBySkus(visibleSkusNeedingDealpos).then((res) => {
+        if (isMounted && res && Object.keys(res).length > 0) {
+          setDealposDeltaMap((prev) => ({ ...prev, ...res }));
+        }
+      }).catch(() => {});
+    }, 250);
     return () => {
       isMounted = false;
+      clearTimeout(timer);
     };
   }, [visibleSkusNeedingDealpos]);
 
   const itemsWithStockCount = useMemo(() => {
-    return normalizedInventory.filter(
-      (item) =>
+    let count = 0;
+    for (let i = 0; i < normalizedInventory.length; i++) {
+      const item = normalizedInventory[i];
+      if (
         item.totalFisikGudang !== 0 ||
         item.totalStore !== 0 ||
         item.totalOnline !== 0 ||
@@ -1063,7 +1072,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         item.komparasi.STUDIO.dp !== 0 ||
         item.komparasi.PERMAK.dp !== 0 ||
         item.komparasi.DEFECT.dp !== 0
-    ).length;
+      ) {
+        count++;
+      }
+    }
+    return count;
   }, [normalizedInventory]);
 
   // Baseline KPI calculation (computed once for normalizedInventory)
@@ -1573,7 +1586,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   {/* 2. Lokasi Rak (Dedicated Column with Smart Progressive Disclosure) */}
                   <td className="p-2 border-r border-slate-100 dark:border-slate-800/60 min-w-[150px] align-middle">
                     {(() => {
-                      const locs = parseNormalizedLocations(item.locList);
+                      const locs = item.parsedLocs || parseNormalizedLocations(item.locList);
                       if (locs.length === 0) {
                         return <span className="text-[11px] text-slate-400 italic block text-center">-</span>;
                       }
@@ -1831,7 +1844,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                       {item.sku}
                     </span>
                     {(() => {
-                      const locs = parseNormalizedLocations(item.locList);
+                      const locs = item.parsedLocs || parseNormalizedLocations(item.locList);
                       if (locs.length === 0) return null;
 
                       const primaryLocs = locs.slice(0, 2);

@@ -64,6 +64,7 @@ import {
   saveLocalPeminjamanRecords,
   FALLBACK_CHANNEL_STOCKS,
 } from '../utils/localStore';
+import { savePendingOfflinePeminjaman } from '../services/localDb';
 import {
   sortAlphabeticalAndSize,
   fuzzySearchMultiple,
@@ -109,28 +110,81 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [activeTab, setActiveTab] = useState<'form' | 'stok' | 'riwayat'>('form');
   const [displayLimit, setDisplayLimit] = useState(30);
 
+  // Recovery of in-progress Peminjaman form draft (prevents data loss on reload or force close)
+  const initialFormDraft = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('wms_peminjaman_active_draft');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.namaPeminjam || parsed.keperluan || (Array.isArray(parsed.items) && parsed.items.some((it: any) => it.produk || it.sku)))) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  }, []);
+
   // Form State
-  const [namaPeminjam, setNamaPeminjam] = useState<string>('');
-  const [noWaPeminjam, setNoWaPeminjam] = useState<string>('');
-  const [keperluan, setKeperluan] = useState<string>('');
-  const [tglPinjam, setTglPinjam] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [namaPeminjam, setNamaPeminjam] = useState<string>(() => initialFormDraft?.namaPeminjam || '');
+  const [noWaPeminjam, setNoWaPeminjam] = useState<string>(() => initialFormDraft?.noWaPeminjam || '');
+  const [keperluan, setKeperluan] = useState<string>(() => initialFormDraft?.keperluan || '');
+  const [tglPinjam, setTglPinjam] = useState<string>(() => initialFormDraft?.tglPinjam || new Date().toISOString().slice(0, 10));
   const [autoSendWa, setAutoSendWa] = useState<boolean>(() => getFonnteConfig().autoSendEnabled);
-  const [items, setItems] = useState<PeminjamanItemForm[]>([
-    {
-      id: 'item-1',
-      produk: '',
-      size: '',
-      sku: '',
-      qty: 1,
-      lokasi: 'BLOK F',
-      stokMap: 0,
-      stokStudio: 0,
-      stokShp: 0,
-      stokTtk: 0,
-      selected: false,
-    },
-  ]);
+  const [items, setItems] = useState<PeminjamanItemForm[]>(() => {
+    if (initialFormDraft?.items && Array.isArray(initialFormDraft.items) && initialFormDraft.items.length > 0) {
+      return initialFormDraft.items;
+    }
+    return [
+      {
+        id: 'item-1',
+        produk: '',
+        size: '',
+        sku: '',
+        qty: 1,
+        lokasi: 'BLOK F',
+        stokMap: 0,
+        stokStudio: 0,
+        stokShp: 0,
+        stokTtk: 0,
+        selected: false,
+      },
+    ];
+  });
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // Auto-Save active Peminjaman draft
+  useEffect(() => {
+    const hasData = Boolean(namaPeminjam.trim() || keperluan.trim() || items.some(it => it.produk.trim() || it.sku.trim()));
+    if (hasData) {
+      const timer = setTimeout(() => {
+        try {
+          localStorage.setItem('wms_peminjaman_active_draft', JSON.stringify({
+            namaPeminjam,
+            noWaPeminjam,
+            keperluan,
+            tglPinjam,
+            items,
+            updatedAt: Date.now(),
+          }));
+        } catch {}
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [namaPeminjam, noWaPeminjam, keperluan, tglPinjam, items]);
+
+  // BeforeUnload guard to prevent accidental tab closing or reload
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasContent = Boolean(namaPeminjam.trim() || keperluan.trim() || items.some(it => it.produk.trim() || it.sku.trim()));
+      if (hasContent) {
+        e.preventDefault();
+        e.returnValue = 'Data formulir peminjaman sedang diisi. Data tersimpan di draft lokal, yakin ingin me-reload?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [namaPeminjam, keperluan, items]);
 
   // Local users list for auto-complete/suggestions
   const localUsers = useMemo(() => getLocalUsers(), []);
@@ -895,8 +949,17 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         username: session?.username || 'Operator',
       };
 
-      // 1. Save directly to Supabase peminjaman
-      await savePeminjamanToSupabase(newRecord);
+      // 1. Save to Supabase with offline queue fallback
+      let saveOk = false;
+      try {
+        saveOk = await savePeminjamanToSupabase(newRecord);
+      } catch (err) {
+        console.warn('Network error saving to Supabase:', err);
+      }
+
+      if (!saveOk) {
+        savePendingOfflinePeminjaman(newRecord);
+      }
 
       // 2. Also create picking tasks in Supabase for Fulfillment
       try {
@@ -939,6 +1002,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       saveLocalPeminjamanRecords(updated);
       try {
         localStorage.setItem('wms_peminjaman_cache', JSON.stringify(updated));
+      } catch {}
+
+      // Clear draft upon successful save
+      try {
+        localStorage.removeItem('wms_peminjaman_active_draft');
       } catch {}
 
       // Open Surat Jalan preview modal for the newly created record

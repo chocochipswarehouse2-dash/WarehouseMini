@@ -421,24 +421,81 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     setSelectedTicketNos(new Set());
   };
 
+  // Recovery of in-progress Perbaikan / Reject form draft (prevents data loss on reload or camera close)
+  const initialPerbaikanDraft = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('wms_perbaikan_form_draft');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.formSku || parsed.formNama || parsed.formDetailKerusakan || (Array.isArray(parsed.formPhotos) && parsed.formPhotos.length > 0))) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  }, []);
+
   // Form Input Reject State (Pendataan & Sortir Sekaligus)
-  const [formSku, setFormSku] = useState('');
+  const [formSku, setFormSku] = useState(() => initialPerbaikanDraft?.formSku || '');
   const deferredFormSku = useDeferredValue(formSku);
-  const [formNama, setFormNama] = useState('');
-  const [formSize, setFormSize] = useState('Default');
-  const [formQty, setFormQty] = useState<number | ''>(1);
-  const [formLokasiAsal, setFormLokasiAsal] = useState('A-01');
-  const [formIsAlreadyInRepair, setFormIsAlreadyInRepair] = useState(false);
-  const [formSumber, setFormSumber] = useState<PerbaikanTicket['sumber_barang']>('Gudang Fisik');
-  const [formKategoriRusak, setFormKategoriRusak] = useState<PerbaikanTicket['kategori_rusak']>('Noda / Kotor');
-  const [formDetailKerusakan, setFormDetailKerusakan] = useState('');
-  const [formPhotos, setFormPhotos] = useState<Array<{ dataUrl: string; sizeText: string; savedPercent: number }>>([]);
+  const [formNama, setFormNama] = useState(() => initialPerbaikanDraft?.formNama || '');
+  const [formSize, setFormSize] = useState(() => initialPerbaikanDraft?.formSize || 'Default');
+  const [formQty, setFormQty] = useState<number | ''>(() => initialPerbaikanDraft?.formQty !== undefined ? initialPerbaikanDraft.formQty : 1);
+  const [formLokasiAsal, setFormLokasiAsal] = useState(() => initialPerbaikanDraft?.formLokasiAsal || 'A-01');
+  const [formIsAlreadyInRepair, setFormIsAlreadyInRepair] = useState(() => Boolean(initialPerbaikanDraft?.formIsAlreadyInRepair));
+  const [formSumber, setFormSumber] = useState<PerbaikanTicket['sumber_barang']>(() => initialPerbaikanDraft?.formSumber || 'Gudang Fisik');
+  const [formKategoriRusak, setFormKategoriRusak] = useState<PerbaikanTicket['kategori_rusak']>(() => initialPerbaikanDraft?.formKategoriRusak || 'Noda / Kotor');
+  const [formDetailKerusakan, setFormDetailKerusakan] = useState(() => initialPerbaikanDraft?.formDetailKerusakan || '');
+  const [formPhotos, setFormPhotos] = useState<Array<{ dataUrl: string; sizeText: string; savedPercent: number }>>(() => initialPerbaikanDraft?.formPhotos || []);
   const [isCompressing, setIsCompressing] = useState(false);
   // Pilihan Sortir Langsung saat Pendataan
-  const [formTindakanSortir, setFormTindakanSortir] = useState<'SORTIR_NANTI' | 'CUCI' | 'PERMAK' | 'DEFECT'>('CUCI');
-  const [formInstruksiSortir, setFormInstruksiSortir] = useState('');
-  const [formPetugasPelaksana, setFormPetugasPelaksana] = useState('');
-  const [formLokasiTujuan, setFormLokasiTujuan] = useState('CC-01');
+  const [formTindakanSortir, setFormTindakanSortir] = useState<'SORTIR_NANTI' | 'CUCI' | 'PERMAK' | 'DEFECT'>(() => initialPerbaikanDraft?.formTindakanSortir || 'CUCI');
+  const [formInstruksiSortir, setFormInstruksiSortir] = useState(() => initialPerbaikanDraft?.formInstruksiSortir || '');
+  const [formPetugasPelaksana, setFormPetugasPelaksana] = useState(() => initialPerbaikanDraft?.formPetugasPelaksana || '');
+  const [formLokasiTujuan, setFormLokasiTujuan] = useState(() => initialPerbaikanDraft?.formLokasiTujuan || 'CC-01');
+
+  // Auto-Save draft input reject
+  useEffect(() => {
+    const hasData = Boolean(formSku.trim() || formNama.trim() || formDetailKerusakan.trim() || formPhotos.length > 0);
+    if (hasData) {
+      const timer = setTimeout(() => {
+        try {
+          localStorage.setItem('wms_perbaikan_form_draft', JSON.stringify({
+            formSku,
+            formNama,
+            formSize,
+            formQty,
+            formLokasiAsal,
+            formIsAlreadyInRepair,
+            formSumber,
+            formKategoriRusak,
+            formDetailKerusakan,
+            formPhotos,
+            formTindakanSortir,
+            formInstruksiSortir,
+            formPetugasPelaksana,
+            formLokasiTujuan,
+            updatedAt: Date.now(),
+          }));
+        } catch {}
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [formSku, formNama, formSize, formQty, formLokasiAsal, formIsAlreadyInRepair, formSumber, formKategoriRusak, formDetailKerusakan, formPhotos, formTindakanSortir, formInstruksiSortir, formPetugasPelaksana, formLokasiTujuan]);
+
+  // BeforeUnload guard for Perbaikan
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasContent = Boolean(formSku.trim() || formNama.trim() || formDetailKerusakan.trim() || formPhotos.length > 0);
+      if (hasContent) {
+        e.preventDefault();
+        e.returnValue = 'Data input barang reject sedang diisi. Data tersimpan di draft lokal, yakin ingin me-reload?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [formSku, formNama, formDetailKerusakan, formPhotos]);
 
   // Modal Edit Tiket & Foto (Untuk semua antrean pengerjaan)
   const [editModalTicket, setEditModalTicket] = useState<PerbaikanTicket | null>(null);
@@ -1381,6 +1438,9 @@ export const PerbaikanView: React.FC<PerbaikanViewProps> = React.memo(({
     setFormInstruksiSortir('');
     setFormPetugasPelaksana('');
     setFormPhotos([]);
+    try {
+      localStorage.removeItem('wms_perbaikan_form_draft');
+    } catch {}
   };
 
   // Eksekusi Sortir Kepala QC (Live Supabase & Log Pindah Rak)

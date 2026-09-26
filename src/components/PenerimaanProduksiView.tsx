@@ -230,24 +230,84 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [currentPage, setCurrentPage] = useState<number>(1);
   const rowsPerPage = 50;
 
+  // Draft Recovery for in-progress goods receipt form (protects against reload, tab close, or app crash)
+  const initialFormDraft = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('wms_penerimaan_produksi_form_draft');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.formNoSuratJalan || (Array.isArray(parsed.productBlocks) && parsed.productBlocks.some((b: any) => b.kode_produksi)))) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  }, []);
+
   // Form State: Header Surat Jalan
-  const [formKategori, setFormKategori] = useState<'Lokal CMT' | 'Kargo'>('Lokal CMT');
+  const [formKategori, setFormKategori] = useState<'Lokal CMT' | 'Kargo'>(() => initialFormDraft?.formKategori || 'Lokal CMT');
   const [formTanggal, setFormTanggal] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return initialFormDraft?.formTanggal || new Date().toISOString().split('T')[0];
   });
-  const [formNoSuratJalan, setFormNoSuratJalan] = useState<string>('');
-  const [formKeteranganGlobal, setFormKeteranganGlobal] = useState<string>('');
+  const [formNoSuratJalan, setFormNoSuratJalan] = useState<string>(() => initialFormDraft?.formNoSuratJalan || '');
+  const [formKeteranganGlobal, setFormKeteranganGlobal] = useState<string>(() => initialFormDraft?.formKeteranganGlobal || '');
 
   // Form State: Product Blocks
-  const [productBlocks, setProductBlocks] = useState<PenerimaanProdukBlock[]>([
-    {
-      id: Date.now(),
-      kode_produksi: '',
-      catatan: '',
-      foto_url: '',
-      variants: [{ warna: '', size: 'S', qty: 1 }],
-    },
-  ]);
+  const [productBlocks, setProductBlocks] = useState<PenerimaanProdukBlock[]>(() => {
+    if (initialFormDraft?.productBlocks && Array.isArray(initialFormDraft.productBlocks) && initialFormDraft.productBlocks.length > 0) {
+      return initialFormDraft.productBlocks;
+    }
+    return [
+      {
+        id: Date.now(),
+        kode_produksi: '',
+        catatan: '',
+        foto_url: '',
+        variants: [{ warna: '', size: 'S', qty: 1 }],
+      },
+    ];
+  });
+
+  // Auto-Save in-progress draft to localStorage
+  useEffect(() => {
+    const hasData = Boolean(
+      formNoSuratJalan.trim() ||
+      formKeteranganGlobal.trim() ||
+      productBlocks.some(b => b.kode_produksi.trim() || (b.variants && b.variants.some(v => v.warna.trim())))
+    );
+    if (hasData) {
+      const timer = setTimeout(() => {
+        try {
+          localStorage.setItem('wms_penerimaan_produksi_form_draft', JSON.stringify({
+            formKategori,
+            formTanggal,
+            formNoSuratJalan,
+            formKeteranganGlobal,
+            productBlocks,
+            savedAt: Date.now(),
+          }));
+        } catch {}
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [formKategori, formTanggal, formNoSuratJalan, formKeteranganGlobal, productBlocks]);
+
+  // BeforeUnload guard to warn if operator attempts to reload or close tab with unsaved items
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasData = Boolean(
+        formNoSuratJalan.trim() ||
+        productBlocks.some(b => b.kode_produksi.trim() || (b.variants && b.variants.some(v => v.warna.trim())))
+      );
+      if (hasData) {
+        e.preventDefault();
+        e.returnValue = 'Data formulir penerimaan barang sedang diisi. Data tersimpan di draft lokal, yakin ingin menutup atau me-reload?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [formNoSuratJalan, productBlocks]);
 
   // Modals
   const [lightboxImage, setLightboxImage] = useState<{
@@ -738,6 +798,9 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         variants: [{ warna: '', size: 'S', qty: 1 }],
       },
     ]);
+    try {
+      localStorage.removeItem('wms_penerimaan_produksi_form_draft');
+    } catch {}
   };
 
   // Submit Form (Batch Save)
@@ -1653,10 +1716,14 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
           {/* Action Bar & Summary Footer */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-3 shadow-md sticky bottom-4 z-20 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-bold text-slate-500">Ringkasan Input:</span>
               <span className="px-3 py-1 rounded-xl text-xs font-black bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                 {formSummary.totalKode} Kode • {formSummary.totalVariants} Varian • {formSummary.totalPcs} Pcs
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10.5px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60" title="Draft tersimpan otomatis offline di perangkat. Aman jika reload atau tertutup.">
+                <CheckCircle2 className="w-3 h-3 text-blue-500" />
+                Draft Offline Tersimpan
               </span>
             </div>
 

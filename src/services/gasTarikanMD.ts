@@ -425,16 +425,24 @@ export async function syncPendingOfflinePengecekanSJ(): Promise<{ successCount: 
   if (pending.length === 0) return { successCount: 0, failCount: 0 };
   let successCount = 0;
   let failCount = 0;
+  const remaining: PengecekanSJRecord[] = [];
   for (const record of pending) {
     try {
       const success = await savePengecekanSJToSupabase(record);
-      if (success) successCount++;
-      else failCount++;
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+        remaining.push(record);
+      }
     } catch {
       failCount++;
+      remaining.push(record);
     }
   }
-  if (successCount > 0) {
+  if (remaining.length > 0) {
+    localStorage.setItem('wms_offline_queue_pengecekan_sj', JSON.stringify(remaining));
+  } else {
     localStorage.removeItem('wms_offline_queue_pengecekan_sj');
   }
   return { successCount, failCount };
@@ -456,22 +464,42 @@ export function exportPengecekanToCsv(records: PengecekanSJRecord[], filename: s
 }
 
 export async function submitTarikanMD(record: PengecekanSJRecord): Promise<{ success: boolean; offline?: boolean; message?: string }> {
-  try {
-    const res = await submitPengecekanSJ(record);
-    if (res.success) {
-      return { success: true, offline: false, message: res.message };
-    }
-    // Jika gagal mengirim (misalnya network error), simpan ke antrean offline
+  // Direct offline catch when network is offline
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
     try {
       const offlineQueue = getPendingOfflinePengecekanSJ();
       const updatedQueue = [record, ...offlineQueue.filter(r => r.no_sj !== record.no_sj)];
       localStorage.setItem('wms_offline_queue_pengecekan_sj', JSON.stringify(updatedQueue));
       return { success: true, offline: true, message: 'Disimpan offline di perangkat (koneksi terputus)' };
     } catch {
+      return { success: false, offline: true, message: 'Gagal menyimpan ke penyimpanan lokal perangkat' };
+    }
+  }
+
+  try {
+    const res = await submitPengecekanSJ(record);
+    if (res.success) {
+      return { success: true, offline: false, message: res.message };
+    }
+    // Jika gagal mengirim (misalnya network error atau server down), simpan ke antrean offline
+    try {
+      const offlineQueue = getPendingOfflinePengecekanSJ();
+      const updatedQueue = [record, ...offlineQueue.filter(r => r.no_sj !== record.no_sj)];
+      localStorage.setItem('wms_offline_queue_pengecekan_sj', JSON.stringify(updatedQueue));
+      return { success: true, offline: true, message: 'Disimpan offline di perangkat (server offline)' };
+    } catch {
       return { success: false, offline: false, message: res.message };
     }
   } catch (err: any) {
-    return { success: false, offline: false, message: err?.message || 'Gagal submit pengecekan' };
+    // Tangani exception jaringan dengan fallback ke antrean offline
+    try {
+      const offlineQueue = getPendingOfflinePengecekanSJ();
+      const updatedQueue = [record, ...offlineQueue.filter(r => r.no_sj !== record.no_sj)];
+      localStorage.setItem('wms_offline_queue_pengecekan_sj', JSON.stringify(updatedQueue));
+      return { success: true, offline: true, message: 'Disimpan offline di perangkat (koneksi terputus)' };
+    } catch {
+      return { success: false, offline: false, message: err?.message || 'Gagal submit pengecekan' };
+    }
   }
 }
 

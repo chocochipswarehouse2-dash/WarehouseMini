@@ -263,20 +263,64 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   // ---- DRAFT QUEUE (ANTREAN PENGECEKAN) ----
   const [drafts, setDrafts] = useState<PengecekanSJDraft[]>(() => loadSJDrafts());
   const [activeDraftId, setActiveDraftId] = useState<string | null>(() => {
+    const savedActive = typeof localStorage !== 'undefined' ? localStorage.getItem('wms_active_sj_draft_id') : null;
     const loaded = loadSJDrafts();
+    if (savedActive && loaded.some(d => d.id === savedActive)) {
+      return savedActive;
+    }
     return loaded.length > 0 ? loaded[0].id : null;
   });
+
+  // Active Draft object
+  const activeDraft = useMemo(() => {
+    return drafts.find(d => d.id === activeDraftId) || null;
+  }, [drafts, activeDraftId]);
 
   // Sinkronisasi drafts ke localStorage dan IndexedDB
   useEffect(() => {
     saveSJDrafts(drafts);
+    if (activeDraftId) {
+      try { localStorage.setItem('wms_active_sj_draft_id', activeDraftId); } catch {}
+    }
     // Jika activeDraftId tidak lagi ada di daftar, reset ke draft pertama
     if (drafts.length > 0 && (!activeDraftId || !drafts.some(d => d.id === activeDraftId))) {
       setActiveDraftId(drafts[0].id);
     } else if (drafts.length === 0) {
       setActiveDraftId(null);
+      try { localStorage.removeItem('wms_active_sj_draft_id'); } catch {}
     }
   }, [drafts, activeDraftId]);
+
+  // Proteksi reload / tab close / force-close saat scanning aktif sedang berlangsung
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeDraft) {
+        const hasScan = Object.values(activeDraft.scanQty || {}).some(q => q > 0) ||
+          Object.keys(activeDraft.unexpected || {}).length > 0;
+        if (hasScan) {
+          e.preventDefault();
+          e.returnValue = 'Pengecekan sedang berjalan. Data hasil scan telah tersimpan aman di perangkat, yakin ingin menutup atau memuat ulang?';
+          return e.returnValue;
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeDraft]);
+
+  // Otomatis sinkronkan pending offline queue saat koneksi online pulih
+  useEffect(() => {
+    const handleOnline = () => {
+      syncPendingOfflinePengecekanSJ().then(res => {
+        if (res.successCount > 0) {
+          onShowToast(`Koneksi internet kembali aktif: ${res.successCount} data pengecekan berhasil disinkronkan ke Database Supabase!`, 'success');
+          setPendingOfflineCount(getPendingOfflinePengecekanSJ().length);
+        }
+      });
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [onShowToast]);
 
   // Hydrate drafts from IndexedDB on mount (ensures large draft imports not lost if localStorage was evicted)
   useEffect(() => {
@@ -297,11 +341,6 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     }).catch(() => {});
     return () => { isMounted = false; };
   }, []);
-
-  // Active Draft object
-  const activeDraft = useMemo(() => {
-    return drafts.find(d => d.id === activeDraftId) || null;
-  }, [drafts, activeDraftId]);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'pending' | 'selesai'>('pending');
@@ -1466,6 +1505,10 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                             <span>Tipe: <strong>{activeDraft.tipe_import}</strong></span>
                           </>
                         )}
+                      </div>
+                      <div className="inline-flex items-center gap-1.5 text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md shadow-2xs mt-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Proteksi Kerja Aktif: Scan & draft tersimpan otomatis ke IndexedDB & Cache Lokal</span>
                       </div>
                     </div>
 
