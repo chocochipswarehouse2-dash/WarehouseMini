@@ -16,6 +16,8 @@ import {
   editManualShipment,
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
+import { sendFonnteMessage } from '../../services/whatsapp';
+import { supabaseFetch } from '../../services/supabase';
 import QRCode from 'qrcode';
 import {
   generateCustomerTransactionNumber,
@@ -99,6 +101,85 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [transCustomer, setTransCustomer] = useState<string>(() => generateManualShipmentOrderId([], ''));
   
   const [items, setItems] = useState<ManualShipmentItem[]>([]);
+
+  // Auto-resolve Store & Phone Number from user login session & database
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveAccountData = async () => {
+      if (!session || editingOrder) return;
+
+      // 1. Resolve Store from session
+      let targetStore = '';
+      if (!pengirim) {
+        const userDiv = (session.divisi || '').toLowerCase().trim();
+        const userName = (session.name || '').toLowerCase().trim();
+        const userUname = (session.username || '').toLowerCase().trim();
+
+        const match = outlets.find((o) => {
+          const oName = o.nama.toLowerCase().trim();
+          return (
+            userDiv === oName ||
+            userDiv.includes(oName) ||
+            userName === oName ||
+            userName.includes(oName) ||
+            userUname === oName ||
+            userUname.includes(oName)
+          );
+        });
+
+        if (match) {
+          targetStore = match.nama;
+          if (isMounted) {
+            setPengirim(match.nama);
+            setTransCustomer(generateManualShipmentOrderId(orders, match.nama));
+          }
+        }
+      }
+
+      // 2. Resolve Phone Number from session or database
+      if (!telpPengirim) {
+        if (session.no_hp && session.no_hp.trim()) {
+          if (isMounted) setTelpPengirim(session.no_hp.trim());
+        } else {
+          try {
+            if (session.username) {
+              const users = await supabaseFetch<any[]>(
+                'wms_users',
+                'GET',
+                null,
+                `username=eq.${encodeURIComponent(session.username)}&limit=1`
+              );
+              if (isMounted && users && users.length > 0 && users[0].no_hp) {
+                setTelpPengirim(users[0].no_hp.trim());
+                return;
+              }
+            }
+            if (session.nik) {
+              const emps = await supabaseFetch<any[]>(
+                'karyawan',
+                'GET',
+                null,
+                `nik=eq.${encodeURIComponent(session.nik)}&limit=1`
+              );
+              if (isMounted && emps && emps.length > 0 && emps[0].no_hp) {
+                setTelpPengirim(emps[0].no_hp.trim());
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn('Could not auto-fetch user phone number', e);
+          }
+        }
+      }
+    };
+
+    resolveAccountData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session, outlets, editingOrder]);
 
   useEffect(() => {
     loadOutlets();
@@ -197,8 +278,30 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pengirim || !tujuan || items.length === 0 || items.some(i => !i.nama_produk || !i.fulfillment)) {
-      onShowToast('Harap lengkapi form dan item pesanan', 'warning');
+
+    // Validasi Kelengkapan Data Pengirim & PIC
+    if (!pengirim || !pengirim.trim()) {
+      onShowToast('Nama Pengirim (Store) wajib dipilih/diisi', 'warning');
+      return;
+    }
+    if (!picStore || !picStore.trim()) {
+      onShowToast('PIC Store wajib diisi secara manual', 'warning');
+      return;
+    }
+    if (!telpPengirim || !telpPengirim.trim()) {
+      onShowToast('No. Telp Store wajib diisi agar notifikasi konfirmasi WhatsApp dapat terkirim', 'warning');
+      return;
+    }
+    if (!transPengirim || !transPengirim.trim()) {
+      onShowToast('No. Transaksi DealPOS wajib diisi', 'warning');
+      return;
+    }
+    if (!tujuan || !tujuan.trim() || !telpTujuan || !telpTujuan.trim() || !alamatTujuan || !alamatTujuan.trim()) {
+      onShowToast('Harap lengkapi Data Customer (Nama Tujuan, No. Telp, Alamat)', 'warning');
+      return;
+    }
+    if (items.length === 0 || items.some(i => !i.nama_produk || !i.fulfillment)) {
+      onShowToast('Harap lengkapi item produk dan pilihan fulfillment toko', 'warning');
       return;
     }
 
@@ -224,14 +327,14 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     const orderData: ManualShipmentOrder = {
       ...(editingOrder || {}),
       no_pesanan: uniquePesananId,
-      nama_pengirim: pengirim,
-      pic_store: picStore,
-      no_telp_store: telpPengirim,
+      nama_pengirim: pengirim.trim(),
+      pic_store: picStore.trim(),
+      no_telp_store: telpPengirim.trim(),
       no_transaksi_pengirim: transPengirim.split(',').map(s => s.trim()).filter(Boolean),
-      nama_tujuan: tujuan,
-      no_telp_tujuan: telpTujuan,
-      alamat_tujuan: alamatTujuan,
-      notes_paket: notesPaket,
+      nama_tujuan: tujuan.trim(),
+      no_telp_tujuan: telpTujuan.trim(),
+      alamat_tujuan: alamatTujuan.trim(),
+      notes_paket: notesPaket.trim(),
       no_transaksi_customer: finalTransCustomer,
       jasa_kirim: finalJasaKirim,
       items: items.map((it) => ({
@@ -253,6 +356,92 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
     if (result.success) {
       onShowToast(editingOrder ? 'Pesanan berhasil diupdate' : 'Pesanan berhasil disubmit', 'success');
+
+      // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke No. Telp Store (Pengirim)
+      if (orderData.no_telp_store && orderData.no_telp_store.trim()) {
+        const totalQty = orderData.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+        const dealposStr = Array.isArray(orderData.no_transaksi_pengirim)
+          ? orderData.no_transaksi_pengirim.join(', ')
+          : (orderData.no_transaksi_pengirim || '-');
+
+        if (editingOrder) {
+          // Pesan Notifikasi Perubahan Data
+          const updateMsg = `✏️ *PEMBARUAN DATA PESANAN MANUAL SHIPMENT*
+--------------------------------------------
+Halo Tim *${orderData.nama_pengirim}*, terdapat pembaruan data pada pesanan manual shipment Anda di sistem WMS Gudang:
+
+📋 *Rincian Pesanan Terupdate:*
+• *Order ID / No. Pesanan:* ${orderData.no_transaksi_customer || orderData.no_pesanan}
+• *Store Pengirim:* ${orderData.nama_pengirim}
+• *PIC Store:* ${orderData.pic_store || '-'}
+• *No. DealPOS:* ${dealposStr}
+• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}
+• *Nama Customer:* ${orderData.nama_tujuan}
+• *No. Telp Customer:* ${orderData.no_telp_tujuan || '-'}
+• *Alamat Tujuan:* ${orderData.alamat_tujuan || '-'}
+• *Total Produk:* ${totalQty} Pcs
+• *Status:* ${orderData.status || '-'}
+• *No. Resi:* ${orderData.no_resi || 'Belum ada'}
+
+⚠️ *Mohon konfirmasi dan pastikan perubahan data di atas sudah sesuai.*
+
+Terima kasih!
+_WMS Warehouse System_`;
+
+          sendFonnteMessage(orderData.no_telp_store, updateMsg)
+            .then((res) => {
+              if (res.success) {
+                console.log('Notifikasi WA update pesanan terkirim ke store:', orderData.no_telp_store);
+              }
+            })
+            .catch((err) => console.warn('WA update notice error:', err));
+        } else {
+          // Pesan Notifikasi Submit Baru
+          const itemsListStr = orderData.items
+            .map(
+              (it, idx) =>
+                `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: ${it.qty} pcs, Fulfillment: ${it.fulfillment || '-'})`
+            )
+            .join('\n');
+
+          const submitMsg = `📦 *KONFIRMASI PESANAN MANUAL SHIPMENT BERHASIL*
+--------------------------------------------
+Halo Tim *${orderData.nama_pengirim}*, pesanan manual shipment Anda telah berhasil disubmit ke sistem WMS Gudang.
+
+📋 *Rincian Pesanan:*
+• *Order ID / No. Pesanan:* ${orderData.no_transaksi_customer || orderData.no_pesanan}
+• *Store Pengirim:* ${orderData.nama_pengirim}
+• *PIC Store:* ${orderData.pic_store || '-'}
+• *No. DealPOS:* ${dealposStr}
+• *Jasa Kirim:* ${orderData.jasa_kirim || '-'}
+• *Waktu Submit:* ${new Date().toLocaleString('id-ID')}
+
+👤 *Data Penerima (Customer):*
+• *Nama Tujuan:* ${orderData.nama_tujuan}
+• *No. Telp:* ${orderData.no_telp_tujuan || '-'}
+• *Alamat Tujuan:* ${orderData.alamat_tujuan || '-'}
+
+📦 *Daftar Produk (${totalQty} Pcs):*
+${itemsListStr}
+
+📝 *Catatan Paket:* ${orderData.notes_paket || '-'}
+
+⚠️ *PENTING - MOHON DICEK KEMBALI:*
+Silakan periksa kembali rincian data di atas untuk menghindari kesalahan input. Jika terdapat revisi atau perubahan alamat, segera hubungi Tim Admin Gudang sebelum paket diproses dan dikirim.
+
+Terima kasih!
+_WMS Warehouse System_`;
+
+          sendFonnteMessage(orderData.no_telp_store, submitMsg)
+            .then((res) => {
+              if (res.success) {
+                console.log('Notifikasi WA submit pesanan terkirim ke store:', orderData.no_telp_store);
+              }
+            })
+            .catch((err) => console.warn('WA submit notice error:', err));
+        }
+      }
+
       resetForm();
       loadOrders();
       setActiveTab('rekap');
@@ -264,9 +453,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
   const resetForm = () => {
     setEditingOrder(null);
-    setPengirim('');
     setPicStore('');
-    setTelpPengirim('');
     setTransPengirim('');
     setJasaKirim('');
     setCustomJasaKirim('');
@@ -275,8 +462,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     setTelpTujuan('');
     setAlamatTujuan('');
     setNotesPaket('');
-    // Otomatis terisi Order ID Manual Shipment baru yang unik untuk pesanan berikutnya
-    setTransCustomer(generateManualShipmentOrderId(orders, ''));
+    setTransCustomer(generateManualShipmentOrderId(orders, pengirim));
     setItems([]);
   };
 
@@ -495,10 +681,19 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
           {/* Data Pengirim */}
           <div>
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2">Data Pengirim</h3>
+            <div className="flex items-center justify-between mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2">
+              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Data Pengirim</h3>
+              {pengirim && (
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                  Store Aktif: {pengirim}
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nama Pengirim (Store)</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Pengirim (Store) <span className="text-red-500">*</span>
+                </label>
                 <select
                   value={pengirim}
                   onChange={(e) => {
@@ -506,7 +701,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                     setPengirim(newStore);
                     setTransCustomer(generateManualShipmentOrderId(orders, newStore));
                   }}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3 font-semibold"
                   required
                 >
                   <option value="">Pilih Store...</option>
@@ -514,31 +709,40 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
                     <option key={idx} value={o.nama}>{o.nama}</option>
                   ))}
                 </select>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Terisi otomatis sesuai akun login</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">PIC Store</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  PIC Store <span className="text-red-500 font-bold">* (Wajib Isi Manual)</span>
+                </label>
                 <input
                   type="text"
                   value={picStore}
                   onChange={(e) => setPicStore(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                  placeholder="Nama PIC"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-semibold"
+                  placeholder="Nama PIC (Wajib Diisi)"
                   required
                 />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Nama staf yang bertanggung jawab</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No. Telp Store</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  No. Telp Store (WhatsApp) <span className="text-red-500 font-bold">* (Wajib Diisi)</span>
+                </label>
                 <input
                   type="text"
                   value={telpPengirim}
                   onChange={(e) => setTelpPengirim(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                  placeholder="08..."
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-mono font-semibold"
+                  placeholder="08... (Wajib diisi)"
                   required
                 />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Notifikasi WA konfirmasi & resi akan dikirim ke nomor ini</p>
               </div>
               <div className="md:col-span-3">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No. Transaksi DealPOS (Bisa lebih dari 1, pisahkan koma)</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  No. Transaksi DealPOS (Bisa lebih dari 1, pisahkan koma) <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   value={transPengirim}
@@ -851,12 +1055,46 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
   const handleUpdateResi = async (no_pesanan: string) => {
     const resi = prompt('Masukkan Nomor Resi:');
-    if (!resi) return;
+    if (!resi || !resi.trim()) return;
     
+    const cleanResi = resi.trim();
     setLoading(true);
-    const success = await updateShipmentResi(no_pesanan, resi);
+    const targetOrder = orders.find(o => o.no_pesanan === no_pesanan || (o as any).id === no_pesanan);
+    const success = await updateShipmentResi(no_pesanan, cleanResi);
     if (success) {
       onShowToast('Resi berhasil diupdate', 'success');
+
+      // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke Store
+      const storePhone = targetOrder?.no_telp_store;
+      if (storePhone && storePhone.trim()) {
+        const resiMsg = `🚚 *UPDATE RESI PENGIRIMAN MANUAL SHIPMENT*
+--------------------------------------------
+Halo Tim *${targetOrder?.nama_pengirim || 'Store'}*, nomor resi pengiriman untuk pesanan Anda telah diperbarui di sistem WMS Gudang:
+
+📋 *Rincian Pesanan:*
+• *Order ID / No. Pesanan:* ${targetOrder?.no_transaksi_customer || targetOrder?.no_pesanan}
+• *Store Pengirim:* ${targetOrder?.nama_pengirim || '-'} (PIC: ${targetOrder?.pic_store || '-'})
+• *Jasa Kirim:* ${targetOrder?.jasa_kirim || '-'}
+• *Nama Customer:* ${targetOrder?.nama_tujuan || '-'}
+• *No. Telp Customer:* ${targetOrder?.no_telp_tujuan || '-'}
+
+📦 *Nomor Resi Baru:*
+👉 *${cleanResi}*
+
+Status pengiriman paket telah diperbarui. Silakan simpan dan teruskan nomor resi ini kepada customer Anda.
+
+Terima kasih!
+_WMS Warehouse System_`;
+
+        sendFonnteMessage(storePhone, resiMsg)
+          .then((res) => {
+            if (res.success) {
+              console.log('Notifikasi WA update resi terkirim ke store:', storePhone);
+            }
+          })
+          .catch((err) => console.warn('WA resi notice error:', err));
+      }
+
       loadOrders();
     } else {
       onShowToast('Gagal update resi', 'error');
