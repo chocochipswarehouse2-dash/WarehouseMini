@@ -8,6 +8,45 @@
 var TARGET_PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 
 /**
+ * Entry point Web App untuk menerima request push dari WMS
+ */
+function doPost(e) {
+  try {
+    if (!e) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data received' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    var payload = {};
+    if (e.postData && e.postData.contents) {
+      try {
+        payload = JSON.parse(e.postData.contents);
+      } catch (errJson) {
+        payload = e.parameter || {};
+      }
+    } else if (e.parameter) {
+      payload = e.parameter;
+    }
+
+    if (payload.data && typeof payload.data === 'object') {
+      payload = payload.data;
+    }
+
+    var result = handlePushPenerimaanProduksi(payload);
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log('doPost error: ' + err.toString());
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({ success: true, status: 'Master Produksi GAS Active', timestamp: new Date().toISOString() }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
  * Handler utama untuk doPost action: 'pushPenerimaanProduksi'
  */
 function handlePushPenerimaanProduksi(data) {
