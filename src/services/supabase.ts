@@ -4972,6 +4972,35 @@ export async function submitPresensiRecord(record: Partial<PresensiRecord>): Pro
 
   const existing = existingList && existingList.length > 0 ? existingList[0] : null;
 
+  // Auto calculate lateness status if not special non-attendance status
+  const effectiveShift = cleanPayload.shift || existing?.shift || 'Shift 1';
+  const effectiveJamMasuk = cleanPayload.jam_masuk || existing?.jam_masuk;
+  const sLower = effectiveShift.toLowerCase();
+
+  if (sLower.includes('libur') || sLower.includes('off')) {
+    cleanPayload.status = 'Libur';
+  } else if (sLower.includes('cuti')) {
+    cleanPayload.status = 'Cuti';
+  } else if (sLower.includes('izin') || sLower.includes('ijin') || sLower.includes('sakit')) {
+    cleanPayload.status = 'Izin';
+  } else if (sLower.includes('alpha')) {
+    cleanPayload.status = 'Alpha';
+  } else if (effectiveJamMasuk) {
+    let schedStart = '08:00';
+    if (sLower.includes('shift 2') || sLower === '2') schedStart = '09:00';
+    else if (sLower.includes('shift 3') || sLower === '3') schedStart = '12:00';
+
+    const calc = calculateLatenessStatus(effectiveJamMasuk, schedStart, 15);
+    cleanPayload.status = calc.status;
+
+    const baseNote = (cleanPayload.catatan || existing?.catatan || '').replace(/\s*\|\s*Terlambat \d+ mnt[^\n]*/gi, '').replace(/Terlambat \d+ mnt[^\n]*/gi, '').trim();
+    if (calc.status === 'Terlambat') {
+      cleanPayload.catatan = baseNote ? `${baseNote} | Terlambat ${calc.minutesLate} mnt (${effectiveShift})` : `Terlambat ${calc.minutesLate} mnt (${effectiveShift})`;
+    } else {
+      cleanPayload.catatan = baseNote || null;
+    }
+  }
+
   let resultData: any = null;
 
   if (existing) {
@@ -4980,8 +5009,8 @@ export async function submitPresensiRecord(record: Partial<PresensiRecord>): Pro
       ...cleanPayload,
       jam_masuk: cleanPayload.jam_masuk || existing.jam_masuk,
       jam_pulang: cleanPayload.jam_pulang || existing.jam_pulang,
-      shift: cleanPayload.shift || existing.shift,
-      status: cleanPayload.status || existing.status,
+      shift: effectiveShift,
+      status: cleanPayload.status,
       catatan: cleanPayload.catatan !== null ? cleanPayload.catatan : existing.catatan,
     };
     const { data: updated, error: updErr } = await sb

@@ -574,36 +574,131 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     {editingPresensiId === r.id ? (
                       <>
                         <td className="p-3">
-                           <input type="text" value={editPresensiData.shift || ''} onChange={e => setEditPresensiData({...editPresensiData, shift: e.target.value})} className="border p-1 rounded w-20 text-xs bg-transparent dark:border-slate-700"/>
+                          <select
+                            value={editPresensiData.shift || 'Shift 1'}
+                            onChange={(e) => {
+                              const newShift = e.target.value;
+                              const currentMasuk = editPresensiData.jam_masuk;
+                              let newStatus = editPresensiData.status || 'Hadir';
+
+                              const sLower = newShift.toLowerCase();
+                              if (sLower.includes('libur') || sLower.includes('off')) {
+                                newStatus = 'Libur';
+                              } else if (sLower.includes('cuti')) {
+                                newStatus = 'Cuti';
+                              } else if (sLower.includes('izin') || sLower.includes('ijin') || sLower.includes('sakit')) {
+                                newStatus = 'Izin';
+                              } else if (sLower.includes('alpha')) {
+                                newStatus = 'Alpha';
+                              } else if (currentMasuk) {
+                                let schedStart = '08:00';
+                                if (sLower.includes('shift 2') || sLower === '2') schedStart = '09:00';
+                                else if (sLower.includes('shift 3') || sLower === '3') schedStart = '12:00';
+
+                                const [actH, actM] = currentMasuk.split(':').map((n) => parseInt(n, 10));
+                                const [schH, schM] = schedStart.split(':').map((n) => parseInt(n, 10));
+                                if (!isNaN(actH) && !isNaN(actM) && !isNaN(schH) && !isNaN(schM)) {
+                                  const diff = actH * 60 + actM - (schH * 60 + schM);
+                                  newStatus = diff > 15 ? 'Terlambat' : 'Hadir';
+                                }
+                              }
+
+                              setEditPresensiData({
+                                ...editPresensiData,
+                                shift: newShift,
+                                status: newStatus,
+                              });
+                            }}
+                            className="border p-1.5 rounded-lg w-28 text-xs font-bold bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-900 dark:text-white"
+                          >
+                            <option value="Shift 1">Shift 1 (08:00)</option>
+                            <option value="Shift 2">Shift 2 (09:00)</option>
+                            <option value="Shift 3">Shift 3 (12:00)</option>
+                            <option value="Libur">Libur (Off)</option>
+                            <option value="Cuti">Cuti</option>
+                            <option value="Izin">Izin</option>
+                            <option value="Alpha">Alpha</option>
+                          </select>
                         </td>
                         <td className="p-3">
-                           <input type="time" value={editPresensiData.jam_masuk || ''} onChange={e => setEditPresensiData({...editPresensiData, jam_masuk: e.target.value})} className="border p-1 rounded w-20 text-xs bg-transparent dark:border-slate-700"/>
+                          <input
+                            type="time"
+                            value={editPresensiData.jam_masuk || ''}
+                            onChange={(e) => {
+                              const newMasuk = e.target.value;
+                              const currentShift = editPresensiData.shift || 'Shift 1';
+                              let newStatus = editPresensiData.status || 'Hadir';
+
+                              const sLower = currentShift.toLowerCase();
+                              if (!sLower.includes('libur') && !sLower.includes('cuti') && !sLower.includes('izin') && !sLower.includes('alpha')) {
+                                let schedStart = '08:00';
+                                if (sLower.includes('shift 2') || sLower === '2') schedStart = '09:00';
+                                else if (sLower.includes('shift 3') || sLower === '3') schedStart = '12:00';
+
+                                const [actH, actM] = newMasuk.split(':').map((n) => parseInt(n, 10));
+                                const [schH, schM] = schedStart.split(':').map((n) => parseInt(n, 10));
+                                if (!isNaN(actH) && !isNaN(actM) && !isNaN(schH) && !isNaN(schM)) {
+                                  const diff = actH * 60 + actM - (schH * 60 + schM);
+                                  newStatus = diff > 15 ? 'Terlambat' : 'Hadir';
+                                }
+                              }
+
+                              setEditPresensiData({
+                                ...editPresensiData,
+                                jam_masuk: newMasuk,
+                                status: newStatus,
+                              });
+                            }}
+                            className="border p-1.5 rounded-lg w-20 text-xs font-mono bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-900 dark:text-white"
+                          />
                         </td>
                         <td className="p-3">
-                           <input type="time" value={editPresensiData.jam_pulang || ''} onChange={e => setEditPresensiData({...editPresensiData, jam_pulang: e.target.value})} className="border p-1 rounded w-20 text-xs bg-transparent dark:border-slate-700"/>
+                          <input
+                            type="time"
+                            value={editPresensiData.jam_pulang || ''}
+                            onChange={(e) => setEditPresensiData({ ...editPresensiData, jam_pulang: e.target.value })}
+                            className="border p-1.5 rounded-lg w-20 text-xs font-mono bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-900 dark:text-white"
+                          />
                         </td>
                         <td className="p-3">
-                           <select value={editPresensiData.status || ''} onChange={e => setEditPresensiData({...editPresensiData, status: e.target.value})} className="border p-1 rounded w-24 text-xs bg-white dark:bg-slate-900 dark:border-slate-700">
-                             <option value="Hadir">Hadir</option>
-                             <option value="Terlambat">Terlambat</option>
-                             <option value="Alpha">Alpha</option>
-                             <option value="Izin">Izin</option>
-                             <option value="Cuti">Cuti</option>
-                           </select>
+                          <select
+                            value={editPresensiData.status || 'Hadir'}
+                            onChange={(e) => setEditPresensiData({ ...editPresensiData, status: e.target.value })}
+                            className="border p-1.5 rounded-lg w-28 text-xs font-bold bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-900 dark:text-white"
+                          >
+                            <option value="Hadir">Hadir</option>
+                            <option value="Terlambat">Terlambat</option>
+                            <option value="Alpha">Alpha</option>
+                            <option value="Izin">Izin</option>
+                            <option value="Cuti">Cuti</option>
+                            <option value="Libur">Libur</option>
+                          </select>
                         </td>
-                        <td className="p-3 flex gap-2">
-                          <button onClick={async () => {
-                            if (!editPresensiData.id) return;
-                            try {
-                              await submitPresensiRecord(editPresensiData);
-                              onShowToast('Presensi berhasil diupdate', 'success');
-                              setEditingPresensiId(null);
-                              loadLogData();
-                            } catch(e) {
-                              onShowToast('Gagal update', 'error');
-                            }
-                          }} className="text-emerald-500"><Save className="w-4 h-4" /></button>
-                          <button onClick={() => setEditingPresensiId(null)} className="text-slate-400"><X className="w-4 h-4" /></button>
+                        <td className="p-3 flex items-center gap-1.5">
+                          <button
+                            onClick={async () => {
+                              if (!editPresensiData.id) return;
+                              try {
+                                await submitPresensiRecord(editPresensiData);
+                                onShowToast('Presensi & status keterlambatan berhasil diperbarui', 'success');
+                                setEditingPresensiId(null);
+                                loadLogData();
+                              } catch(e: any) {
+                                onShowToast(`Gagal update: ${e.message || 'Error'}`, 'error');
+                              }
+                            }}
+                            className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 transition-colors"
+                            title="Simpan Perubahan"
+                          >
+                            <Save className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingPresensiId(null)}
+                            className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                            title="Batal"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </td>
                       </>
                     ) : (
