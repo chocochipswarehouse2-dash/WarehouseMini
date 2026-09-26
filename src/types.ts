@@ -266,6 +266,65 @@ export interface PerijinanCutiRecord {
   created_at?: string;
 }
 
+export interface IzinPulangAwalRecord {
+  id: string;
+  nik: string;
+  nama: string;
+  divisi?: string;
+  tanggal: string;
+  jam_pulang_rencana: string;
+  jam_pulang_standar?: string;
+  shift: string;
+  alasan: string;
+  status: 'Diajukan' | 'Disetujui' | 'Ditolak';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  catatan?: string | null;
+  created_at?: string;
+}
+
+export interface TukarShiftRecord {
+  id: string;
+  pemohon_nik: string;
+  pemohon_nama: string;
+  pemohon_tanggal: string;
+  pemohon_shift_asal: string;
+  target_nik: string;
+  target_nama: string;
+  target_tanggal: string;
+  target_shift_asal: string;
+  alasan: string;
+  status: 'Diajukan' | 'Disetujui' | 'Ditolak';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  catatan?: string | null;
+  created_at?: string;
+}
+
+export interface KpiAbsensiSummary {
+  nik: string;
+  nama: string;
+  divisi: string;
+  totalHariKerja: number;
+  totalHadir: number;
+  totalOnTime: number;
+  totalTerlambat: number;
+  totalMenitTerlambat: number;
+  totalPulangNormal: number;
+  totalPulangAwalIzin: number;
+  totalPulangAwalTanpaIzin: number;
+  totalCutiIzin: number;
+  totalAlpha: number;
+  totalLemburJam: number;
+  persenKehadiran: number;
+  persenOnTime: number;
+  skorBerangkat: number;
+  skorPulang: number;
+  nilaiKpiAbsensi: number;
+  grade: 'A+' | 'A' | 'B' | 'C' | 'D';
+  labelStatus: string;
+}
+
 export interface LocalUserRecord {
   id?: string;
   username: string;

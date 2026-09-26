@@ -5500,6 +5500,315 @@ export async function updateCutiStatus(
   }
 }
 
+// ============================================================================
+// IZIN PULANG AWAL SERVICES (EARLY CHECKOUT)
+// ============================================================================
+
+const LOCAL_STORAGE_IZIN_PULANG_KEY = 'wms_local_izin_pulang_awal';
+
+/**
+ * Fetch Izin Pulang Awal list
+ */
+export async function fetchIzinPulangAwalList(
+  nik?: string,
+  tanggal?: string
+): Promise<IzinPulangAwalRecord[]> {
+  try {
+    let query = 'select=*&order=tanggal.desc,created_at.desc&limit=500';
+    if (nik) {
+      query += `&nik=eq.${encodeURIComponent(nik)}`;
+    }
+    if (tanggal) {
+      query += `&tanggal=eq.${encodeURIComponent(tanggal)}`;
+    }
+    const data = await supabaseFetch<IzinPulangAwalRecord[]>('izin_pulang_awal', 'GET', null, query);
+    if (data && Array.isArray(data)) {
+      // Sync local cache
+      localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(data));
+      return data;
+    }
+  } catch (err) {
+    console.warn('fetchIzinPulangAwalList fallback to localStorage:', err);
+  }
+
+  // Fallback localStorage
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_IZIN_PULANG_KEY);
+    if (raw) {
+      let list: IzinPulangAwalRecord[] = JSON.parse(raw);
+      if (nik) {
+        list = list.filter((item) => (item.nik || '').toUpperCase() === nik.toUpperCase());
+      }
+      if (tanggal) {
+        list = list.filter((item) => item.tanggal === tanggal);
+      }
+      return list;
+    }
+  } catch {}
+
+  return [];
+}
+
+/**
+ * Submit new Izin Pulang Awal request
+ */
+export async function submitIzinPulangAwalRecord(
+  record: Partial<IzinPulangAwalRecord>
+): Promise<IzinPulangAwalRecord> {
+  const sb = getSupabaseClient();
+  const id = record.id || `IPA-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const payload: IzinPulangAwalRecord = {
+    id,
+    nik: (record.nik || '').trim().toUpperCase(),
+    nama: (record.nama || '').trim(),
+    divisi: record.divisi || 'Warehouse',
+    tanggal: record.tanggal || new Date().toISOString().slice(0, 10),
+    jam_pulang_rencana: record.jam_pulang_rencana ? record.jam_pulang_rencana.replace(/\./g, ':') : '14:00',
+    jam_pulang_standar: record.jam_pulang_standar || '17:00',
+    shift: record.shift || 'Shift 1',
+    alasan: record.alasan || '',
+    status: record.status || 'Diajukan',
+    approved_by: record.approved_by || null,
+    approved_at: record.approved_at || null,
+    catatan: record.catatan || null,
+    created_at: record.created_at || new Date().toISOString(),
+  };
+
+  try {
+    const { data, error } = await sb
+      .from('izin_pulang_awal')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (!error && data) {
+      // Update local storage
+      const existing = await fetchIzinPulangAwalList();
+      const updated = [data, ...existing.filter((item) => item.id !== data.id)];
+      localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(updated));
+      return data;
+    }
+  } catch (err) {
+    console.warn('submitIzinPulangAwalRecord error, saving to localStorage:', err);
+  }
+
+  // Fallback save to localStorage
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_IZIN_PULANG_KEY);
+    const list: IzinPulangAwalRecord[] = raw ? JSON.parse(raw) : [];
+    list.unshift(payload);
+    localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(list));
+  } catch {}
+
+  return payload;
+}
+
+/**
+ * Update Izin Pulang Awal status (Approval)
+ */
+export async function updateIzinPulangAwalStatus(
+  id: string,
+  status: 'Disetujui' | 'Ditolak',
+  approvedBy: string,
+  catatan?: string
+): Promise<void> {
+  const sb = getSupabaseClient();
+  const nowIso = new Date().toISOString();
+
+  try {
+    await sb
+      .from('izin_pulang_awal')
+      .update({
+        status,
+        approved_by: approvedBy,
+        approved_at: nowIso,
+        catatan: catatan || '',
+      })
+      .eq('id', id);
+  } catch (err) {
+    console.warn('updateIzinPulangAwalStatus supabase warn:', err);
+  }
+
+  // Update local storage
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_IZIN_PULANG_KEY);
+    if (raw) {
+      const list: IzinPulangAwalRecord[] = JSON.parse(raw);
+      const updated = list.map((item) =>
+        item.id === id
+          ? { ...item, status, approved_by: approvedBy, approved_at: nowIso, catatan: catatan || item.catatan }
+          : item
+      );
+      localStorage.setItem(LOCAL_STORAGE_IZIN_PULANG_KEY, JSON.stringify(updated));
+    }
+  } catch {}
+}
+
+// ============================================================================
+// TUKAR SHIFT SERVICES (SHIFT EXCHANGE WITH AUTOMATIC ROSTER SWAP)
+// ============================================================================
+
+const LOCAL_STORAGE_TUKAR_SHIFT_KEY = 'wms_local_tukar_shift';
+
+/**
+ * Fetch Tukar Shift records
+ */
+export async function fetchTukarShiftList(nik?: string): Promise<TukarShiftRecord[]> {
+  try {
+    let query = 'select=*&order=created_at.desc&limit=500';
+    if (nik) {
+      query += `&or=(pemohon_nik.eq.${encodeURIComponent(nik)},target_nik.eq.${encodeURIComponent(nik)})`;
+    }
+    const data = await supabaseFetch<TukarShiftRecord[]>('pengajuan_tukar_shift', 'GET', null, query);
+    if (data && Array.isArray(data)) {
+      localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(data));
+      return data;
+    }
+  } catch (err) {
+    console.warn('fetchTukarShiftList fallback to localStorage:', err);
+  }
+
+  // Fallback localStorage
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY);
+    if (raw) {
+      let list: TukarShiftRecord[] = JSON.parse(raw);
+      if (nik) {
+        const uNik = nik.toUpperCase();
+        list = list.filter(
+          (item) =>
+            (item.pemohon_nik || '').toUpperCase() === uNik ||
+            (item.target_nik || '').toUpperCase() === uNik
+        );
+      }
+      return list;
+    }
+  } catch {}
+
+  return [];
+}
+
+/**
+ * Submit new Tukar Shift request
+ */
+export async function submitTukarShiftRecord(
+  record: Partial<TukarShiftRecord>
+): Promise<TukarShiftRecord> {
+  const sb = getSupabaseClient();
+  const id = record.id || `TSH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const payload: TukarShiftRecord = {
+    id,
+    pemohon_nik: (record.pemohon_nik || '').trim().toUpperCase(),
+    pemohon_nama: (record.pemohon_nama || '').trim(),
+    pemohon_tanggal: record.pemohon_tanggal || new Date().toISOString().slice(0, 10),
+    pemohon_shift_asal: record.pemohon_shift_asal || 'Shift 1',
+    target_nik: (record.target_nik || '').trim().toUpperCase(),
+    target_nama: (record.target_nama || '').trim(),
+    target_tanggal: record.target_tanggal || new Date().toISOString().slice(0, 10),
+    target_shift_asal: record.target_shift_asal || 'Shift 2',
+    alasan: record.alasan || '',
+    status: record.status || 'Diajukan',
+    approved_by: record.approved_by || null,
+    approved_at: record.approved_at || null,
+    catatan: record.catatan || null,
+    created_at: record.created_at || new Date().toISOString(),
+  };
+
+  try {
+    const { data, error } = await sb
+      .from('pengajuan_tukar_shift')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (!error && data) {
+      const existing = await fetchTukarShiftList();
+      const updated = [data, ...existing.filter((item) => item.id !== data.id)];
+      localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(updated));
+      return data;
+    }
+  } catch (err) {
+    console.warn('submitTukarShiftRecord error, saving to localStorage:', err);
+  }
+
+  // Fallback save to localStorage
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY);
+    const list: TukarShiftRecord[] = raw ? JSON.parse(raw) : [];
+    list.unshift(payload);
+    localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(list));
+  } catch {}
+
+  return payload;
+}
+
+/**
+ * Update Tukar Shift status.
+ * WHEN APPROVED: Automatically swaps the roster shift schedules for both employees in database!
+ */
+export async function updateTukarShiftStatus(
+  item: TukarShiftRecord,
+  status: 'Disetujui' | 'Ditolak',
+  approvedBy: string,
+  catatan?: string
+): Promise<void> {
+  const sb = getSupabaseClient();
+  const nowIso = new Date().toISOString();
+
+  // 1. Update request status
+  try {
+    await sb
+      .from('pengajuan_tukar_shift')
+      .update({
+        status,
+        approved_by: approvedBy,
+        approved_at: nowIso,
+        catatan: catatan || '',
+      })
+      .eq('id', item.id);
+  } catch (err) {
+    console.warn('updateTukarShiftStatus supabase warn:', err);
+  }
+
+  // 2. IF APPROVED: AUTO-SWAP ROSTER SHIFTS FOR BOTH EMPLOYEES!
+  if (status === 'Disetujui') {
+    try {
+      // Pemohon takes target's shift on pemohon_tanggal
+      await saveRosterShift({
+        nik: item.pemohon_nik,
+        tanggal: item.pemohon_tanggal,
+        shift: item.target_shift_asal,
+        keterangan: `Tukar Shift dgn ${item.target_nama} (Approved by ${approvedBy})`,
+      });
+
+      // Target takes pemohon's shift on target_tanggal
+      await saveRosterShift({
+        nik: item.target_nik,
+        tanggal: item.target_tanggal,
+        shift: item.pemohon_shift_asal,
+        keterangan: `Tukar Shift dgn ${item.pemohon_nama} (Approved by ${approvedBy})`,
+      });
+    } catch (swapErr) {
+      console.error('Error auto-swapping roster shift records:', swapErr);
+      throw new Error('Pengajuan disetujui, namun gagal memperbarui jadwal shift: ' + String(swapErr));
+    }
+  }
+
+  // Update local storage
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY);
+    if (raw) {
+      const list: TukarShiftRecord[] = JSON.parse(raw);
+      const updated = list.map((r) =>
+        r.id === item.id
+          ? { ...r, status, approved_by: approvedBy, approved_at: nowIso, catatan: catatan || r.catatan }
+          : r
+      );
+      localStorage.setItem(LOCAL_STORAGE_TUKAR_SHIFT_KEY, JSON.stringify(updated));
+    }
+  } catch {}
+}
+
 /**
  * Fetch all karyawan directory
  */

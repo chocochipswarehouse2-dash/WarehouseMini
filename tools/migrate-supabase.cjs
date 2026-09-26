@@ -123,6 +123,8 @@ const ALL_TABLES = [
   'presensi',
   'lembur',
   'perijinan_cuti',
+  'izin_pulang_awal',
+  'tukar_shift',
   // Project & Agenda — wms_projects HARUS sebelum wms_agenda
   'wms_projects',
   'wms_agenda',

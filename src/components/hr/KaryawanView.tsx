@@ -22,10 +22,35 @@ import {
   Building,
   DollarSign,
   AlertTriangle,
+  Award,
+  TrendingUp,
+  LogIn,
+  LogOut,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
-import { UserSession, KaryawanRecord } from '../../types';
+import {
+  UserSession,
+  KaryawanRecord,
+  PresensiRecord,
+  RosterShiftRecord,
+  LemburRecord,
+  PerijinanCutiRecord,
+  IzinPulangAwalRecord,
+  KpiAbsensiSummary,
+} from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
-import { fetchKaryawanDirectory, upsertKaryawanRecord, deleteKaryawanRecord } from '../../services/supabase';
+import {
+  fetchKaryawanDirectory,
+  upsertKaryawanRecord,
+  deleteKaryawanRecord,
+  fetchPresensiRange,
+  fetchRosterShiftList,
+  fetchLemburRecords,
+  fetchCutiRecords,
+  fetchIzinPulangAwalList,
+} from '../../services/supabase';
+import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
 
 interface KaryawanViewProps {
   session: UserSession | null;
@@ -37,10 +62,16 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDivisi, setSelectedDivisi] = useState<string>('ALL');
+  const [sortByKpi, setSortByKpi] = useState<'default' | 'kpi_desc' | 'kpi_asc' | 'ontime_desc'>('default');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
-  
+
+  // KPI Attendance data for all employees (current month)
+  const [kpiMap, setKpiMap] = useState<Record<string, KpiAbsensiSummary>>({});
+  const [loadingKpi, setLoadingKpi] = useState<boolean>(false);
+
   // Modals & Drawers
   const [selectedKaryawan, setSelectedKaryawan] = useState<KaryawanRecord | null>(null);
+  const [detailTab, setDetailTab] = useState<'profil' | 'kpi'>('profil');
   const [isDetailOpen, setIsDetailOpen] = useState<boolean>(false);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -72,20 +103,52 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
   // Access checks
   const userIsAdmin = isSuperadmin(session);
   const canView = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
-  const canEdit = userIsAdmin || hasPermission(session, 'action_edit_master') || isSuperadmin(session);
+  const canEdit = userIsAdmin || hasPermission(session, 'action_edit_master');
   const canDelete = userIsAdmin || hasPermission(session, 'action_delete_master');
   const canSeeSalary = userIsAdmin;
 
-  // Load Karyawan Directory
+  // Load Karyawan Directory & Compute KPI
   const loadKaryawan = useCallback(async () => {
     setLoading(true);
+    setLoadingKpi(true);
     try {
       const data = await fetchKaryawanDirectory();
       setKaryawanList(data);
+
+      // Compute KPI for current month
+      const d = new Date();
+      d.setDate(1);
+      const startOfMonth = d.toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+
+      const [presensis, rosters, lemburs, cutis, izins] = await Promise.all([
+        fetchPresensiRange(startOfMonth, today),
+        fetchRosterShiftList(undefined, startOfMonth, today),
+        fetchLemburRecords(),
+        fetchCutiRecords(),
+        fetchIzinPulangAwalList(),
+      ]);
+
+      const map: Record<string, KpiAbsensiSummary> = {};
+      data.forEach((k) => {
+        const summary = calculateKpiAbsensi({
+          karyawan: k,
+          presensiList: presensis,
+          rosterList: rosters,
+          lemburList: lemburs,
+          cutiList: cutis,
+          izinPulangAwalList: izins,
+          startDate: startOfMonth,
+          endDate: today,
+        });
+        map[k.nik.toUpperCase()] = summary;
+      });
+      setKpiMap(map);
     } catch (err: any) {
       onShowToast('Gagal memuat data karyawan: ' + (err?.message || 'Error'), 'error');
     } finally {
       setLoading(false);
+      setLoadingKpi(false);
     }
   }, [onShowToast]);
 
@@ -104,10 +167,10 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
     return Array.from(set).sort();
   }, [karyawanList]);
 
-  // Filtered Karyawan
+  // Filtered & Sorted Karyawan
   const filteredList = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return karyawanList.filter((k) => {
+    let result = karyawanList.filter((k) => {
       const matchQuery =
         !q ||
         k.nik.toLowerCase().includes(q) ||
@@ -120,7 +183,30 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
 
       return matchQuery && matchDivisi;
     });
-  }, [karyawanList, searchQuery, selectedDivisi]);
+
+    // Sorting by KPI
+    if (sortByKpi === 'kpi_desc') {
+      result.sort((a, b) => {
+        const scoreA = kpiMap[a.nik.toUpperCase()]?.nilaiKpiAbsensi ?? 0;
+        const scoreB = kpiMap[b.nik.toUpperCase()]?.nilaiKpiAbsensi ?? 0;
+        return scoreB - scoreA;
+      });
+    } else if (sortByKpi === 'kpi_asc') {
+      result.sort((a, b) => {
+        const scoreA = kpiMap[a.nik.toUpperCase()]?.nilaiKpiAbsensi ?? 0;
+        const scoreB = kpiMap[b.nik.toUpperCase()]?.nilaiKpiAbsensi ?? 0;
+        return scoreA - scoreB;
+      });
+    } else if (sortByKpi === 'ontime_desc') {
+      result.sort((a, b) => {
+        const scoreA = kpiMap[a.nik.toUpperCase()]?.persenOnTime ?? 0;
+        const scoreB = kpiMap[b.nik.toUpperCase()]?.persenOnTime ?? 0;
+        return scoreB - scoreA;
+      });
+    }
+
+    return result;
+  }, [karyawanList, searchQuery, selectedDivisi, sortByKpi, kpiMap]);
 
   // Open Form for Adding
   const handleOpenAdd = () => {
@@ -204,23 +290,27 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
       return;
     }
 
-    const headers = ['NIK', 'Nama Lengkap', 'Divisi', 'Username', 'Role', 'No HP', 'Email', 'Alamat'];
-    const rows = filteredList.map((k) => [
-      `"${k.nik}"`,
-      `"${k.nama}"`,
-      `"${k.divisi || ''}"`,
-      `"${k.username || ''}"`,
-      `"${k.role || ''}"`,
-      `"${k.no_hp || ''}"`,
-      `"${k.email || ''}"`,
-      `"${(k.alamat || '').replace(/"/g, '""')}"`,
-    ]);
+    const headers = ['NIK', 'Nama Lengkap', 'Divisi', 'KPI Score', 'Grade', 'OnTime %', 'No HP', 'Email', 'Alamat'];
+    const rows = filteredList.map((k) => {
+      const kpi = kpiMap[k.nik.toUpperCase()];
+      return [
+        `"${k.nik}"`,
+        `"${k.nama}"`,
+        `"${k.divisi || ''}"`,
+        `"${kpi?.nilaiKpiAbsensi ?? '-'}"`,
+        `"${kpi?.grade ?? '-'}"`,
+        `"${kpi?.persenOnTime ?? '-'}%"`,
+        `"${k.no_hp || ''}"`,
+        `"${k.email || ''}"`,
+        `"${(k.alamat || '').replace(/"/g, '""')}"`,
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Direktori_Karyawan_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Direktori_Karyawan_KPI_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -239,64 +329,56 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
             Akses Menu Karyawan Dibatasi
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-primary-500">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Data & Direktori Karyawan</b>.
+            Akun Anda (<b className="text-slate-700 dark:text-slate-200">{session?.name || session?.username}</b> - Role: <b className="text-primary-500">{session?.role}</b>) tidak memiliki hak akses untuk membuka modul <b>Data &amp; Direktori Karyawan</b>.
           </p>
-          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 text-left space-y-1">
-            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-primary-500" />
-              <span>Pengaturan Hak Akses Role:</span>
-            </div>
-            <p>
-              Hubungi Superadmin untuk mengaktifkan izin <b>can_view_karyawan</b> pada akun Anda melalui menu <b>Pengaturan &gt; Manajemen Pengguna &amp; Role</b>.
-            </p>
-          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2 pb-12">
-      {/* Top Header Card */}
-      <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-3 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+    <div className="space-y-4 animate-in fade-in duration-200">
+      {/* Header Toolbar */}
+      <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/20">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
               <Users className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                  Data &amp; Direktori Karyawan
+                <h1 className="text-lg font-black text-slate-900 dark:text-white">
+                  Direktori Karyawan &amp; Penilaian KPI
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-200 dark:border-teal-800 font-mono">
-                  {filteredList.length} Staf
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
+                  {karyawanList.length} Staf
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Master data karyawan, profil staf divisi, kontak darurat dan sinkronisasi NIK WMS
+                Manajemen data karyawan, kontak, akun, dan skor KPI kedisiplinan absensi
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={loadKaryawan}
               disabled={loading}
-              title="Refresh Data dari Supabase"
-              className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Refresh Data"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-primary-500' : ''}`} />
-              <span>Refresh</span>
+              <span className="hidden sm:inline">Refresh</span>
             </button>
 
             <button
               type="button"
               onClick={handleExportCSV}
-              className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 text-teal-500" />
               <span>Ekspor CSV</span>
             </button>
 
@@ -314,7 +396,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
         </div>
 
         {/* Filters & Search Toolbar */}
-        <div className="mt-2 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="flex-1 flex flex-col sm:flex-row items-center gap-2.5">
             {/* Search input */}
             <div className="relative w-full sm:max-w-md">
@@ -353,6 +435,18 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 );
               })}
             </select>
+
+            {/* Sort by KPI */}
+            <select
+              value={sortByKpi}
+              onChange={(e) => setSortByKpi(e.target.value as any)}
+              className="w-full sm:w-auto px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-amber-600 dark:text-amber-400 font-bold focus:outline-none focus:border-amber-500"
+            >
+              <option value="default">Urutkan: Default</option>
+              <option value="kpi_desc">🏆 KPI Tertinggi (Nilai Absen)</option>
+              <option value="kpi_asc">⚠️ KPI Terendah (Nilai Absen)</option>
+              <option value="ontime_desc">⏰ Ketepatan On-Time Tertinggi</option>
+            </select>
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-2">
@@ -388,7 +482,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 type="button"
                 onClick={() => setShowSalary(!showSalary)}
                 className="px-2.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer"
-                title="Sembunyikan / Tampilkan Gaji & Rate"
+                title="Sembunyikan / Tampilkan Gaji"
               >
                 {showSalary ? <EyeOff className="w-3.5 h-3.5 text-primary-500" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
                 <span className="hidden md:inline">{showSalary ? 'Tutup Gaji' : 'Lihat Gaji'}</span>
@@ -403,7 +497,6 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
         <div className="p-12 text-center bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
           <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mx-auto mb-3" />
           <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Memuat direktori data karyawan...</p>
-          <p className="text-[11px] text-slate-400 mt-1">Mengambil dari database Supabase</p>
         </div>
       ) : filteredList.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs space-y-3">
@@ -412,28 +505,16 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
           </div>
           <h3 className="text-sm font-bold text-slate-800 dark:text-white">Tidak ada data karyawan ditemukan</h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            {searchQuery || selectedDivisi !== 'ALL'
-              ? 'Tidak ada staf yang cocok dengan kriteria pencarian atau filter divisi yang dipilih.'
-              : 'Belum ada data staf karyawan yang tersimpan di database.'}
+            Tidak ada staf yang cocok dengan kriteria pencarian atau filter divisi yang dipilih.
           </p>
-          {(searchQuery || selectedDivisi !== 'ALL') && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedDivisi('ALL');
-              }}
-              className="text-xs text-primary-500 font-bold hover:underline cursor-pointer"
-            >
-              Reset Filter Pencarian
-            </button>
-          )}
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
           {filteredList.map((k) => {
             const isMe = session?.nik === k.nik || session?.username?.toLowerCase() === k.username?.toLowerCase();
+            const kpi = kpiMap[k.nik.toUpperCase()];
+
             return (
               <div
                 key={k.nik}
@@ -465,6 +546,34 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                       {k.divisi || 'Umum'}
                     </span>
                   </div>
+
+                  {/* KPI CARD BADGE */}
+                  {kpi && (
+                    <div className="mb-3 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                        <div>
+                          <div className="text-[10px] font-extrabold text-amber-800 dark:text-amber-300">
+                            KPI Absen: <b>{kpi.nilaiKpiAbsensi} Pts</b>
+                          </div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400">
+                            On-Time: {kpi.persenOnTime}% • Pulang: {kpi.skorPulang} Pts
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${
+                          kpi.grade === 'A+' || kpi.grade === 'A'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                            : kpi.grade === 'B'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                        }`}
+                      >
+                        Grade {kpi.grade}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Metadata info */}
                   <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2.5 mb-3">
@@ -502,12 +611,13 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     type="button"
                     onClick={() => {
                       setSelectedKaryawan(k);
+                      setDetailTab('profil');
                       setIsDetailOpen(true);
                     }}
                     className="flex-1 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1"
                   >
                     <Eye className="w-3 h-3 text-teal-500" />
-                    <span>Detail</span>
+                    <span>Detail &amp; KPI</span>
                   </button>
 
                   {canEdit && (
@@ -546,7 +656,8 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                   <th className="p-3">NIK</th>
                   <th className="p-3">Nama Karyawan</th>
                   <th className="p-3">Divisi</th>
-                  <th className="p-3">Username</th>
+                  <th className="p-3">KPI Absensi</th>
+                  <th className="p-3">On-Time %</th>
                   <th className="p-3">No. HP</th>
                   {canSeeSalary && <th className="p-3">Gaji Pokok</th>}
                   <th className="p-3 text-right">Aksi</th>
@@ -555,6 +666,8 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredList.map((k) => {
                   const isMe = session?.nik === k.nik || session?.username?.toLowerCase() === k.username?.toLowerCase();
+                  const kpi = kpiMap[k.nik.toUpperCase()];
+
                   return (
                     <tr key={k.nik} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="p-3 font-mono font-bold text-slate-800 dark:text-slate-200">
@@ -576,8 +689,28 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                           {k.divisi || 'Umum'}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
-                        @{k.username || '-'}
+                      <td className="p-3">
+                        {kpi ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-black text-amber-600 dark:text-amber-400">
+                              {kpi.nilaiKpiAbsensi}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
+                              kpi.grade === 'A+' || kpi.grade === 'A'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : kpi.grade === 'B'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {kpi.grade}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-300">
+                        {kpi ? `${kpi.persenOnTime}%` : '-'}
                       </td>
                       <td className="p-3 font-mono text-slate-600 dark:text-slate-400">
                         {k.no_hp || '-'}
@@ -593,10 +726,11 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                             type="button"
                             onClick={() => {
                               setSelectedKaryawan(k);
+                              setDetailTab('profil');
                               setIsDetailOpen(true);
                             }}
                             className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg cursor-pointer"
-                            title="Lihat Profil Lengkap"
+                            title="Lihat Profil & KPI"
                           >
                             <Eye className="w-3.5 h-3.5 text-teal-500" />
                           </button>
@@ -604,8 +738,8 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                             <button
                               type="button"
                               onClick={() => handleOpenEdit(k)}
-                              className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-lg cursor-pointer"
-                              title="Edit Data"
+                              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-500 rounded-lg cursor-pointer"
+                              title="Edit"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -614,8 +748,8 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                             <button
                               type="button"
                               onClick={() => setDeleteConfirmNik(k.nik)}
-                              className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-lg cursor-pointer"
-                              title="Hapus Karyawan"
+                              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-500 rounded-lg cursor-pointer"
+                              title="Hapus"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -631,131 +765,164 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
         </div>
       )}
 
-      {/* DETAIL MODAL / DRAWER */}
+      {/* DETAIL DRAWER / MODAL WITH KPI TAB */}
       {isDetailOpen && selectedKaryawan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl space-y-2">
+          <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl">
             {/* Modal Header */}
-            <div className="p-5 bg-gradient-to-r from-teal-500 to-emerald-500 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center font-black text-lg text-white">
-                  {selectedKaryawan.nama.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="text-base font-black tracking-tight">{selectedKaryawan.nama}</h3>
-                  <p className="text-xs text-teal-100 font-mono">NIK: {selectedKaryawan.nik}</p>
-                </div>
-              </div>
-
+            <div className="p-5 bg-gradient-to-r from-teal-600 via-teal-700 to-emerald-700 text-white relative">
               <button
                 type="button"
                 onClick={() => setIsDetailOpen(false)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                className="absolute right-4 top-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
+
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-white text-teal-700 font-black text-2xl flex items-center justify-center shadow-md">
+                  {selectedKaryawan.nama.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-base font-black">{selectedKaryawan.nama}</h3>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-teal-100">
+                    <span className="font-mono font-bold">NIK: {selectedKaryawan.nik}</span>
+                    <span>•</span>
+                    <span className="px-2 py-0.2 rounded-full bg-white/20 font-extrabold uppercase text-[10px]">
+                      {selectedKaryawan.divisi || 'Umum'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub tabs */}
+              <div className="flex gap-2 mt-4 pt-3 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => setDetailTab('profil')}
+                  className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                    detailTab === 'profil' ? 'bg-white text-teal-800 shadow-xs' : 'text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  Profil &amp; Kontak
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailTab('kpi')}
+                  className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    detailTab === 'kpi' ? 'bg-white text-teal-800 shadow-xs' : 'text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  <span>Penilaian KPI Absensi</span>
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 space-y-2 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1 mb-0.5">
-                    <Briefcase className="w-3 h-3" />
-                    <span>Divisi</span>
+            <div className="p-5 space-y-4 max-h-[65vh] overflow-y-auto">
+              {detailTab === 'profil' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Username Sistem:</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                      @{selectedKaryawan.username || '-'}
+                    </span>
                   </div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-white">
-                    {selectedKaryawan.divisi || 'Umum'}
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">No. WhatsApp / HP:</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                      {selectedKaryawan.no_hp || '-'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Email:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                      {selectedKaryawan.email || '-'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Kontak Darurat:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                      {selectedKaryawan.kontak_darurat || '-'}
+                    </span>
+                  </div>
+
+                  <div className="sm:col-span-2 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Alamat Domisili:</span>
+                    <span className="text-slate-800 dark:text-slate-100">
+                      {selectedKaryawan.alamat || '-'}
+                    </span>
                   </div>
                 </div>
+              ) : (
+                /* TAB KPI DETAIL */
+                <div className="space-y-3.5">
+                  {kpiMap[selectedKaryawan.nik.toUpperCase()] ? (
+                    (() => {
+                      const kpi = kpiMap[selectedKaryawan.nik.toUpperCase()];
+                      return (
+                        <>
+                          <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-white flex items-center justify-between shadow-md">
+                            <div>
+                              <div className="text-xs text-amber-100 font-bold uppercase">Nilai KPI Absensi Bulan Ini</div>
+                              <div className="text-4xl font-black font-mono mt-1">{kpi.nilaiKpiAbsensi} Pts</div>
+                              <div className="text-xs text-amber-100 font-bold mt-0.5">{kpi.labelStatus}</div>
+                            </div>
+                            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black text-2xl text-white">
+                              {kpi.grade}
+                            </div>
+                          </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1 mb-0.5">
-                    <Shield className="w-3 h-3" />
-                    <span>Role Sistem</span>
-                  </div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-white capitalize">
-                    {selectedKaryawan.role || 'User'}
-                  </div>
-                </div>
-              </div>
+                          <div className="grid grid-cols-2 gap-2.5 text-xs">
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-400 block">Skor Jam Berangkat:</span>
+                              <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                                {kpi.skorBerangkat} / 100
+                              </span>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                On-Time: {kpi.totalOnTime} hari ({kpi.persenOnTime}%) • Telat: {kpi.totalTerlambat} ({kpi.totalMenitTerlambat} mnt)
+                              </div>
+                            </div>
 
-              {/* Kontak & Info Pribadi */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-teal-500" />
-                    <span>Nomor WhatsApp / HP:</span>
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white">
-                    {selectedKaryawan.no_hp || '-'}
-                  </span>
-                </div>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-400 block">Skor Jam Pulang:</span>
+                              <span className="text-lg font-black text-primary-500 font-mono">
+                                {kpi.skorPulang} / 100
+                              </span>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Pulang Normal: {kpi.totalPulangNormal} hari • Izin Pulang Awal: {kpi.totalPulangAwalIzin}x
+                              </div>
+                            </div>
 
-                {selectedKaryawan.email && (
-                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-teal-500" />
-                      <span>Email:</span>
-                    </span>
-                    <span className="font-bold text-slate-800 dark:text-white">{selectedKaryawan.email}</span>
-                  </div>
-                )}
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-400 block">Tingkat Kehadiran:</span>
+                              <span className="text-lg font-black text-blue-600 dark:text-blue-400 font-mono">
+                                {kpi.persenKehadiran}%
+                              </span>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Masuk: {kpi.totalHadir} dari {kpi.totalHariKerja} hari kerja
+                              </div>
+                            </div>
 
-                {selectedKaryawan.alamat && (
-                  <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                    <span className="text-slate-400 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-teal-500" />
-                      <span>Alamat Domisili:</span>
-                    </span>
-                    <p className="text-slate-700 dark:text-slate-200 font-medium pl-5">{selectedKaryawan.alamat}</p>
-                  </div>
-                )}
-
-                {selectedKaryawan.kontak_darurat && (
-                  <div className="p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 space-y-1">
-                    <span className="text-amber-800 dark:text-amber-300 font-bold flex items-center gap-1.5 text-[11px]">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Kontak Darurat:</span>
-                    </span>
-                    <p className="text-slate-700 dark:text-slate-200 font-mono text-[11px] pl-5">
-                      {selectedKaryawan.kontak_darurat}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Data Finansial (Superadmin Only) */}
-              {canSeeSalary && (
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Informasi Finansial &amp; Lembur (Superadmin)</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowSalary(!showSalary)}
-                      className="text-primary-500 hover:underline cursor-pointer text-[10px]"
-                    >
-                      {showSalary ? 'Sembunyikan' : 'Buka'}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Gaji Pokok:</span>
-                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
-                        {showSalary ? `Rp ${(selectedKaryawan.gaji_pokok || 0).toLocaleString('id-ID')}` : '••••••'}
-                      </span>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-400 block">Cuti / Alpha / Lembur:</span>
+                              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1">
+                                Cuti: {kpi.totalCutiIzin}h • Alpha: {kpi.totalAlpha}h • Lembur: {kpi.totalLemburJam}j
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="p-6 text-center text-slate-400 text-xs">
+                      Belum ada rekaman data presensi untuk dihitung KPI bulan ini.
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Rate Lembur / Jam:</span>
-                      <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                        {showSalary ? `Rp ${(selectedKaryawan.rate_lembur || 10000).toLocaleString('id-ID')}` : '••••••'}
-                      </span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
@@ -765,7 +932,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               <button
                 type="button"
                 onClick={() => setIsDetailOpen(false)}
-                className="px-2 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
               >
                 Tutup
               </button>
@@ -776,7 +943,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     setIsDetailOpen(false);
                     handleOpenEdit(selectedKaryawan);
                   }}
-                  className="px-2 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
                 >
                   Edit Data
                 </button>
@@ -790,7 +957,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
       {isFormOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl">
-            <div className="p-2 sm:p-3 bg-white dark:bg-[#131d31] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-4 bg-white dark:bg-[#131d31] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
                   {isEditing ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -808,7 +975,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="p-5 space-y-2 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={handleSave} className="p-5 space-y-3 max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
@@ -897,40 +1064,14 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
 
                 <div>
                   <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Kontak Darurat (Nama &amp; Hubungan)
+                    Kontak Darurat
                   </label>
                   <input
                     type="text"
                     value={formData.kontak_darurat || ''}
                     onChange={(e) => setFormData({ ...formData, kontak_darurat: e.target.value })}
-                    placeholder="e.g. Ibu Ani - Orang Tua - 0812345678"
+                    placeholder="e.g. Ibu Ani - 0812345678"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Tanggal Lahir (Opsional)
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.tgl_lahir || ''}
-                    onChange={(e) => setFormData({ ...formData, tgl_lahir: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Tanggal Bergabung (Opsional)
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.tgl_bergabung || ''}
-                    onChange={(e) => setFormData({ ...formData, tgl_bergabung: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
               </div>
@@ -949,7 +1090,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               </div>
 
               {canSeeSalary && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
                   <div className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                     <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
                     <span>Konfigurasi Gaji &amp; Lembur (Superadmin)</span>
@@ -986,7 +1127,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
-                  className="px-2 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
                 >
                   Batal
                 </button>
@@ -1007,7 +1148,7 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
       {/* DELETE CONFIRMATION MODAL */}
       {deleteConfirmNik && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-2 shadow-2xl">
+          <div className="bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-3 shadow-2xl">
             <div className="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6" />
             </div>
@@ -1021,14 +1162,14 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
               <button
                 type="button"
                 onClick={() => setDeleteConfirmNik(null)}
-                className="px-2 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={() => handleDelete(deleteConfirmNik)}
-                className="px-2 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
               >
                 Ya, Hapus Data
               </button>

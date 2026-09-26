@@ -12,6 +12,11 @@ import {
   Zap,
   Palmtree,
   Calendar,
+  Award,
+  Sparkles,
+  TrendingUp,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import {
   UserSession,
@@ -20,6 +25,8 @@ import {
   LemburRecord,
   PerijinanCutiRecord,
   RosterShiftRecord,
+  IzinPulangAwalRecord,
+  KpiAbsensiSummary,
 } from '../../types';
 import {
   fetchKaryawanDirectory,
@@ -27,7 +34,9 @@ import {
   fetchLemburRecords,
   fetchCutiRecords,
   fetchRosterShiftList,
+  fetchIzinPulangAwalList,
 } from '../../services/supabase';
+import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
 import { getUserPersonName } from '../../utils/userResolver';
 
 interface HrRekapViewProps {
@@ -48,7 +57,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   const [selectedNik, setSelectedNik] = useState<string>('ALL');
   const [selectedDivisi, setSelectedDivisi] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'ringkasan' | 'lembur' | 'cuti' | 'absensi'>('ringkasan');
+  const [activeTab, setActiveTab] = useState<'ringkasan' | 'kpi' | 'lembur' | 'cuti' | 'absensi'>('ringkasan');
   const [loading, setLoading] = useState<boolean>(false);
 
   const [karyawanList, setKaryawanList] = useState<KaryawanRecord[]>([]);
@@ -56,16 +65,18 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   const [lemburList, setLemburList] = useState<LemburRecord[]>([]);
   const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
   const [rosterList, setRosterList] = useState<RosterShiftRecord[]>([]);
+  const [izinPulangList, setIzinPulangList] = useState<IzinPulangAwalRecord[]>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [karyawans, presensis, lemburs, cutis, rosters] = await Promise.all([
+      const [karyawans, presensis, lemburs, cutis, rosters, izins] = await Promise.all([
         fetchKaryawanDirectory(),
         fetchPresensiRange(startDate, endDate),
         fetchLemburRecords(),
         fetchCutiRecords(),
         fetchRosterShiftList(undefined, startDate, endDate),
+        fetchIzinPulangAwalList(),
       ]);
 
       setKaryawanList(karyawans);
@@ -73,6 +84,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       setLemburList(lemburs);
       setCutiList(cutis);
       setRosterList(rosters);
+      setIzinPulangList(izins);
     } catch (err) {
       console.error('Error loading rekap data:', err);
       onShowToast('Gagal memuat data rekap HR.', 'error');
@@ -227,6 +239,25 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     });
   }, [filteredKaryawan, presensiList, lemburList, cutiList, rosterList, startDate, endDate]);
 
+  // KPI Summary Evaluation across filtered period
+  const kpiSummaryList = useMemo(() => {
+    const list = filteredKaryawan.map((k) => {
+      return calculateKpiAbsensi({
+        karyawan: k,
+        presensiList,
+        rosterList,
+        lemburList,
+        cutiList,
+        izinPulangAwalList: izinPulangList,
+        startDate,
+        endDate,
+      });
+    });
+    // Sort descending by Nilai KPI
+    list.sort((a, b) => b.nilaiKpiAbsensi - a.nilaiKpiAbsensi);
+    return list;
+  }, [filteredKaryawan, presensiList, rosterList, lemburList, cutiList, izinPulangList, startDate, endDate]);
+
   // Grand Totals
   const grandTotals = useMemo(() => {
     let jamLembur = 0;
@@ -262,6 +293,11 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       csvContent += 'NIK,Nama,Divisi,Jadwal Hari,Total Masuk,Tidak Masuk,Tepat Waktu,Terlambat,Lembur Disetujui (Jam),Estimasi Upah Lembur (Rp),Cuti (Hari)\n';
       summaryPerKaryawan.forEach((s) => {
         csvContent += `"${s.nik}","${s.nama}","${s.divisi}",${s.totalJadwalKerja},${s.totalHadir},${s.totalTidakMasuk},${s.totalTepatWaktu},${s.totalTerlambat},${s.totalJamLembur},${s.totalUangLembur},${s.totalHariCuti}\n`;
+      });
+    } else if (activeTab === 'kpi') {
+      csvContent += 'Rank,NIK,Nama,Divisi,Grade,Nilai KPI,Status Kedisiplinan,Skor Berangkat,Skor Pulang,% On-Time,% Kehadiran,Total Hadir,Jadwal Kerja,Terlambat (x),Total Menit Terlambat,Pulang Normal,Izin Pulang Awal,Alpha\n';
+      kpiSummaryList.forEach((k, idx) => {
+        csvContent += `${idx + 1},"${k.nik}","${k.nama}","${k.divisi}","${k.grade}",${k.nilaiKpiAbsensi},"${k.labelStatus}",${k.skorBerangkat},${k.skorPulang},${k.persenOnTime}%,${k.persenKehadiran}%,${k.totalHadir},${k.totalHariKerja},${k.totalTerlambat},${k.totalMenitTerlambat},${k.totalPulangNormal},${k.totalPulangAwalIzin},${k.totalAlpha}\n`;
       });
     } else if (activeTab === 'lembur') {
       csvContent += 'Tanggal,NIK,Nama,Jam Mulai,Jam Selesai,Durasi (Jam),Keterangan,Status,Disetujui Oleh,Total (Rp)\n';
@@ -505,6 +541,17 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           Ringkasan Per Karyawan ({summaryPerKaryawan.length})
         </button>
         <button
+          onClick={() => setActiveTab('kpi')}
+          className={`px-2 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'kpi'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Award className="w-3.5 h-3.5" />
+          <span>KPI & Nilai Absensi ({kpiSummaryList.length})</span>
+        </button>
+        <button
           onClick={() => setActiveTab('lembur')}
           className={`px-2 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'lembur'
@@ -535,6 +582,220 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           Detail Log Presensi ({filteredPresensi.length})
         </button>
       </div>
+
+      {/* TAB KPI & NILAI ABSENSI */}
+      {activeTab === 'kpi' && (
+        <div className="space-y-4">
+          {/* TOP 3 PODIUM */}
+          {kpiSummaryList.length >= 3 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* RANK 2 */}
+              <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl relative overflow-hidden flex flex-col items-center text-center shadow-sm">
+                <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black flex items-center justify-center text-base mb-2">
+                  🥈 #2
+                </div>
+                <div className="font-black text-slate-900 dark:text-white text-base">
+                  {kpiSummaryList[1].nama}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mb-2">NIK: {kpiSummaryList[1].nik}</div>
+                <div className="text-3xl font-black text-primary-500 mb-1">
+                  {kpiSummaryList[1].nilaiKpiAbsensi}
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                  Grade {kpiSummaryList[1].grade} • {kpiSummaryList[1].labelStatus}
+                </span>
+                <div className="grid grid-cols-2 gap-2 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                  <div>
+                    <span className="text-slate-400 block">Berangkat (On-Time)</span>
+                    <strong className="text-emerald-500 font-black">{kpiSummaryList[1].skorBerangkat} pts</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Pulang Normal</span>
+                    <strong className="text-primary-500 font-black">{kpiSummaryList[1].skorPulang} pts</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* RANK 1 */}
+              <div className="bg-gradient-to-b from-primary-500/10 via-white to-white dark:from-primary-500/10 dark:via-[#131d31] dark:to-[#131d31] border-2 border-primary-500/40 p-4 rounded-3xl relative overflow-hidden flex flex-col items-center text-center shadow-lg shadow-primary-500/10">
+                <div className="w-12 h-12 rounded-2xl bg-primary-500 text-white font-black flex items-center justify-center text-lg mb-2 shadow-md shadow-primary-500/30">
+                  👑 #1
+                </div>
+                <div className="font-black text-slate-900 dark:text-white text-lg">
+                  {kpiSummaryList[0].nama}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mb-2">NIK: {kpiSummaryList[0].nik}</div>
+                <div className="text-4xl font-black text-primary-500 mb-1">
+                  {kpiSummaryList[0].nilaiKpiAbsensi}
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  Grade {kpiSummaryList[0].grade} • {kpiSummaryList[0].labelStatus}
+                </span>
+                <div className="grid grid-cols-2 gap-2 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Berangkat (On-Time)</span>
+                    <strong className="text-emerald-500 font-black">{kpiSummaryList[0].skorBerangkat} pts ({kpiSummaryList[0].persenOnTime}%)</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Pulang Normal</span>
+                    <strong className="text-primary-500 font-black">{kpiSummaryList[0].skorPulang} pts</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* RANK 3 */}
+              <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 p-4 rounded-3xl relative overflow-hidden flex flex-col items-center text-center shadow-sm">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black flex items-center justify-center text-base mb-2">
+                  🥉 #3
+                </div>
+                <div className="font-black text-slate-900 dark:text-white text-base">
+                  {kpiSummaryList[2].nama}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mb-2">NIK: {kpiSummaryList[2].nik}</div>
+                <div className="text-3xl font-black text-primary-500 mb-1">
+                  {kpiSummaryList[2].nilaiKpiAbsensi}
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                  Grade {kpiSummaryList[2].grade} • {kpiSummaryList[2].labelStatus}
+                </span>
+                <div className="grid grid-cols-2 gap-2 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                  <div>
+                    <span className="text-slate-400 block">Berangkat (On-Time)</span>
+                    <strong className="text-emerald-500 font-black">{kpiSummaryList[2].skorBerangkat} pts</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Pulang Normal</span>
+                    <strong className="text-primary-500 font-black">{kpiSummaryList[2].skorPulang} pts</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TABLE FULL LEADERBOARD */}
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-primary-500" />
+                  <span>Leaderboard Kedisiplinan & Nilai Absensi Karyawan</span>
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Nilai dihitung dari kedisiplinan jam datang (45%), jam pulang (35%), rasio kehadiran (20%), minus poin keterlambatan/alpha/pulang awal tanpa izin.
+                </p>
+              </div>
+              <span className="text-xs text-slate-400 font-bold">{kpiSummaryList.length} Karyawan</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase tracking-wider text-[11px]">
+                    <th className="py-2 px-2 text-center w-12">Rank</th>
+                    <th className="py-2 px-3">Karyawan</th>
+                    <th className="py-2 px-3">Divisi</th>
+                    <th className="py-2 px-3 text-center">Grade</th>
+                    <th className="py-2 px-3 text-center text-primary-500">Nilai KPI</th>
+                    <th className="py-2 px-3 text-center text-emerald-600 dark:text-emerald-400">Skor Berangkat</th>
+                    <th className="py-2 px-3 text-center text-blue-600 dark:text-blue-400">Skor Pulang</th>
+                    <th className="py-2 px-3 text-center">% On-Time</th>
+                    <th className="py-2 px-3 text-center">Terlambat</th>
+                    <th className="py-2 px-3 text-center">Pulang Normal / Izin</th>
+                    <th className="py-2 px-3 text-center text-rose-500">Alpha</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                  {kpiSummaryList.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="py-12 text-center text-slate-400">
+                        Tidak ada data KPI karyawan pada periode ini.
+                      </td>
+                    </tr>
+                  ) : (
+                    kpiSummaryList.map((k, idx) => (
+                      <tr
+                        key={k.nik}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+                      >
+                        <td className="py-3 px-2 text-center font-black text-slate-700 dark:text-slate-300">
+                          {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : `#${idx + 1}`}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-extrabold text-slate-900 dark:text-white">{k.nama}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">NIK: {k.nik}</div>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{k.divisi}</td>
+                        <td className="py-3 px-3 text-center">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-black ${
+                              k.grade === 'A+'
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : k.grade === 'A'
+                                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                                : k.grade === 'B'
+                                ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300'
+                                : k.grade === 'C'
+                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                                : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                            }`}
+                          >
+                            {k.grade}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="font-black text-base text-primary-500">{k.nilaiKpiAbsensi}</div>
+                          <div className="text-[9px] text-slate-400 font-bold">{k.labelStatus}</div>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                            {k.skorBerangkat} pts
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            {k.totalOnTime}/{k.totalHadir} tepat waktu
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="font-bold text-blue-600 dark:text-blue-400 font-mono">
+                            {k.skorPulang} pts
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            {k.totalPulangNormal} normal
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                          {k.persenOnTime}%
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={k.totalTerlambat > 0 ? 'text-primary-500 font-bold' : 'text-slate-400'}>
+                            {k.totalTerlambat > 0 ? `${k.totalTerlambat}x (${k.totalMenitTerlambat}m)` : '-'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center text-slate-600 dark:text-slate-300 text-[11px]">
+                          {k.totalPulangAwalIzin > 0 && (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] mr-1">
+                              Izin: {k.totalPulangAwalIzin}x
+                            </span>
+                          )}
+                          {k.totalPulangAwalTanpaIzin > 0 && (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300 text-[10px]">
+                              Tanpa Izin: {k.totalPulangAwalTanpaIzin}x
+                            </span>
+                          )}
+                          {k.totalPulangAwalIzin === 0 && k.totalPulangAwalTanpaIzin === 0 && (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold text-rose-500">
+                          {k.totalAlpha > 0 ? `${k.totalAlpha} Hari` : '-'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: RINGKASAN PER KARYAWAN */}
       {activeTab === 'ringkasan' && (
