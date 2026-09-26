@@ -4,27 +4,63 @@ import { supabaseFetch } from './supabase';
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
 /**
- * Daftar resmi store / outlet yang disinkronkan langsung dengan Master Produk (dealpos_channels.b)
- * Tidak ada store yang dikarang di luar data Master Produk.
+ * Mapping kode singkat store ke nama lengkap resmi
+ */
+export const STORE_CODE_TO_FULL_NAME: Record<string, string> = {
+  GAIA: 'Gaia Pontianak',
+  BTS: 'By The Sea PIK',
+  CPJ: 'Central Park Jakarta',
+  CWS: 'Ciputra World Surabaya',
+  DPM: 'Deli Park Medan',
+  GST: 'Gading Serpong Tangerang',
+  LMP: 'Lippo Mall Puri',
+  LVL: 'La Vela Tangerang',
+  LWS: 'Living World Tangerang',
+  MKG: 'Mall Kelapa Gading',
+  NSJ: 'Neo Soho Jakarta',
+  PHB: 'Paskal Hyper Square Bandung',
+  PIM: 'Pondok Indah Mall',
+  PMS: 'Pakuwon Mall Surabaya',
+  SPM: 'Sun Plaza Medan',
+  TP: 'Tunjungan Plaza Surabaya',
+  KYTE: 'Kyte',
+};
+
+/**
+ * Helper untuk mendapatkan nama lengkap store (tidak disingkat)
+ */
+export function getFullStoreName(storeNameOrCode?: string): string {
+  if (!storeNameOrCode) return '';
+  const trimmed = storeNameOrCode.trim();
+  const upper = trimmed.toUpperCase();
+  if (STORE_CODE_TO_FULL_NAME[upper]) {
+    return STORE_CODE_TO_FULL_NAME[upper];
+  }
+  return trimmed;
+}
+
+/**
+ * Daftar resmi store / outlet lengkap yang disinkronkan langsung dengan Master Produk & DealPOS.
+ * Nama ditulis lengkap (bukan singkatan) untuk modul operasional & loading dock.
  */
 export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode: string }[] = [
-  { nama: 'GAIA', fulfillment: 'Gaia Pontianak', kode: 'GAIA' },
-  { nama: 'BTS', fulfillment: 'By The Sea PIK', kode: 'BTS' },
-  { nama: 'CPJ', fulfillment: 'Central Park Jakarta', kode: 'CPJ' },
-  { nama: 'CWS', fulfillment: 'Ciputra World Surabaya', kode: 'CWS' },
-  { nama: 'DPM', fulfillment: 'Deli Park Medan', kode: 'DPM' },
-  { nama: 'GST', fulfillment: 'Gading Serpong Tangerang', kode: 'GST' },
-  { nama: 'LMP', fulfillment: 'Lippo Mall Puri', kode: 'LMP' },
-  { nama: 'LVL', fulfillment: 'La Vela Tangerang', kode: 'LVL' },
-  { nama: 'LWS', fulfillment: 'Living World Tangerang', kode: 'LWS' },
-  { nama: 'MKG', fulfillment: 'Mall Kelapa Gading', kode: 'MKG' },
-  { nama: 'NSJ', fulfillment: 'Neo Soho Jakarta', kode: 'NSJ' },
-  { nama: 'PHB', fulfillment: 'Paskal Hyper Square Bandung', kode: 'PHB' },
-  { nama: 'PIM', fulfillment: 'Pondok Indah Mall', kode: 'PIM' },
-  { nama: 'PMS', fulfillment: 'Pakuwon Mall Surabaya', kode: 'PMS' },
-  { nama: 'SPM', fulfillment: 'Sun Plaza Medan', kode: 'SPM' },
-  { nama: 'TP', fulfillment: 'Tunjungan Plaza Surabaya', kode: 'TP' },
-  { nama: 'KYTE', fulfillment: 'Kyte', kode: 'KYTE' },
+  { nama: 'Gaia Pontianak', fulfillment: 'Gaia Pontianak', kode: 'GAIA' },
+  { nama: 'By The Sea PIK', fulfillment: 'By The Sea PIK', kode: 'BTS' },
+  { nama: 'Central Park Jakarta', fulfillment: 'Central Park Jakarta', kode: 'CPJ' },
+  { nama: 'Ciputra World Surabaya', fulfillment: 'Ciputra World Surabaya', kode: 'CWS' },
+  { nama: 'Deli Park Medan', fulfillment: 'Deli Park Medan', kode: 'DPM' },
+  { nama: 'Gading Serpong Tangerang', fulfillment: 'Gading Serpong Tangerang', kode: 'GST' },
+  { nama: 'Lippo Mall Puri', fulfillment: 'Lippo Mall Puri', kode: 'LMP' },
+  { nama: 'La Vela Tangerang', fulfillment: 'La Vela Tangerang', kode: 'LVL' },
+  { nama: 'Living World Tangerang', fulfillment: 'Living World Tangerang', kode: 'LWS' },
+  { nama: 'Mall Kelapa Gading', fulfillment: 'Mall Kelapa Gading', kode: 'MKG' },
+  { nama: 'Neo Soho Jakarta', fulfillment: 'Neo Soho Jakarta', kode: 'NSJ' },
+  { nama: 'Paskal Hyper Square Bandung', fulfillment: 'Paskal Hyper Square Bandung', kode: 'PHB' },
+  { nama: 'Pondok Indah Mall', fulfillment: 'Pondok Indah Mall', kode: 'PIM' },
+  { nama: 'Pakuwon Mall Surabaya', fulfillment: 'Pakuwon Mall Surabaya', kode: 'PMS' },
+  { nama: 'Sun Plaza Medan', fulfillment: 'Sun Plaza Medan', kode: 'SPM' },
+  { nama: 'Tunjungan Plaza Surabaya', fulfillment: 'Tunjungan Plaza Surabaya', kode: 'TP' },
+  { nama: 'Kyte', fulfillment: 'Kyte', kode: 'KYTE' },
 ];
 
 export const DEFAULT_JASA_KIRIM: string[] = [
@@ -55,10 +91,17 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
     if (data && data.length > 0) {
       data.forEach(d => {
         if (d.nama) {
-          const norm = d.nama.trim();
-          if (!seenNames.has(norm.toLowerCase())) {
-            seenNames.add(norm.toLowerCase());
-            result.push(d);
+          const rawName = d.nama.trim();
+          const fullName = getFullStoreName(d.fulfillment || rawName);
+          const kode = d.kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === fullName.toLowerCase()) || rawName.toUpperCase();
+          if (!seenNames.has(fullName.toLowerCase())) {
+            seenNames.add(fullName.toLowerCase());
+            result.push({
+              id: d.id,
+              nama: fullName,
+              fulfillment: fullName,
+              kode: kode,
+            });
           }
         }
       });

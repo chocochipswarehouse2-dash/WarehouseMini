@@ -5177,22 +5177,29 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
   if (!rawNik) throw new Error('NIK karyawan wajib diisi');
   if (!rawTanggal) throw new Error('Tanggal shift wajib diisi');
 
-  // Determine standard shift times if empty
+  const sLower = cleanShift.toLowerCase();
+  let defaultStart = '08:00';
+  let defaultEnd = '17:00';
+  if (sLower.includes('shift 2') || sLower === '2') {
+    defaultStart = '09:00';
+    defaultEnd = '18:00';
+  } else if (sLower.includes('shift 3') || sLower === '3') {
+    defaultStart = '12:00';
+    defaultEnd = '21:00';
+  } else if (sLower.includes('libur') || sLower.includes('off') || sLower.includes('cuti') || sLower.includes('izin')) {
+    defaultStart = '';
+    defaultEnd = '';
+  }
+
+  // Determine standard shift times if empty or if leftover from previous shift
   let jamMasuk = record.jam_masuk ? String(record.jam_masuk).replace(/\./g, ':').trim() : '';
   let jamPulang = record.jam_pulang ? String(record.jam_pulang).replace(/\./g, ':').trim() : '';
 
-  if (!jamMasuk && !jamPulang) {
-    const sLower = cleanShift.toLowerCase();
-    if (sLower.includes('shift 1') || sLower === '1') {
-      jamMasuk = '08:00';
-      jamPulang = '17:00';
-    } else if (sLower.includes('shift 2') || sLower === '2') {
-      jamMasuk = '09:00';
-      jamPulang = '18:00';
-    } else if (sLower.includes('shift 3') || sLower === '3') {
-      jamMasuk = '12:00';
-      jamPulang = '21:00';
-    }
+  if (!jamMasuk && !sLower.includes('libur') && !sLower.includes('cuti') && !sLower.includes('izin')) {
+    jamMasuk = defaultStart;
+  }
+  if (!jamPulang && !sLower.includes('libur') && !sLower.includes('cuti') && !sLower.includes('izin')) {
+    jamPulang = defaultEnd;
   }
 
   const cleanPayload: Record<string, any> = {
@@ -5274,7 +5281,7 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
     if (presensiRows && presensiRows.length > 0) {
       const pRecord = presensiRows[0];
       const isOff = cleanShift.toLowerCase().includes('libur') || cleanShift.toLowerCase().includes('off');
-      const isCuti = cleanShift.toLowerCase().includes('cuti') || cleanShift.toLowerCase().includes('izin');
+      const isCuti = cleanShift.toLowerCase().includes('cuti') || cleanShift.toLowerCase().includes('izin') || cleanShift.toLowerCase().includes('sakit');
 
       let newStatus = pRecord.status;
       let newCatatan = pRecord.catatan || '';
@@ -5282,15 +5289,19 @@ export async function saveRosterShift(record: Partial<RosterShiftRecord>): Promi
       if (isOff) {
         newStatus = 'Libur';
       } else if (isCuti) {
-        newStatus = cleanShift;
+        newStatus = cleanShift.toLowerCase().includes('cuti') ? 'Cuti' : 'Izin';
       } else if (pRecord.jam_masuk) {
         // Recalculate late status against scheduled start time
-        const schedStart = jamMasuk || '08:00';
+        let schedStart = jamMasuk || defaultStart || '08:00';
         const calc = calculateLatenessStatus(pRecord.jam_masuk, schedStart, 15);
         newStatus = calc.status;
         
-        // Update late note cleanly
-        const baseNote = (newCatatan || '').replace(/\s*\|\s*Terlambat \d+ mnt[^\n]*/gi, '').replace(/Terlambat \d+ mnt[^\n]*/gi, '').trim();
+        // Update late note cleanly (strip previous late message)
+        const baseNote = (newCatatan || '')
+          .replace(/\s*\|\s*Terlambat \d+ mnt[^\n]*/gi, '')
+          .replace(/Terlambat \d+ mnt[^\n]*/gi, '')
+          .trim();
+
         if (calc.status === 'Terlambat') {
           newCatatan = baseNote ? `${baseNote} | Terlambat ${calc.minutesLate} mnt (Shift ${cleanShift})` : `Terlambat ${calc.minutesLate} mnt (Shift ${cleanShift})`;
         } else {

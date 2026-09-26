@@ -65,7 +65,7 @@ import {
   getTodayDateString,
   getCurrentTimeString,
 } from '../../services/pengirimanStore';
-import { fetchOutlets, DEFAULT_OUTLETS } from '../../services/gasManualShipment';
+import { fetchOutlets, DEFAULT_OUTLETS, getFullStoreName } from '../../services/gasManualShipment';
 import { uploadMultipleImagesToGdrive } from '../../services/gdriveUpload';
 import { compressImage } from '../../utils/imageCompressor';
 import { KoliMarkingPrintModal } from './KoliMarkingPrintModal';
@@ -130,7 +130,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   const [itemRows, setItemRows] = useState<ItemInputRow[]>([
     {
       tempId: 'row-1',
-      storeTujuan: 'GAIA',
+      storeTujuan: 'Gaia Pontianak',
       noSuratJalan: '',
       deskripsi: '',
       qty: 1,
@@ -404,7 +404,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
   // --------------------------------------------------------------------------
   const handleAddRow = () => {
     const lastRow = itemRows[itemRows.length - 1];
-    const defaultStore = lastRow?.storeTujuan || stores[0]?.nama || 'GAIA';
+    const defaultStore = lastRow?.storeTujuan || stores[0]?.nama || 'Gaia Pontianak';
     const defaultSJ = lastRow?.noSuratJalan || '';
 
     setItemRows((prev) => [
@@ -637,7 +637,7 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
         setItemRows([
           {
             tempId: `row-${Date.now()}`,
-            storeTujuan: stores[0]?.nama || 'GAIA',
+            storeTujuan: stores[0]?.nama || 'Gaia Pontianak',
             noSuratJalan: '',
             deskripsi: '',
             qty: 1,

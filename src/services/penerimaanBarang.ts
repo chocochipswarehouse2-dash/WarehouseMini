@@ -535,7 +535,7 @@ export async function deleteEkspedisi(namaEkspedisi: string): Promise<{ success:
 }
 
 // Re-export store functions from gasManualShipment for convenient uniform import
-export { fetchOutlets, saveOutlet, deleteOutlet, DEFAULT_OUTLETS };
+export { fetchOutlets, saveOutlet, deleteOutlet, DEFAULT_OUTLETS, getFullStoreName, STORE_CODE_TO_FULL_NAME };
 
 // ==============================================================================
 // 4. WATERMARK CANVAS STAMPER (TIMESTAMP + GPS LOCATION + PIC)
