@@ -4,7 +4,6 @@ import {
   Printer,
   Layers,
   Image as ImageIcon,
-  ExternalLink,
   Check,
   X,
   FileSpreadsheet,
@@ -15,10 +14,15 @@ import {
   Calendar,
   Save,
   Edit3,
-  Undo2,
+  CloudUpload,
+  Filter,
+  CheckSquare,
+  Square,
+  Sparkles,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
+import { pushPenerimaanProduksiToGoogleSheet } from '../../services/gasProduksiSync';
 
 interface ProduksiSpreadsheetViewProps {
   dataList: PenerimaanProduksiItem[];
@@ -107,6 +111,16 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   // Master local state of product blocks
   const [blocks, setBlocks] = useState<MatrixProductBlock[]>([]);
 
+  // Push to Google Sheet state
+  const [isPushingSheet, setIsPushingSheet] = useState<boolean>(false);
+
+  // Export Modal state
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [selectedExportDates, setSelectedExportDates] = useState<string[]>([]);
+  const [selectedExportSjs, setSelectedExportSjs] = useState<string[]>([]);
+  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
+  const [exportProgressMsg, setExportProgressMsg] = useState<string>('');
+
   // Format date helper: "2026-07-13" -> "13 Jul"
   const formatDateHeader = (dateStr: string): string => {
     if (!dateStr) return '';
@@ -155,6 +169,21 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     codeMap.forEach((items, code) => {
       const photoUrl = items.find((i) => i.foto_url && i.foto_url.trim().length > 0)?.foto_url;
       const firstItem = items[0];
+
+      // Clean UP / Catatan Vendor extraction (Avoid hardcoding "BIS Florence" to all items)
+      let upVendor = '';
+      if (firstItem) {
+        if (firstItem.kategori === 'Lokal CMT') {
+          upVendor = 'BIS';
+        } else if (firstItem.keterangan) {
+          const ket = firstItem.keterangan.trim();
+          if (ket.toUpperCase().startsWith('UP:')) {
+            upVendor = ket.substring(3).trim();
+          } else if (ket !== firstItem.nama_produk) {
+            upVendor = ket;
+          }
+        }
+      }
 
       // Extract unique arrival dates
       const distinctDatangDates = Array.from(
@@ -277,7 +306,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         rowNumber: rowNumber++,
         code,
         productName: firstItem?.nama_produk || '',
-        upVendor: firstItem?.kategori === 'Lokal CMT' ? 'BIS' : (firstItem?.keterangan || ''),
+        upVendor,
         kategori: targetCategory,
         photoUrl,
         colorGroups,
@@ -357,7 +386,141 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     };
   };
 
-  // Start Edit Mode for a Block
+  // Unique Dates & SJs across current tab items for Export Multi-Choice Filter
+  const availableDates = useMemo(() => {
+    const datesSet = new Set<string>();
+    blocks.forEach((b) => {
+      b.dateSlots.forEach((d) => {
+        if (d) datesSet.add(d);
+      });
+    });
+    return Array.from(datesSet).sort().reverse();
+  }, [blocks]);
+
+  const availableSjs = useMemo(() => {
+    const sjSet = new Set<string>();
+    dataList.forEach((it) => {
+      const sj = (it.no_surat_jalan || '').trim().toUpperCase();
+      if (sj) sjSet.add(sj);
+    });
+    return Array.from(sjSet).sort();
+  }, [dataList]);
+
+  // Open Export Modal
+  const handleOpenExportModal = () => {
+    setSelectedExportDates(availableDates);
+    setSelectedExportSjs(availableSjs);
+    setIsExportModalOpen(true);
+  };
+
+  // Filter blocks according to search
+  const filteredBlocks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return blocks;
+    return blocks.filter(
+      (b) =>
+        b.code.toLowerCase().includes(q) ||
+        b.colorGroups.some((cg) => cg.color.toLowerCase().includes(q))
+    );
+  }, [blocks, search]);
+
+  // Export Modern Excel with selected multi-choice filters
+  const handleExportModernExcelWithFilters = async () => {
+    if (filteredBlocks.length === 0) {
+      onShowToast('Tidak ada data untuk diekspor', 'warning');
+      return;
+    }
+
+    const selectedDateSet = new Set(selectedExportDates);
+    const selectedSjSet = new Set(selectedExportSjs);
+
+    const blocksToExport = filteredBlocks.filter((b) => {
+      const matchesDate = b.dateSlots.some((d) => d && selectedDateSet.has(d));
+      const matchesSj = dataList.some(
+        (it) =>
+          (it.kode_produksi || '').trim().toUpperCase() === b.code &&
+          selectedSjSet.has((it.no_surat_jalan || '').trim().toUpperCase())
+      );
+      return matchesDate || matchesSj;
+    });
+
+    if (blocksToExport.length === 0) {
+      onShowToast('Tidak ada data yang cocok dengan pilihan tanggal / Surat Jalan.', 'warning');
+      return;
+    }
+
+    try {
+      setIsExportingExcel(true);
+      await exportProduksiToModernExcel(blocksToExport, activeTab, (msg) => {
+        setExportProgressMsg(msg);
+      });
+      onShowToast(`File Excel ${activeTab} Modern (.xlsx) berhasil diunduh!`, 'success');
+      setIsExportModalOpen(false);
+    } catch (err: any) {
+      console.error('Error exporting modern excel:', err);
+      onShowToast(err?.message || 'Gagal mengekspor file Excel', 'error');
+    } finally {
+      setIsExportingExcel(false);
+      setExportProgressMsg('');
+    }
+  };
+
+  // Push Data & Gambar directly to Google Sheet (1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk)
+  const handlePushToGoogleSheet = async () => {
+    if (filteredBlocks.length === 0) {
+      onShowToast('Tidak ada data untuk dikirim ke Google Sheet', 'warning');
+      return;
+    }
+
+    const itemsToPush: PenerimaanProduksiItem[] = [];
+    const nowStr = new Date().toISOString();
+
+    filteredBlocks.forEach((block) => {
+      block.colorGroups.forEach((cg) => {
+        cg.sizes.forEach((sz) => {
+          Object.entries(sz.qtyByDate || {}).forEach(([dateStr, qty]) => {
+            if (dateStr && Number(qty) > 0) {
+              itemsToPush.push({
+                tanggal_penerimaan: dateStr,
+                kategori: block.kategori || (activeTab === 'CMT' ? 'Lokal CMT' : 'Kargo'),
+                no_surat_jalan: `SJ-${block.code}`,
+                kode_produksi: block.code,
+                nama_produk: block.productName || '',
+                warna: cg.color,
+                size: sz.size,
+                qty: Number(qty),
+                foto_url: block.photoUrl || '',
+                keterangan: block.upVendor || '',
+                operator: 'WMS Spreadsheet Editor',
+                created_at: nowStr,
+              });
+            }
+          });
+        });
+      });
+    });
+
+    if (itemsToPush.length === 0) {
+      onShowToast('Tidak ada kuantitas barang terisi untuk dikirim.', 'warning');
+      return;
+    }
+
+    try {
+      setIsPushingSheet(true);
+      const res = await pushPenerimaanProduksiToGoogleSheet(itemsToPush);
+      if (res.success) {
+        onShowToast(res.message, 'success');
+      } else {
+        onShowToast(res.message || 'Gagal push ke Google Sheet', 'error');
+      }
+    } catch (err: any) {
+      onShowToast('Gagal push ke Google Sheet: ' + (err?.message || err), 'error');
+    } finally {
+      setIsPushingSheet(false);
+    }
+  };
+
+  // Start Edit Mode
   const handleStartEditBlock = (block: MatrixProductBlock) => {
     setBackupBlock(JSON.parse(JSON.stringify(block)));
     setEditingBlockId(block.id);
@@ -373,7 +536,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     onShowToast('Perubahan dibatalkan.', 'info');
   };
 
-  // Save Block Changes & Synchronize
+  // Save Block Changes
   const handleSaveBlockChanges = (blockId: string) => {
     const targetBlock = blocks.find((b) => b.id === blockId);
     if (!targetBlock) return;
@@ -408,7 +571,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
               size: sz.size,
               qty: Number(qty),
               foto_url: targetBlock.photoUrl || '',
-              keterangan: targetBlock.upVendor ? `UP: ${targetBlock.upVendor}` : '',
+              keterangan: targetBlock.upVendor || '',
               operator: 'Spreadsheet Editor',
               created_at: nowStr,
             });
@@ -431,7 +594,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 size: sz.size,
                 qty: 0,
                 foto_url: targetBlock.photoUrl || '',
-                keterangan: `RETUR UP: ${targetBlock.upVendor || 'BIS'}`,
+                keterangan: targetBlock.upVendor ? `RETUR UP: ${targetBlock.upVendor}` : 'RETUR',
                 operator: 'Spreadsheet Editor',
                 created_at: nowStr,
               });
@@ -445,13 +608,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     try {
       const cached = localStorage.getItem('wms_local_penerimaan_produksi');
       let list: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
-      // Remove previous items for this specific code
       list = list.filter((it) => (it.kode_produksi || '').trim().toUpperCase() !== targetBlock.code);
       list = [...list, ...newItems];
       localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
     } catch {}
 
-    // Dispatch global event for instant reactivity
+    // Dispatch global event
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(
@@ -482,7 +644,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     } catch {}
   };
 
-  // Cell Text/Number Typing (Datang) - Pure text input
+  // Cell Text Typing (Datang)
   const handleTypeQtyDatang = (
     blockId: string,
     colorIndex: number,
@@ -491,7 +653,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     rawText: string
   ) => {
     if (!dateStr) return;
-    const cleanDigits = rawText.replace(/\D/g, ''); // only numbers
+    const cleanDigits = rawText.replace(/\D/g, '');
     const numVal = cleanDigits === '' ? 0 : parseInt(cleanDigits, 10);
 
     setBlocks((prev) =>
@@ -519,7 +681,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     );
   };
 
-  // Cell Text/Number Typing (Retur - Khusus CMT)
+  // Cell Text Typing (Retur - Khusus CMT)
   const handleTypeQtyRetur = (
     blockId: string,
     colorIndex: number,
@@ -564,7 +726,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       `Masukkan ${title} (Format YYYY-MM-DD, contoh: 2026-07-15):`,
       currentVal || new Date().toISOString().split('T')[0]
     );
-    if (input === null) return; // Cancelled
+    if (input === null) return;
 
     const cleanDate = input.trim();
 
@@ -708,7 +870,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     };
 
     setBlocks((prev) => [...prev, newBlock]);
-    setEditingBlockId(cleanCode); // automatically enter edit mode for new block
+    setEditingBlockId(cleanCode);
     onShowToast(`Tabel Kode ${cleanCode} dibuat. Silakan ketik datanya dan simpan.`, 'info');
   };
 
@@ -728,42 +890,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       setBlocks((prev) =>
         prev.map((b) => (b.id === blockId ? { ...b, photoUrl: url.trim() } : b))
       );
-    }
-  };
-
-  // Filter blocks
-  const filteredBlocks = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return blocks;
-    return blocks.filter(
-      (b) =>
-        b.code.toLowerCase().includes(q) ||
-        b.colorGroups.some((cg) => cg.color.toLowerCase().includes(q))
-    );
-  }, [blocks, search]);
-
-  // Export Excel
-  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
-  const [exportProgressMsg, setExportProgressMsg] = useState<string>('');
-
-  const handleExportModernExcel = async () => {
-    if (filteredBlocks.length === 0) {
-      onShowToast('Tidak ada data untuk diekspor', 'warning');
-      return;
-    }
-
-    try {
-      setIsExportingExcel(true);
-      await exportProduksiToModernExcel(filteredBlocks, activeTab, (msg) => {
-        setExportProgressMsg(msg);
-      });
-      onShowToast(`File Excel ${activeTab} Modern (.xlsx) berhasil diunduh!`, 'success');
-    } catch (err: any) {
-      console.error('Error exporting modern excel:', err);
-      onShowToast(err?.message || 'Gagal mengekspor file Excel', 'error');
-    } finally {
-      setIsExportingExcel(false);
-      setExportProgressMsg('');
     }
   };
 
@@ -846,6 +972,27 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Push to Google Sheet Button */}
+            <button
+              type="button"
+              disabled={isPushingSheet}
+              onClick={handlePushToGoogleSheet}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+              title="Push Tulis + Gambar (=IMAGE) ke Google Sheet (1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk)"
+            >
+              {isPushingSheet ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Pushing...</span>
+                </>
+              ) : (
+                <>
+                  <CloudUpload className="w-3.5 h-3.5" />
+                  <span>Push ke Sheet</span>
+                </>
+              )}
+            </button>
+
             {/* Lembar Hitung Ulang Button */}
             {onOpenHitungUlang && (
               <button
@@ -862,22 +1009,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             {/* Export Modern Excel */}
             <button
               type="button"
-              disabled={isExportingExcel}
-              onClick={handleExportModernExcel}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+              onClick={handleOpenExportModal}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
               title={`Download Excel Modern ${activeTab} (.xlsx)`}
             >
-              {isExportingExcel ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{exportProgressMsg || 'Mengunduh...'}</span>
-                </>
-              ) : (
-                <>
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Export Excel ({activeTab})</span>
-                </>
-              )}
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Export Excel ({activeTab})</span>
             </button>
 
             <button
@@ -898,10 +1035,191 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             <strong className="text-rose-600 dark:text-rose-400">{activeTab}</strong>
           </div>
           <div className="text-[11px] text-slate-500 font-medium">
-            💡 Klik tombol <strong>&ldquo;✏️ Edit Tabel&rdquo;</strong> pada masing-masing tabel untuk mengetik perubahan data dan konfirmasi simpan.
+            💡 Foto produk ditampilkan utuh dan proporsional. Export Excel menggunakan rasio gambar asli (tidak gepeng).
           </div>
         </div>
       </div>
+
+      {/* EXPORT OPTIONS MODAL (MULTI-CHOICE SELECTION) */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 rounded-xl">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Pilih Filter Export Data Excel ({activeTab})
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Bisa pilih multi-choice tanggal penerimaan &amp; No Surat Jalan
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* MULTI-CHOICE TANGGAL PENERIMAAN */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Pilih Tanggal Penerimaan ({selectedExportDates.length}/{availableDates.length})</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedExportDates.length === availableDates.length) {
+                      setSelectedExportDates([]);
+                    } else {
+                      setSelectedExportDates([...availableDates]);
+                    }
+                  }}
+                  className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                >
+                  {selectedExportDates.length === availableDates.length ? 'Pilih Tak Satupun' : 'Pilih Semua Tanggal'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700">
+                {availableDates.length === 0 ? (
+                  <span className="text-xs text-slate-400 col-span-3 italic">Tidak ada tanggal terdaftar</span>
+                ) : (
+                  availableDates.map((dStr) => {
+                    const isChecked = selectedExportDates.includes(dStr);
+                    return (
+                      <label
+                        key={dStr}
+                        className={`flex items-center gap-2 p-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition ${
+                          isChecked
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedExportDates([...selectedExportDates, dStr]);
+                            } else {
+                              setSelectedExportDates(selectedExportDates.filter((x) => x !== dStr));
+                            }
+                          }}
+                          className="rounded text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>{formatDateHeader(dStr)}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* MULTI-CHOICE SURAT JALAN */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Pilih No. Surat Jalan ({selectedExportSjs.length}/{availableSjs.length})</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedExportSjs.length === availableSjs.length) {
+                      setSelectedExportSjs([]);
+                    } else {
+                      setSelectedExportSjs([...availableSjs]);
+                    }
+                  }}
+                  className="text-[11px] text-blue-600 dark:text-blue-400 font-bold hover:underline"
+                >
+                  {selectedExportSjs.length === availableSjs.length ? 'Pilih Tak Satupun' : 'Pilih Semua SJ'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700">
+                {availableSjs.length === 0 ? (
+                  <span className="text-xs text-slate-400 col-span-2 italic">Tidak ada SJ terdaftar</span>
+                ) : (
+                  availableSjs.map((sjStr) => {
+                    const isChecked = selectedExportSjs.includes(sjStr);
+                    return (
+                      <label
+                        key={sjStr}
+                        className={`flex items-center gap-2 p-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition ${
+                          isChecked
+                            ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedExportSjs([...selectedExportSjs, sjStr]);
+                            } else {
+                              setSelectedExportSjs(selectedExportSjs.filter((x) => x !== sjStr));
+                            }
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="truncate">{sjStr}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800 flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <span>
+                Catatan Multi-Tanggal: Jika 1 kode produk memiliki penerimaan di beberapa tanggal, seluruh histori tanggal untuk kode tersebut tetap dilampirkan lengkap dalam hasil export Excel!
+              </span>
+            </div>
+
+            {/* ACTION BUTTONS */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                disabled={isExportingExcel}
+                onClick={handleExportModernExcelWithFilters}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+              >
+                {isExportingExcel ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{exportProgressMsg || 'Mengunduh...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Unduh Excel Modern (.xlsx)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EMPTY STATE */}
       {filteredBlocks.length === 0 ? (
@@ -1050,7 +1368,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-center border-collapse text-xs select-text border border-slate-300 dark:border-slate-700 min-w-[1100px]">
+                  <table className="w-full text-center border-collapse text-xs select-text border border-slate-300 dark:border-slate-700 min-w-[900px]">
                     {/* SPREADSHEET HEADER */}
                     <thead>
                       {/* HEADER ROW 1 */}
@@ -1067,7 +1385,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                         <th rowSpan={2} className="py-2.5 px-2.5 w-16">
                           UP
                         </th>
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[130px]">
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[160px]">
                           PHOTO
                         </th>
                         <th rowSpan={2} className="py-2.5 px-3 min-w-[100px]">
@@ -1095,22 +1413,9 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                           </th>
                         )}
 
-                        {/* TOTAL DATANG */}
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[80px] bg-[#fce8e6] dark:bg-[#3d1e22]">
+                        {/* TOTAL DATANG (NET) - NOTE: TABEL KESIMPULAN DIBUANG SESUAI PERMINTAAN */}
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[110px] bg-[#fce8e6] dark:bg-[#3d1e22]">
                           TOTAL<br />{isCMT ? 'DATANG (NET)' : 'DATANG'}
-                        </th>
-
-                        {/* SPACER */}
-                        <th rowSpan={2} className="w-3 bg-[#fce8e6] dark:bg-[#3d1e22] border-none">
-                          {/* Spacer */}
-                        </th>
-
-                        {/* KESIMPULAN SPAN */}
-                        <th
-                          colSpan={5}
-                          className="py-1.5 px-3 bg-[#fce8e6] dark:bg-[#3d1e22] text-center border-b border-slate-300 dark:border-slate-700"
-                        >
-                          KESIMPULAN
                         </th>
                       </tr>
 
@@ -1152,13 +1457,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                               {rStr ? formatDateHeader(rStr) : <span className="text-red-400/80 font-normal">Ret {rIdx + 1}</span>}
                             </th>
                           ))}
-
-                        {/* Kesimpulan Subheaders */}
-                        <th className="py-1 px-2 min-w-[50px] text-red-600 dark:text-red-400 font-bold">PCS</th>
-                        <th className="py-1 px-2 min-w-[65px] text-blue-600 dark:text-blue-400 font-bold">KG</th>
-                        <th className="py-1 px-2 min-w-[60px]">ONGKIR</th>
-                        <th className="py-1 px-2 min-w-[75px]">TOTAL ONGKIR</th>
-                        <th className="py-1 px-2 min-w-[70px]">ONGKIR/PCS</th>
                       </tr>
                     </thead>
 
@@ -1247,18 +1545,18 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 </td>
                               )}
 
-                              {/* 5. PHOTO */}
+                              {/* 5. PHOTO (TAMPIL UTUH & PROPORSIONAL) */}
                               {isFirstRowOfBlock && (
                                 <td
                                   rowSpan={totalSubRows}
-                                  className="p-2.5 text-center align-middle bg-slate-50/50 dark:bg-slate-850/50"
+                                  className="p-2 text-center align-middle bg-slate-50/50 dark:bg-slate-850/50"
                                 >
                                   {block.photoUrl ? (
-                                    <div className="relative group w-24 h-24 sm:w-28 sm:h-28 mx-auto rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-white dark:bg-slate-800">
+                                    <div className="relative group w-28 h-36 sm:w-32 sm:h-40 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
                                       <img
                                         src={block.photoUrl}
                                         alt={block.code}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 cursor-pointer"
+                                        className="w-full h-full object-contain rounded-lg group-hover:scale-105 transition-transform duration-200 cursor-pointer"
                                         referrerPolicy="no-referrer"
                                         onClick={() =>
                                           onOpenLightbox({
@@ -1272,7 +1570,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                         <button
                                           type="button"
                                           onClick={() => handleEditPhoto(block.id)}
-                                          className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 hover:bg-black text-white rounded text-[10px] font-bold transition cursor-pointer"
+                                          className="absolute bottom-1 right-1 px-2 py-0.5 bg-black/75 hover:bg-black text-white rounded text-[10px] font-bold transition cursor-pointer"
                                         >
                                           Ganti
                                         </button>
@@ -1283,12 +1581,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                       type="button"
                                       disabled={!isEditingThisBlock}
                                       onClick={() => handleEditPhoto(block.id)}
-                                      className={`w-20 h-20 mx-auto rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/40 transition ${
+                                      className={`w-24 h-28 mx-auto rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/40 transition ${
                                         isEditingThisBlock ? 'hover:text-rose-600 hover:border-rose-400 cursor-pointer' : ''
                                       }`}
                                     >
                                       <ImageIcon className="w-5 h-5 mb-1" />
-                                      <span className="text-[9px]">{isEditingThisBlock ? '+ Foto' : 'No Photo'}</span>
+                                      <span className="text-[10px] font-semibold">{isEditingThisBlock ? '+ Foto' : 'No Photo'}</span>
                                     </button>
                                   )}
                                 </td>
@@ -1320,7 +1618,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 {sizeItem.size}
                               </td>
 
-                              {/* 8. QTY BARANG DATANG (Ketik Tanpa Panah Stepper) */}
+                              {/* 8. QTY BARANG DATANG */}
                               {block.dateSlots.map((dStr, slotIdx) => {
                                 const qtyVal = dStr ? sizeItem.qtyByDate[dStr] : undefined;
                                 return (
@@ -1354,7 +1652,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 );
                               })}
 
-                              {/* 9. QTY BARANG RETUR (Khusus CMT - Ketik Tanpa Panah Stepper) */}
+                              {/* 9. QTY BARANG RETUR (Khusus CMT) */}
                               {isCMT &&
                                 returSlots.map((rStr, rIdx) => {
                                   const rQtyVal = rStr ? sizeItem.qtyReturByDate?.[rStr] : undefined;
@@ -1393,7 +1691,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                               {isFirstRowOfBlock && (
                                 <td
                                   rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-bold text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800/60"
+                                  className="py-3 px-2 text-center align-middle font-mono font-black text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800/60"
                                 >
                                   <div>{block.totalNet}</div>
                                   {isCMT && block.totalRetur ? (
@@ -1401,106 +1699,6 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                       ({block.totalDatang} - {block.totalRetur})
                                     </div>
                                   ) : null}
-                                </td>
-                              )}
-
-                              {/* 11. SPACER */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="w-3 bg-slate-100/60 dark:bg-slate-850/60 border-none"
-                                >
-                                  {/* Spacer */}
-                                </td>
-                              )}
-
-                              {/* 12. KESIMPULAN: PCS */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-bold text-sm text-red-600 dark:text-red-400 bg-white dark:bg-slate-900"
-                                >
-                                  {block.totalNet}
-                                </td>
-                              )}
-
-                              {/* 13. KESIMPULAN: KG */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle bg-white dark:bg-slate-900"
-                                >
-                                  {isEditingThisBlock ? (
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={String(block.kg || '')}
-                                      onChange={(e) => {
-                                        const clean = e.target.value.replace(/[^0-9.]/g, '');
-                                        const val = parseFloat(clean) || 0;
-                                        setBlocks((prev) =>
-                                          prev.map((b) =>
-                                            b.id === block.id ? recalculateBlock({ ...b, kg: val }) : b
-                                          )
-                                        );
-                                      }}
-                                      placeholder="0.0"
-                                      className="w-16 px-1.5 py-1 text-center font-bold text-blue-600 border border-blue-400 rounded text-xs outline-none bg-blue-50/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                  ) : (
-                                    <span className="font-mono font-bold text-xs text-blue-700 dark:text-blue-300">
-                                      {block.kg.toFixed(1)}
-                                    </span>
-                                  )}
-                                </td>
-                              )}
-
-                              {/* 14. KESIMPULAN: ONGKIR */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-bold text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
-                                >
-                                  {isEditingThisBlock ? (
-                                    <input
-                                      type="text"
-                                      inputMode="numeric"
-                                      value={String(block.ongkirPerKg || '')}
-                                      onChange={(e) => {
-                                        const clean = e.target.value.replace(/\D/g, '');
-                                        const val = parseInt(clean, 10) || 0;
-                                        setBlocks((prev) =>
-                                          prev.map((b) =>
-                                            b.id === block.id ? recalculateBlock({ ...b, ongkirPerKg: val }) : b
-                                          )
-                                        );
-                                      }}
-                                      placeholder="0"
-                                      className="w-16 px-1.5 py-1 text-center font-bold text-slate-800 border border-emerald-400 rounded text-xs outline-none bg-emerald-50/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                  ) : (
-                                    <span>{block.ongkirPerKg.toLocaleString('id-ID')}</span>
-                                  )}
-                                </td>
-                              )}
-
-                              {/* 15. KESIMPULAN: TOTAL ONGKIR */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-bold text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
-                                >
-                                  {block.totalOngkir.toLocaleString('id-ID')}
-                                </td>
-                              )}
-
-                              {/* 16. KESIMPULAN: ONGKIR/PCS */}
-                              {isFirstRowOfBlock && (
-                                <td
-                                  rowSpan={totalSubRows}
-                                  className="py-3 px-2 text-center align-middle font-mono font-bold text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
-                                >
-                                  {block.ongkirPerPcs.toLocaleString('id-ID')}
                                 </td>
                               )}
                             </tr>

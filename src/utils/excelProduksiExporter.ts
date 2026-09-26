@@ -30,9 +30,52 @@ async function fetchImageBuffer(
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
-  } catch (e) {
+  } catch {
     return null;
   }
+}
+
+// Get scaled image dimensions maintaining exact original aspect ratio (prevents "gepeng" distortion)
+async function getScaledImageDimensions(
+  url: string,
+  maxColWidthPx: number,
+  maxRowHeightPx: number
+): Promise<{ base64: string; extension: 'jpeg' | 'png' | 'gif'; width: number; height: number } | null> {
+  const imgData = await fetchImageBuffer(url);
+  if (!imgData) return null;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const origW = img.naturalWidth || img.width || 100;
+      const origH = img.naturalHeight || img.height || 100;
+      const aspect = origW / origH;
+
+      let w = maxColWidthPx;
+      let h = w / aspect;
+
+      if (h > maxRowHeightPx) {
+        h = maxRowHeightPx;
+        w = h * aspect;
+      }
+
+      resolve({
+        base64: imgData.base64,
+        extension: imgData.extension,
+        width: Math.max(20, Math.round(w)),
+        height: Math.max(20, Math.round(h)),
+      });
+    };
+    img.onerror = () => {
+      resolve({
+        base64: imgData.base64,
+        extension: imgData.extension,
+        width: Math.round(maxColWidthPx * 0.5),
+        height: Math.round(maxRowHeightPx * 0.85),
+      });
+    };
+    img.src = `data:image/${imgData.extension};base64,${imgData.base64}`;
+  });
 }
 
 // Format date to "DD MMM"
@@ -79,9 +122,9 @@ export async function exportProduksiToModernExcel(
   });
 
   // Base Columns: A: NO, B: CODE, C: PRODUCT NAME, D: UP, E: PHOTO, F: COLOR, G: SIZE
-  // Next: Date Arrival Columns (H..Q)
-  // If CMT: Retur Date Columns (R..W) (6 columns)
-  // Then: Total Datang, Spacer, Kesimpulan (PCS, KG, ONGKIR, TOTAL ONGKIR, ONGKIR/PCS)
+  // Next: Date Arrival Columns (H..)
+  // If CMT: Retur Date Columns
+  // Then: Total Datang (NET)
 
   // Styling Constants
   const PINK_HEADER_FILL: ExcelJS.Fill = {
@@ -153,9 +196,23 @@ export async function exportProduksiToModernExcel(
     const returSlots = isCMT ? block.returDateSlots || [] : [];
 
     const numDateCols = dateSlots.length; // 10
-    const numReturCols = isCMT ? returSlots.length : 0; // 5 or 6
+    const numReturCols = isCMT ? returSlots.length : 0; // 5
 
-    const totalCols = 7 + numDateCols + (isCMT ? numReturCols : 0) + 1 + 1 + 5;
+    const totalCols = 7 + numDateCols + (isCMT ? numReturCols : 0) + 1;
+
+    // Set Column Widths for Clear Image & Data Display
+    worksheet.getColumn(1).width = 6;  // NO
+    worksheet.getColumn(2).width = 12; // CODE
+    worksheet.getColumn(3).width = 22; // PRODUCT NAME
+    worksheet.getColumn(4).width = 12; // UP / Vendor
+    worksheet.getColumn(5).width = 24; // PHOTO (Col E width)
+    worksheet.getColumn(6).width = 16; // COLOR
+    worksheet.getColumn(7).width = 10; // SIZE
+
+    for (let c = 8; c < 8 + numDateCols + numReturCols; c++) {
+      worksheet.getColumn(c).width = 11;
+    }
+    worksheet.getColumn(totalCols).width = 18; // TOTAL DATANG (NET)
 
     // Build Row 1 Headers
     const row1Vals: string[] = ['NO', 'CODE', 'PRODUCT NAME', 'UP', 'PHOTO', 'COLOR', 'SIZE'];
@@ -168,9 +225,6 @@ export async function exportProduksiToModernExcel(
     }
 
     row1Vals.push('TOTAL DATANG (NET)');
-    row1Vals.push(''); // Spacer
-    row1Vals.push('KESIMPULAN');
-    for (let i = 1; i < 5; i++) row1Vals.push('');
 
     row1.values = row1Vals;
 
@@ -181,12 +235,6 @@ export async function exportProduksiToModernExcel(
       returSlots.forEach((d) => row2Vals.push(d ? formatDateHeader(d) : ''));
     }
     row2Vals.push(''); // Total Datang span
-    row2Vals.push(''); // Spacer
-    row2Vals.push('PCS');
-    row2Vals.push('KG');
-    row2Vals.push('ONGKIR');
-    row2Vals.push('TOTAL ONGKIR');
-    row2Vals.push('ONGKIR/PCS');
 
     row2.values = row2Vals;
 
@@ -219,21 +267,9 @@ export async function exportProduksiToModernExcel(
     // Merge TOTAL DATANG
     const totalDatangCol = currentPointer;
     worksheet.mergeCells(headerRow1Index, totalDatangCol, headerRow2Index, totalDatangCol);
-    currentPointer++;
-
-    // Spacer
-    const spacerCol = currentPointer;
-    worksheet.mergeCells(headerRow1Index, spacerCol, headerRow2Index, spacerCol);
-    currentPointer++;
-
-    // Merge KESIMPULAN
-    const startKesimpulanCol = currentPointer;
-    const endKesimpulanCol = startKesimpulanCol + 4;
-    worksheet.mergeCells(headerRow1Index, startKesimpulanCol, headerRow1Index, endKesimpulanCol);
 
     // Style Header Cells
     for (let c = 1; c <= totalCols; c++) {
-      if (c === spacerCol) continue;
       const cell1 = row1.getCell(c);
       const isReturCell = isCMT && c >= startReturCol && c <= endReturCol;
       cell1.fill = isReturCell ? RETUR_HEADER_FILL : PINK_HEADER_FILL;
@@ -258,6 +294,10 @@ export async function exportProduksiToModernExcel(
 
     const startDataRowIndex = currentRow;
 
+    // Height calculation: Ensure photo block height is at least ~140px total
+    const targetBlockHeight = Math.max(140, totalSubRows * 32);
+    const rowHeightAllocated = Math.max(32, Math.floor(targetBlockHeight / totalSubRows));
+
     for (let cIdx = 0; cIdx < block.colorGroups.length; cIdx++) {
       const colorGroup = block.colorGroups[cIdx];
       const startColorRowIndex = currentRow;
@@ -265,7 +305,7 @@ export async function exportProduksiToModernExcel(
       for (let sIdx = 0; sIdx < colorGroup.sizes.length; sIdx++) {
         const sizeItem = colorGroup.sizes[sIdx];
         const dataRow = worksheet.getRow(currentRow);
-        dataRow.height = Math.max(24, Math.floor(110 / Math.max(1, totalSubRows)));
+        dataRow.height = rowHeightAllocated;
 
         const rowValues: any[] = [
           block.rowNumber,
@@ -300,18 +340,11 @@ export async function exportProduksiToModernExcel(
         // Total Datang Net (Datang - Retur)
         const netTotal = Math.max(0, block.totalDatang - (block.totalRetur || 0));
         rowValues.push(netTotal);
-        rowValues.push(''); // Spacer
-        rowValues.push(netTotal); // PCS
-        rowValues.push(block.kg); // KG
-        rowValues.push(block.ongkirPerKg); // ONGKIR
-        rowValues.push(block.totalOngkir); // TOTAL ONGKIR
-        rowValues.push(block.ongkirPerPcs); // ONGKIR/PCS
 
         dataRow.values = rowValues;
 
         // Styling data cells
         for (let col = 1; col <= totalCols; col++) {
-          if (col === spacerCol) continue;
           const cell = dataRow.getCell(col);
           cell.font = FONT_BODY;
           cell.border = BORDER_THIN;
@@ -360,20 +393,24 @@ export async function exportProduksiToModernExcel(
       // 1. NO
       worksheet.mergeCells(startDataRowIndex, 1, endDataRowIndex, 1);
       const noCell = worksheet.getRow(startDataRowIndex).getCell(1);
-      noCell.alignment = { vertical: 'top', horizontal: 'center' };
+      noCell.alignment = { vertical: 'middle', horizontal: 'center' };
       noCell.font = { ...FONT_BODY, bold: true };
 
       // 2. CODE
       worksheet.mergeCells(startDataRowIndex, 2, endDataRowIndex, 2);
       const codeCell = worksheet.getRow(startDataRowIndex).getCell(2);
-      codeCell.alignment = { vertical: 'top', horizontal: 'center' };
+      codeCell.alignment = { vertical: 'middle', horizontal: 'center' };
       codeCell.font = { ...FONT_BODY, bold: true };
 
       // 3. PRODUCT NAME
       worksheet.mergeCells(startDataRowIndex, 3, endDataRowIndex, 3);
+      const nameCell = worksheet.getRow(startDataRowIndex).getCell(3);
+      nameCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
       // 4. UP
       worksheet.mergeCells(startDataRowIndex, 4, endDataRowIndex, 4);
+      const upCell = worksheet.getRow(startDataRowIndex).getCell(4);
+      upCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
       // 5. PHOTO
       worksheet.mergeCells(startDataRowIndex, 5, endDataRowIndex, 5);
@@ -384,57 +421,33 @@ export async function exportProduksiToModernExcel(
       worksheet.mergeCells(startDataRowIndex, totalDatangCol, endDataRowIndex, totalDatangCol);
       const totalDatangCell = worksheet.getRow(startDataRowIndex).getCell(totalDatangCol);
       totalDatangCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      totalDatangCell.font = { ...FONT_BODY, bold: true, size: 10.5 };
+      totalDatangCell.font = { ...FONT_BODY, bold: true, size: 11 };
       totalDatangCell.fill = {
         type: 'pattern',
         pattern: 'solid',
         fgColor: { argb: 'FFF8FAFC' },
       };
 
-      // PCS
-      worksheet.mergeCells(startDataRowIndex, startKesimpulanCol, endDataRowIndex, startKesimpulanCol);
-      const pcsCell = worksheet.getRow(startDataRowIndex).getCell(startKesimpulanCol);
-      pcsCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      pcsCell.font = { ...FONT_BODY, bold: true, color: { argb: 'FFDC2626' } };
-
-      // KG
-      worksheet.mergeCells(startDataRowIndex, startKesimpulanCol + 1, endDataRowIndex, startKesimpulanCol + 1);
-      const kgCell = worksheet.getRow(startDataRowIndex).getCell(startKesimpulanCol + 1);
-      kgCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      kgCell.font = { ...FONT_BODY, bold: true, color: { argb: 'FF2563EB' } };
-      kgCell.numFmt = '0.0';
-
-      // ONGKIR
-      worksheet.mergeCells(startDataRowIndex, startKesimpulanCol + 2, endDataRowIndex, startKesimpulanCol + 2);
-      const ongkirCell = worksheet.getRow(startDataRowIndex).getCell(startKesimpulanCol + 2);
-      ongkirCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      ongkirCell.numFmt = '#,##0';
-
-      // TOTAL ONGKIR
-      worksheet.mergeCells(startDataRowIndex, startKesimpulanCol + 3, endDataRowIndex, startKesimpulanCol + 3);
-      const totalOngkirCell = worksheet.getRow(startDataRowIndex).getCell(startKesimpulanCol + 3);
-      totalOngkirCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      totalOngkirCell.numFmt = '#,##0';
-
-      // ONGKIR/PCS
-      worksheet.mergeCells(startDataRowIndex, startKesimpulanCol + 4, endDataRowIndex, startKesimpulanCol + 4);
-      const ongkirPcsCell = worksheet.getRow(startDataRowIndex).getCell(startKesimpulanCol + 4);
-      ongkirPcsCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      ongkirPcsCell.numFmt = '#,##0';
-
-      // Embed Image
+      // Embed Image maintaining natural aspect ratio (PREVENTS GEPENG / DISTORTION)
       if (block.photoUrl) {
         try {
-          const imgData = await fetchImageBuffer(block.photoUrl);
-          if (imgData) {
+          const maxW = 150; // max width px in column E
+          const maxH = Math.max(100, totalSubRows * rowHeightAllocated - 10); // max height px in block
+          const scaledImg = await getScaledImageDimensions(block.photoUrl, maxW, maxH);
+
+          if (scaledImg) {
             const imageId = workbook.addImage({
-              base64: imgData.base64,
-              extension: imgData.extension,
+              base64: scaledImg.base64,
+              extension: scaledImg.extension,
             });
 
+            // Center image inside column E
+            const colEWidthPx = 180;
+            const leftColOffset = Math.max(0.04, (colEWidthPx - scaledImg.width) / colEWidthPx / 2);
+
             worksheet.addImage(imageId, {
-              tl: { col: 4.15, row: startDataRowIndex - 1 + 0.1 } as any,
-              br: { col: 4.85, row: endDataRowIndex + 0.9 } as any,
+              tl: { col: 4 + leftColOffset, row: startDataRowIndex - 1 + 0.08 } as any,
+              ext: { width: scaledImg.width, height: scaledImg.height },
               editAs: 'oneCell',
             });
           } else {
