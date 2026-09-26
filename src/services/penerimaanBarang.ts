@@ -5,7 +5,7 @@ import {
   LocationStamp,
 } from '../types';
 import { supabaseFetch } from './supabase';
-import { fetchOutlets, saveOutlet, deleteOutlet, DEFAULT_OUTLETS } from './gasManualShipment';
+import { fetchOutlets, saveOutlet, deleteOutlet, DEFAULT_OUTLETS, getFullStoreName, STORE_CODE_TO_FULL_NAME } from './gasManualShipment';
 import { uploadMultipleImagesToGdrive, uploadImageToGdrive } from './gdriveUpload';
 
 // Default List Ekspedisi

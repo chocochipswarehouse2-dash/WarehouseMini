@@ -175,6 +175,7 @@ export interface KaryawanRecord {
   nik: string;
   nama: string;
   divisi: string;
+  jabatan?: string;
   username: string;
   password?: string;
   role: string;

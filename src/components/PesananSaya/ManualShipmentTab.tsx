@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store
 } from 'lucide-react';
 import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
@@ -57,8 +57,90 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [filterEndDate, setFilterEndDate] = useState<string>('');
 
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ManualShipmentOrder | null>(null);
-
   const [editingOrder, setEditingOrder] = useState<ManualShipmentOrder | null>(null);
+
+  // Modal WhatsApp Template untuk PIC Store kirim ke Customer
+  const [waModalOrder, setWaModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [copiedResi, setCopiedResi] = useState<string | null>(null);
+
+  // Helper Clipboard dengan fallback aman
+  const copyToClipboard = async (text: string, successMsg: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        onShowToast(successMsg, 'success');
+        return true;
+      }
+    } catch (err) {
+      console.warn('Clipboard writeText failed, fallback to textarea:', err);
+    }
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-999999px';
+      textarea.style.top = '-999999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (successful) {
+        onShowToast(successMsg, 'success');
+        return true;
+      }
+    } catch (e) {
+      console.warn('Fallback copy failed:', e);
+    }
+    onShowToast('Gagal menyalin teks.', 'error');
+    return false;
+  };
+
+  const getCleanCustomerPhone = (phone?: string): string => {
+    if (!phone) return '';
+    let clean = phone.replace(/[^0-9]/g, '');
+    if (clean.startsWith('0')) {
+      clean = '62' + clean.slice(1);
+    } else if (clean.startsWith('8')) {
+      clean = '62' + clean;
+    }
+    return clean;
+  };
+
+  const generateCustomerWaTemplate = (order: ManualShipmentOrder): string => {
+    const storeName = order.nama_pengirim || 'Toko Kami';
+    const customerName = order.nama_tujuan || 'Kakak';
+    const jasaKirim = order.jasa_kirim || 'Ekspedisi';
+    const noResi = order.no_resi || '(Sedang diproses / Menunggu Resi)';
+    const dealposArr = Array.isArray(order.no_transaksi_pengirim)
+      ? order.no_transaksi_pengirim.filter(Boolean)
+      : (order.no_transaksi_pengirim ? [order.no_transaksi_pengirim] : []);
+    const noTrans = dealposArr.length > 0
+      ? dealposArr.join(', ')
+      : (order.no_transaksi_customer || order.no_pesanan || '-');
+
+    let itemsList = '';
+    if (order.items && order.items.length > 0) {
+      itemsList = order.items.map((it, idx) => {
+        const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (${it.size})` : '';
+        return `  ${idx + 1}. *${it.nama_produk}*${sizeStr} - ${it.qty || 1} pcs`;
+      }).join('\n');
+    }
+
+    return `Halo Kak *${customerName}*! 👋
+Terima kasih telah berbelanja di *${storeName}*.
+
+Pesanan Kakak telah dikemas dan dikirimkan dengan rincian berikut:
+📦 *No. Transaksi:* ${noTrans}
+🚚 *Ekspedisi:* ${jasaKirim}
+🔖 *No. Resi:* *${noResi}*
+📍 *Alamat Pengiriman:* ${order.alamat_tujuan || '-'}
+${itemsList ? `\n📋 *Daftar Produk:*\n${itemsList}\n` : ''}${order.notes_paket ? `\n📝 *Catatan Paket:* ${order.notes_paket}\n` : ''}
+Kakak dapat memantau status pengiriman paket melalui website resmi atau aplikasi *${jasaKirim}* menggunakan No. Resi di atas.
+
+Terima kasih banyak atas kepercayaannya! Semoga paket lekas sampai dan bermanfaat ya Kak. ✨🙏`;
+  };
 
   // State untuk cetak in-page A6 & Picking List (100% kompatibel di HP / mobile dan desktop tanpa popup blocker)
   const [printPayload, setPrintPayload] = useState<{
@@ -496,18 +578,35 @@ _WMS Warehouse System_`;
   };
 
   const renderForm = () => (
-    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors">
-      <div className="p-3.5 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white mb-4 sm:mb-6 flex items-center">
-          <Package className="w-5 h-5 sm:w-6 sm:h-6 mr-2 text-indigo-600 dark:text-indigo-400 shrink-0" />
-          {editingOrder ? 'Edit Manual Shipment' : 'Form Manual Shipment'}
-        </h2>
+    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-slate-200/90 dark:border-slate-800 overflow-hidden transition-colors">
+      <div className="p-4 sm:p-6">
+        <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-3.5 mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                {editingOrder ? 'Edit Pesanan Manual Shipment' : 'Form Pengiriman Manual Shipment'}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Input data pesanan store untuk pengiriman ke customer
+              </p>
+            </div>
+          </div>
+          {pengirim && (
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {pengirim}
+            </span>
+          )}
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-10">
-          {/* Order ID Manual Shipment & Pilihan Jasa Kirim (Paling Atas) */}
-          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/70 rounded-xl p-4 space-y-4 max-w-2xl">
-            <div className="max-w-md">
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Top Row: Order ID & Pilihan Jasa Kirim (Compact & Aesthetic) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3.5 sm:p-4 bg-slate-50/80 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                 Order ID Manual Shipment
               </label>
               <input
@@ -516,15 +615,16 @@ _WMS Warehouse System_`;
                 readOnly
                 tabIndex={-1}
                 placeholder="Pilih store pengirim..."
-                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold sm:text-base cursor-not-allowed select-all shadow-sm py-2 px-3 tracking-wide"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-xs sm:text-sm cursor-not-allowed select-all shadow-xs py-2 px-3 tracking-wide"
               />
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Dibuat otomatis oleh sistem</p>
             </div>
 
-            {/* Pilihan Jasa Kirim (Dibawah Order ID Manual Shipment) */}
-            <div className="max-w-md">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Pilihan Jasa Kirim
+            {/* Pilihan Jasa Kirim */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Pilihan Jasa Kirim / Ekspedisi <span className="text-red-500">*</span>
                 </label>
                 <button
                   type="button"
@@ -533,14 +633,15 @@ _WMS Warehouse System_`;
                     onShowToast('Daftar jasa kirim disinkronkan dari Database', 'info');
                   }}
                   disabled={loadingJasaKirim}
-                  className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors disabled:opacity-50"
+                  className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors disabled:opacity-50 flex items-center gap-1 text-[10px] cursor-pointer"
                   title="Sinkronkan data jasa kirim"
                 >
-                  <RefreshCw className={`w-4 h-4 ${loadingJasaKirim ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3 h-3 ${loadingJasaKirim ? 'animate-spin' : ''}`} />
+                  <span>Sync</span>
                 </button>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <select
                   value={isCustomJasaKirim ? '__custom__' : jasaKirim}
                   onChange={(e) => {
@@ -553,7 +654,7 @@ _WMS Warehouse System_`;
                       setJasaKirim(val);
                     }
                   }}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3"
                   required={!isCustomJasaKirim}
                 >
                   <option value="">-- Pilih Jasa Kirim / Ekspedisi --</option>
@@ -574,8 +675,8 @@ _WMS Warehouse System_`;
                       setCustomJasaKirim(val);
                       setJasaKirim(val);
                     }}
-                    placeholder="Ketik nama ekspedisi / jasa kirim manual..."
-                    className="w-full rounded-lg border border-indigo-300 dark:border-indigo-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 bg-indigo-50/40 dark:bg-indigo-950/40 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
+                    placeholder="Ketik nama ekspedisi manual..."
+                    className="w-full rounded-lg border border-indigo-300 dark:border-indigo-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs px-3 py-1.5 bg-indigo-50/40 dark:bg-indigo-950/40 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
                     autoFocus
                     required
                   />
@@ -584,46 +685,195 @@ _WMS Warehouse System_`;
             </div>
           </div>
 
-          {/* Pesanan */}
+          {/* Section 1: Data Pengirim */}
           <div>
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2 flex justify-between items-center">
-              <span>Item Pesanan</span>
+            <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-700/80 pb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                Data Pengirim (Store)
+              </h3>
+              {pengirim && (
+                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                  {pengirim}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Pengirim (Store) <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={pengirim}
+                  onChange={(e) => {
+                    const newStore = e.target.value;
+                    setPengirim(newStore);
+                    setTransCustomer(generateManualShipmentOrderId(orders, newStore));
+                  }}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3 font-semibold"
+                  required
+                >
+                  <option value="">Pilih Store...</option>
+                  {outlets.map((o, idx) => (
+                    <option key={idx} value={o.nama}>{o.nama}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Terisi otomatis sesuai akun login</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  PIC Store <span className="text-red-500 font-bold">* (Wajib Isi Manual)</span>
+                </label>
+                <input
+                  type="text"
+                  value={picStore}
+                  onChange={(e) => setPicStore(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-semibold"
+                  placeholder="Nama PIC (Wajib Diisi)"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Nama staf yang bertugas / bertanggung jawab</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  No. Telp Store (WhatsApp) <span className="text-red-500 font-bold">* (Wajib Diisi)</span>
+                </label>
+                <input
+                  type="text"
+                  value={telpPengirim}
+                  onChange={(e) => setTelpPengirim(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-mono font-semibold"
+                  placeholder="08... (Wajib diisi)"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Notifikasi konfirmasi & resi dikirim ke nomor ini</p>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  No. Transaksi DealPOS <span className="text-red-500 font-bold">* (Wajib Diisi)</span>
+                </label>
+                <input
+                  type="text"
+                  value={transPengirim}
+                  onChange={(e) => setTransPengirim(e.target.value)}
+                  placeholder="Contoh: 26.09.00023 (bisa lebih dari 1, pisahkan koma)"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-mono"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                  Format DealPOS: <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">26.09.00023</span> (bisa lebih dari 1 transaksi jika digabung, pisahkan tanda koma)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Data Customer */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 border-b border-slate-200 dark:border-slate-700/80 pb-2 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              Data Customer (Penerima)
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Tujuan / Customer <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={tujuan}
+                  onChange={(e) => setTujuan(e.target.value)}
+                  placeholder="Nama lengkap customer"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  No. Telp Tujuan (WhatsApp Customer) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={telpTujuan}
+                  onChange={(e) => setTelpTujuan(e.target.value)}
+                  placeholder="08..."
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-mono"
+                  required
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Alamat Lengkap Tujuan <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={alamatTujuan}
+                  onChange={(e) => setAlamatTujuan(e.target.value)}
+                  placeholder="Jalan, No. Rumah, RT/RW, Kelurahan, Kecamatan, Kota/Kabupaten, Kode Pos"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
+                  rows={2}
+                  required
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Notes Tambahan Paket (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={notesPaket}
+                  onChange={(e) => setNotesPaket(e.target.value)}
+                  placeholder="Contoh: Jangan dibanting, titip di satpam, dll."
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Item Pesanan */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 border-b border-slate-200 dark:border-slate-700/80 pb-2 flex justify-between items-center">
+              <span className="flex items-center gap-1.5">
+                <ShoppingBag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                Item Pesanan
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {items.length} Baris Produk
+              </span>
             </h3>
 
             {/* Scan / Add Product */}
-            <div className="mb-6">
+            <div className="mb-4">
               <PhysicalScanInput 
                 onScan={handleScanProduct}
                 products={productCatalog}
-                placeholder="KETIK SKU ATAU SCAN BARCODE"
+                placeholder="KETIK SKU ATAU SCAN BARCODE..."
               />
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-3">
               {items.length === 0 && (
-                <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-                  <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-                  <div className="font-medium text-slate-500 dark:text-slate-400 mb-1">Empty Cart</div>
-                  <div className="text-sm">Add products to the cart<br/>or scan barcode</div>
+                <div className="text-center py-8 text-slate-400 dark:text-slate-500 bg-slate-50/60 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                  <ShoppingBag className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                  <div className="font-semibold text-slate-600 dark:text-slate-400 text-xs">Belum ada item pesanan</div>
+                  <div className="text-[11px]">Ketik SKU produk atau scan barcode untuk menambahkan ke pesanan</div>
                 </div>
               )}
               {items.map((item) => (
-                  <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700/80 relative transition-colors">
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 relative transition-colors">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                       {/* Product Name */}
                       <div className="md:col-span-5 flex flex-col justify-center">
-                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Nama Produk</label>
-                        <div className="font-semibold text-slate-800 dark:text-white text-sm">
+                        <label className="block text-[10px] font-semibold uppercase text-slate-400 dark:text-slate-500 mb-0.5">Nama Produk</label>
+                        <div className="font-semibold text-slate-800 dark:text-white text-xs truncate" title={item.nama_produk}>
                           {item.nama_produk}
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                           SKU: {item.sku}
                         </div>
                       </div>
 
                       {/* QTY */}
                       <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Qty</label>
+                        <label className="block text-[10px] font-semibold uppercase text-slate-400 dark:text-slate-500 mb-0.5">Qty</label>
                         <input
                           type="number"
                           min="1"
@@ -638,18 +888,18 @@ _WMS Warehouse System_`;
                               handleItemChange(item.id, 'qty', 1);
                             }
                           }}
-                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1.5 px-3 font-bold"
+                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-xs focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1 px-2.5 font-bold"
                           required
                         />
                       </div>
 
                       {/* Fulfillment */}
                       <div className="md:col-span-4">
-                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Fulfillment</label>
+                        <label className="block text-[10px] font-semibold uppercase text-slate-400 dark:text-slate-500 mb-0.5">Fulfillment</label>
                         <select
                           value={item.fulfillment}
                           onChange={(e) => handleItemChange(item.id, 'fulfillment', e.target.value)}
-                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1.5 px-3"
+                          className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-xs focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1 px-2"
                           required
                         >
                           <option value="">Pilih Fulfillment...</option>
@@ -665,10 +915,10 @@ _WMS Warehouse System_`;
                         <button
                           type="button"
                           onClick={() => handleRemoveItem(item.id)}
-                          className="p-2 rounded-lg transition-colors text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-1 text-xs font-semibold cursor-pointer"
+                          className="p-1.5 rounded-lg transition-colors text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-1 text-xs font-semibold cursor-pointer"
                           title="Hapus item"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                           <span className="md:hidden">Hapus</span>
                         </button>
                       </div>
@@ -679,134 +929,12 @@ _WMS Warehouse System_`;
             </div>
           </div>
 
-          {/* Data Pengirim */}
-          <div>
-            <div className="flex items-center justify-between mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2">
-              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Data Pengirim</h3>
-              {pengirim && (
-                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                  Store Aktif: {pengirim}
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Pengirim (Store) <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={pengirim}
-                  onChange={(e) => {
-                    const newStore = e.target.value;
-                    setPengirim(newStore);
-                    setTransCustomer(generateManualShipmentOrderId(orders, newStore));
-                  }}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3 font-semibold"
-                  required
-                >
-                  <option value="">Pilih Store...</option>
-                  {outlets.map((o, idx) => (
-                    <option key={idx} value={o.nama}>{o.nama}</option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Terisi otomatis sesuai akun login</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  PIC Store <span className="text-red-500 font-bold">* (Wajib Isi Manual)</span>
-                </label>
-                <input
-                  type="text"
-                  value={picStore}
-                  onChange={(e) => setPicStore(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-semibold"
-                  placeholder="Nama PIC (Wajib Diisi)"
-                  required
-                />
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Nama staf yang bertanggung jawab</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  No. Telp Store (WhatsApp) <span className="text-red-500 font-bold">* (Wajib Diisi)</span>
-                </label>
-                <input
-                  type="text"
-                  value={telpPengirim}
-                  onChange={(e) => setTelpPengirim(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-mono font-semibold"
-                  placeholder="08... (Wajib diisi)"
-                  required
-                />
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Notifikasi WA konfirmasi & resi akan dikirim ke nomor ini</p>
-              </div>
-              <div className="md:col-span-3">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  No. Transaksi DealPOS (Bisa lebih dari 1, pisahkan koma) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={transPengirim}
-                  onChange={(e) => setTransPengirim(e.target.value)}
-                  placeholder="Contoh: POS-260901-001, POS-260901-002"
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                  required
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Data Customer */}
-          <div>
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-4 border-b border-slate-200 dark:border-slate-700/80 pb-2">Data Customer</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nama Tujuan</label>
-                <input
-                  type="text"
-                  value={tujuan}
-                  onChange={(e) => setTujuan(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No. Telp Tujuan</label>
-                <input
-                  type="text"
-                  value={telpTujuan}
-                  onChange={(e) => setTelpTujuan(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                  required
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Alamat Tujuan</label>
-                <textarea
-                  value={alamatTujuan}
-                  onChange={(e) => setAlamatTujuan(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                  rows={3}
-                  required
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Notes Tambahan Paket</label>
-                <input
-                  type="text"
-                  value={notesPaket}
-                  onChange={(e) => setNotesPaket(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2.5">
             {editingOrder && (
               <button
                 type="button"
                 onClick={resetForm}
-                className="px-6 py-2.5 rounded-lg text-slate-700 dark:text-slate-300 font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl text-slate-700 dark:text-slate-300 text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 Batal Edit
               </button>
@@ -814,14 +942,14 @@ _WMS Warehouse System_`;
             <button
               type="submit"
               disabled={loading}
-              className={`px-6 py-2.5 rounded-lg text-white font-medium flex items-center shadow-sm cursor-pointer transition-colors ${
+              className={`px-5 py-2 rounded-xl text-white text-xs font-bold flex items-center shadow-xs cursor-pointer transition-colors ${
                 loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800'
               }`}
             >
               {loading ? (
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
               ) : (
-                <Send className="w-5 h-5 mr-2" />
+                <Send className="w-3.5 h-3.5 mr-1.5" />
               )}
               {loading ? 'Submitting...' : editingOrder ? 'Update Pesanan' : 'Submit Pesanan'}
             </button>
@@ -933,26 +1061,111 @@ _WMS Warehouse System_`;
 
               {/* Right Column */}
               <div className="space-y-8">
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   <button 
                     onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-sm border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
+                    className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-xs border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
                   >
-                    <Printer className="w-4 h-4 mr-2" />
+                    <Printer className="w-3.5 h-3.5 mr-1.5" />
                     Print Label
                   </button>
-                  <button 
-                    onClick={() => { setSelectedOrderDetails(null); handleEdit(order); }}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-sm border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => { handleUpdateResi(order.no_pesanan!); }}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-sm border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
-                  >
-                    Resi
-                  </button>
+                  {userIsAdmin && (
+                    <>
+                      <button 
+                        onClick={() => { setSelectedOrderDetails(null); handleEdit(order); }}
+                        className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-xs border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => { handleUpdateResi(order.no_pesanan!); }}
+                        className="px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-semibold rounded-lg text-xs border border-indigo-200 dark:border-indigo-800 flex items-center transition-colors cursor-pointer"
+                      >
+                        Update Resi
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Section No. Resi & Template WA Customer (Khusus PIC Store & Admin) */}
+                <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider block">
+                        Nomor Resi Pengiriman
+                      </span>
+                      <div className="text-base font-mono font-black text-emerald-950 dark:text-emerald-200 mt-0.5">
+                        {order.no_resi ? (
+                          <span className="bg-emerald-100 dark:bg-emerald-900/60 px-2.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-700">
+                            {order.no_resi}
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-400 font-sans font-semibold text-xs flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            Menunggu update resi dari Admin Gudang
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {order.no_resi && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            copyToClipboard(order.no_resi || '', `No. Resi ${order.no_resi} berhasil disalin!`);
+                            setCopiedResi(order.no_pesanan);
+                            setTimeout(() => setCopiedResi(null), 2000);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                        >
+                          {copiedResi === order.no_pesanan ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>Salin No. Resi</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWaModalOrder(order)}
+                          className="px-3 py-1.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>Template WA Customer</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* WhatsApp Message Preview Box */}
+                  <div className="pt-2 border-t border-emerald-200/80 dark:border-emerald-800/40">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        Format Pesan WA untuk Customer (Kirim Manual oleh PIC Store):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(generateCustomerWaTemplate(order), 'Format pesan WA customer berhasil disalin!')}
+                        className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        Salin Format WA
+                      </button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 border border-emerald-200/90 dark:border-emerald-800/50 rounded-lg p-3 text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto leading-relaxed select-all">
+                      {generateCustomerWaTemplate(order)}
+                    </div>
+                    {order.no_telp_tujuan && (
+                      <div className="mt-2 flex justify-end">
+                        <a
+                          href={`https://wa.me/${getCleanCustomerPhone(order.no_telp_tujuan)}?text=${encodeURIComponent(generateCustomerWaTemplate(order))}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Buka Chat WhatsApp Customer ({order.no_telp_tujuan})
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -1482,7 +1695,7 @@ _WMS Warehouse System_`;
           <table className="min-w-full">
             <thead className="bg-white dark:bg-slate-800/90 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 backdrop-blur-xs">
               <tr>
-                {canAction && (
+                {userIsAdmin && (
                   <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal w-10">
                     <input
                       type="checkbox"
@@ -1499,10 +1712,11 @@ _WMS Warehouse System_`;
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Date</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Store / Pengirim</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Customer</th>
-                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Shipping Method</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Ekspedisi</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">No. Resi</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Status</th>
                 <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Total Items</th>
-                {canAction && (
+                {userIsAdmin && (
                   <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Aksi</th>
                 )}
               </tr>
@@ -1510,14 +1724,14 @@ _WMS Warehouse System_`;
             <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={canAction ? 9 : 8} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                  <td colSpan={userIsAdmin ? 10 : 8} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
                     {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
                   </td>
                 </tr>
               ) : (
               filteredOrders.map((order) => (
                 <tr key={order.no_pesanan} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                  {canAction && (
+                  {userIsAdmin && (
                     <td className="px-3 py-2.5 whitespace-nowrap align-top">
                       <input
                         type="checkbox"
@@ -1566,10 +1780,45 @@ _WMS Warehouse System_`;
                     </div>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap align-top">
-                    <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">{order.jasa_kirim || '-'}</div>
-                    {order.no_resi && (
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
-                        {order.no_resi}
+                    <div className="text-[11px] text-slate-700 dark:text-slate-300 mt-0.5 font-medium">{order.jasa_kirim || '-'}</div>
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                    {order.no_resi ? (
+                      <div className="flex flex-col gap-1 items-start">
+                        <div className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/70 rounded-md px-2 py-0.5 text-[11px] font-mono font-bold text-emerald-800 dark:text-emerald-300">
+                          <Truck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>{order.no_resi}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyToClipboard(order.no_resi || '', `No. Resi ${order.no_resi} berhasil disalin!`);
+                              setCopiedResi(order.no_pesanan);
+                              setTimeout(() => setCopiedResi(null), 2000);
+                            }}
+                            className="ml-1 p-0.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-950 dark:hover:text-emerald-100 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded cursor-pointer transition-colors"
+                            title="Salin No. Resi"
+                          >
+                            {copiedResi === order.no_pesanan ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWaModalOrder(order);
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 bg-emerald-100/70 dark:bg-emerald-950/60 hover:bg-emerald-200/70 dark:hover:bg-emerald-900/80 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer"
+                          title="Format pesan WhatsApp untuk customer"
+                        >
+                          <MessageCircle className="w-2.5 h-2.5" />
+                          <span>WA Customer</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/50 font-medium">
+                        <Clock className="w-3 h-3 shrink-0" />
+                        <span>Menunggu Resi</span>
                       </div>
                     )}
                   </td>
@@ -1593,7 +1842,7 @@ _WMS Warehouse System_`;
                       {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
                     </button>
                   </td>
-                  {canAction && (
+                  {userIsAdmin && (
                     <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
                       <select
                         className="text-[10px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium"
@@ -1634,7 +1883,7 @@ _WMS Warehouse System_`;
                 <div key={order.no_pesanan} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col transition-shadow hover:shadow-md">
                   <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start">
                     <div className="flex gap-2 items-start">
-                      {canAction && (
+                      {userIsAdmin && (
                         <input
                           type="checkbox"
                           className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-blue-500 focus:ring-blue-500 w-4 h-4 cursor-pointer mt-0.5"
@@ -1694,16 +1943,52 @@ _WMS Warehouse System_`;
                       <div>
                         <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Jasa Kirim</div>
                         <div className="text-xs font-medium text-slate-800 dark:text-slate-200">{order.jasa_kirim || '-'}</div>
+                      </div>
+                    </div>
+
+                    {/* No. Resi Box (Khusus agar PIC Store bisa copas langsung) */}
+                    <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">No. Resi Pengiriman</span>
                         {order.no_resi && (
-                          <div className="text-[10px] text-slate-600 dark:text-slate-300 font-mono mt-0.5 tracking-wider bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 inline-block">
-                            {order.no_resi}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              copyToClipboard(order.no_resi || '', `No. Resi ${order.no_resi} berhasil disalin!`);
+                              setCopiedResi(order.no_pesanan);
+                              setTimeout(() => setCopiedResi(null), 2000);
+                            }}
+                            className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            {copiedResi === order.no_pesanan ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>Salin</span>
+                          </button>
                         )}
                       </div>
+                      {order.no_resi ? (
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <span className="text-xs font-mono font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
+                            {order.no_resi}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setWaModalOrder(order)}
+                            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                          >
+                            <MessageCircle className="w-3 h-3" />
+                            <span>WA Customer</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-800/40 font-medium">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          <span>Menunggu resi dari Admin</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
-                  <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex justify-between items-center">
+                  <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex justify-between items-center">
                     <button 
                       type="button"
                       onClick={() => setSelectedOrderDetails(order)}
@@ -1713,7 +1998,7 @@ _WMS Warehouse System_`;
                       {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
                     </button>
                     
-                    {canAction && (
+                    {userIsAdmin && (
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
@@ -1758,16 +2043,16 @@ _WMS Warehouse System_`;
 
   return (
     <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300">
-      {/* Tab Navigation Style Quality Control */}
-      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs mb-3 sm:mb-5">
-        <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+      {/* Tab Navigation - Compact, Sleek & Aesthetic */}
+      <div className="flex items-center justify-between flex-wrap gap-2.5 mb-4">
+        <div className="inline-flex p-1 bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-xs">
           <button
             type="button"
             id="tab-manual-form"
-            className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
+            className={`py-1.5 px-3.5 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-150 flex items-center gap-2 cursor-pointer ${
               activeTab === 'form'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500/50 font-extrabold'
-                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
             onClick={() => {
               if (editingOrder) resetForm();
@@ -1775,15 +2060,15 @@ _WMS Warehouse System_`;
             }}
           >
             <Package className="w-4 h-4 shrink-0" />
-            <span className="truncate">{editingOrder ? 'Edit Pesanan' : 'Form Pesanan'}</span>
+            <span>{editingOrder ? 'Edit Pesanan' : 'Form Pesanan'}</span>
           </button>
           <button
             type="button"
             id="tab-manual-rekap"
-            className={`w-full py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 select-none min-w-0 cursor-pointer ${
+            className={`py-1.5 px-3.5 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-150 flex items-center gap-2 cursor-pointer ${
               activeTab === 'rekap'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-500/50 font-extrabold'
-                : 'bg-white/70 dark:bg-[#131d31]/70 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-[#131d31] hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
             onClick={() => {
               setActiveTab('rekap');
@@ -1791,9 +2076,20 @@ _WMS Warehouse System_`;
             }}
           >
             <History className="w-4 h-4 shrink-0" />
-            <span className="truncate">Rekap Pesanan</span>
+            <span>Rekap Pesanan</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+              {orders.length}
+            </span>
           </button>
         </div>
+
+        {pengirim && (
+          <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Store: <strong className="text-slate-900 dark:text-white font-semibold">{pengirim}</strong></span>
+            {picStore && <span className="text-slate-400 text-[11px]">(PIC: {picStore})</span>}
+          </div>
+        )}
       </div>
 
       <div className="w-full">
@@ -1806,6 +2102,119 @@ _WMS Warehouse System_`;
         </div>
       </div>
       {renderOrderDetailsModal()}
+
+      {/* Modal WhatsApp Template Customer */}
+      {waModalOrder && (
+        <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-emerald-50/80 dark:bg-emerald-950/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-600 text-white">
+                  <MessageCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+                    Template Pesan WhatsApp Customer
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Disalin atau dikirim langsung oleh PIC Store ke customer
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWaModalOrder(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Customer</span>
+                  <span className="font-bold text-slate-800 dark:text-white truncate block">{waModalOrder.nama_tujuan || '-'}</span>
+                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{waModalOrder.no_telp_tujuan || '-'}</span>
+                </div>
+                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Ekspedisi</span>
+                  <span className="font-bold text-slate-800 dark:text-white truncate block">{waModalOrder.jasa_kirim || '-'}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">Store: {waModalOrder.nama_pengirim}</span>
+                </div>
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800/60 col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold block">No. Resi</span>
+                  <span className="font-bold font-mono text-emerald-900 dark:text-emerald-200 truncate block text-sm">
+                    {waModalOrder.no_resi || 'Belum Ada'}
+                  </span>
+                  {waModalOrder.no_resi && (
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(waModalOrder.no_resi || '', `No. Resi disalin: ${waModalOrder.no_resi}`)}
+                      className="text-[10px] text-emerald-700 dark:text-emerald-400 hover:underline font-semibold cursor-pointer"
+                    >
+                      Salin Resi Saja
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>Format Pesan WhatsApp (Siap Kirim):</span>
+                  <span className="text-[10px] font-normal text-slate-400">Dapat diedit sebelum disalin</span>
+                </label>
+                <textarea
+                  defaultValue={generateCustomerWaTemplate(waModalOrder)}
+                  id="wa-template-textarea"
+                  rows={9}
+                  className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 text-slate-800 dark:text-slate-100 font-sans focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed select-all"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const ta = document.getElementById('wa-template-textarea') as HTMLTextAreaElement | null;
+                  const textToCopy = ta ? ta.value : generateCustomerWaTemplate(waModalOrder);
+                  copyToClipboard(textToCopy, 'Template pesan WhatsApp Customer berhasil disalin!');
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <Copy className="w-4 h-4" />
+                <span>Salin Pesan WA</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {waModalOrder.no_telp_tujuan && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ta = document.getElementById('wa-template-textarea') as HTMLTextAreaElement | null;
+                      const textToSend = ta ? ta.value : generateCustomerWaTemplate(waModalOrder);
+                      const cleanPhone = getCleanCustomerPhone(waModalOrder.no_telp_tujuan);
+                      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(textToSend)}`, '_blank');
+                    }}
+                    className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Buka WhatsApp Customer</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setWaModalOrder(null)}
+                  className="px-3.5 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CSS @media print terisolasi ke #manual-shipment-print-area untuk keandalan cetak di HP / mobile & desktop */}
       {printPayload && (
