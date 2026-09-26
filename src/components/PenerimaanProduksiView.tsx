@@ -72,6 +72,10 @@ import {
 import { compressImage } from '../utils/imageCompressor';
 import { uploadMultipleImagesToGdrive } from '../services/gdriveUpload';
 import { normalizeWhatsAppNumber } from '../services/whatsapp';
+import {
+  pushPenerimaanProduksiToGoogleSheet,
+  PRODUKSI_SPREADSHEET_ID,
+} from '../services/gasProduksiSync';
 
 interface PenerimaanProduksiViewProps {
   session: UserSession | null;
@@ -1120,12 +1124,24 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       };
 
       const operatorName = session?.name || session?.username || 'Operator Gudang';
-      await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
+      const savedItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
 
       onShowToast(
         `Sukses menyimpan kedatangan ${cleanedBlocks.length} kode produksi (${formSummary.totalPcs} pcs)!`,
         'success'
       );
+
+      // Otomatis push riwayat produksi bergambar ke Google Sheet (1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk)
+      if (savedItems && savedItems.length > 0) {
+        pushPenerimaanProduksiToGoogleSheet(savedItems)
+          .then((res) => {
+            if (res.success) {
+              onShowToast(`📊 Terkirim ke Google Spreadsheet (${res.count} baris bergambar)`, 'info');
+            }
+          })
+          .catch((err) => console.warn('Sync to Google Sheet warning:', err));
+      }
+
       handleResetForm();
       setActiveTab('riwayat');
       loadData();
@@ -1499,6 +1515,37 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     document.body.removeChild(link);
 
     onShowToast(`Berhasil mengekspor ${filteredData.length} baris data ke CSV!`, 'success');
+  };
+
+  // Push to Google Spreadsheet (1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk) with =IMAGE(...)
+  const [isPushingToSheet, setIsPushingToSheet] = useState(false);
+
+  const handlePushToGoogleSheet = async () => {
+    if (filteredData.length === 0) {
+      onShowToast('Tidak ada data riwayat produksi untuk dikirim ke Google Sheet.', 'warning');
+      return;
+    }
+
+    setIsPushingToSheet(true);
+    onShowToast(`Mengirim ${filteredData.length} baris riwayat produksi bergambar ke Google Sheet...`, 'info');
+    try {
+      const res = await pushPenerimaanProduksiToGoogleSheet(filteredData);
+      if (res.success) {
+        onShowToast(res.message || `Sukses mengirim data ke Google Sheet!`, 'success');
+        if (res.sheetUrl) {
+          window.open(res.sheetUrl, '_blank');
+        }
+      } else {
+        onShowToast(`Info kirim Google Sheet: ${res.message}`, 'warning');
+        if (res.sheetUrl) {
+          window.open(res.sheetUrl, '_blank');
+        }
+      }
+    } catch (err: any) {
+      onShowToast('Terjadi kesalahan saat push ke Google Sheet: ' + (err?.message || err), 'error');
+    } finally {
+      setIsPushingToSheet(false);
+    }
   };
 
   return (

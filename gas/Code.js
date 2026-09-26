@@ -52,6 +52,11 @@ function doPost(e) {
       payload = payload.data;
     }
 
+    // 2. Action router khusus WMS Produksi Sheet Sync
+    if (payload.action === 'pushPenerimaanProduksi') {
+      return jsonResponse(handlePushPenerimaanProduksi(payload));
+    }
+
     return handleWhatsAppScan(payload);
 
   } catch (err) {
@@ -422,4 +427,138 @@ function generateInvoice() {
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Push data riwayat produksi ke Google Spreadsheet dengan formula =IMAGE(...)
+ * Spreadsheet ID: 1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk
+ */
+function handlePushPenerimaanProduksi(data) {
+  try {
+    var ssId = data.spreadsheetId || '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
+    var targetSheetName = data.sheetName || 'Riwayat Produksi';
+
+    var ss;
+    try {
+      ss = SpreadsheetApp.openById(ssId);
+    } catch (eOpen) {
+      ss = SpreadsheetApp.getActiveSpreadsheet();
+      if (!ss) throw new Error('Tidak dapat membuka Spreadsheet dengan ID: ' + ssId + '. Pastikan script memiliki izin akses.');
+    }
+
+    var sheet = ss.getSheetByName(targetSheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(targetSheetName);
+    }
+
+    var headers = [
+      'No',
+      'Tanggal Penerimaan',
+      'Kategori',
+      'No Surat Jalan',
+      'Kode Produksi',
+      'Warna',
+      'Size',
+      'Qty (Pcs)',
+      'Foto Produk',
+      'Keterangan',
+      'Operator',
+      'Waktu Dibuat'
+    ];
+
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(headers);
+      var headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setBackground('#059669');
+      headerRange.setFontColor('#FFFFFF');
+      headerRange.setFontWeight('bold');
+      headerRange.setHorizontalAlignment('center');
+      headerRange.setVerticalAlignment('middle');
+      sheet.setFrozenRows(1);
+      sheet.setRowHeight(1, 36);
+
+      sheet.setColumnWidth(1, 45);
+      sheet.setColumnWidth(2, 120);
+      sheet.setColumnWidth(3, 95);
+      sheet.setColumnWidth(4, 140);
+      sheet.setColumnWidth(5, 130);
+      sheet.setColumnWidth(6, 110);
+      sheet.setColumnWidth(7, 75);
+      sheet.setColumnWidth(8, 80);
+      sheet.setColumnWidth(9, 100);
+      sheet.setColumnWidth(10, 180);
+      sheet.setColumnWidth(11, 120);
+      sheet.setColumnWidth(12, 140);
+    }
+
+    var items = data.items || [];
+    if (!items || items.length === 0) {
+      return { success: true, message: 'Tidak ada baris data item untuk ditambahkan.', count: 0 };
+    }
+
+    var startRow = sheet.getLastRow() + 1;
+    var rowsToAdd = [];
+
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var rowNumber = startRow + i;
+
+      var fotoFormula = '-';
+      var rawFoto = String(it.foto_url || '').trim();
+      if (rawFoto && (rawFoto.indexOf('http://') === 0 || rawFoto.indexOf('https://') === 0)) {
+        fotoFormula = '=IMAGE("' + rawFoto + '", 4, 60, 60)';
+      }
+
+      rowsToAdd.push([
+        rowNumber - 1,
+        it.tanggal_penerimaan || '',
+        it.kategori || 'Lokal CMT',
+        it.no_surat_jalan || '',
+        it.kode_produksi || '',
+        it.warna || '',
+        it.size || '',
+        Number(it.qty) || 0,
+        fotoFormula,
+        it.keterangan || '',
+        it.operator || 'Operator',
+        it.created_at || new Date().toISOString()
+      ]);
+    }
+
+    if (rowsToAdd.length > 0) {
+      var range = sheet.getRange(startRow, 1, rowsToAdd.length, headers.length);
+      range.setValues(rowsToAdd);
+
+      for (var r = 0; r < rowsToAdd.length; r++) {
+        var cRow = startRow + r;
+        sheet.setRowHeight(cRow, 65);
+      }
+
+      sheet.getRange(startRow, 1, rowsToAdd.length, 1).setHorizontalAlignment('center');
+      sheet.getRange(startRow, 2, rowsToAdd.length, 1).setHorizontalAlignment('center');
+      sheet.getRange(startRow, 3, rowsToAdd.length, 1).setHorizontalAlignment('center');
+      sheet.getRange(startRow, 7, rowsToAdd.length, 2).setHorizontalAlignment('center');
+      sheet.getRange(startRow, 9, rowsToAdd.length, 1).setHorizontalAlignment('center');
+      sheet.getRange(startRow, 1, rowsToAdd.length, headers.length).setVerticalAlignment('middle');
+
+      sheet.getRange(startRow, 1, rowsToAdd.length, headers.length).setBorder(
+        true, true, true, true, true, true,
+        '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID
+      );
+    }
+
+    return {
+      success: true,
+      message: 'Sukses menulis ' + rowsToAdd.length + ' baris dengan gambar ke Google Sheet!',
+      count: rowsToAdd.length,
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit#gid=' + sheet.getSheetId()
+    };
+  } catch (err) {
+    Logger.log('handlePushPenerimaanProduksi error: ' + err.toString());
+    return {
+      success: false,
+      error: err.toString(),
+      message: 'Gagal menulis ke Google Sheet: ' + err.toString()
+    };
+  }
 }
