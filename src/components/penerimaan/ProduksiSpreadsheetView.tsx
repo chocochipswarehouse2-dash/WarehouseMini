@@ -507,7 +507,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
     try {
       setIsPushingSheet(true);
-      const res = await pushPenerimaanProduksiToGoogleSheet(itemsToPush);
+      const res = await pushPenerimaanProduksiToGoogleSheet(itemsToPush, filteredBlocks, activeTab);
       if (res.success) {
         onShowToast(res.message, 'success');
       } else {

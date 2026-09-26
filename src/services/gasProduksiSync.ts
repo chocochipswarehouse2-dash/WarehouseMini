@@ -1,8 +1,9 @@
 import { PenerimaanProduksiItem } from '../types';
-import { DEFAULT_MANUAL_SHIPMENT_GAS_URL } from './settings';
+import { MatrixProductBlock } from '../components/penerimaan/ProduksiSpreadsheetView';
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 export const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
+export const DEFAULT_PRODUKSI_GAS_URL = 'https://script.google.com/macros/s/AKfycbyrsovwstbIR_e1-zgOovxt2sKCyPTjpON9XbOERShS-mZd-Aj5TgWueZRjwDJ05bponA/exec';
 
 export interface PushProduksiResponse {
   success: boolean;
@@ -35,22 +36,30 @@ export function formatImageUrlForSheets(url?: string): string {
 }
 
 /**
- * Push data penerimaan produksi ke Google Spreadsheet dengan format bergambar (=IMAGE)
+ * Push data penerimaan produksi ke Google Spreadsheet dengan format Master Matrix Spreadsheet (=IMAGE)
  * Spreadsheet ID: 1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk
  */
 export async function pushPenerimaanProduksiToGoogleSheet(
   items: PenerimaanProduksiItem[],
+  blocks?: MatrixProductBlock[],
+  activeTab: 'CMT' | 'Kargo' = 'CMT',
   customSpreadsheetId?: string
 ): Promise<PushProduksiResponse> {
-  if (!items || items.length === 0) {
+  if ((!items || items.length === 0) && (!blocks || blocks.length === 0)) {
     return { success: false, message: 'Tidak ada data item untuk dikirim.' };
   }
 
   const targetSpreadsheetId = customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
-  const gasUrl = localStorage.getItem('wms_produksi_gas_url') || localStorage.getItem('wms_manual_shipment_gas_url') || DEFAULT_MANUAL_SHIPMENT_GAS_URL;
+  const gasUrl = localStorage.getItem('wms_produksi_gas_url') || DEFAULT_PRODUKSI_GAS_URL;
 
-  // Persiapkan baris data
-  const formattedItems = items.map((it) => ({
+  // Format blocks jika ada
+  const formattedBlocks = blocks ? blocks.map((b) => ({
+    ...b,
+    photoUrl: formatImageUrlForSheets(b.photoUrl),
+  })) : undefined;
+
+  // Format flat items
+  const formattedItems = items ? items.map((it) => ({
     tanggal_penerimaan: it.tanggal_penerimaan || '',
     kategori: it.kategori || 'Lokal CMT',
     no_surat_jalan: it.no_surat_jalan || '',
@@ -62,12 +71,14 @@ export async function pushPenerimaanProduksiToGoogleSheet(
     keterangan: it.keterangan || '',
     operator: it.operator || 'Operator',
     created_at: it.created_at || new Date().toISOString(),
-  }));
+  })) : [];
 
   const payload = {
     action: 'pushPenerimaanProduksi',
     spreadsheetId: targetSpreadsheetId,
-    sheetName: 'Riwayat Produksi',
+    activeTab: activeTab,
+    sheetName: `Master Produksi (${activeTab})`,
+    blocks: formattedBlocks,
     items: formattedItems,
   };
 
@@ -85,16 +96,15 @@ export async function pushPenerimaanProduksiToGoogleSheet(
         const json = await res.json();
         return {
           success: json.success !== false,
-          message: json.message || `Berhasil menulis ${formattedItems.length} baris bergambar ke Google Sheet!`,
-          count: formattedItems.length,
+          message: json.message || `Berhasil menulis Master Matrix ${activeTab} ke Google Sheet!`,
+          count: blocks ? blocks.length : formattedItems.length,
           sheetUrl: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
         };
       } catch {
-        // Fallback jika Google Apps Script me-return response non-JSON
         return {
           success: true,
-          message: `Berhasil mengirim ${formattedItems.length} baris ke Google Sheet!`,
-          count: formattedItems.length,
+          message: `Berhasil mengirim data Master Matrix ke Google Sheet!`,
+          count: blocks ? blocks.length : formattedItems.length,
           sheetUrl: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
         };
       }
