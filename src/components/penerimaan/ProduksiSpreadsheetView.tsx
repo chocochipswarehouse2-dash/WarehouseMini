@@ -229,7 +229,18 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           sizeMap.get(sz)!.push(it);
         });
 
-        const sortedSizes = Array.from(sizeMap.keys()).sort((a, b) => {
+        const presentSizes = Array.from(sizeMap.keys());
+        const isFreeOrAllSizeOnly =
+          presentSizes.length === 1 &&
+          (presentSizes[0] === 'ALL SIZE' || presentSizes[0] === 'FREE SIZE' || presentSizes[0] === 'DEFAULT');
+
+        let sizesToInclude = presentSizes;
+        if (!isFreeOrAllSizeOnly) {
+          const combinedSet = new Set([...presentSizes, 'S', 'M', 'L', 'XL']);
+          sizesToInclude = Array.from(combinedSet);
+        }
+
+        const sortedSizes = sizesToInclude.sort((a, b) => {
           const idxA = standardSizeOrder.indexOf(a);
           const idxB = standardSizeOrder.indexOf(b);
           if (idxA !== -1 && idxB !== -1) return idxA - idxB;
@@ -242,7 +253,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         let totalColorRetur = 0;
 
         const sizes: MatrixSizeItem[] = sortedSizes.map((sz) => {
-          const sItems = sizeMap.get(sz)!;
+          const sItems = sizeMap.get(sz) || [];
           const qtyByDate: Record<string, number> = {};
           const qtyReturByDate: Record<string, number> = {};
           let totalSizeQty = 0;
@@ -1552,7 +1563,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                   className="p-2 text-center align-middle bg-slate-50/50 dark:bg-slate-850/50"
                                 >
                                   {block.photoUrl ? (
-                                    <div className="relative group w-28 h-36 sm:w-32 sm:h-40 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
+                                    <div className="relative group w-48 h-48 sm:w-56 sm:h-56 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
                                       <img
                                         src={block.photoUrl}
                                         alt={block.code}

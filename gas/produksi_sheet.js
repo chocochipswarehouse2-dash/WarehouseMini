@@ -1,11 +1,11 @@
 /**
- * WMS PRODUKSI GOOGLE SPREADSHEET SYNC (MASTER SPREADSHEET MATRIX FORMAT)
- * =======================================================================
+ * WMS PRODUKSI GOOGLE SPREADSHEET SYNC (MASTER SPREADSHEET MATRIX FORMAT - LARGE PHOTO SIZE)
+ * =======================================================================================
  * Spreadsheet ID : 1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk
  * Script ID      : 1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb
  *
  * Menulis hasil input & tabel matriks produksi ke Google Sheet persis seperti
- * format spreadsheet master bergambar (NO | CODE | PRODUCT NAME | UP | PHOTO | COLOR | SIZE | DATANG | RETUR | TOTAL DATANG NET)
+ * format spreadsheet master bergambar besar (NO | CODE | PRODUCT NAME | UP | PHOTO | COLOR | SIZE | DATANG | RETUR | TOTAL DATANG NET)
  */
 
 var TARGET_PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
@@ -120,6 +120,16 @@ function handlePushPenerimaanProduksi(data) {
         var startDataRowIndex = currentRow;
         var colorGroups = block.colorGroups || [];
 
+        // Total subrows calculation for row height allocation
+        var totalSubRowsInBlock = 0;
+        for (var cgIdx = 0; cgIdx < colorGroups.length; cgIdx++) {
+          totalSubRowsInBlock += Math.max(1, (colorGroups[cgIdx].sizes || []).length);
+        }
+
+        // Row height allocation so total block height is ~220px to 250px for large image display!
+        var targetBlockHeightPx = Math.max(220, totalSubRowsInBlock * 38);
+        var calculatedRowHeight = Math.max(38, Math.floor(targetBlockHeightPx / Math.max(1, totalSubRowsInBlock)));
+
         for (var c = 0; c < colorGroups.length; c++) {
           var cg = colorGroups[c];
           var startColorRowIndex = currentRow;
@@ -157,7 +167,7 @@ function handlePushPenerimaanProduksi(data) {
             dataRowVals.push(block.totalNet || 0);
 
             sheet.getRange(currentRow, 1, 1, dataRowVals.length).setValues([dataRowVals]);
-            sheet.setRowHeight(currentRow, 36);
+            sheet.setRowHeight(currentRow, calculatedRowHeight);
 
             currentRow++;
           }
@@ -182,29 +192,29 @@ function handlePushPenerimaanProduksi(data) {
             sheet.getRange(startDataRowIndex, totalCols, numBlockRows, 1).merge(); // NET
           }
 
-          // Add Photo Formula in Photo Cell
+          // Add Photo Formula in Photo Cell using Mode 1 (=IMAGE(url, 1) preserves aspect ratio perfectly inside large cell!)
           var rawPhotoUrl = String(block.photoUrl || '').trim();
           if (rawPhotoUrl && (rawPhotoUrl.indexOf('http://') === 0 || rawPhotoUrl.indexOf('https://') === 0)) {
-            sheet.getRange(startDataRowIndex, 5).setFormula('=IMAGE("' + rawPhotoUrl + '", 4, 110, 110)');
+            sheet.getRange(startDataRowIndex, 5).setFormula('=IMAGE("' + rawPhotoUrl + '", 1)');
           }
 
           // Alignments & Borders
           var blockDataRange = sheet.getRange(startDataRowIndex, 1, numBlockRows, totalCols);
           blockDataRange.setVerticalAlignment('middle');
           blockDataRange.setHorizontalAlignment('center');
-          blockDataRange.setFontSize(9);
+          blockDataRange.setFontSize(9.5);
           blockDataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
         }
 
         currentRow += 2; // Spacer gap between product blocks
       }
 
-      // Adjust column widths for Master Matrix
+      // Adjust column widths for Master Matrix (PHOTO column 5 width set to 260px for LARGE photo!)
       sheet.setColumnWidth(1, 45);  // NO
       sheet.setColumnWidth(2, 90);  // CODE
       sheet.setColumnWidth(3, 160); // PRODUCT NAME
       sheet.setColumnWidth(4, 90);  // UP
-      sheet.setColumnWidth(5, 130); // PHOTO
+      sheet.setColumnWidth(5, 260); // PHOTO (Large photo column width 260px!)
       sheet.setColumnWidth(6, 110); // COLOR
       sheet.setColumnWidth(7, 70);  // SIZE
 
@@ -215,85 +225,13 @@ function handlePushPenerimaanProduksi(data) {
 
       return {
         success: true,
-        message: 'Sukses menulis ' + blocks.length + ' Master Tabel Kode Produk ke Google Sheet (' + targetSheetName + ')!',
+        message: 'Sukses menulis ' + blocks.length + ' Master Tabel Kode Produk (Foto Besar) ke Google Sheet (' + targetSheetName + ')!',
         count: blocks.length,
         sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit#gid=' + sheet.getSheetId()
       };
     }
 
-    // Fallback: Jika hanya data flat items
-    var headers = [
-      'No', 'Tanggal Penerimaan', 'Kategori', 'No Surat Jalan', 'Kode Produksi',
-      'Warna', 'Size', 'Qty (Pcs)', 'Foto Produk', 'Keterangan', 'Operator', 'Waktu Dibuat'
-    ];
-
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(headers);
-      var headerRange = sheet.getRange(1, 1, 1, headers.length);
-      headerRange.setBackground('#059669');
-      headerRange.setFontColor('#FFFFFF');
-      headerRange.setFontWeight('bold');
-      headerRange.setHorizontalAlignment('center');
-      headerRange.setVerticalAlignment('middle');
-      sheet.setFrozenRows(1);
-      sheet.setRowHeight(1, 36);
-    }
-
-    var items = data.items || [];
-    if (!items || items.length === 0) {
-      return { success: true, message: 'Tidak ada baris data item untuk ditambahkan.', count: 0 };
-    }
-
-    var startRow = sheet.getLastRow() + 1;
-    var rowsToAdd = [];
-
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      var rowNumber = startRow + i;
-
-      var fotoFormula = '-';
-      var rawFoto = String(it.foto_url || '').trim();
-      if (rawFoto && (rawFoto.indexOf('http://') === 0 || rawFoto.indexOf('https://') === 0)) {
-        fotoFormula = '=IMAGE("' + rawFoto + '", 4, 60, 60)';
-      }
-
-      rowsToAdd.push([
-        rowNumber - 1,
-        it.tanggal_penerimaan || '',
-        it.kategori || 'Lokal CMT',
-        it.no_surat_jalan || '',
-        it.kode_produksi || '',
-        it.warna || '',
-        it.size || '',
-        Number(it.qty) || 0,
-        fotoFormula,
-        it.keterangan || '',
-        it.operator || 'Operator',
-        it.created_at || new Date().toISOString()
-      ]);
-    }
-
-    if (rowsToAdd.length > 0) {
-      var range = sheet.getRange(startRow, 1, rowsToAdd.length, headers.length);
-      range.setValues(rowsToAdd);
-
-      for (var r = 0; r < rowsToAdd.length; r++) {
-        sheet.setRowHeight(startRow + r, 65);
-      }
-
-      sheet.getRange(startRow, 1, rowsToAdd.length, headers.length).setVerticalAlignment('middle');
-      sheet.getRange(startRow, 1, rowsToAdd.length, headers.length).setBorder(
-        true, true, true, true, true, true,
-        '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID
-      );
-    }
-
-    return {
-      success: true,
-      message: 'Sukses menulis ' + rowsToAdd.length + ' baris ke Google Sheet!',
-      count: rowsToAdd.length,
-      sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit#gid=' + sheet.getSheetId()
-    };
+    return { success: false, message: 'Tidak ada data blok matriks untuk ditulis.' };
 
   } catch (err) {
     Logger.log('handlePushPenerimaanProduksi error: ' + err.toString());

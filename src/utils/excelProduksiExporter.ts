@@ -35,7 +35,7 @@ async function fetchImageBuffer(
   }
 }
 
-// Get scaled image dimensions maintaining exact original aspect ratio (prevents "gepeng" distortion)
+// Get scaled image dimensions maintaining exact original aspect ratio (prevents gepeng)
 async function getScaledImageDimensions(
   url: string,
   maxColWidthPx: number,
@@ -62,15 +62,15 @@ async function getScaledImageDimensions(
       resolve({
         base64: imgData.base64,
         extension: imgData.extension,
-        width: Math.max(20, Math.round(w)),
-        height: Math.max(20, Math.round(h)),
+        width: Math.max(30, Math.round(w)),
+        height: Math.max(30, Math.round(h)),
       });
     };
     img.onerror = () => {
       resolve({
         base64: imgData.base64,
         extension: imgData.extension,
-        width: Math.round(maxColWidthPx * 0.5),
+        width: Math.round(maxColWidthPx * 0.85),
         height: Math.round(maxRowHeightPx * 0.85),
       });
     };
@@ -200,12 +200,12 @@ export async function exportProduksiToModernExcel(
 
     const totalCols = 7 + numDateCols + (isCMT ? numReturCols : 0) + 1;
 
-    // Set Column Widths for Clear Image & Data Display
+    // Set Column Widths for Large & Clear Image Display (Col E width 42 = ~260px wide!)
     worksheet.getColumn(1).width = 6;  // NO
     worksheet.getColumn(2).width = 12; // CODE
     worksheet.getColumn(3).width = 22; // PRODUCT NAME
     worksheet.getColumn(4).width = 12; // UP / Vendor
-    worksheet.getColumn(5).width = 24; // PHOTO (Col E width)
+    worksheet.getColumn(5).width = 42; // PHOTO (Large photo column width!)
     worksheet.getColumn(6).width = 16; // COLOR
     worksheet.getColumn(7).width = 10; // SIZE
 
@@ -294,9 +294,9 @@ export async function exportProduksiToModernExcel(
 
     const startDataRowIndex = currentRow;
 
-    // Height calculation: Ensure photo block height is at least ~140px total
-    const targetBlockHeight = Math.max(140, totalSubRows * 32);
-    const rowHeightAllocated = Math.max(32, Math.floor(targetBlockHeight / totalSubRows));
+    // Height calculation: Allocate total row height for product block to at least 220px to 260px!
+    const targetBlockHeight = Math.max(220, totalSubRows * 36);
+    const rowHeightAllocated = Math.max(36, Math.floor(targetBlockHeight / totalSubRows));
 
     for (let cIdx = 0; cIdx < block.colorGroups.length; cIdx++) {
       const colorGroup = block.colorGroups[cIdx];
@@ -428,11 +428,11 @@ export async function exportProduksiToModernExcel(
         fgColor: { argb: 'FFF8FAFC' },
       };
 
-      // Embed Image maintaining natural aspect ratio (PREVENTS GEPENG / DISTORTION)
+      // Embed Large Image maintaining natural aspect ratio (MATCHES USER SCREENSHOT)
       if (block.photoUrl) {
         try {
-          const maxW = 150; // max width px in column E
-          const maxH = Math.max(100, totalSubRows * rowHeightAllocated - 10); // max height px in block
+          const maxW = 250; // Large width px in column E (~42 width)
+          const maxH = Math.max(200, totalSubRows * rowHeightAllocated - 12); // Large height px in block
           const scaledImg = await getScaledImageDimensions(block.photoUrl, maxW, maxH);
 
           if (scaledImg) {
@@ -442,11 +442,11 @@ export async function exportProduksiToModernExcel(
             });
 
             // Center image inside column E
-            const colEWidthPx = 180;
-            const leftColOffset = Math.max(0.04, (colEWidthPx - scaledImg.width) / colEWidthPx / 2);
+            const colEWidthPx = 270;
+            const leftColOffset = Math.max(0.02, (colEWidthPx - scaledImg.width) / colEWidthPx / 2);
 
             worksheet.addImage(imageId, {
-              tl: { col: 4 + leftColOffset, row: startDataRowIndex - 1 + 0.08 } as any,
+              tl: { col: 4 + leftColOffset, row: startDataRowIndex - 1 + 0.05 } as any,
               ext: { width: scaledImg.width, height: scaledImg.height },
               editAs: 'oneCell',
             });
