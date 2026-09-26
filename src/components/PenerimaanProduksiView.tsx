@@ -923,6 +923,27 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     });
   };
 
+  const addSizesPresetToWarna = (blockIndex: number, warnaIndex: number, preset: string[]) => {
+    setProductBlocks((prev) => {
+      const next = [...prev];
+      const target = next[blockIndex];
+      if (!target || !target.warnas[warnaIndex]) return prev;
+
+      const w = target.warnas[warnaIndex];
+      const existing = new Set(w.sizes.map((s) => s.size.toUpperCase()));
+      for (const sz of preset) {
+        if (!existing.has(sz.toUpperCase())) {
+          w.sizes.push({
+            id: `sz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            size: sz,
+            qty: 1,
+          });
+        }
+      }
+      return next;
+    });
+  };
+
   const removeSizeFromWarna = (blockIndex: number, warnaIndex: number, sizeIndex: number) => {
     setProductBlocks((prev) => {
       const next = [...prev];
@@ -1663,97 +1684,76 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Hierarchical Product -> Warna -> Size Batch Blocks */}
-          <div className="space-y-4 sm:space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-600 text-white shrink-0 shadow-xs">
-                  <Package className="w-5 h-5" />
+          {/* Card 2: Tabel Input Produk & Varian (Excel Spreadsheet Style - Ringkas & Cepat di HP) */}
+          <div className="space-y-3">
+            {/* Header Ringkas Section */}
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-600 text-white shrink-0">
+                  <Package className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <span>2. Input Produk, Varian Warna &amp; Ukuran</span>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>Tabel Varian Produksi (Model Excel)</span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                       {productBlocks.length} Kode
                     </span>
                   </h2>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Hierarki: <strong>1 Kode Produksi</strong> ➔ <strong>Banyak Warna</strong> ➔ <strong>Banyak Size</strong> (Cepat &amp; Praktis via HP)
-                  </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={addProductBlock}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-sm transition cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Tambah Produk (Kode Baru)</span>
-              </button>
+              <span className="text-[11px] text-slate-500 hidden sm:inline">
+                1 Kode ➔ Banyak Warna ➔ Banyak Size
+              </span>
             </div>
 
+            {/* Loop Setiap Kode Produk (Tampilan Sheet / Tabel Excel Ringkas) */}
             {productBlocks.map((block, blockIdx) => {
               const blockTotalPcs = block.warnas.reduce(
                 (sum, w) => sum + w.sizes.reduce((sSum, s) => sSum + (Number(s.qty) || 0), 0),
                 0
               );
-              const filledWarnaCount = block.warnas.filter((w) => w.warna.trim()).length;
 
               return (
                 <div
                   key={block.id}
-                  className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 dark:hover:border-emerald-600/60 rounded-2xl p-3.5 sm:p-5 shadow-xs transition-all space-y-4"
+                  className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden shadow-2xs transition-all"
                 >
-                  {/* Block Header (Level 1: Produk) */}
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 flex-wrap gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
+                  {/* BARIS 1: Header Kode Produk (Kompak satu baris, hemat tempat) */}
+                  <div className="bg-slate-100 dark:bg-slate-800/90 px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                      <span className="w-6 h-6 rounded-md bg-emerald-600 text-white flex items-center justify-center text-xs font-black shrink-0">
                         {blockIdx + 1}
                       </span>
-                      <div>
-                        <span className="text-sm font-black text-slate-900 dark:text-white">
-                          Produk #{blockIdx + 1}
-                        </span>
-                        {block.kode_produksi && (
-                          <span className="ml-2 px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                            {block.kode_produksi}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-1.5 flex-1 max-w-xs">
+                        <input
+                          type="text"
+                          placeholder="KODE PRODUKSI *"
+                          value={block.kode_produksi}
+                          onChange={(e) => updateProductBlockField(blockIdx, 'kode_produksi', e.target.value)}
+                          required
+                          className="w-full px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-mono font-black text-slate-900 dark:text-white uppercase placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="hidden sm:block flex-1 min-w-[140px]">
+                        <input
+                          type="text"
+                          placeholder="Catatan produk (opsional)"
+                          value={block.catatan || ''}
+                          onChange={(e) => updateProductBlockField(blockIdx, 'catatan', e.target.value)}
+                          className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
                       </div>
                     </div>
 
+                    {/* Quick Foto & Action Baris Header */}
                     <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60">
-                        Total: <strong>{blockTotalPcs} Pcs</strong> • {filledWarnaCount || block.warnas.length} Warna
-                      </span>
-
-                      {productBlocks.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeProductBlock(blockIdx)}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg transition cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Hapus Kode</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Block Details (Kode, Catatan, Foto) */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                    {/* Foto Upload Column */}
-                    <div className="lg:col-span-4 flex flex-col justify-start">
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                        Foto Produk (Kamera HP / Upload)
-                      </label>
-
+                      {/* Foto Button / Thumbnail Mini */}
                       {block.foto_url ? (
-                        <div className="relative group w-full h-36 sm:h-40 rounded-xl overflow-hidden border-2 border-emerald-400 dark:border-emerald-600 shadow-xs bg-slate-100 dark:bg-slate-800">
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700">
                           <img
                             src={block.foto_url}
-                            alt="Foto Produk"
-                            className="w-full h-full object-cover cursor-pointer"
+                            alt="Foto"
+                            className="w-6 h-6 rounded object-cover cursor-pointer hover:opacity-80"
                             onClick={() =>
                               setLightboxImage({
                                 url: block.foto_url!,
@@ -1761,340 +1761,275 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                                 subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
                               })
                             }
+                            title="Klik untuk perbesar"
                           />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setLightboxImage({
-                                  url: block.foto_url!,
-                                  title: block.kode_produksi || `Produk #${blockIdx + 1}`,
-                                  subtitle: `Surat Jalan: ${formNoSuratJalan || '-'}`,
-                                })
-                              }
-                              className="p-2 rounded-lg bg-white/90 text-slate-800 hover:bg-white shadow cursor-pointer"
-                              title="Perbesar"
-                            >
-                              <Maximize2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateProductBlockPhoto(blockIdx, '')}
-                              className="p-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 shadow cursor-pointer"
-                              title="Hapus Foto"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updateProductBlockPhoto(blockIdx, '')}
+                            className="text-rose-500 hover:text-rose-700 text-xs font-bold px-0.5"
+                            title="Hapus foto"
+                          >
+                            ×
+                          </button>
                         </div>
                       ) : (
-                        <div
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                              handleImageUpload(e.dataTransfer.files[0], blockIdx);
-                            }
-                          }}
-                          className="w-full min-h-[110px] sm:min-h-[130px] rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 bg-slate-50 dark:bg-slate-800/40 flex flex-col items-center justify-center p-3 text-center transition"
-                        >
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <Camera className="w-4 h-4 text-emerald-600" />
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Foto Produk
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => startWebcam(blockIdx, false)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-xs cursor-pointer"
-                            >
-                              <Camera className="w-3.5 h-3.5" />
-                              <span>Buka Kamera HP</span>
-                            </button>
-                            <label className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 cursor-pointer shadow-xs">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>Pilih File</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    handleImageUpload(e.target.files[0], blockIdx);
-                                  }
-                                }}
-                              />
-                            </label>
-                          </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => startWebcam(blockIdx, false)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-300 dark:border-slate-600 cursor-pointer shadow-2xs"
+                            title="Buka Kamera HP"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="hidden sm:inline">Kamera</span>
+                          </button>
+                          <label
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-300 dark:border-slate-600 cursor-pointer shadow-2xs"
+                            title="Pilih Foto dari Galeri"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-slate-500" />
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  handleImageUpload(e.target.files[0], blockIdx);
+                                }
+                              }}
+                            />
+                          </label>
                         </div>
                       )}
-                    </div>
 
-                    {/* Kode Produksi & Catatan Column */}
-                    <div className="lg:col-span-8 space-y-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Kode Produksi <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Contoh: CP-DRESS-881 atau CMT-BLOUSE-01"
-                          value={block.kode_produksi}
-                          onChange={(e) => updateProductBlockField(blockIdx, 'kode_produksi', e.target.value)}
-                          required
-                          className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-mono font-bold text-slate-900 dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
+                      {/* Total Pcs Produk */}
+                      <span className="px-2 py-1 rounded-md text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-emerald-700 dark:text-emerald-400">
+                        {blockTotalPcs} pcs
+                      </span>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Catatan Khusus Produk (Opsional)
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Contoh: Kancing cadangan terpisah, jahit tepi khusus"
-                          value={block.catatan || ''}
-                          onChange={(e) => updateProductBlockField(blockIdx, 'catatan', e.target.value)}
-                          className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
+                      {/* Hapus Produk (Jika > 1) */}
+                      {productBlocks.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeProductBlock(blockIdx)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
+                          title="Hapus Kode Produk Ini"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Level 2: Section Varian Warna */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <Palette className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                        <h3 className="text-xs sm:text-sm font-black text-slate-800 dark:text-white">
-                          Varian Warna &amp; Ukuran
-                        </h3>
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          (1 Kode bisa beberapa warna, 1 warna bisa beberapa size)
-                        </span>
-                      </div>
+                  {/* Catatan di HP (jika layar kecil) */}
+                  <div className="sm:hidden px-3 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700">
+                    <input
+                      type="text"
+                      placeholder="Catatan khusus produk (opsional)"
+                      value={block.catatan || ''}
+                      onChange={(e) => updateProductBlockField(blockIdx, 'catatan', e.target.value)}
+                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
 
-                      <button
-                        type="button"
-                        onClick={() => addWarnaToBlock(blockIdx)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Tambah Warna Baru</span>
-                      </button>
-                    </div>
+                  {/* BARIS 2: Tabel Spreadsheet Varian Warna & Size */}
+                  <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {block.warnas.map((w, wIdx) => {
+                      const warnaTotalPcs = w.sizes.reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
 
-                    {/* Loop Daftar Warna */}
-                    <div className="space-y-3">
-                      {block.warnas.map((w, wIdx) => {
-                        const warnaTotalPcs = w.sizes.reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
-                        const existingSizes = new Set(w.sizes.map((s) => s.size.toUpperCase()));
+                      return (
+                        <div
+                          key={w.id}
+                          className="p-2 sm:p-2.5 bg-white dark:bg-slate-900 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                        >
+                          {/* Sub-Baris: Warna & Subtotal */}
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1.5">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                              <span className="w-5 h-5 rounded bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">
+                                {wIdx + 1}
+                              </span>
+                              <input
+                                type="text"
+                                placeholder="NAMA WARNA (cth: BLACK, NAVY)"
+                                value={w.warna}
+                                onChange={(e) => updateWarnaName(blockIdx, wIdx, e.target.value)}
+                                list={`colors-list-${blockIdx}-${wIdx}`}
+                                required
+                                className="w-full max-w-[200px] sm:max-w-xs px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-xs font-black text-slate-900 dark:text-white uppercase placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                              <datalist id={`colors-list-${blockIdx}-${wIdx}`}>
+                                {POPULAR_COLORS.map((c) => (
+                                  <option key={c} value={c} />
+                                ))}
+                              </datalist>
 
-                        return (
-                          <div
-                            key={w.id}
-                            className="bg-slate-50/90 dark:bg-slate-800/60 rounded-xl border border-slate-200/90 dark:border-slate-700/80 p-3 sm:p-4 space-y-3 transition-all"
-                          >
-                            {/* Header Warna (Row 1) */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80 dark:border-slate-700/60">
-                              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                                <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10.5px] font-black uppercase shrink-0">
-                                  Warna #{wIdx + 1}
-                                </span>
-                                <input
-                                  type="text"
-                                  placeholder="Ketik Nama Warna (cth: BLACK, WHITE, SAGE GREEN)"
-                                  value={w.warna}
-                                  onChange={(e) => updateWarnaName(blockIdx, wIdx, e.target.value)}
-                                  required
-                                  className="w-full max-w-xs px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-indigo-500"
-                                />
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
-                                  Subtotal: <strong>{warnaTotalPcs} Pcs</strong>
-                                </span>
-
+                              {/* Presets Cepat Ukuran (1 Tap mengisi S, M, L) */}
+                              <div className="hidden md:flex items-center gap-1 text-[10.5px]">
+                                <span className="text-slate-400">Set:</span>
                                 <button
                                   type="button"
-                                  onClick={() => addWarnaToBlock(blockIdx, wIdx)}
-                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 px-2 py-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 transition cursor-pointer"
-                                  title="Duplikat susunan size ini ke warna baru"
+                                  onClick={() => addSizesPresetToWarna(blockIdx, wIdx, ['S', 'M', 'L'])}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
                                 >
-                                  <Copy className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">Duplikat ke Warna Baru</span>
+                                  +S,M,L
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addSizesPresetToWarna(blockIdx, wIdx, ['S', 'M', 'L', 'XL'])}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
+                                >
+                                  +S,M,L,XL
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addSizesPresetToWarna(blockIdx, wIdx, ['ALL SIZE'])}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-pointer"
+                                >
+                                  +ALL SIZE
+                                </button>
+                              </div>
+                            </div>
 
-                                {block.warnas.length > 1 && (
+                            {/* Subtotal & Aksi Warna */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                {warnaTotalPcs} pcs
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => addWarnaToBlock(blockIdx, wIdx)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 cursor-pointer"
+                                title="Duplikat warna ini beserta semua ukurannya"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span className="hidden sm:inline">Duplikat</span>
+                              </button>
+
+                              {block.warnas.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeWarnaFromBlock(blockIdx, wIdx)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
+                                  title="Hapus Warna Ini"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Deretan Sel Ukuran & Kuantitas (Excel Cells Ringkas) */}
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            {w.sizes.map((s, sIdx) => (
+                              <div
+                                key={s.id}
+                                className="inline-flex items-center border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 overflow-hidden shadow-2xs"
+                              >
+                                <select
+                                  value={s.size}
+                                  onChange={(e) =>
+                                    updateSizeField(blockIdx, wIdx, sIdx, 'size', e.target.value)
+                                  }
+                                  className="bg-slate-100 dark:bg-slate-700 font-black text-xs px-1.5 py-1 text-slate-800 dark:text-slate-200 border-r border-slate-300 dark:border-slate-600 focus:outline-none cursor-pointer"
+                                >
+                                  {STANDARD_SIZES.map((sz) => (
+                                    <option key={sz} value={sz}>
+                                      {sz}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min={1}
+                                  value={s.qty}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) =>
+                                    updateSizeField(blockIdx, wIdx, sIdx, 'qty', e.target.value)
+                                  }
+                                  onBlur={() => {
+                                    if (s.qty === '' || Number(s.qty) < 1) {
+                                      updateSizeField(blockIdx, wIdx, sIdx, 'qty', 1);
+                                    }
+                                  }}
+                                  className="w-12 sm:w-14 px-1 py-1 text-center font-black text-xs text-slate-900 dark:text-white bg-transparent focus:outline-none"
+                                />
+                                {w.sizes.length > 1 && (
                                   <button
                                     type="button"
-                                    onClick={() => removeWarnaFromBlock(blockIdx, wIdx)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-md transition cursor-pointer"
-                                    title="Hapus Warna ini"
+                                    onClick={() => removeSizeFromWarna(blockIdx, wIdx, sIdx)}
+                                    className="px-1 text-slate-400 hover:text-rose-500 font-bold text-xs"
+                                    title="Hapus size"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    ×
                                   </button>
                                 )}
                               </div>
-                            </div>
+                            ))}
 
-                            {/* Preset Warna Populer (Quick Tap di HP) */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
-                                Pilihan Cepat:
-                              </span>
-                              {POPULAR_COLORS.map((col) => {
-                                const isCurrent = w.warna.toUpperCase() === col;
-                                return (
-                                  <button
-                                    key={col}
-                                    type="button"
-                                    onClick={() => updateWarnaName(blockIdx, wIdx, col)}
-                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase transition cursor-pointer ${
-                                      isCurrent
-                                        ? 'bg-indigo-600 text-white shadow-2xs'
-                                        : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                                    }`}
-                                  >
-                                    {col}
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {/* Level 3: Varian Size & Qty (Di dalam Warna) */}
-                            <div className="space-y-2 pt-1">
-                              {/* Quick Size Chips Header */}
-                              <div className="flex items-center justify-between flex-wrap gap-1.5">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[10.5px] font-bold text-slate-600 dark:text-slate-300">
-                                    Tambah Ukuran:
-                                  </span>
-                                  {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'ALL SIZE'].map((sz) => {
-                                    const hasSize = existingSizes.has(sz.toUpperCase());
-                                    return (
-                                      <button
-                                        key={sz}
-                                        type="button"
-                                        onClick={() => addSizeToWarna(blockIdx, wIdx, sz)}
-                                        className={`px-2 py-0.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                                          hasSize
-                                            ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                                        }`}
-                                      >
-                                        <span>{hasSize ? '✓' : '+'}</span>
-                                        <span>{sz}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() => addSizeToWarna(blockIdx, wIdx)}
-                                  className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  <span>+ Tambah Size Lain</span>
-                                </button>
-                              </div>
-
-                              {/* Size Cards Grid (Ramah Jempol HP) */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                {w.sizes.map((s, sIdx) => (
-                                  <div
-                                    key={s.id}
-                                    className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2 sm:p-2.5 flex items-center justify-between gap-2 shadow-2xs"
-                                  >
-                                    {/* Size Badge & Selector */}
-                                    <div className="flex items-center gap-1.5 min-w-[75px]">
-                                      <span className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-black text-xs flex items-center justify-center border border-emerald-300 dark:border-emerald-700">
-                                        {s.size}
-                                      </span>
-                                      <select
-                                        value={s.size}
-                                        onChange={(e) =>
-                                          updateSizeField(blockIdx, wIdx, sIdx, 'size', e.target.value)
-                                        }
-                                        className="text-xs font-bold text-slate-800 dark:text-slate-200 bg-transparent border-0 focus:ring-0 p-0 cursor-pointer"
-                                      >
-                                        {STANDARD_SIZES.map((sz) => (
-                                          <option key={sz} value={sz}>
-                                            {sz}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-
-                                    {/* Stepper Qty (HP-Friendly Thumb Buttons) */}
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => adjustSizeQty(blockIdx, wIdx, sIdx, -1)}
-                                        className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 text-slate-700 dark:text-slate-200 font-black text-sm flex items-center justify-center cursor-pointer transition-transform"
-                                      >
-                                        -
-                                      </button>
-                                      <input
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        value={s.qty}
-                                        onFocus={(e) => e.target.select()}
-                                        onChange={(e) =>
-                                          updateSizeField(blockIdx, wIdx, sIdx, 'qty', e.target.value)
-                                        }
-                                        onBlur={() => {
-                                          if (s.qty === '' || Number(s.qty) < 1) {
-                                            updateSizeField(blockIdx, wIdx, sIdx, 'qty', 1);
-                                          }
-                                        }}
-                                        className="w-14 sm:w-16 h-8 text-center text-xs sm:text-sm font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-emerald-500"
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={() => adjustSizeQty(blockIdx, wIdx, sIdx, 1)}
-                                        className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 text-slate-700 dark:text-slate-200 font-black text-sm flex items-center justify-center cursor-pointer transition-transform"
-                                      >
-                                        +
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => adjustSizeQty(blockIdx, wIdx, sIdx, 10)}
-                                        className="hidden sm:flex px-1.5 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold items-center justify-center border border-emerald-200/80 cursor-pointer"
-                                        title="Tambah 10 pcs"
-                                      >
-                                        +10
-                                      </button>
-                                    </div>
-
-                                    {/* Delete Size */}
-                                    {w.sizes.length > 1 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => removeSizeFromWarna(blockIdx, wIdx, sIdx)}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
-                                        title="Hapus Size ini"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
+                            {/* Tombol Tambah Size Tepat di Samping/Bawah Size */}
+                            <button
+                              type="button"
+                              onClick={() => addSizeToWarna(blockIdx, wIdx)}
+                              className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-dashed border-emerald-300 dark:border-emerald-700 transition cursor-pointer"
+                              title="Tambah Ukuran ke Warna Ini"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Size</span>
+                            </button>
                           </div>
-                        );
-                      })}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* FOOTER TABEL WARNA: Tombol Tambah Warna TEPAT DI BAWAH DAFTAR WARNA! */}
+                  <div className="bg-slate-50 dark:bg-slate-800/60 p-2 sm:px-3 sm:py-2 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addWarnaToBlock(blockIdx)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-indigo-300 dark:border-indigo-700 shadow-2xs transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Tambah Warna</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => addWarnaToBlock(blockIdx, block.warnas.length - 1)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-600 transition cursor-pointer"
+                        title="Salin ukuran dari warna sebelumnya ke warna baru"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Salin Warna Terakhir</span>
+                      </button>
                     </div>
+
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Subtotal: <strong className="text-emerald-600">{blockTotalPcs} pcs</strong> ({block.warnas.length} Warna)
+                    </span>
                   </div>
                 </div>
               );
             })}
+
+            {/* TOMBOL TAMBAH PRODUK (KODE BARU) TEPAT DI BAWAH DAFTAR PRODUK! */}
+            <div className="pt-1 flex items-center justify-between flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addProductBlock}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-xs transition cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Tambah Produk (Kode Baru)</span>
+              </button>
+
+              <span className="text-xs text-slate-500 font-semibold">
+                Selesai isi produk? Tap tombol di atas untuk menambah kode produk berikutnya.
+              </span>
+            </div>
           </div>
 
           {/* Action Bar & Summary Footer */}
