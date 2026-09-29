@@ -1,0 +1,52 @@
+--- src/components/ThermalStickerModal.tsx
++++ src/components/ThermalStickerModal.tsx
+@@ -526,9 +526,8 @@
+                 font-size: ${isPortrait ? '6.8pt' : '7.5pt'} !important;
+                 font-weight: 800 !important;
+                 line-height: 1.15 !important;
+-                white-space: nowrap !important;
+-                overflow: hidden !important;
+-                text-overflow: ellipsis !important;
++                word-break: break-word !important;
++                white-space: normal !important;
+                 letter-spacing: -0.1px !important;
+                 color: #000000 !important;
+               }
+@@ -537,10 +536,8 @@
+                 font-weight: 600 !important;
+                 line-height: 1.15 !important;
+                 color: #111111 !important;
+-                display: -webkit-box !important;
+-                -webkit-line-clamp: 2 !important;
+-                -webkit-box-orient: vertical !important;
+-                overflow: hidden !important;
++                display: block !important;
++                white-space: normal !important;
+                 word-break: break-word !important;
+               }
+               .thermal-meta-details {
+@@ -746,9 +743,8 @@
+                 font-size: ${printOrientation === 'portrait' ? '6.8pt' : '7.5pt'} !important;
+                 font-weight: 800 !important;
+                 line-height: 1.15 !important;
+-                white-space: nowrap !important;
+-                overflow: hidden !important;
+-                text-overflow: ellipsis !important;
++                word-break: break-word !important;
++                white-space: normal !important;
+                 letter-spacing: -0.1px !important;
+                 color: #000000 !important;
+               }
+@@ -757,10 +753,8 @@
+                 font-weight: 600 !important;
+                 line-height: 1.15 !important;
+                 color: #111111 !important;
+-                display: -webkit-box !important;
+-                -webkit-line-clamp: 2 !important;
+-                -webkit-box-orient: vertical !important;
+-                overflow: hidden !important;
++                display: block !important;
++                white-space: normal !important;
+                 word-break: break-word !important;
+               }
+               .thermal-meta-details {

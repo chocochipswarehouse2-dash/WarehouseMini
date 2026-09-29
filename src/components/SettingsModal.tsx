@@ -1,0 +1,2799 @@
+import React, { useState, useEffect } from 'react';
+import { clearLocalDb } from '../services/localDb';
+import {
+  X,
+  Settings,
+  Database,
+  Cloud,
+  Users,
+  Sliders,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  Activity,
+  RotateCcw,
+  Save, Send,
+  Radio,
+  Plus,
+  Trash2,
+  Edit2,
+  Key,
+  Shield,
+  RefreshCw,
+  Volume2,
+  Vibrate,
+  Smartphone,
+  Bell,
+  Sun,
+  Moon,
+  Copy,
+  Check,
+  Lock,
+  ShieldCheck,
+  UserCheck,
+  CheckSquare,
+  Square,
+  HelpCircle,
+  Layers,
+  ScanBarcode,
+  Package,
+  FileText,
+  SlidersHorizontal,
+  Rocket,
+  Github,
+  Globe,
+  Terminal,
+  Download,
+  ExternalLink,
+  Laptop,
+  Workflow,
+  ArrowRight,
+  Sparkles,
+  Code2,
+  FileCode,
+  CheckCheck, Share2, Loader2, UploadCloud,
+  ShieldAlert,
+  Pencil,
+  Store
+} from 'lucide-react';
+import { fetchOutlets, saveOutlet, deleteOutlet } from '../services/gasManualShipment';
+import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
+import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
+import {
+  DEFAULT_SUPABASE_URL,
+  DEFAULT_SUPABASE_ANON_KEY,
+  getStoredSupabaseConfig,
+  saveSupabaseConfig,
+  getSupabaseClient,
+  fetchWmsUsersFromSupabase,
+  saveWmsUserToSupabase,
+  deleteWmsUserFromSupabase,
+  fetchKaryawanDirectory,
+  supabaseFetch,
+  DEFAULT_WMS_USERS,
+} from '../services/supabase';
+import {
+  DEFAULT_GDRIVE_FOLDER_URL,
+
+  testGdriveConnection,
+  saveGdriveConfig,
+} from '../services/gdriveUpload';
+
+import {
+  fetchWmsSettings,
+  saveWmsSettings,
+  getStoredGdriveFolderUrl,
+} from '../services/settings';
+import {
+  hasPermission,
+  isSuperadmin,
+  ROLE_DETAILS,
+  ROLE_DEFAULT_PERMISSIONS,
+  PERMISSION_GROUPS,
+  countGrantedPermissions,
+  TOTAL_PERMISSIONS_COUNT,
+} from '../services/permissions';
+import {
+  playSuccessBeep,
+  playErrorBeep,
+  playCategoryBeep,
+  playNewTaskChime,
+  vibrateDevice,
+} from '../services/audio';
+
+interface SettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  session: UserSession | null;
+  onUpdateSession: (newSession: UserSession) => void;
+  onRefreshCatalog: (endpoint?: string, token?: string) => Promise<void>;
+  notificationPermission: NotificationPermission;
+  onRequestNotification: () => void;
+  isRealtimeConnected: boolean;
+  onOpenUpdateDatabase?: () => void;
+  onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+}
+
+type SettingsTab = 'database' | 'supabase' | 'users' | 'roles' | 'device' | 'deploy_apk' | 'whatsapp' | 'outlets';
+
+interface LocalRole {
+  name: string;
+  icon: string;
+  badge: string;
+  permissions: Partial<UserPermissions>;
+}
+
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  session,
+  onUpdateSession,
+  onRefreshCatalog,
+  notificationPermission,
+  onRequestNotification,
+  isRealtimeConnected,
+  onOpenUpdateDatabase,
+  onNotify,
+}) => {
+  const userIsSuperadmin = isSuperadmin(session);
+  const canManageUsers = userIsSuperadmin || isSuperadmin(session);
+  const canManageSettings = userIsSuperadmin || isSuperadmin(session);
+  const canAccessModal = userIsSuperadmin || canManageUsers || canManageSettings;
+
+  // Default tab based on permissions
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    if (userIsSuperadmin || canManageSettings) return 'database';
+    if (canManageUsers) return 'users';
+    return 'device';
+  });
+
+  // Supabase Config State
+  const [supabaseUrl, setSupabaseUrl] = useState<string>('');
+  const [supabaseKey, setSupabaseKey] = useState<string>('');
+  const [isTestingDatabase, setIsTestingDatabase] = useState<boolean>(false);
+  const [databaseStatus, setDatabaseStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [databaseStatusMsg, setDatabaseStatusMsg] = useState<string>('');
+  const [gdriveFolderUrl, setGdriveFolderUrl] = useState<string>('');
+  const [gdriveGasUrl, setGdriveGasUrl] = useState<string>('');
+  const [isTestingGdrive, setIsTestingGdrive] = useState<boolean>(false);
+  const [gdriveStatus, setGdriveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [gdriveStatusMsg, setGdriveStatusMsg] = useState<string>('');
+  // WhatsApp Config State
+  const [fonnteToken, setFonnteToken] = useState<string>('');
+  const [fonnteGroupTarget, setFonnteGroupTarget] = useState<string>('');
+  const [fonnteAutoSend, setFonnteAutoSend] = useState<boolean>(true);
+  const [waWebhookGasUrl, setWaWebhookGasUrl] = useState<string>('');
+  const [isTestingWa, setIsTestingWa] = useState<boolean>(false);
+  const [isTestingWaWebhook, setIsTestingWaWebhook] = useState<boolean>(false);
+  const [waWebhookStatus, setWaWebhookStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [waWebhookStatusMsg, setWaWebhookStatusMsg] = useState<string>('');
+
+  // Outlets Management State
+  const [outletList, setOutletList] = useState<{ id?: string; nama: string; fulfillment: string }[]>([]);
+  const [isLoadingOutlets, setIsLoadingOutlets] = useState<boolean>(false);
+  const [editingOutlet, setEditingOutlet] = useState<{ id?: string; nama: string; fulfillment: string } | null>(null);
+
+  // Users Management State
+  const [userList, setUserList] = useState<LocalUserRecord[]>([]);
+  const [karyawanDirectory, setKaryawanDirectory] = useState<KaryawanRecord[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
+  const [showPasswords, setShowPasswords] = useState<boolean>(false);
+  const [newUsername, setNewUsername] = useState<string>('');
+  const [newName, setNewName] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [newNik, setNewNik] = useState<string>('');
+  const [newPhone, setNewPhone] = useState<string>('');
+  const [newEmail, setNewEmail] = useState<string>('');
+  const [newRole, setNewRole] = useState<UserRole>('Operator');
+  const [newPermissions, setNewPermissions] = useState<Partial<UserPermissions>>({
+    ...ROLE_DEFAULT_PERMISSIONS['Operator'],
+  });
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [isPermissionFormOpen, setIsPermissionFormOpen] = useState<boolean>(false);
+
+  // Role Templates State
+  const [roleList, setRoleList] = useState<LocalRole[]>([]);
+  const [isRoleFormOpen, setIsRoleFormOpen] = useState<boolean>(false);
+  const [editingRoleIndex, setEditingRoleIndex] = useState<number | null>(null);
+  const [newRoleTemplateName, setNewRoleTemplateName] = useState<string>('');
+  const [newRoleTemplateIcon, setNewRoleTemplateIcon] = useState<string>('📦');
+  const [newRoleTemplateBadge, setNewRoleTemplateBadge] = useState<string>('bg-slate-500');
+  const [newRoleTemplatePerms, setNewRoleTemplatePerms] = useState<Partial<UserPermissions>>({});
+
+  // Copied helper
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Custom confirm dialog (replaces window.confirm for TWA/PWA Builder)
+  const [settingsConfirmDialog, setSettingsConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+
+  const loadUsersFromSupabase = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const [dbUsers, karyawanList] = await Promise.all([
+        fetchWmsUsersFromSupabase(),
+        fetchKaryawanDirectory().catch(() => []),
+      ]);
+
+      if (karyawanList && karyawanList.length > 0) {
+        setKaryawanDirectory(karyawanList);
+      }
+
+      if (dbUsers && dbUsers.length > 0) {
+        setUserList(dbUsers as LocalUserRecord[]);
+        saveLocalUsersList(dbUsers as LocalUserRecord[]);
+      } else {
+        const local = getLocalUsers();
+        setUserList(local);
+      }
+    } catch (err) {
+      console.warn('Error fetching users from Supabase:', err);
+      setUserList(getLocalUsers());
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const handleCleanupDummyUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      let deletedCount = 0;
+      const dummyUsernames = DEFAULT_WMS_USERS
+        .map(u => u.username)
+        .filter(u => !['admin', 'operator', 'chocochips.warehouse2@gmail.com'].includes(u));
+        
+      for (const username of dummyUsernames) {
+        const result = await deleteWmsUserFromSupabase(username);
+        if (result.success) deletedCount++;
+      }
+      onNotify(`Berhasil membersihkan ${deletedCount} user dummy ciptaan sistem.`, 'success');
+      await loadUsersFromSupabase();
+    } catch (err) {
+      console.error('Gagal membersihkan dummy users:', err);
+      onNotify('Gagal membersihkan dummy users', 'error');
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const loadOutlets = async () => {
+    setIsLoadingOutlets(true);
+    try {
+      const data = await fetchOutlets();
+      setOutletList(data);
+    } catch (err) {
+      console.warn('Error fetching outlets', err);
+    } finally {
+      setIsLoadingOutlets(false);
+    }
+  };
+
+  const handleDeleteOutlet = async (id?: string) => {
+    if (!id) return;
+    if (!confirm('Yakin ingin menghapus store ini?')) return;
+    
+    setIsLoadingOutlets(true);
+    const res = await deleteOutlet(id);
+    if (res.success) {
+      onNotify('Store dihapus', 'success');
+      loadOutlets();
+    } else {
+      onNotify(res.message, 'error');
+    }
+    setIsLoadingOutlets(false);
+  };
+
+  const handleSaveOutlet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOutlet) return;
+    setIsLoadingOutlets(true);
+    const res = await saveOutlet(editingOutlet);
+    if (res.success) {
+      onNotify(res.message, 'success');
+      setEditingOutlet(null);
+      loadOutlets();
+    } else {
+      onNotify(res.message, 'error');
+    }
+    setIsLoadingOutlets(false);
+  };
+
+  // Initialize values when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const storedSupabase = getStoredSupabaseConfig();
+      setSupabaseUrl(storedSupabase.url);
+      setSupabaseKey(storedSupabase.key);
+      setGdriveFolderUrl(getStoredGdriveFolderUrl());
+
+      setFonnteToken(localStorage.getItem('wms_fonnte_token') || '');
+      setFonnteGroupTarget(localStorage.getItem('wms_fonnte_group_target') || '');
+      setFonnteAutoSend(localStorage.getItem('wms_fonnte_auto_send') !== 'false');
+      setWaWebhookGasUrl(localStorage.getItem('wms_wa_webhook_gas_url') || '');
+
+      // Load unified WMS settings from Supabase (shared across all users)
+      fetchWmsSettings(true).then((settings) => {
+        if (settings) {
+          
+          
+          if (settings.gdrive_folder_url) {
+            setGdriveFolderUrl(settings.gdrive_folder_url);
+          }
+          if (settings.gdrive_gas_url) {
+            setGdriveGasUrl(settings.gdrive_gas_url);
+          }
+          
+          if (settings.fonnte_token !== undefined) {
+            setFonnteToken(settings.fonnte_token);
+          }
+          if (settings.fonnte_group_target !== undefined) {
+            setFonnteGroupTarget(settings.fonnte_group_target);
+          }
+          if (settings.fonnte_auto_send !== undefined) {
+            setFonnteAutoSend(settings.fonnte_auto_send);
+          }
+          if (settings.wa_webhook_gas_url !== undefined) {
+            setWaWebhookGasUrl(settings.wa_webhook_gas_url);
+          }
+        }
+      }).catch(err => {
+        console.warn('Gagal memuat wms settings dari supabase', err);
+      });
+
+      // Load outlets when modal opens
+      loadOutlets();
+
+      loadUsersFromSupabase();
+      setGdriveStatus('idle');
+
+      const mappedRoles = Object.keys(ROLE_DETAILS).map(k => ({
+        name: k,
+        icon: ROLE_DETAILS[k].icon,
+        badge: ROLE_DETAILS[k].badge,
+        permissions: ROLE_DEFAULT_PERMISSIONS[k] || {}
+      }));
+      setRoleList(mappedRoles);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(label);
+    onNotify(`Berhasil menyalin ${label}`, 'info');
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  // --- SUPABASE & GDRIVE ACTIONS ---
+  const handleSaveDatabase = async () => {
+    const cleanUrl = supabaseUrl.trim();
+    const cleanKey = supabaseKey.trim();
+    const cleanGdrive = gdriveFolderUrl.trim();
+    const cleanGas = gdriveGasUrl.trim();
+
+    if (!cleanUrl || !cleanKey) {
+      onNotify('URL dan Anon Key Supabase tidak boleh kosong!', 'warning');
+      return;
+    }
+
+    saveSupabaseConfig(cleanUrl, cleanKey);
+    saveGdriveConfig(cleanGdrive, cleanGas);
+
+    try {
+      await saveWmsSettings({
+        gdrive_folder_url: cleanGdrive,
+        gdrive_gas_url: cleanGas,
+      });
+    } catch {}
+
+    onNotify('Konfigurasi database & Google Drive berhasil disimpan global!', 'success');
+    playSuccessBeep();
+  };
+
+  const handleTestGdrive = async () => {
+    setIsTestingGdrive(true);
+    setGdriveStatus('idle');
+    setGdriveStatusMsg('');
+    try {
+      const cleanGas = gdriveGasUrl.trim();
+      const cleanFolder = gdriveFolderUrl.trim();
+      saveGdriveConfig(cleanFolder, cleanGas);
+      const res = await testGdriveConnection(cleanGas, cleanFolder);
+      if (res.success) {
+        setGdriveStatus('success');
+        setGdriveStatusMsg(res.message);
+        playSuccessBeep();
+      } else {
+        setGdriveStatus('error');
+        setGdriveStatusMsg(res.message);
+        playErrorBeep();
+      }
+    } catch (err: any) {
+      setGdriveStatus('error');
+      setGdriveStatusMsg(err?.message || 'Gagal mengetes Google Drive.');
+      playErrorBeep();
+    } finally {
+      setIsTestingGdrive(false);
+    }
+  };
+
+  const handleResetDatabase = () => {
+    setSupabaseUrl(DEFAULT_SUPABASE_URL);
+    setSupabaseKey(DEFAULT_SUPABASE_ANON_KEY);
+    saveSupabaseConfig(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY);
+    onNotify('Database di-reset ke konfigurasi default Chocochips!', 'info');
+  };
+
+  const handleTestDatabase = async () => {
+    setIsTestingDatabase(true);
+    setDatabaseStatus('idle');
+    setDatabaseStatusMsg('');
+
+    try {
+      saveSupabaseConfig(supabaseUrl.trim(), supabaseKey.trim());
+      const client = getSupabaseClient();
+      const { error } = await client.from('log_produk').select('id').limit(1);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setDatabaseStatus('success');
+      setDatabaseStatusMsg('Koneksi database berhasil! Siap menyimpan data.');
+      playSuccessBeep();
+      vibrateDevice(50);
+      onNotify('Koneksi database berhasil terhubung!', 'success');
+    } catch (err: unknown) {
+      console.warn('Supabase test failed:', err);
+      setDatabaseStatus('error');
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi database.';
+      setDatabaseStatusMsg(msg);
+      playErrorBeep();
+      onNotify(`Koneksi database gagal: ${msg}`, 'error');
+    } finally {
+      setIsTestingDatabase(false);
+    }
+  };
+
+  // --- WHATSAPP FONNTE ACTIONS ---
+  const handleSaveWa = async () => {
+    // Save to local storage first for immediate availability
+    localStorage.setItem('wms_fonnte_token', fonnteToken.trim());
+    localStorage.setItem('wms_fonnte_group_target', fonnteGroupTarget.trim());
+    localStorage.setItem('wms_fonnte_auto_send', fonnteAutoSend ? 'true' : 'false');
+    localStorage.setItem('wms_wa_webhook_gas_url', waWebhookGasUrl.trim());
+    
+    try {
+      const { saveWmsSettings } = await import('../services/settings');
+      const success = await saveWmsSettings({
+        fonnte_token: fonnteToken.trim(),
+        fonnte_group_target: fonnteGroupTarget.trim(),
+        fonnte_auto_send: fonnteAutoSend,
+        wa_webhook_gas_url: waWebhookGasUrl.trim(),
+      });
+      
+      if (success) {
+        onNotify('Konfigurasi WhatsApp & Webhook berhasil disimpan global!', 'success');
+        playSuccessBeep();
+      } else {
+        onNotify('Tersimpan di lokal, tapi gagal sinkron ke database.', 'warning');
+      }
+    } catch (e) {
+      onNotify('Tersimpan di lokal. Gagal menyimpan ke cloud.', 'warning');
+    }
+  };
+
+  const handleTestWaWebhook = async () => {
+    if (!waWebhookGasUrl.trim()) {
+      onNotify('URL Webhook WA (GAS) belum diisi!', 'warning');
+      return;
+    }
+
+    setIsTestingWaWebhook(true);
+    setWaWebhookStatus('idle');
+    setWaWebhookStatusMsg('');
+
+    try {
+      // Test simulated payload (ping/test scan)
+      const res = await fetch(waWebhookGasUrl.trim(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify({
+          sender: '6280000000000',
+          pushname: 'Tester System Webhook',
+          message: 'PING TEST WEBHOOK',
+        }),
+      });
+
+      const data = await res.json();
+      if (data && (data.success !== false || res.ok)) {
+        setWaWebhookStatus('success');
+        setWaWebhookStatusMsg('URL Webhook aktif & merespon dengan baik (' + (data.message || 'OK') + ')');
+        playSuccessBeep();
+        onNotify('Webhook WA berhasil terhubung!', 'success');
+      } else {
+        throw new Error(data.error || data.message || 'Webhook mengembalikan status error');
+      }
+    } catch (err: unknown) {
+      console.warn('Webhook test failed:', err);
+      setWaWebhookStatus('error');
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi URL Webhook.';
+      setWaWebhookStatusMsg(msg);
+      playErrorBeep();
+      onNotify(`Koneksi Webhook gagal: ${msg}`, 'error');
+    } finally {
+      setIsTestingWaWebhook(false);
+    }
+  };
+
+  const handleTestWa = async () => {
+    if (!fonnteToken.trim()) {
+      onNotify('Token Fonnte tidak boleh kosong untuk ditest!', 'warning');
+      return;
+    }
+    
+    const target = fonnteGroupTarget.trim() || '6281234567890'; // fallback default untuk test
+    
+    setIsTestingWa(true);
+    try {
+      const res = await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': fonnteToken.trim(),
+        },
+        body: new URLSearchParams({
+          target: target,
+          message: 'Ini adalah pesan test koneksi Fonnte dari WMS System.',
+        }),
+      });
+      
+      const data = await res.json();
+      if (data.status) {
+        playSuccessBeep();
+        onNotify('Pesan test Fonnte berhasil dikirim ke ' + target, 'success');
+      } else {
+        throw new Error(data.reason || data.detail || 'Fonnte merespon dengan error');
+      }
+    } catch (err: unknown) {
+      console.warn('Fonnte test error:', err);
+      playErrorBeep();
+      const msg = err instanceof Error ? err.message : 'Gagal menghubungi Fonnte API.';
+      onNotify(`Test WhatsApp Fonnte gagal: ${msg}`, 'error');
+    } finally {
+      setIsTestingWa(false);
+    }
+  };
+
+  // --- USER MANAGEMENT & ROLE ACTIONS ---
+  const handleRolePresetSelect = (role: UserRole) => {
+    setNewRole(role);
+    setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS[role] });
+  };
+
+  const handleTogglePermission = (key: UserPermissionKey) => {
+    setNewPermissions((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const handleSelectAllGroupPermissions = (keys: UserPermissionKey[], selectAll: boolean) => {
+    setNewPermissions((prev) => {
+      const updated = { ...prev };
+      keys.forEach((k) => {
+        updated[k] = selectAll;
+      });
+      return updated;
+    });
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanU = newUsername.trim().toLowerCase();
+    const cleanName = newName.trim() || cleanU;
+    const cleanP = newPassword.trim();
+
+    if (!cleanU) {
+      onNotify('Username tidak boleh kosong!', 'warning');
+      return;
+    }
+
+    const isConflict = userList.some((u, idx) => {
+      if (editingIndex !== null && idx === editingIndex) return false;
+      return u.username.toLowerCase() === cleanU;
+    });
+    if (isConflict) {
+      onNotify(`Username "${cleanU}" sudah digunakan oleh akun lain!`, 'warning');
+      return;
+    }
+
+    const originalTarget = editingIndex !== null ? userList[editingIndex] : null;
+    const userToSave: LocalUserRecord = {
+      id: originalTarget?.id,
+      username: cleanU,
+      name: cleanName,
+      password: cleanP || (originalTarget ? originalTarget.password : '123456'),
+      role: newRole,
+      permissions: { ...newPermissions },
+      nik: newNik.trim() || undefined,
+      phone: newPhone.trim() || undefined,
+      email: newEmail.trim() || undefined,
+    };
+
+    let updated: LocalUserRecord[];
+    if (editingIndex !== null) {
+      // Edit existing user in place
+      updated = [...userList];
+      updated[editingIndex] = userToSave;
+      setEditingIndex(null);
+    } else {
+      // Add new user
+      updated = [...userList, userToSave];
+    }
+
+    setUserList(updated);
+    saveLocalUsersList(updated);
+
+    // Sync to Database table in background
+    setIsLoadingUsers(true);
+    
+    // Hanya simpan permission yang berbeda dari default Role agar sinkronisasi role template tetap bekerja
+    const defaultPerms = ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS['Operator'];
+    const finalPermissions: Partial<UserPermissions> = {};
+    Object.keys(newPermissions).forEach((key) => {
+      const k = key as UserPermissionKey;
+      if (!!newPermissions[k] !== !!defaultPerms[k]) {
+        finalPermissions[k] = !!newPermissions[k];
+      }
+    });
+
+    const res = await saveWmsUserToSupabase({
+      id: userToSave.id,
+      username: cleanU,
+      name: cleanName,
+      role: newRole,
+      password: cleanP ? cleanP : undefined,
+      permissions: finalPermissions,
+      nik: newNik.trim() || undefined,
+      no_hp: newPhone.trim() || undefined,
+      email: newEmail.trim() || undefined,
+    }, originalTarget?.username);
+    setIsLoadingUsers(false);
+
+    if (res.success) {
+      if (originalTarget) {
+        onNotify(`User "${cleanU}" & izin akses berhasil disimpan dan diperbarui di database!`, 'success');
+      } else {
+        onNotify(`User "${cleanU}" berhasil ditambahkan ke sistem & database!`, 'success');
+      }
+    } else {
+      onNotify(`Info: Gagal sinkronisasi ke database Supabase (${res.message}). Data disimpan lokal.`, 'warning');
+    }
+
+    // Refresh user list from Supabase to guarantee IDs and state are completely aligned
+    await loadUsersFromSupabase();
+
+    // If current logged-in user is updated, update active session
+    if (session && session.username.toLowerCase() === cleanU) {
+      onUpdateSession({
+        ...session,
+        name: cleanName,
+        role: newRole,
+        permissions: newPermissions,
+        nik: newNik.trim() || undefined,
+      });
+    }
+
+    // Reset form
+    setNewUsername('');
+    setNewName('');
+    setNewPassword('');
+    setNewNik('');
+    setNewPhone('');
+    setNewEmail('');
+    setNewRole('Operator');
+    setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS['Operator'] });
+    setIsPermissionFormOpen(false);
+    playSuccessBeep();
+  };
+
+  const handleEditUser = (idx: number) => {
+    const u = userList[idx];
+    setEditingIndex(idx);
+    setNewUsername(u.username);
+    setNewName(u.name || u.username);
+    setNewPassword('');
+    setNewNik(u.nik || '');
+    setNewPhone(u.phone || '');
+    setNewEmail(u.email || '');
+    setNewRole(u.role || 'Operator');
+    setNewPermissions(
+      u.permissions
+        ? { ...ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'], ...u.permissions }
+        : { ...ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'] }
+    );
+    setIsPermissionFormOpen(false);
+  };
+
+  const handleDeleteUser = (idx: number) => {
+    const target = userList[idx];
+    if (target.username.toLowerCase() === 'admin' || target.username.toLowerCase() === 'superadmin') {
+      onNotify('User admin master tidak dapat dihapus!', 'warning');
+      return;
+    }
+    setSettingsConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Pengguna',
+      message: `Hapus pengguna "${target.name || target.username}" (${target.role})? Data akan dihapus permanen dari sistem dan database Supabase.`,
+      onConfirm: async () => {
+        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        
+        const updated = userList.filter((_, i) => i !== idx);
+        setUserList(updated);
+        saveLocalUsersList(updated);
+
+        setIsLoadingUsers(true);
+        const res = await deleteWmsUserFromSupabase(target.username, target.id);
+        setIsLoadingUsers(false);
+        if (res.success) {
+          onNotify(`User "${target.name || target.username}" berhasil dihapus permanen dari sistem & database.`, 'success');
+        } else {
+          onNotify(`Peringatan: Gagal menghapus dari database Supabase (${res.message}).`, 'error');
+        }
+        await loadUsersFromSupabase();
+      }
+    });
+  };
+
+  const handleSaveRoleTemplate = async () => {
+    if (!newRoleTemplateName.trim()) {
+      onNotify('Nama Role tidak boleh kosong', 'warning');
+      return;
+    }
+    const roleName = newRoleTemplateName.trim();
+    if (roleName.toLowerCase() === 'superadmin') {
+      onNotify('Role Superadmin tidak dapat diedit melalui form ini.', 'warning');
+      return;
+    }
+
+    const newRoleObj: LocalRole = {
+      name: roleName,
+      icon: newRoleTemplateIcon || '📦',
+      badge: newRoleTemplateBadge || 'bg-slate-500',
+      permissions: newRoleTemplatePerms
+    };
+
+    let updatedList = [...roleList];
+    let oldRoleName = '';
+    
+    if (editingRoleIndex !== null) {
+      oldRoleName = updatedList[editingRoleIndex].name;
+      updatedList[editingRoleIndex] = newRoleObj;
+    } else {
+      const existing = updatedList.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+      if (existing) {
+        onNotify('Role dengan nama tersebut sudah ada', 'warning');
+        return;
+      }
+      updatedList.push(newRoleObj);
+    }
+
+    setRoleList(updatedList);
+    
+    const roleDict: Record<string, any> = {};
+    updatedList.forEach(r => {
+      roleDict[r.name] = {
+        name: r.name,
+        icon: r.icon,
+        badge: r.badge,
+        permissions: r.permissions
+      };
+    });
+
+    try {
+      await saveWmsSettings({ roles: roleDict });
+      
+      // Jika rename role, update user yang terdampak di supabase & lokal
+      if (editingRoleIndex !== null && oldRoleName && oldRoleName !== roleName) {
+         const updatedUsers = userList.map(u => u.role === oldRoleName ? { ...u, role: roleName } : u);
+         setUserList(updatedUsers);
+         saveLocalUsersList(updatedUsers);
+         supabaseFetch('wms_users', 'PATCH', { role: roleName }, `role=eq.${encodeURIComponent(oldRoleName)}`, true).catch(console.error);
+      }
+      
+      onNotify('Template Role berhasil disimpan ke Cloud!', 'success');
+      setIsRoleFormOpen(false);
+      setEditingRoleIndex(null);
+    } catch {
+      onNotify('Gagal menyimpan template Role ke Cloud', 'error');
+    }
+  };
+
+  const handleDeleteRoleTemplate = (idx: number) => {
+    const target = roleList[idx];
+    if (target.name.toLowerCase() === 'superadmin' || target.name.toLowerCase() === 'admin') {
+      onNotify('Role master tidak dapat dihapus', 'warning');
+      return;
+    }
+    
+    setSettingsConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Role',
+      message: `Hapus role "${target.name}"? Ini akan menghapus dari database global.`,
+      onConfirm: async () => {
+        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const updatedList = roleList.filter((_, i) => i !== idx);
+        setRoleList(updatedList);
+
+        const roleDict: Record<string, any> = {};
+        updatedList.forEach(r => {
+          roleDict[r.name] = {
+            name: r.name,
+            icon: r.icon,
+            badge: r.badge,
+            permissions: r.permissions
+          };
+        });
+
+        try {
+          await saveWmsSettings({ roles: roleDict });
+          
+          // Cascading delete: fallback user dengan role terhapus ke 'Operator'
+          const roleName = target.name;
+          const updatedUsers = userList.map(u => u.role === roleName ? { ...u, role: 'Operator' } : u);
+          setUserList(updatedUsers);
+          saveLocalUsersList(updatedUsers);
+          supabaseFetch('wms_users', 'PATCH', { role: 'Operator' }, `role=eq.${encodeURIComponent(roleName)}`, true).catch(console.error);
+          
+          onNotify(`Role "${target.name}" berhasil dihapus.`, 'success');
+        } catch {
+          onNotify('Gagal menghapus role dari Cloud', 'error');
+        }
+      }
+    });
+  };
+
+  const handleEditRoleTemplate = (idx: number) => {
+    const r = roleList[idx];
+    if (r.name.toLowerCase() === 'superadmin') {
+      onNotify('Role Superadmin tidak dapat diedit', 'info');
+      return;
+    }
+    setEditingRoleIndex(idx);
+    setNewRoleTemplateName(r.name);
+    setNewRoleTemplateIcon(r.icon);
+    setNewRoleTemplateBadge(r.badge);
+    setNewRoleTemplatePerms(r.permissions || {});
+    setIsRoleFormOpen(true);
+  };
+
+  const handleSwitchActiveRole = (targetRole: UserRole) => {
+    if (!session) return;
+    const targetPermissions = ROLE_DEFAULT_PERMISSIONS[targetRole];
+    const updatedSession: UserSession = {
+      ...session,
+      role: targetRole,
+      permissions: targetPermissions,
+    };
+    onUpdateSession(updatedSession);
+    localStorage.setItem('wms_user_role', targetRole);
+    onNotify(`Role aktif beralih ke: ${targetRole}`, 'info');
+    playCategoryBeep();
+  };
+
+  if (!isOpen) return null;
+
+  if (!canAccessModal) {
+    return (
+      <div
+        id="settingsModalOverlay"
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      >
+        <div
+          id="settingsModalContent"
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 text-center space-y-4"
+        >
+          <div className="w-12 h-12 bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 rounded-xl flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Akses Pengaturan Dibatasi</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Akun Anda tidak memiliki hak akses untuk membuka pengaturan sistem. Hanya Superadmin atau akun dengan izin Konfigurasi Sistem/Manajemen Pengguna yang diizinkan.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 px-4 bg-primary-500 hover:bg-primary-600 text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+    <div
+      id="settingsModalOverlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+    >
+      <div
+        id="settingsModalContent"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
+      >
+        {/* Header */}
+        <div className="px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary-500/10 border border-primary-500/30 flex items-center justify-center text-primary-500">
+              <Settings className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  Pengaturan Sistem & Hak Akses WMS
+                </h2>
+                {userIsSuperadmin && (
+                  <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-[10px] font-black tracking-wider uppercase border border-purple-300 dark:border-purple-800">
+                    SUPERADMIN
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Cloud DB, Integrasi Google Apps Script, Manajemen Pengguna & Perangkat
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('database')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'database'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              <span>Cloud Database</span>
+              {isRealtimeConnected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]"></span>
+              )}
+            </button>
+          )}
+
+          
+
+          {canManageUsers && (
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab('users')}
+                className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'users'
+                    ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Manajemen Pengguna ({userList.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('roles')}
+                className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'roles'
+                    ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                <span>Role Templates</span>
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('device')}
+            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'device'
+                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            <span>Preferensi Perangkat</span>
+          </button>
+
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('deploy_apk')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'deploy_apk'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Rocket className="w-4 h-4" />
+              <span>Deploy & APK</span>
+            </button>
+          )}
+          
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('whatsapp')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'whatsapp'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Integrasi WhatsApp</span>
+            </button>
+          )}
+
+          {canManageSettings && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('outlets')}
+              className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'outlets'
+                  ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Store className="w-4 h-4" />
+              <span>Store & Outlet</span>
+            </button>
+          )}
+        </div>
+
+        {/* Tab Content Body */}
+        <div className="p-5 overflow-y-auto flex-1 space-y-6">
+          {/* ========================================================================= */}
+          {/* TAB: USER MANAGEMENT (RBAC) */}
+          {/* ========================================================================= */}
+          {activeTab === 'users' && (
+            <div className="space-y-6">
+              {/* Quick Role Simulation Switcher for Superadmin Testing */}
+              {session && userIsSuperadmin && (
+                <div className="p-4 bg-gradient-to-r from-primary-500/10 via-primary-500/5 to-transparent border border-primary-500/30 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary-500" />
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                        Sesi Login Aktif: <b className="text-primary-500">{session.name || session.username}</b>
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-primary-500 text-white rounded-lg text-[11px] font-black uppercase">
+                      {session.role}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Ganti role simulasi cepat untuk menguji tampilan menu & izin fitur:
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {roleList.map((rObj) => {
+                      const r = rObj.name;
+                      const details = rObj;
+                      const isCurrent = session.role === r || (r === 'Superadmin' && session.role === 'All');
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => handleSwitchActiveRole(r)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            isCurrent
+                              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
+                              : 'bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-primary-500'
+                          }`}
+                        >
+                          <span className="text-sm">{details?.icon}</span>
+                          <span>{r}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Add User Form Accordion */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/50 dark:bg-[#0f172a]/50">
+                <div className="p-4 bg-white dark:bg-[#101726] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-primary-500" />
+                    <span className="text-xs font-extrabold text-slate-800 dark:text-white">
+                      Tambah Pengguna & Pengaturan Role Baru
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isPermissionFormOpen && editingIndex === null) {
+                        setIsPermissionFormOpen(false);
+                      } else {
+                        setEditingIndex(null);
+                        setNewUsername('');
+                        setNewName('');
+                        setNewPassword('');
+                        setNewNik('');
+                        setNewPhone('');
+                        setNewEmail('');
+                        setNewRole('Operator');
+                        setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS['Operator'] });
+                        setIsPermissionFormOpen(true);
+                      }
+                    }}
+                    className="text-xs text-primary-500 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    {isPermissionFormOpen && editingIndex === null ? 'Tutup Form' : '+ Buka Form Tambah User'}
+                  </button>
+                </div>
+
+                {isPermissionFormOpen && editingIndex === null && (
+                  <form onSubmit={handleSaveUser} className="p-4 sm:p-5 space-y-4">
+                    {/* Basic Info: Username, Name, Password, NIK / Data Karyawan */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Username / ID Login <span className="text-primary-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="e.g. gudang1"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Nama Lengkap Staff
+                        </label>
+                        <input
+                          type="text"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          placeholder="e.g. Budi Santoso"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tautkan NIK Karyawan
+                        </label>
+                        {karyawanDirectory.length > 0 ? (
+                          <select
+                            value={newNik}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewNik(val);
+                              const match = karyawanDirectory.find((k) => k.nik === val);
+                              if (match && !newName) {
+                                setNewName(match.nama);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                          >
+                            <option value="">-- Tanpa NIK --</option>
+                            {karyawanDirectory.map((k) => (
+                              <option key={k.nik} value={k.nik}>
+                                {k.nik} - {k.nama} ({k.divisi || 'Umum'})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={newNik}
+                            onChange={(e) => setNewNik(e.target.value)}
+                            placeholder="e.g. WH0001"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Password
+                        </label>
+                        <input
+                          type="text"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder={editingIndex !== null ? "Kosongkan jika tidak diubah" : "Default: 123456"}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          No HP (WhatsApp)
+                        </label>
+                        <input
+                          type="text"
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value)}
+                          placeholder="e.g. 628123456"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Email (Opsional)
+                        </label>
+                        <input
+                          type="email"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          placeholder="e.g. user@email.com"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Role Preset Selector */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                        Pilih Template Role Utama:
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {roleList.map((rObj) => {
+                          const r = rObj.name;
+                          const details = rObj;
+                          const isSelected = newRole === r;
+                          return (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => handleRolePresetSelect(r)}
+                              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                                isSelected
+                                  ? 'bg-primary-500/10 border-primary-500 text-primary-500 shadow-sm'
+                                  : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                              }`}
+                            >
+                              <div className="text-base mb-1">{details?.icon}</div>
+                              <div className="text-xs font-bold truncate">{r}</div>
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">
+                                {Object.values(details?.permissions || {}).filter(Boolean).length} izin
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Granular Permission Checkbox Matrix */}
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                        <div>
+                          <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-primary-500" />
+                            <span>Pengaturan Hak Akses Spesifik (Granular Permissions)</span>
+                          </h4>
+                          <p className="text-[10px] text-slate-400">
+                            Centang atau hapus centang untuk menyesuaikan fitur apa saja yang boleh dibuka oleh user ini
+                          </p>
+                        </div>
+
+                        <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-300 dark:border-emerald-800">
+                          {countGrantedPermissions(newPermissions)} / {TOTAL_PERMISSIONS_COUNT} Izin Aktif
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {PERMISSION_GROUPS.map((group) => {
+                          const groupKeys = group.permissions.map((p) => p.key as UserPermissionKey);
+                          const isAllGroupSelected = groupKeys.every((k) => newPermissions[k]);
+
+                          return (
+                            <div
+                              key={group.id}
+                              className="p-3.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5 shadow-xs"
+                            >
+                              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">{group.badge}</span>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 dark:text-white">
+                                      {group.title}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400">{group.description}</div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleSelectAllGroupPermissions(groupKeys, !isAllGroupSelected)
+                                  }
+                                  className="text-[10px] font-bold text-primary-500 hover:underline cursor-pointer"
+                                >
+                                  {isAllGroupSelected ? 'Batal' : 'Pilih Semua'}
+                                </button>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                {group.permissions.map((perm) => {
+                                  const isChecked = !!newPermissions[perm.key];
+                                  return (
+                                    <label
+                                      key={perm.key}
+                                      className={`flex items-start gap-2.5 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                        isChecked
+                                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 text-slate-900 dark:text-white'
+                                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => handleTogglePermission(perm.key as UserPermissionKey)}
+                                        className="mt-0.5 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-bold flex items-center gap-1">
+                                          <span>{perm.label}</span>
+                                          {perm.isSuperadminOnly && (
+                                            <span className="text-[8px] font-extrabold px-1 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded">
+                                              SUPERADMIN
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 leading-tight">
+                                          {perm.description}
+                                        </div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Form Buttons */}
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPermissionFormOpen(false);
+                          setEditingIndex(null);
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan User Baru</span>
+                      </button>
+                    </div>
+                  </form>)}
+      {editingIndex !== null && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-blue-500" />
+                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  Edit Data & Izin User: "{newUsername}"
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingIndex(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveUser} className="p-4 sm:p-5 space-y-4">
+                    {/* Basic Info: Username, Name, Password, NIK / Data Karyawan */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Username / ID Login <span className="text-primary-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="e.g. gudang1"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Nama Lengkap Staff
+                        </label>
+                        <input
+                          type="text"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          placeholder="e.g. Budi Santoso"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tautkan NIK Karyawan
+                        </label>
+                        {karyawanDirectory.length > 0 ? (
+                          <select
+                            value={newNik}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewNik(val);
+                              const match = karyawanDirectory.find((k) => k.nik === val);
+                              if (match && !newName) {
+                                setNewName(match.nama);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                          >
+                            <option value="">-- Tanpa NIK --</option>
+                            {karyawanDirectory.map((k) => (
+                              <option key={k.nik} value={k.nik}>
+                                {k.nik} - {k.nama} ({k.divisi || 'Umum'})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={newNik}
+                            onChange={(e) => setNewNik(e.target.value)}
+                            placeholder="e.g. WH0001"
+                            className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Password
+                        </label>
+                        <input
+                          type="text"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder={editingIndex !== null ? "Kosongkan jika tidak diubah" : "Default: 123456"}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          No HP (WhatsApp)
+                        </label>
+                        <input
+                          type="text"
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value)}
+                          placeholder="e.g. 628123456"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Email (Opsional)
+                        </label>
+                        <input
+                          type="email"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          placeholder="e.g. user@email.com"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Role Preset Selector */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                        Pilih Template Role Utama:
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {roleList.map((rObj) => {
+                          const r = rObj.name;
+                          const details = rObj;
+                          const isSelected = newRole === r;
+                          return (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => handleRolePresetSelect(r)}
+                              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                                isSelected
+                                  ? 'bg-primary-500/10 border-primary-500 text-primary-500 shadow-sm'
+                                  : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                              }`}
+                            >
+                              <div className="text-base mb-1">{details?.icon}</div>
+                              <div className="text-xs font-bold truncate">{r}</div>
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">
+                                {Object.values(details?.permissions || {}).filter(Boolean).length} izin
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Granular Permission Checkbox Matrix */}
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                        <div>
+                          <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-primary-500" />
+                            <span>Pengaturan Hak Akses Spesifik (Granular Permissions)</span>
+                          </h4>
+                          <p className="text-[10px] text-slate-400">
+                            Centang atau hapus centang untuk menyesuaikan fitur apa saja yang boleh dibuka oleh user ini
+                          </p>
+                        </div>
+
+                        <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-300 dark:border-emerald-800">
+                          {countGrantedPermissions(newPermissions)} / {TOTAL_PERMISSIONS_COUNT} Izin Aktif
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {PERMISSION_GROUPS.map((group) => {
+                          const groupKeys = group.permissions.map((p) => p.key as UserPermissionKey);
+                          const isAllGroupSelected = groupKeys.every((k) => newPermissions[k]);
+
+                          return (
+                            <div
+                              key={group.id}
+                              className="p-3.5 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5 shadow-xs"
+                            >
+                              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">{group.badge}</span>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 dark:text-white">
+                                      {group.title}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400">{group.description}</div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleSelectAllGroupPermissions(groupKeys, !isAllGroupSelected)
+                                  }
+                                  className="text-[10px] font-bold text-primary-500 hover:underline cursor-pointer"
+                                >
+                                  {isAllGroupSelected ? 'Batal' : 'Pilih Semua'}
+                                </button>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                {group.permissions.map((perm) => {
+                                  const isChecked = !!newPermissions[perm.key];
+                                  return (
+                                    <label
+                                      key={perm.key}
+                                      className={`flex items-start gap-2.5 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                        isChecked
+                                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 text-slate-900 dark:text-white'
+                                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => handleTogglePermission(perm.key as UserPermissionKey)}
+                                        className="mt-0.5 rounded text-primary-500 focus:ring-primary-500 cursor-pointer"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-bold flex items-center gap-1">
+                                          <span>{perm.label}</span>
+                                          {perm.isSuperadminOnly && (
+                                            <span className="text-[8px] font-extrabold px-1 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded">
+                                              SUPERADMIN
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 leading-tight">
+                                          {perm.description}
+                                        </div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Form Buttons */}
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPermissionFormOpen(false);
+                          setEditingIndex(null);
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-extrabold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan Perubahan User</span>
+                      </button>
+                    </div>
+                  </form>
+          </div>
+        </div>
+      )}
+
+              </div>
+
+              {/* User List Table */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-primary-500" />
+                      <span>Daftar Pengguna Supabase ({userList.length})</span>
+                    </h4>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      wms_users Cloud DB
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords((prev) => !prev)}
+                      className="px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-700"
+                    >
+                      <Key className="w-3 h-3 text-primary-500" />
+                      <span>{showPasswords ? 'Sembunyikan Password' : 'Lihat Password'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCleanupDummyUsers}
+                      disabled={isLoadingUsers}
+                      className="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      <Trash2 className={`w-3 h-3 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                      <span>Hapus Dummy User</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={loadUsersFromSupabase}
+                      disabled={isLoadingUsers}
+                      className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                      <span>Sync Supabase</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-[#0f172a]">
+                  {userList.map((usr, idx) => {
+                    const roleInfo = ROLE_DETAILS[usr.role || 'Operator'] || ROLE_DETAILS['Operator'];
+                    const grantedCount = countGrantedPermissions(
+                      usr.permissions || ROLE_DEFAULT_PERMISSIONS[usr.role || 'Operator']
+                    );
+                    const isCurrentUser = session?.username.toLowerCase() === usr.username.toLowerCase();
+
+                    return (
+                      <div
+                        key={idx}
+                        className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0 ${roleInfo?.badge || "bg-slate-500"}`}>
+                            {roleInfo?.icon || "👤"}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                              <span className="truncate">{usr.name || usr.username}</span>
+                              <span className="font-mono text-[10px] text-slate-400 font-normal">
+                                (@{usr.username})
+                              </span>
+                              {isCurrentUser && (
+                                <span className="text-[9px] px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded font-bold">
+                                  Akun Anda
+                                </span>
+                              )}
+                              {usr.nik && (
+                                <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 rounded font-bold border border-cyan-200 dark:border-cyan-800">
+                                  NIK: {usr.nik}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span>
+                                Role: <b className="text-slate-700 dark:text-slate-200">{usr.role}</b>
+                              </span>
+                              <span>•</span>
+                              <span className="font-mono text-slate-600 dark:text-slate-300">
+                                Pass:{' '}
+                                <b className="font-mono text-primary-500">
+                                  {showPasswords ? (usr.password || '123456') : '••••••'}
+                                </b>
+                              </span>
+                              <span>•</span>
+                              <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                                {usr.role?.toLowerCase() === 'superadmin' 
+                                  ? 'Akses Penuh (Sistem)' 
+                                  : `${grantedCount}/${TOTAL_PERMISSIONS_COUNT} Izin Aktif`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 shrink-0">
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-lg font-extrabold uppercase ${
+                              usr.role === 'Superadmin' || usr.role === 'All'
+                                ? 'bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800'
+                                : 'bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                            }`}
+                          >
+                            {usr.role}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleEditUser(idx)}
+                            title="Edit Role & Izin"
+                            className="px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg flex items-center gap-1 cursor-pointer border border-blue-200 dark:border-blue-800/60"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Edit Izin</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(idx)}
+                            title="Hapus User"
+                            disabled={usr.username.toLowerCase() === 'admin' || usr.username.toLowerCase() === 'superadmin'}
+                            className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg disabled:opacity-20 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: DATABASE CONFIG (SUPERADMIN ONLY) */}
+          {/* ========================================================================= */}
+          {activeTab === 'database' && (
+            <div className="space-y-5">
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black">
+                    S
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+                      Status Database Realtime
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {isRealtimeConnected
+                        ? '🟢 WebSocket Live Channel Terhubung (log_produk & picking_list sync)'
+                        : '🟡 Menghubungkan ke Realtime Channel...'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTestDatabase}
+                    disabled={isTestingDatabase}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingDatabase ? 'animate-spin' : ''}`} />
+                    <span>Tes Koneksi</span>
+                  </button>
+                </div>
+              </div>
+
+              {databaseStatus === 'success' && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>{databaseStatusMsg}</span>
+                </div>
+              )}
+
+              {databaseStatus === 'error' && (
+                <div className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800/60 rounded-xl text-xs text-primary-800 dark:text-primary-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                  <span>{databaseStatusMsg}</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Database Project URL
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(supabaseUrl, 'Database URL')}
+                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey === 'Database URL' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      <span>Salin</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={supabaseUrl}
+                    onChange={(e) => setSupabaseUrl(e.target.value)}
+                    placeholder="https://xyz.database.co"
+                    className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Database Anon / Public API Key
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(supabaseKey, 'Database Key')}
+                      className="text-[11px] text-slate-500 hover:text-primary-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey === 'Database Key' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      <span>Salin</span>
+                    </button>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={supabaseKey}
+                    onChange={(e) => setSupabaseKey(e.target.value)}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                  />
+                </div>
+                
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current text-primary-500"><path d="M7.71,9.79l-4,6.93h12.56l4-6.93H7.71z M10.49,11.39h6.98l-2.26,3.93h-6.98L10.49,11.39z M13.71,8.39l-4,6.93L5.71,15.3l4-6.93H13.71z M16.49,10l-2.26,3.93l-4-6.93l2.26-3.93L16.49,10z"/></svg>
+                        Google Drive Cloud Storage (Penerimaan Produksi & QC)
+                      </label>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Foto barang masuk Penerimaan Produksi & Foto Reject QC otomatis diunggah ke Google Drive (menghemat kuota Supabase).
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleTestGdrive}
+                      disabled={isTestingGdrive}
+                      className="px-3 py-1.5 bg-primary-500/10 hover:bg-primary-500/20 text-primary-500 rounded-xl text-xs font-bold transition-all border border-primary-500/30 flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isTestingGdrive ? 'animate-spin' : ''}`} />
+                      <span>{isTestingGdrive ? 'Mengetes...' : 'Tes Koneksi GDrive'}</span>
+                    </button>
+                  </div>
+
+                  {gdriveStatus === 'success' && (
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <span>{gdriveStatusMsg}</span>
+                    </div>
+                  )}
+
+                  {gdriveStatus === 'error' && (
+                    <div className="p-3 bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800/60 rounded-xl text-xs text-primary-800 dark:text-primary-300 space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                        <span>{gdriveStatusMsg}</span>
+                      </div>
+                      {gdriveStatusMsg.includes('DriveApp') && (
+                        <div className="text-[11px] text-primary-700 dark:text-primary-300 bg-primary-100/60 dark:bg-primary-900/40 p-2 rounded-lg leading-relaxed">
+                          <b>Solusi Otorisasi:</b> Buka editor skrip di <code>script.google.com</code>, buat fungsi <code>function testAuth() &#123; DriveApp.getRootFolder(); &#125;</code>, lalu klik <b>Run (Jalankan)</b> sekali agar Google memunculkan popup izin akses <i>"Allow / Izinkan"</i> akun Google Anda. Pastikan juga deploy Web App diatur ke <b>"Execute as: Me"</b> dan <b>"Who has access: Anyone"</b>.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          1. Google Drive Folder URL / ID
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={gdriveFolderUrl}
+                        onChange={(e) => setGdriveFolderUrl(e.target.value)}
+                        placeholder="https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          2. GAS Web App URL (Google Apps Script)
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={gdriveGasUrl}
+                        onChange={(e) => setGdriveGasUrl(e.target.value)}
+                        placeholder="https://script.google.com/macros/s/AKfycbw.../exec"
+                        className="w-full px-3.5 py-2 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Master Database CSV Update Box (Superadmin Only) */}
+              {userIsSuperadmin && onOpenUpdateDatabase && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-primary-500/10 via-primary-500/5 to-transparent border border-primary-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-primary-600 text-white font-black shrink-0">
+                      <Database className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black text-slate-800 dark:text-white">
+                          Update Database Master (2 File CSV)
+                        </h4>
+                        <span className="text-[9px] px-1.5 py-0.2 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 font-extrabold rounded">
+                          SUPERADMIN
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Import data produk & inventori cabang store ke Supabase (Otomatis hapus database lama & ganti baru).
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenUpdateDatabase();
+                    }}
+                    className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-primary-600/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Buka Update Database</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleResetDatabase}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Default</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveDatabase}
+                  className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Simpan Konfigurasi Database</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: GOOGLE APPS SCRIPT CONFIG (SUPERADMIN ONLY) */}
+          {/* ========================================================================= */}
+          {/* ========================================================================= */}
+          {/* TAB: DEVICE & SCANNER PREFERENCES (ACCESSIBLE TO ALL USERS) */}
+          {/* ========================================================================= */}
+
+          {/* ========================================================================= */}
+          {/* TAB: ROLE TEMPLATES */}
+          {/* ========================================================================= */}
+          {activeTab === 'roles' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary-500" />
+                      Role Templates
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-1 max-w-lg leading-relaxed">
+                      Tambahkan dan atur role (hak akses) pengguna di sini. Role yang Anda buat akan tersedia saat mengatur pengguna.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href="/DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
+                      download="DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Unduh Dokumen PDF Matriks 4 Hierarki Hak Akses WMS"
+                      className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Unduh PDF Matriks Akses</span>
+                    </a>
+                    {!isRoleFormOpen && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingRoleIndex(null);
+                          setNewRoleTemplateName('');
+                          setNewRoleTemplateIcon('📦');
+                          setNewRoleTemplateBadge('bg-slate-500');
+                          setNewRoleTemplatePerms({});
+                          setIsRoleFormOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-primary-500 text-white rounded-lg text-xs font-bold hover:bg-primary-600 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Role Baru
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isRoleFormOpen && (
+                  <form 
+                    className="mb-6 p-4 rounded-xl border border-primary-500/20 bg-primary-500/5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSaveRoleTemplate();
+                    }}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                          Nama Role <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newRoleTemplateName}
+                          onChange={(e) => setNewRoleTemplateName(e.target.value)}
+                          placeholder="misal: Supervisor"
+                          className="w-full px-3 py-2 bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">Icon (Emoji)</label>
+                          <input
+                            type="text"
+                            value={newRoleTemplateIcon}
+                            onChange={(e) => setNewRoleTemplateIcon(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">Warna Badge</label>
+                          <select
+                            value={newRoleTemplateBadge}
+                            onChange={(e) => setNewRoleTemplateBadge(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                          >
+                            <option value="bg-slate-500">Abu-abu</option>
+                            <option value="bg-primary-500">Biru (Primary)</option>
+                            <option value="bg-purple-500">Ungu</option>
+                            <option value="bg-emerald-500">Hijau</option>
+                            <option value="bg-amber-500">Kuning</option>
+                            <option value="bg-rose-500">Merah</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar border-t border-slate-200 dark:border-slate-700 pt-4">
+                      {PERMISSION_GROUPS.map((group) => (
+                        <div key={group.id} className="space-y-2">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm">{group.badge}</span>
+                            <h5 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">{group.title}</h5>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {group.permissions.map((perm) => {
+                              const isChecked = !!newRoleTemplatePerms[perm.key as keyof UserPermissions];
+                              return (
+                                <label
+                                  key={perm.key}
+                                  className={`flex items-start gap-2 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                    isChecked ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setNewRoleTemplatePerms(prev => ({
+                                        ...prev,
+                                        [perm.key]: checked
+                                      }));
+                                    }}
+                                    className="mt-0.5 rounded text-emerald-500 focus:ring-emerald-500"
+                                  />
+                                  <div>
+                                    <div className={`text-xs font-bold ${isChecked ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>
+                                      {perm.label}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 leading-tight">
+                                      {perm.description}
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setIsRoleFormOpen(false)}
+                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 rounded-xl"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-primary-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        Simpan Role
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {roleList.map((r, idx) => (
+                    <div key={r.name} className="flex items-start justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-[#0f172a]/50">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg text-white ${r.badge}`}>
+                          {r.icon}
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-slate-800 dark:text-white leading-none mb-1">{r.name}</div>
+                          <div className="text-[10px] text-slate-500 font-medium">
+                            {r.name.toLowerCase() === 'superadmin' 
+                              ? 'Akses Penuh (Sistem)' 
+                              : `${Object.values(r.permissions).filter(Boolean).length} izin akses`}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEditRoleTemplate(idx)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 cursor-pointer transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRoleTemplate(idx)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'device' && (
+            <div className="space-y-4">
+              {/* Audio & Vibration Test */}
+              <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary-500/10 text-primary-500 flex items-center justify-center">
+                    <Volume2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-white">
+                      Feedback Suara & Getaran Scanner
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Uji nada beep scanner fisik/kamera dan getaran haptic HP
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playSuccessBeep();
+                      vibrateDevice(50);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs font-bold hover:bg-emerald-200 cursor-pointer"
+                  >
+                    🔊 Test Beep Sukses
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playCategoryBeep();
+                      vibrateDevice(60);
+                    }}
+                    className="px-3 py-1.5 bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800 rounded-xl text-xs font-bold hover:bg-blue-200 cursor-pointer"
+                  >
+                    🔊 Test Beep Kategori/Lokasi
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playErrorBeep();
+                    }}
+                    className="px-3 py-1.5 bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-800 rounded-xl text-xs font-bold hover:bg-primary-200 cursor-pointer"
+                  >
+                    🔊 Test Beep Error (Keras)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playNewTaskChime();
+                    }}
+                    className="px-3 py-1.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-bold hover:bg-amber-200 cursor-pointer"
+                  >
+                    🔔 Test Notif Tugas Baru
+                  </button>
+                </div>
+              </div>
+
+              {/* Push Notifications */}
+              <div className="p-3.5 bg-slate-50 dark:bg-[#0f172a] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-white">
+                      Push Notifikasi Real-time
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Status: <b>{notificationPermission.toUpperCase()}</b>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onRequestNotification}
+                  className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-primary-500 cursor-pointer"
+                >
+                  {notificationPermission === 'granted' ? '🔔 Aktif' : 'Minta Izin'}
+                </button>
+              </div>
+
+              {/* Clear Cache */}
+              <div className="p-3.5 bg-primary-50/50 dark:bg-primary-950/20 rounded-2xl border border-primary-200 dark:border-primary-900/40 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-primary-800 dark:text-primary-300">
+                    Bersihkan Cache & Reset Data Lokal
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Hapus cache katalog produk dan riwayat sementara di browser ini
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await clearLocalDb();
+                    localStorage.removeItem('wms_product_cache');
+                    localStorage.removeItem('wms_cache_inventory_v38');
+                    localStorage.removeItem('wms_inventory_stock_cache');
+                    onNotify('Database & cache katalog lokal berhasil dibersihkan.', 'info');
+                  }}
+                  className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                >
+                  Bersihkan Cache & Reset DB Lokal
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: DEPLOY & APK */}
+          {/* ========================================================================= */}
+          {activeTab === 'deploy_apk' && (
+            <div className="space-y-6">
+              {/* GitHub Pages */}
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Github className="w-5 h-5 text-slate-800 dark:text-white" />
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    1. Cara Deploy Langsung ke GitHub Pages (Gratis)
+                  </h3>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl">
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-2">
+                      Aplikasi ini sudah dilengkapi dengan file otomatisasi <strong>GitHub Actions</strong> (<code>.github/workflows/deploy.yml</code>) yang langsung mem-build web WMS Anda ke GitHub Pages tanpa layanan tambahan.
+                    </p>
+                    <ol className="text-xs text-slate-700 dark:text-slate-300 space-y-1.5 list-decimal list-inside pl-1 font-medium">
+                      <li>Buat <strong>Repository Baru</strong> di GitHub Anda.</li>
+                      <li>Upload/push semua file dari proyek ini ke branch utama (<code>main</code> atau <code>master</code>).</li>
+                      <li>Di repository GitHub Anda, masuk ke tab <strong>Settings</strong> {'>'} <strong>Pages</strong>.</li>
+                      <li>Pada bagian <em>Build and deployment</em>, ubah <em>Source</em> menjadi <strong>GitHub Actions</strong>.</li>
+                      <li>Selesai! GitHub akan otomatis memproses dan dalam 1-2 menit, link Web App Anda akan muncul di bagian atas halaman Settings tersebut.</li>
+                    </ol>
+                    <div className="mt-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/50 rounded-lg">
+                      <p className="text-[10px] text-yellow-800 dark:text-yellow-400 font-semibold">
+                        *Catatan penting untuk Vite: Jika URL GitHub Pages Anda memiliki subfolder (misal: <code>username.github.io/nama-repo/</code>), pastikan Anda mengubah pengaturan <code>base: '/nama-repo/'</code> di dalam file <code>vite.config.ts</code> sebelum melakukan push.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* PWABuilder Android */}
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Smartphone className="w-5 h-5 text-emerald-500" />
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    2. Cara Generate File APK Android (.apk / .aab)
+                  </h3>
+                </div>
+
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 rounded-xl space-y-3">
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                    Aplikasi ini sudah mendukung spesifikasi Progressive Web App (PWA) lengkap dengan <code className="font-mono text-emerald-700 dark:text-emerald-400">manifest.json</code> dan <code className="font-mono text-emerald-700 dark:text-emerald-400">sw.js</code>. Anda dapat mem-build APK nya secara gratis dalam 3 menit:
+                  </p>
+                  
+                  <ol className="text-xs text-slate-700 dark:text-slate-300 space-y-1.5 list-decimal list-inside pl-1">
+                    <li>Pastikan aplikasi Web sudah online (seperti panduan nomor 1).</li>
+                    <li>Buka situs <a href="https://www.pwabuilder.com/" target="_blank" rel="noreferrer" className="text-emerald-600 dark:text-emerald-400 underline font-bold flex inline-flex items-center gap-1">PWABuilder <ExternalLink className="w-3 h-3" /></a> di laptop.</li>
+                    <li>Masukkan link URL web WMS Anda (contoh: <code className="text-[10px]">https://chocowms.vercel.app</code>) lalu klik <strong>Start</strong>.</li>
+                    <li>Sistem akan menganalisa web Anda dan memberi skor (biasanya sempurna karena manifest dan SW sudah siap).</li>
+                    <li>Klik tombol <strong>Package for Android</strong>.</li>
+                    <li>Tunggu beberapa saat, lalu unduh file Zip yang berisi <strong>APK</strong> dan <strong>AAB</strong>.</li>
+                    <li>Kirim file <code>app-release.apk</code> ke HP operator dan install.</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Update & Bug Fixes */}
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Workflow className="w-5 h-5 text-primary-500" />
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    3. Tata Cara Update / Revisi (Tanpa Perlu Install APK Ulang)
+                  </h3>
+                </div>
+
+                <div className="p-3 bg-primary-500/5 border border-primary-500/20 rounded-xl">
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
+                    Keunggulan menggunakan PWABuilder (Webview) adalah Anda <strong>tidak perlu meminta operator install ulang APK</strong> setiap kali ada revisi bug atau fitur baru.
+                  </p>
+                  
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-slate-100 dark:border-slate-700">
+                      <Code2 className="w-6 h-6 text-slate-400" />
+                      <div className="flex-1">
+                        <h5 className="text-[11px] font-bold text-slate-900 dark:text-white">A. Perbaiki Kode</h5>
+                        <p className="text-[10px] text-slate-500">Edit kode fitur/bug di local/AI Studio</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-center -my-1">
+                      <ArrowRight className="w-4 h-4 text-slate-300 dark:text-slate-600 rotate-90 sm:rotate-0" />
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-slate-100 dark:border-slate-700">
+                      <Github className="w-6 h-6 text-slate-400" />
+                      <div className="flex-1">
+                        <h5 className="text-[11px] font-bold text-slate-900 dark:text-white">B. Push/Deploy Web</h5>
+                        <p className="text-[10px] text-slate-500">Push kode baru ke GitHub / Vercel</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-center -my-1">
+                      <ArrowRight className="w-4 h-4 text-slate-300 dark:text-slate-600 rotate-90 sm:rotate-0" />
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-primary-500/10 border border-primary-500/30 p-2.5 rounded-lg">
+                      <Sparkles className="w-6 h-6 text-primary-500" />
+                      <div className="flex-1">
+                        <h5 className="text-[11px] font-bold text-primary-500">C. Update Otomatis!</h5>
+                        <p className="text-[10px] text-primary-500/80">APK di HP akan otomatis merefresh & memuat fitur baru saat dibuka.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: WHATSAPP INTEGRATION */}
+          {/* ========================================================================= */}
+          {activeTab === 'whatsapp' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-primary-500/10 border border-primary-500/30 rounded-2xl p-4 sm:p-5">
+                <div>
+                  <h3 className="text-[13px] font-black text-slate-800 dark:text-white flex items-center gap-2">
+                    <Share2 className="w-5 h-5 text-primary-500" />
+                    WhatsApp API (Fonnte)
+                  </h3>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 max-w-lg leading-relaxed">
+                    Kirim notifikasi otomatis ke tim atau peminjam melalui WhatsApp tanpa perlu copy-paste manual.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Fonnte API Token
+                  </label>
+                  <input
+                    type="password"
+                    value={fonnteToken}
+                    onChange={(e) => setFonnteToken(e.target.value)}
+                    placeholder="Masukkan Token dari device Fonnte Anda"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Dapatkan token dari dashboard Fonnte. Jangan bagikan token ini.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Nomor Target Default (Grup Gudang)
+                  </label>
+                  <input
+                    type="text"
+                    value={fonnteGroupTarget}
+                    onChange={(e) => setFonnteGroupTarget(e.target.value)}
+                    placeholder="Contoh: 6281234567890 (Tanpa tanda +)"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Nomor WhatsApp grup gudang untuk notifikasi Peminjaman/Picking List (Gunakan ID Grup jika mengirim ke grup Fonnte).
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      URL Webhook Pesan Masuk (Google Apps Script)
+                    </label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      Incoming Scan WA
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={waWebhookGasUrl}
+                      onChange={(e) => {
+                        setWaWebhookGasUrl(e.target.value);
+                        setWaWebhookStatus('idle');
+                      }}
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTestWaWebhook}
+                      disabled={isTestingWaWebhook || !waWebhookGasUrl.trim()}
+                      className="px-3 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isTestingWaWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5 text-blue-500" />}
+                      <span>Tes URL</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    URL Google Apps Script untuk menerima scan stok (#IN, #OUT, #LOK) dari Fonnte. Masukkan URL ini juga di menu Webhook dashboard Fonnte.
+                  </p>
+
+                  {waWebhookStatus !== 'idle' && (
+                    <div className={`mt-2 p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                      waWebhookStatus === 'success' 
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                        : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                    }`}>
+                      {waWebhookStatus === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                      <span className="leading-tight">{waWebhookStatusMsg}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <label className="flex items-start gap-3 p-3 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fonnteAutoSend}
+                      onChange={(e) => setFonnteAutoSend(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                        Kirim Otomatis Saat Submit Peminjaman
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 leading-relaxed">
+                        Setiap kali peminjaman disubmit, otomatis mengirimkan Picking List ke WA Grup Gudang dan pesan konfirmasi ke nomor pribadi peminjam.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={handleSaveWa}
+                    className="flex-1 px-4 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-black shadow-[0_4px_12px_rgba(255,122,0,0.3)] transition-all flex items-center justify-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Simpan Pengaturan</span>
+                  </button>
+                  <button
+                    onClick={handleTestWa}
+                    disabled={isTestingWa}
+                    className="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isTestingWa ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>Test Kirim Pesan</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* ========================================================================= */}
+          {/* TAB: OUTLETS CONFIGURATION */}
+          {/* ========================================================================= */}
+          {activeTab === 'outlets' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
+                    <Store className="w-4 h-4 text-primary-500" />
+                    Manajemen Store & Outlet
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Atur daftar nama store/outlet untuk Manual Shipment.</p>
+                </div>
+                <button
+                  onClick={() => setEditingOutlet({ nama: '', fulfillment: '1 - 2 Hari' })}
+                  className="px-3 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-primary-600 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Tambah Store
+                </button>
+              </div>
+
+              {editingOutlet && (
+                <form onSubmit={handleSaveOutlet} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 pb-2">
+                    {editingOutlet.id ? 'Edit Store' : 'Tambah Store Baru'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Store</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingOutlet.nama}
+                        onChange={e => setEditingOutlet({...editingOutlet, nama: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                        placeholder="Misal: Shopee Chocochips"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estimasi Fulfillment</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingOutlet.fulfillment}
+                        onChange={e => setEditingOutlet({...editingOutlet, fulfillment: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                        placeholder="Misal: 1 - 2 Hari"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingOutlet(null)}
+                      className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isLoadingOutlets}
+                      className="px-4 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-2"
+                    >
+                      {isLoadingOutlets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Simpan
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-500">
+                      <th className="px-4 py-3">Nama Store</th>
+                      <th className="px-4 py-3">Estimasi Fulfillment</th>
+                      <th className="px-4 py-3 w-20 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoadingOutlets && outletList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-primary-500 mb-2" />
+                          Memuat data store...
+                        </td>
+                      </tr>
+                    ) : outletList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500 text-xs">Belum ada data store.</td>
+                      </tr>
+                    ) : (
+                      outletList.map((outlet, idx) => (
+                        <tr key={outlet.id || idx} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {outlet.nama}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {outlet.fulfillment}
+                          </td>
+                          <td className="px-4 py-3 flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => setEditingOutlet(outlet)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+                              title="Edit Store"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteOutlet(outlet.id)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                              title="Hapus Store"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-between items-center text-xs text-slate-500">
+          <div className="flex items-center gap-1.5">
+            <Smartphone className="w-3.5 h-3.5 text-primary-500" />
+            <span className="font-mono">WMS v2.4 Chocochips • RBAC Engine</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold transition-all cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* Custom Confirm Dialog for Settings */}
+    {settingsConfirmDialog.isOpen && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-[#1e293b] rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200">
+          <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">{settingsConfirmDialog.title}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{settingsConfirmDialog.message}</p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+            >
+              Batal
+            </button>
+            <button
+              onClick={settingsConfirmDialog.onConfirm}
+              className="px-4 py-2 text-sm font-bold bg-primary-500 hover:bg-primary-600 text-white rounded-xl shadow-sm shadow-primary-500/20 transition-all active:scale-95"
+            >
+              Ya, Lanjutkan
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  );
+};

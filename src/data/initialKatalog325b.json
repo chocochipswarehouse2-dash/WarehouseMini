@@ -1,0 +1,173 @@
+[
+  {
+    "id": "KAT-325B-1",
+    "nomor": "1",
+    "deskripsi": "Quisera Top",
+    "price": "315.000",
+    "variants": [
+      {
+        "warna": "Brown",
+        "size": "Default",
+        "sku": "F26ITN816BN",
+        "qty": 78
+      },
+      {
+        "warna": "Grey",
+        "size": "Default",
+        "sku": "F26ITN816GY",
+        "qty": 100
+      },
+      {
+        "warna": "Latte",
+        "size": "Default",
+        "sku": "F26ITN816LA",
+        "qty": 100
+      },
+      {
+        "warna": "Navy",
+        "size": "Default",
+        "sku": "F26ITN816NV",
+        "qty": 100
+      }
+    ],
+    "image_url": "/katalog/row_4_image1.jpg"
+  },
+  {
+    "id": "KAT-325B-2",
+    "nomor": "2",
+    "deskripsi": "Saveria Top",
+    "price": "395.000",
+    "variants": [
+      {
+        "warna": "Black",
+        "size": "Default",
+        "sku": "F26ITN817BA",
+        "qty": 100
+      },
+      {
+        "warna": "Brown",
+        "size": "Default",
+        "sku": "F26ITN817BN",
+        "qty": 100
+      },
+      {
+        "warna": "Cream",
+        "size": "Default",
+        "sku": "F26ITN817CR",
+        "qty": 99
+      }
+    ],
+    "image_url": "/katalog/row_19_image2.jpg"
+  },
+  {
+    "id": "KAT-325B-3",
+    "nomor": "3",
+    "deskripsi": "Maple Top",
+    "price": "450.000",
+    "variants": [
+      {
+        "warna": "Brown",
+        "size": "S",
+        "sku": "F26GTN779BNS",
+        "qty": 56
+      },
+      {
+        "warna": "Brown",
+        "size": "M",
+        "sku": "F26GTN779BNM",
+        "qty": 41
+      },
+      {
+        "warna": "Brown",
+        "size": "L",
+        "sku": "F26GTN779BNL",
+        "qty": 31
+      },
+      {
+        "warna": "Brown",
+        "size": "XL",
+        "sku": "F26GTN779BNXL",
+        "qty": 20
+      },
+      {
+        "warna": "Navy",
+        "size": "S",
+        "sku": "F26GTN779NVS",
+        "qty": 36
+      },
+      {
+        "warna": "Navy",
+        "size": "M",
+        "sku": "F26GTN779NVM",
+        "qty": 54
+      },
+      {
+        "warna": "Navy",
+        "size": "L",
+        "sku": "F26GTN779NVL",
+        "qty": 30
+      },
+      {
+        "warna": "Navy",
+        "size": "XL",
+        "sku": "F26GTN779NVXL",
+        "qty": 20
+      }
+    ],
+    "image_url": "/katalog/row_34_image3.png"
+  },
+  {
+    "id": "KAT-325B-4",
+    "nomor": "4",
+    "deskripsi": "Maggie Top",
+    "price": "475.000",
+    "variants": [
+      {
+        "warna": "Dark Grey",
+        "size": "Default",
+        "sku": "F26GTN781BA",
+        "qty": 62
+      },
+      {
+        "warna": "Khaki",
+        "size": "Default",
+        "sku": "F26GTN781KH",
+        "qty": 62
+      }
+    ],
+    "image_url": "/katalog/row_49_image4.jpg"
+  },
+  {
+    "id": "KAT-325B-5",
+    "nomor": "5",
+    "deskripsi": "Skylar Jacket",
+    "price": "495.000",
+    "variants": [
+      {
+        "warna": "Beige",
+        "size": "S",
+        "sku": "F26IOK080BES",
+        "qty": 38
+      },
+      {
+        "warna": "Beige",
+        "size": "M",
+        "sku": "F26IOK080BEM",
+        "qty": 38
+      },
+      {
+        "warna": "Brown",
+        "size": "S",
+        "sku": "F26IOK080BNS",
+        "qty": 30
+      },
+      {
+        "warna": "Brown",
+        "size": "M",
+        "sku": "F26IOK080BNM",
+        "qty": 27
+      }
+    ],
+    "image_url": "/katalog/row_64_image5.jpg"
+  }
+]

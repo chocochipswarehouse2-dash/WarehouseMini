@@ -1,0 +1,2 @@
+sed -i 's/-- TABEL ROADMAP CREATE TABLE IF NOT EXISTS public.master_produk FEATURE REQUEST/-- TABEL ROADMAP \& FEATURE REQUEST/' src/components/UpdateDatabaseModal.tsx
+sed -i 's/CREATE TABLE IF NOT EXISTS public.wms_roadmap (/-- TABEL DOKUMENTASI SISTEM (WORKFLOW COMMENTS)\nCREATE TABLE IF NOT EXISTS public.wms_system_docs (\n  section_id TEXT PRIMARY KEY,\n  content TEXT,\n  updated_by TEXT,\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);\n\nCREATE TABLE IF NOT EXISTS public.wms_roadmap (/' src/components/UpdateDatabaseModal.tsx

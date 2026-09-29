@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# clasp OAuth credentials (jangan di-commit!)
+.clasprc.json
+gas/.clasprc.json
+
+# Supabase credentials (jangan di-commit!)
+supabase/.env
+
+scratch/

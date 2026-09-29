@@ -1,0 +1,239 @@
+import { VitePWA } from 'vite-plugin-pwa';
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import {defineConfig} from 'vite';
+
+export default defineConfig(({ command }) => {
+  const isGithubPages = process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_PAGES === 'true';
+  const isVercel = !!process.env.VERCEL;
+  
+  // In development (serve), always use '/' so the reverse proxy can route properly.
+  // In production, use VITE_BASE or auto-detect Github Pages/Vercel.
+  let base = '/';
+  if (command !== 'serve') {
+    base = process.env.VITE_BASE 
+      ? (process.env.VITE_BASE.startsWith('/') ? process.env.VITE_BASE : `/${process.env.VITE_BASE}/`)
+      : (isVercel ? '/' : (isGithubPages ? '/WarehouseMini/' : './'));
+  }
+
+
+  return {
+    base,
+    plugins: [
+      react(),
+      tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        injectRegister: 'auto',
+        manifestFilename: 'manifest.json',
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          importScripts: ['pwa-extras.js'],
+          navigateFallback: 'index.html',
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'supabase-api-cache',
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            }
+          ]
+        },
+        manifest: {
+          id: 'warehouse-mini',
+          name: 'Warehouse Mini',
+          short_name: 'Warehouse Mini',
+          description: 'Aplikasi Scanner Barcode & WMS Warehouse Management System dengan sinkronisasi Supabase real-time',
+          theme_color: '#0f172a',
+          background_color: '#0f172a',
+          display: 'standalone',
+          display_override: ['standalone', 'minimal-ui'],
+          orientation: 'any',
+          scope: './',
+          start_url: './',
+          lang: 'id',
+          dir: 'ltr',
+          categories: ['business', 'productivity', 'utilities'],
+          iarc_rating_id: 'e-84b0d5f2-7ce9-4b8a-9a91-4d32e9d2ab82',
+          prefer_related_applications: false,
+          related_applications: isGithubPages ? [
+            {
+              platform: 'webapp',
+              url: 'https://chocochipswarehouse2-dash.github.io/WarehouseMini/manifest.json'
+            }
+          ] : [],
+          scope_extensions: isGithubPages ? [{ origin: 'https://chocochipswarehouse2-dash.github.io' }] : [],
+          note_taking: {
+            new_note_url: './'
+          },
+          edge_side_panel: {
+            preferred_width: 400
+          },
+          widgets: [
+            {
+              name: 'Scanner Widget',
+              short_name: 'Scanner',
+              description: 'Quick access to Warehouse Scanner',
+              tag: 'scanner-widget',
+              template_url: 'widget-template.json',
+              ms_ac_template: 'widget-template.json',
+              data: 'widget-data.json',
+              type: 'application/json',
+              icons: [
+                {
+                  src: 'icon-192.png',
+                  sizes: '192x192',
+                  type: 'image/png'
+                }
+              ]
+            }
+          ],
+          file_handlers: [
+            {
+              action: './',
+              accept: {
+                'text/csv': ['.csv']
+              }
+            }
+          ],
+          share_target: {
+            action: './',
+            method: 'GET',
+            enctype: 'application/x-www-form-urlencoded',
+            params: {
+              title: 'title',
+              text: 'text',
+              url: 'url'
+            }
+          },
+          launch_handler: {
+            client_mode: 'navigate-existing'
+          },
+          protocol_handlers: [
+            {
+              protocol: 'web+wms',
+              url: './?query=%s'
+            }
+          ],
+          icons: [
+            {
+              src: 'icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: 'icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'maskable'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
+            },
+            {
+              src: 'icon-192.svg',
+              sizes: '192x192',
+              type: 'image/svg+xml',
+              purpose: 'any'
+            },
+            {
+              src: 'icon-512.svg',
+              sizes: '512x512',
+              type: 'image/svg+xml',
+              purpose: 'any'
+            }
+          ],
+          screenshots: [
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              form_factor: 'wide',
+              label: 'Warehouse Mini Dashboard'
+            },
+            {
+              src: 'icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              form_factor: 'narrow',
+              label: 'Warehouse Mini Mobile Scanner'
+            }
+          ],
+          shortcuts: [
+            {
+              name: 'Scan Barcode',
+              short_name: 'Scan',
+              description: 'Buka pemindai',
+              url: './',
+              icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }]
+            }
+          ]
+        } as any
+      })
+    ],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              if (id.includes('html5-qrcode')) {
+                return 'vendor-scanner';
+              }
+              if (
+                id.includes('/node_modules/react/') ||
+                id.includes('/node_modules/react-dom/') ||
+                id.includes('/node_modules/scheduler/')
+              ) {
+                return 'vendor-react';
+              }
+              return 'vendor-core';
+            }
+          }
+        }
+      }
+    },
+    server: {
+
+      host: '0.0.0.0',
+      port: 3000,
+      allowedHosts: true,
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      hmr: process.env.DISABLE_HMR !== 'true',
+      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
+      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+  };
+});

@@ -1,0 +1,243 @@
+/**
+ * Service untuk upload foto reject / QC ke Google Drive via Google Apps Script (GAS) Web App.
+ * Menghindari beban Egress di Supabase dengan menyimpan gambar langsung di Google Drive
+ * dan hanya menyimpan URL / File ID di database Supabase.
+ */
+
+import {
+  getStoredGdriveFolderUrl,
+  getStoredGdriveGasUrl,
+  saveWmsSettings,
+  DEFAULT_GDRIVE_FOLDER_URL,
+  DEFAULT_GDRIVE_GAS_URL,
+} from './settings';
+
+export { DEFAULT_GDRIVE_FOLDER_URL, DEFAULT_GDRIVE_GAS_URL };
+
+/**
+ * Ekstrak ID Folder dari URL Google Drive atau string ID langsung
+ */
+export function extractGdriveFolderId(urlOrId: string): string {
+  if (!urlOrId) return '1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
+
+  // Format: https://drive.google.com/drive/folders/1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw
+  const folderMatch = urlOrId.match(/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+
+  // Format: https://drive.google.com/open?id=1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw
+  const idMatch = urlOrId.match(/id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) return idMatch[1];
+
+  // Fallback if just an ID is given (or return default if completely invalid)
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(urlOrId)) return urlOrId;
+
+  return '1oFx9WFm8Ch_DlOxw66WRy4nH-kIAXwcw';
+}
+
+/**
+ * Ambil konfigurasi GDrive aktif (Tersinkronisasi dari Supabase & cache)
+ */
+export function getGdriveConfig(): { folderUrl: string; folderId: string; gasUrl: string } {
+  const folderUrl = getStoredGdriveFolderUrl();
+  const gasUrl = getStoredGdriveGasUrl();
+  const folderId = extractGdriveFolderId(folderUrl);
+
+  return { folderUrl, folderId, gasUrl };
+}
+
+/**
+ * Simpan konfigurasi GDrive ke LocalStorage dan Supabase Cloud
+ */
+export function saveGdriveConfig(folderUrl: string, gasUrl: string): void {
+  const cleanFolder = folderUrl.trim();
+  const cleanGas = gasUrl.trim();
+  try {
+    localStorage.setItem('wms_gdrive_folder_url', cleanFolder);
+    localStorage.setItem('wms_gdrive_gas_url', cleanGas);
+  } catch {}
+  saveWmsSettings({
+    gdrive_folder_url: cleanFolder,
+    gdrive_gas_url: cleanGas,
+  }).catch((err) => {
+    console.warn('Background Supabase save for GDrive config error:', err);
+  });
+}
+
+export interface GdriveUploadResult {
+  success: boolean;
+  url: string;
+  fileId?: string;
+  error?: string;
+}
+
+/**
+ * Upload satu gambar (Base64 dataUrl) ke Google Drive via GAS
+ */
+export async function uploadImageToGdrive(
+  base64Data: string,
+  filename?: string
+): Promise<GdriveUploadResult> {
+  // Jika bukan base64 (sudah berupa URL web / http), tidak perlu diupload ulang
+  if (!base64Data || !base64Data.startsWith('data:')) {
+    return { success: true, url: base64Data };
+  }
+
+  const { folderId, gasUrl } = getGdriveConfig();
+
+  if (!gasUrl) {
+    return {
+      success: false,
+      url: base64Data,
+      error: 'GAS Web App URL belum dikonfigurasi.',
+    };
+  }
+
+  const generatedFilename =
+    filename || `Reject_QC_${Date.now()}_${Math.floor(100 + Math.random() * 900)}.jpg`;
+
+  try {
+    const payload = {
+      base64File: base64Data, // standard webhook.js requirement
+      fileName: generatedFilename, // standard webhook.js requirement
+      folderId: folderId,
+    };
+
+    // Ensure secret token is attached for the unified webhook.js
+    let fetchUrl = gasUrl;
+    if (fetchUrl && !fetchUrl.includes('secret=')) {
+      fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'secret=wms-webhook-secret-2026';
+    }
+
+    const response = await fetch(fetchUrl, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if ((result.status === 'success' || result.success === true) && (result.fileId || result.id)) {
+      // Format URL CDN langsung Google (sangat cepat, no-cookie, no egress Supabase)
+      const fileId = result.fileId || result.id;
+      const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+      return {
+        success: true,
+        url: directCdnUrl,
+        fileId: fileId,
+      };
+    } else {
+      const errMsg = result.error || result.message || 'Gagal upload ke Google Drive';
+      console.warn('GAS upload warning:', errMsg);
+      return {
+        success: false,
+        url: '', // STRICT NO-BASE64 FALLBACK
+        error: errMsg,
+      };
+    }
+  } catch (err: any) {
+    console.warn('Gagal upload ke Google Drive via GAS, Mencegah fallback base64:', err);
+    return {
+      success: false,
+      url: '', // STRICT NO-BASE64 FALLBACK
+      error: err?.message || 'Koneksi ke GAS gagal',
+    };
+  }
+}
+
+/**
+ * Upload beberapa foto sekaligus ke Google Drive
+ * Mengembalikan array URL (Google Drive CDN jika sukses, atau base64 jika gagal)
+ */
+export async function uploadMultipleImagesToGdrive(
+  dataUrls: string[],
+  prefix = 'QC'
+): Promise<string[]> {
+  if (!dataUrls || dataUrls.length === 0) return [];
+
+  const uploadPromises = dataUrls.map(async (dataUrl, idx) => {
+    // Jika sudah URL http/https, abaikan
+    if (!dataUrl.startsWith('data:')) return dataUrl;
+
+    const fname = `${prefix}_${Date.now()}_${idx + 1}.jpg`;
+    const res = await uploadImageToGdrive(dataUrl, fname);
+    return res.url;
+  });
+
+  const results = await Promise.all(uploadPromises);
+  return results.filter(url => url && url.trim() !== '');
+}
+
+/**
+ * Test koneksi ke Google Apps Script dan Google Drive
+ */
+export async function testGdriveConnection(
+  customGasUrl?: string,
+  customFolderUrl?: string
+): Promise<{ success: boolean; message: string; fileId?: string }> {
+  const gasUrl = (customGasUrl || getGdriveConfig().gasUrl).trim();
+  const folderId = extractGdriveFolderId(customFolderUrl || getGdriveConfig().folderUrl);
+
+  if (!gasUrl) {
+    return { success: false, message: 'URL Google Apps Script tidak boleh kosong.' };
+  }
+
+  // 1x1 transparent JPEG probe
+  const probeBase64 =
+    'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+
+  try {
+    let fetchUrl = gasUrl;
+    if (fetchUrl && !fetchUrl.includes('secret=')) {
+      fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'secret=wms-webhook-secret-2026';
+    }
+
+    const response = await fetch(fetchUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        base64: probeBase64,
+        base64File: probeBase64,
+        filename: `probe_test_${Date.now()}.jpg`,
+        fileName: `probe_test_${Date.now()}.jpg`,
+        folderId: folderId,
+      }),
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+    });
+
+    const result = await response.json();
+
+    if ((result.status === 'success' || result.success === true) && (result.fileId || result.id)) {
+      const fileId = result.fileId || result.id;
+      return {
+        success: true,
+        message: 'Koneksi ke Google Drive (Apps Script) berhasil.',
+        fileId: fileId,
+      };
+    } else {
+      const errMsg = result.error || result.message || 'Error tidak diketahui dari GAS.';
+      if (errMsg.includes('Access denied: DriveApp') || errMsg.includes('DriveApp')) {
+        return {
+          success: false,
+          message:
+            'Akses DriveApp Ditolak: Otorisasi Google Drive belum dijalankan di editor Apps Script Anda.',
+        };
+      }
+      return {
+        success: false,
+        message: `GAS Error: ${errMsg}`,
+      };
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Gagal menghubungi Google Apps Script: ${err?.message || err}`,
+    };
+  }
+}

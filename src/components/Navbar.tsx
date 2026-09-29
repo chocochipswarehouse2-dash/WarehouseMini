@@ -1,0 +1,278 @@
+import React from 'react';
+import {
+  Moon,
+  Sun,
+  Palette,
+  Settings,
+  LogOut,
+  BellRing,
+  Bell,
+  Smartphone,
+  Layers,
+  WifiOff,
+  User,
+  Menu,
+  ScanBarcode, Map,
+  Package,
+  FileText,
+  PanelLeft,
+  ClipboardList,
+  ArrowRightLeft,
+  Clock,
+  Calendar,
+  Zap,
+  ShieldCheck,
+  BarChart3,
+  Users,
+  Scissors,
+  ClipboardCheck,
+  Truck,
+  Send,
+  Database,
+  Printer,
+  QrCode,
+  ShieldAlert,
+  BookOpen,
+} from 'lucide-react';
+import { UserSession, ActivePage } from '../types';
+import { canAccessSettings } from '../services/permissions';
+import { getUserPersonName } from '../utils/userResolver';
+
+interface NavbarProps {
+  session: UserSession | null;
+  activePage: ActivePage;
+  onSelectPage: (page: ActivePage) => void;
+  onOpenMobileSidebar: () => void;
+  onToggleSidebarCollapse: () => void;
+  isSidebarCollapsed: boolean;
+    onOpenThemePicker: () => void;
+  notificationPermission: NotificationPermission;
+  onRequestNotification: () => void;
+  isRealtimeConnected: boolean;
+  onOpenSettings: () => void;
+  onOpenApkModal: () => void;
+  onLogout: () => void;
+  totalScannedCount: number;
+  hasNewPickingAlert?: boolean;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({
+  session,
+  activePage,
+  onSelectPage,
+  onOpenMobileSidebar,
+  onToggleSidebarCollapse,
+  isSidebarCollapsed,
+    onOpenThemePicker,
+  notificationPermission,
+  onRequestNotification,
+  isRealtimeConnected,
+  onOpenSettings,
+  onOpenApkModal,
+  onLogout,
+  totalScannedCount,
+  hasNewPickingAlert = false,
+}) => {
+  const getPageInfo = () => {
+    switch (activePage) {
+      case 'loading_dock':
+        return { title: 'Loading Dock', subtitle: 'Area terpadu untuk mengatur kedatangan barang dari vendor CMT, penerimaan retur, dan pengiriman barang ke customer.', icon: ArrowRightLeft };
+      case 'dashboard':
+        return { title: 'Dashboard', subtitle: 'Ringkasan Aktivitas Gudang', icon: BarChart3 };
+      case 'penerimaan_barang':
+        return { title: 'Penerimaan Barang', subtitle: 'Laporan Pendataan Loading Dock', icon: Truck };
+      case 'packing':
+        return { title: 'Packing Area', subtitle: 'Pengecekan & Pengemasan Pesanan', icon: Package };
+      case 'pengiriman':
+        return { title: 'Pengiriman', subtitle: 'Pencatatan Barang Dikirim', icon: Send };
+      case 'agenda':
+        return { title: 'Agenda dan Project', subtitle: 'Kalender Kerja & Manajemen Project', icon: Calendar };
+      case 'pesanan_saya':
+      case 'manual_shipment':
+        return { title: 'Pesanan Saya', subtitle: 'Form Pesanan & Rekap Pengiriman', icon: Package };
+      case 'katalog_produk':
+        return { title: 'Katalog Produk', subtitle: 'Manajemen Katalog Manual', icon: BookOpen };
+      case 'penerimaan':
+        return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
+      case 'scanner':
+        return { title: 'Scanner', subtitle: 'Tembak Lokasi & SKU', icon: ScanBarcode };
+      case 'inventory':
+        return { title: 'Inventory', subtitle: 'Audit Saldo Fisik Rak & DealPOS', icon: Layers };
+      case 'stock_opname':
+        return { title: 'Stock Opname (SO)', subtitle: 'Audit & Otorisasi Penyesuaian', icon: ClipboardList };
+      case 'mutasi_log':
+        return { title: 'Mutasi Log Produk', subtitle: 'Riwayat IN/OUT, Edit & Hapus Baris', icon: ArrowRightLeft };
+      case 'picking_tasks':
+        return { title: 'Tugas Picking', subtitle: 'Ambil Barang Surat Jalan', icon: Package };
+      case 'peminjaman':
+        return { title: 'Peminjaman (SPS)', subtitle: 'Log Pinjam Live & Studio', icon: FileText };
+      case 'perbaikan':
+        return { title: 'Laporan QC', subtitle: 'Laporan QC, Perbaikan & Defect', icon: ClipboardCheck };
+      case 'karyawan':
+        return { title: 'Data Karyawan', subtitle: 'Direktori & Profil Karyawan', icon: Users };
+      case 'presensi':
+        return { title: 'Presensi & Shift Saya', subtitle: 'Live Clock & Presensi Harian', icon: Clock };
+      case 'roster_shift':
+        return { title: 'Jadwal Roster Shift', subtitle: 'Jadwal Kerja Tim Gudang', icon: Calendar };
+      case 'lembur_cuti':
+      case 'hr_approval':
+        return { title: 'Lembur, Cuti & Approval', subtitle: 'Pengajuan Mandiri & Persetujuan Tim Operasional', icon: Zap };
+      case 'hr_rekap':
+        return { title: 'Rekap & Laporan Karyawan', subtitle: 'Rekap Lembur, Cuti & Absensi Karyawan', icon: BarChart3 };
+      case 'roadmap':
+        return { title: 'Roadmap & Fitur', subtitle: 'Pantau & Request Fitur', icon: Map };
+      case 'supabase_migration':
+        return { title: 'Setup Migrasi Supabase', subtitle: 'Kloning Data & Pindah Database Baru (Bypass Egress)', icon: Database };
+      case 'cetak_label':
+        return { title: 'Cetak Label', subtitle: 'Label Paket & Label Custom (QR Code Rak)', icon: Printer };
+      case 'cetak_barcode':
+        return { title: 'Cetak Barcode Produk', subtitle: 'Stiker Thermal 50×20 mm & Import Massal', icon: QrCode };
+      
+      case 'pusat_resolusi':
+        return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };
+      default:
+        return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
+    }
+  };
+
+  const pageInfo = getPageInfo();
+  const PageIcon = pageInfo.icon;
+
+  return (
+    <header
+      id="mainNavbar"
+      className="lg:hidden bg-white/95 dark:bg-[#131d31]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-2 sm:px-4 py-1 flex justify-between items-center sticky top-0 z-30 transition-colors shadow-xs"
+    >
+      {/* Left side: Hamburger Toggle & Active Page Title */}
+      <div className="flex items-center gap-2.5 sm:gap-3.5">
+        {/* Mobile Hamburger Button */}
+        <button
+          type="button"
+          onClick={onOpenMobileSidebar}
+          title="Buka Menu Navigasi"
+          className="lg:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors cursor-pointer active:scale-95 border border-slate-200 dark:border-slate-700"
+        >
+          <Menu className="w-5 h-5 text-primary-500" />
+        </button>
+
+        {/* Desktop Sidebar Toggle Button */}
+        <button
+          type="button"
+          onClick={onToggleSidebarCollapse}
+          title={isSidebarCollapsed ? 'Buka Sidebar' : 'Sembunyikan Sidebar'}
+          className="hidden lg:flex p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+        >
+          <PanelLeft className="w-4 h-4" />
+        </button>
+
+        {/* Active Page Indicator / Breadcrumb */}
+        <div className="flex items-center gap-2.5">
+          <div className="hidden sm:flex w-8 h-8 rounded-xl bg-primary-500/10 border border-primary-500/20 items-center justify-center text-primary-500">
+            <PageIcon className="w-4 h-4" />
+          </div>
+          <div>
+            <h1 className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 font-sans">
+              <span>{pageInfo.title}</span>
+            </h1>
+            <p className="hidden">
+              {pageInfo.subtitle}
+            </p>
+          </div>
+        </div>
+
+        {/* Realtime Live Status Pill */}
+        <div
+          title={
+            isRealtimeConnected
+              ? 'Database Realtime: Terhubung'
+              : 'Database Realtime: Menghubungkan...'
+          }
+          className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#0f172a] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-800 ml-1"
+        >
+          {isRealtimeConnected ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-primary-500 shadow-[0_0_8px_var(--theme-500)]"></div>
+              <span className="text-[10px] uppercase font-extrabold text-primary-500 pr-0.5">
+                Live
+              </span>
+            </>
+          ) : (
+            <>
+              <WifiOff className="w-3 h-3 text-amber-500" />
+              <span className="text-[10px] uppercase font-bold text-slate-400 pr-0.5">
+                Sync
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Right side: Quick Action Buttons & User Summary */}
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Quick Shortcut to Picking if there is a new picking task */}
+        {hasNewPickingAlert && activePage !== 'picking_tasks' && (
+          <button
+            type="button"
+            onClick={() => onSelectPage('picking_tasks')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-black shadow-md shadow-primary-500/30 animate-bounce cursor-pointer transition-all active:scale-95"
+            title="Ada tugas picking baru! Klik untuk buka."
+          >
+            <Package className="w-3.5 h-3.5" />
+            <span className="hidden xs:inline">Tugas Baru!</span>
+          </button>
+        )}
+
+        {/* PWA Install Button (Android & iOS) */}
+        <button
+          id="btnOpenApkModal"
+          onClick={onOpenApkModal}
+          title="Pasang Aplikasi ke HP (PWA Android & iPhone)"
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-[#0f172a] text-slate-700 dark:text-slate-300 hover:text-primary-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all text-xs font-bold border border-slate-200 dark:border-slate-800 cursor-pointer shadow-xs"
+        >
+          <Smartphone className="w-3.5 h-3.5 text-primary-500" />
+          <span>Install App</span>
+        </button>
+
+        {/* Dark / Light Mode Toggle */}
+        <button
+          id="btnToggleDarkMode"
+          onClick={onOpenThemePicker}
+          title="Pilih Tema"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-[#0f172a] dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
+        >
+          <>
+              <Palette className="w-4 h-4 text-slate-500" />
+              <span className="hidden md:inline font-bold text-slate-500">Tema</span>
+            </>
+        </button>
+
+        {/* Settings Button - Hanya untuk Superadmin atau user dengan izin Konfigurasi Sistem / Manajemen User */}
+        {canAccessSettings(session) && (
+          <button
+            id="btnSettings"
+            onClick={onOpenSettings}
+            title="Pengaturan Sistem"
+            className="p-2 text-slate-600 dark:text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* User Role Tag & Name on Desktop */}
+        {session && (
+          <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+              <span className="truncate max-w-[130px] text-slate-800 dark:text-slate-200 font-bold" title={session.name || getUserPersonName(session.username) || session.username}>
+                {session.name || getUserPersonName(session.username) || session.username}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-primary-500/10 text-primary-500 font-extrabold border border-primary-500/20 text-[10px] uppercase">
+                {session.role}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+};
+

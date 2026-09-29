@@ -1,0 +1,3720 @@
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
+import {
+  RefreshCw,
+  Search,
+  Layers,
+  MapPin,
+  Tag,
+  Boxes,
+  SlidersHorizontal,
+  Loader2,
+  Download,
+  AlertTriangle,
+  FileSpreadsheet,
+  X,
+  Package,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown, Info,
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  Check,
+  Smartphone,
+  Monitor,
+  Building,
+  Video,
+  Wrench,
+  Sparkles,
+  PieChart as PieChartIcon,
+  Shirt,
+  Scissors,
+  ShoppingBag,
+  ExternalLink,
+  Printer,
+  ShieldAlert,
+} from 'lucide-react';
+import { StockRealtimeItem, ProductItem, UserSession } from '../types';
+import { saveInventoryStocksToLocalDb, getAllInventoryStocksFromLocalDb } from '../services/localDb';
+import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
+import { InventoryAnomalyModal } from './InventoryAnomalyModal';
+import { isCorruptedSku, scanAnomalies } from '../utils/anomalyUtils';
+import {
+  fetchAllStockRealtime,
+  fetchSupabaseStokFisikDirect,
+  fetchSupabaseStokFisikBySkus,
+  fetchMasterProductDealposChannelsBySkus,
+  fetchStockForLocations,
+  getAreaFromLokasi,
+  getSupabaseClient,
+  supabaseFetch,
+  getMemoryStokFisikCache,
+  setMemoryStokFisikCache,
+  isDummyProduct,
+} from '../services/supabase';
+import { globalRealtimeStore } from '../services/store';
+import { hasPermission } from '../services/permissions';
+import {
+  partialSearchMatch,
+  sortAlphabeticalAndSize,
+  cleanProductName,
+  resolveProductName,
+  resolveProductDisplaySize,
+  extractSizeFromSku,
+} from '../utils/sortUtils';
+
+// ========================================================
+// DEFINISI KONSTANTA KOLOM AREA SESUAI SPESIFIKASI WMS
+// ========================================================
+export const KOMPARASI_5 = ['MAP', 'LIVE', 'STUDIO', 'PERMAK', 'DEFECT'] as const;
+export const OFFLINE_COLS = ['WH', 'QC', 'GA', 'LOG'] as const;
+export const STORE_COLS = [
+  'LMP', 'MKG', 'BTS', 'CPJ', 'CWS', 'LWS', 'DPM', 'PHB', 'PMS', 'NSJ', 'PIM', 'SPM', 'GAIA', 'GST', 'LVL',
+] as const;
+export const ONLINE_COLS = ['WEB', 'SHP', 'TPD', 'TTK', 'LZD', 'WOO'] as const;
+export const ALL_AREA_COLS = [...OFFLINE_COLS, ...STORE_COLS, ...ONLINE_COLS] as const;
+
+export type AreaFilterType = 'ALL' | 'GUDANG' | 'STORE' | 'ONLINE' | 'OFFLINE';
+
+// Helper to parse and sort locations cleanly (static for zero per-render overhead)
+export const parseNormalizedLocations = (locList?: (string | { lokasi: string; qty?: number })[]) => {
+  if (!Array.isArray(locList) || locList.length === 0) return [];
+  const map = new Map<string, { cleanLocName: string; qty: number; isNeg: boolean; displayStr: string }>();
+
+  for (let i = 0; i < locList.length; i++) {
+    const loc = locList[i];
+    let cleanLocName = '';
+    let qty = 0;
+    if (typeof loc === 'object' && loc !== null) {
+      cleanLocName = String(loc.lokasi || '').trim();
+      qty = Number(loc.qty ?? 0);
+    } else {
+      const parts = String(loc || '').split(':');
+      cleanLocName = String(parts[0] || '').trim();
+      qty = parseInt(parts[1], 10) || 0;
+    }
+    if (!cleanLocName || cleanLocName === '-') continue;
+
+    const existing = map.get(cleanLocName);
+    if (existing) {
+      existing.qty += qty;
+      existing.isNeg = existing.qty < 0;
+      existing.displayStr = `${cleanLocName} (${existing.qty})`;
+    } else {
+      map.set(cleanLocName, {
+        cleanLocName,
+        qty,
+        isNeg: qty < 0,
+        displayStr: qty ? `${cleanLocName} (${qty})` : cleanLocName,
+      });
+    }
+  }
+
+  const parsed = Array.from(map.values());
+  if (parsed.length > 1) {
+    parsed.sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      return a.cleanLocName.localeCompare(b.cleanLocName);
+    });
+  }
+  return parsed;
+};
+
+export interface NormalizedInventoryItem {
+  sku: string;
+  produk: string;
+  size: string;
+  locList: (string | { lokasi: string; qty?: number })[];
+  parsedLocs?: { cleanLocName: string; qty: number; isNeg: boolean; displayStr: string }[];
+  locStr: string;
+  komparasi: {
+    MAP: { fisik: number; dp: number };
+    LIVE: { fisik: number; dp: number };
+    STUDIO: { fisik: number; dp: number };
+    PERMAK: { fisik: number; dp: number };
+    DEFECT: { fisik: number; dp: number };
+  };
+  singles: { [key: string]: number };
+  stokStudio?: number;
+  stokShp?: number;
+  stokTtk?: number;
+  stokCuci?: number;
+  stokPermak?: number;
+  stokDefect?: number;
+  totalFisikGudang: number;
+  totalStore: number;
+  totalOnline: number;
+  totalOffline: number;
+  // Precomputed for ultra-fast sorting and search (avoids localeCompare CPU freeze)
+  _s?: string;
+  _pLower?: string;
+  _skuLower?: string;
+  _sizeOrder?: number;
+}
+
+export type InventorySortOption =
+  | 'NAME_ASC'
+  | 'NAME_DESC'
+  | 'SKU_ASC'
+  | 'SKU_DESC'
+  | 'STOCK_DESC'
+  | 'STOCK_ASC'
+  | 'DIFF_DESC'
+  | 'DIFF_ASC'
+  | 'LOCATION_ASC'
+  | 'LOCATION_DESC';
+
+export interface InventoryViewProps {
+  session?: UserSession | null;
+  currentLocations?: string[];
+  productCatalog?: ProductItem[];
+  onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  onRefreshCatalog?: (forceRefresh?: boolean) => Promise<void> | void;
+}
+
+// Modal types for KPI Drill-Down
+type KpiModalType = 'CATEGORY' | 'MAP' | 'BLOK_F' | 'PERBAIKAN' | null;
+
+// Module-level in-memory cache to make tab transitions 100% instant (0ms)
+let globalInventoryStockCache: StockRealtimeItem[] | null = null;
+let globalInventoryLastFetch = 0;
+const CACHE_STALE_TTL = 30 * 1000; // 30 seconds
+
+const SIZE_ORDER_MAP: Record<string, number> = {
+  'ALL': 0, 'DEFAULT': 1, 'FREE': 2, 'XS': 3, 'S': 4, 'M': 5, 'L': 6, 'XL': 7, 'XXL': 8, '3XL': 9, '4XL': 10
+};
+
+const getSizeOrder = (size: string): number => {
+  const s = String(size || '').toUpperCase();
+  return SIZE_ORDER_MAP[s] !== undefined ? SIZE_ORDER_MAP[s] : 99;
+};
+
+export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
+  session,
+  currentLocations = [],
+  productCatalog = [],
+  onNotify,
+  onRefreshCatalog,
+}) => {
+  // Master state initialized immediately from memory cache for 0ms page switch
+  const [stockList, setStockList] = useState<StockRealtimeItem[]>(() => {
+    // Purge legacy truncated localStorage cache if present
+    try {
+      localStorage.removeItem('wms_inventory_stock_cache');
+    } catch {}
+
+    const mem = getMemoryStokFisikCache();
+    if (mem && mem.length > 0) {
+      globalInventoryStockCache = mem;
+      return mem;
+    }
+    if (globalInventoryStockCache && globalInventoryStockCache.length > 0) {
+      return globalInventoryStockCache;
+    }
+    return [];
+  });
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    // Only show full loading if there is zero cached data
+    const mem = getMemoryStokFisikCache();
+    if (mem && mem.length > 0) return false;
+    return !globalInventoryStockCache || globalInventoryStockCache.length === 0;
+  });
+  const [isSyncingBackground, setIsSyncingBackground] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isSyncingCatalog, setIsSyncingCatalog] = useState<boolean>(false);
+  const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(true);
+
+  // View Mode: 'TABLE' (Spreadsheet multi-level) | 'CARD' (Mobile / Grid card) | 'LOCATION' (Per Location) | 'SKU' (Per SKU)
+  const [viewMode, setViewMode] = useState<'TABLE' | 'CARD' | 'LOCATION' | 'SKU'>(() => {
+    const saved = localStorage.getItem('wms_inventory_view_mode');
+    if (saved === 'card') return 'CARD';
+    if (saved === 'table') return 'TABLE';
+    if (saved === 'LOCATION' || saved === 'SKU') return saved;
+    return window.innerWidth <= 768 ? 'CARD' : 'TABLE';
+  });
+
+  // Area Filters (Multiselect)
+  const [activeAreaFilters, setActiveAreaFilters] = useState<AreaFilterType[]>(() => {
+    try {
+      const saved = localStorage.getItem('wms_filter_areas_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return ['ALL', 'GUDANG', 'STORE', 'ONLINE', 'OFFLINE'];
+  });
+  const [isAreaDropdownOpen, setIsAreaDropdownOpen] = useState<boolean>(false);
+  const areaDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Search, Sort & Pagination
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearch = useDeferredValue(searchQuery);
+  const [sortOption, setSortOption] = useState<InventorySortOption>('NAME_ASC');
+  const [onlyWithStock, setOnlyWithStock] = useState<boolean>(false);
+  const [displayLimit, setDisplayLimit] = useState<number>(30);
+  const RENDER_STEP = 30;
+
+  // On-demand delta cache for DealPOS channels
+  const [dealposDeltaMap, setDealposDeltaMap] = useState<Record<string, any>>({});
+  const lastFetchedSearchTerm = useRef<string>('');
+  const fetchedDealposSkusRef = useRef<Set<string>>(new Set());
+
+  // KPI Modal Drilldown State
+  const [kpiModal, setKpiModal] = useState<KpiModalType>(null);
+  const [kpiMapTab, setKpiMapTab] = useState<'ALL' | 'A' | 'B' | 'C' | 'D' | 'BELT' | 'Z'>('ALL');
+  const [kpiBlokFTab, setKpiBlokFTab] = useState<'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'ALL'>('STUDIO');
+  const [kpiPerbaikanTab, setKpiPerbaikanTab] = useState<'ALL' | 'PERMAK' | 'DEFECT' | 'CUCI'>('ALL');
+  const [kpiModalSearch, setKpiModalSearch] = useState<string>('');
+  const [modalDisplayLimit, setModalDisplayLimit] = useState<number>(50);
+
+  // Reset modal display limit whenever drilldown filters change
+  useEffect(() => {
+    setModalDisplayLimit(50);
+  }, [kpiModal, kpiMapTab, kpiBlokFTab, kpiPerbaikanTab, kpiModalSearch]);
+
+  const canExportData = hasPermission(session, 'action_export_data');
+  const canSyncDealpos = hasPermission(session, 'action_sync_dealpos');
+
+  // Lokasi Export & Print PDF Modal State
+  const [isLokasiExportModalOpen, setIsLokasiExportModalOpen] = useState<boolean>(false);
+  const [selectedExportLocation, setSelectedExportLocation] = useState<string>('CC001');
+
+  // Multi-location popover toggle state (per SKU)
+  const [activeLocPopoverSku, setActiveLocPopoverSku] = useState<string | null>(null);
+
+  // Close multi-location popover on click outside or escape
+  useEffect(() => {
+    if (!activeLocPopoverSku) return;
+    const handleClose = () => setActiveLocPopoverSku(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveLocPopoverSku(null);
+    };
+    window.addEventListener('click', handleClose);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeLocPopoverSku]);
+
+  // Anomaly Hub Diagnostics Modal State
+  const [isAnomalyModalOpen, setIsAnomalyModalOpen] = useState<boolean>(false);
+
+  // Scan anomalies from catalog & stock for badge counter
+  const anomalyItems = useMemo(() => {
+    return scanAnomalies(productCatalog, stockList);
+  }, [productCatalog, stockList]);
+  const anomalyCount = anomalyItems.length;
+
+  const handleOpenLokasiExport = (locName?: string) => {
+    if (locName) {
+      setSelectedExportLocation(locName);
+    }
+    setIsLokasiExportModalOpen(true);
+  };
+
+  // Close area dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (areaDropdownRef.current && !areaDropdownRef.current.contains(e.target as Node)) {
+        setIsAreaDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Sync viewMode to localStorage
+  useEffect(() => {
+    localStorage.setItem('wms_inventory_view_mode', viewMode === 'CARD' ? 'card' : 'table');
+  }, [viewMode]);
+
+  // Sync activeAreaFilters to localStorage
+  useEffect(() => {
+    localStorage.setItem('wms_filter_areas_v2', JSON.stringify(activeAreaFilters));
+  }, [activeAreaFilters]);
+
+  // ========================================================
+  // 1. DATA FETCHING & REALTIME AGGREGATION FROM SUPABASE (STALE-WHILE-REVALIDATE)
+  // ========================================================
+  const loadStockData = async (isManualRefresh = false, forceNetwork = false) => {
+    // If cache is fresh and not a manual/realtime refresh, use memory cache
+    const now = Date.now();
+    const isCacheFresh = globalInventoryStockCache && globalInventoryStockCache.length > 0 && now - globalInventoryLastFetch < CACHE_STALE_TTL;
+    if (!isManualRefresh && !forceNetwork && isCacheFresh) {
+      return;
+    }
+
+    let hasCachedData = (globalInventoryStockCache && globalInventoryStockCache.length > 0) || stockList.length > 0;
+    if (!hasCachedData) {
+      const mem = getMemoryStokFisikCache();
+      if (mem && mem.length > 0) {
+        globalInventoryStockCache = mem;
+        globalInventoryLastFetch = Date.now();
+        setStockList(mem);
+        hasCachedData = true;
+      }
+    }
+    if (!hasCachedData) {
+      try {
+        const localStocks = await getAllInventoryStocksFromLocalDb();
+        if (localStocks && localStocks.length > 0) {
+          globalInventoryStockCache = localStocks;
+          globalInventoryLastFetch = Date.now();
+          setStockList(localStocks);
+          hasCachedData = true;
+        }
+      } catch {}
+    }
+
+    if (!hasCachedData) {
+      setIsLoading(true);
+    } else {
+      setIsSyncingBackground(true);
+    }
+    setFetchError(null);
+
+    if (isManualRefresh && onNotify) {
+      onNotify('Menyinkronkan data inventori terbaru dari Supabase & Katalog...', 'info');
+    }
+
+    try {
+      // 1. Fetch physical stock rows directly from Supabase (stok_real_fisik / stok_realtime)
+      // Force fresh network fetch so the latest mutations are always retrieved while cached UI is displayed
+      const realtimeData = await fetchSupabaseStokFisikDirect(true);
+      if (realtimeData && Array.isArray(realtimeData) && realtimeData.length > 0) {
+        globalInventoryStockCache = realtimeData;
+        globalInventoryLastFetch = Date.now();
+        setStockList(realtimeData);
+
+        // Store 100% complete snapshot to local IndexedDB (never truncated)
+        saveInventoryStocksToLocalDb(realtimeData).catch(() => {});
+      } else if (!hasCachedData || stockList.length === 0) {
+        // 2. Fallback to fetchAllStockRealtime if direct returned empty
+        const fallbackData = await fetchAllStockRealtime(50000, true);
+        if (fallbackData && Array.isArray(fallbackData) && fallbackData.length > 0) {
+          globalInventoryStockCache = fallbackData;
+          globalInventoryLastFetch = Date.now();
+          setStockList(fallbackData);
+          saveInventoryStocksToLocalDb(fallbackData).catch(() => {});
+        } else if (!hasCachedData) {
+          throw new Error('Data stok fisik tidak dapat dimuat dari Supabase. Silakan klik Muat Ulang.');
+        }
+      }
+
+      if (isManualRefresh) {
+        if (onRefreshCatalog) await onRefreshCatalog(true);
+        if (onNotify) {
+          onNotify(`Inventori berhasil disinkronkan (${realtimeData?.length || stockList.length} baris lokasi)!`, 'success');
+        }
+      }
+    } catch (e: any) {
+      console.error('Error loading inventory stock:', e);
+      // Fallback if direct fetch failed and no cached data exists
+      if (!hasCachedData) {
+        try {
+          const fallbackData = await fetchAllStockRealtime(50000);
+          if (fallbackData && fallbackData.length > 0) {
+            globalInventoryStockCache = fallbackData;
+            globalInventoryLastFetch = Date.now();
+            setStockList(fallbackData);
+            saveInventoryStocksToLocalDb(fallbackData).catch(() => {});
+          } else {
+            setFetchError(e.message || 'Gagal memuat data stok realtime');
+            if (onNotify) onNotify('Gagal memuat data stok realtime dari Supabase.', 'error');
+          }
+        } catch (err: any) {
+          setFetchError(err.message || 'Gagal memuat data stok realtime');
+          if (onNotify) onNotify('Gagal memuat data stok realtime.', 'error');
+        }
+      }
+    } finally {
+      setIsLoading(false);
+      setIsSyncingBackground(false);
+    }
+  };
+
+  useEffect(() => {
+    // 0ms instant hydrate from local IndexedDB if memory cache isn't populated
+    if (!globalInventoryStockCache || globalInventoryStockCache.length === 0) {
+      getAllInventoryStocksFromLocalDb().then((local) => {
+        if (local && local.length > 0) {
+          globalInventoryStockCache = local;
+          setStockList(local);
+          setIsLoading(false);
+        }
+      }).catch(() => {});
+    }
+
+    loadStockData(false, false);
+
+    // Supabase Realtime Subscription via global store
+    let debounceTimer: any = null;
+    let pendingSkus = new Set<string>();
+
+    const updateDeltaStocks = async () => {
+      if (pendingSkus.size === 0) return;
+      const skus = Array.from(pendingSkus);
+      pendingSkus.clear();
+      
+      try {
+        const deltaRows = await fetchSupabaseStokFisikBySkus(skus, true);
+        const upperSkus = new Set(skus.map((s) => String(s).trim().toUpperCase()));
+        
+        // Remove old rows for these SKUs, insert new ones
+        setStockList((prev) => {
+          const filtered = prev.filter((p) => !upperSkus.has(String(p.sku || '').trim().toUpperCase()));
+          const merged = [...filtered, ...deltaRows];
+          globalInventoryStockCache = merged;
+          saveInventoryStocksToLocalDb(merged).catch(() => {});
+          return merged;
+        });
+      } catch (err) {
+        console.warn('Delta stock fetch failed:', err);
+      }
+    };
+
+    const triggerDebouncedDelta = (payload: any) => {
+      if (payload && payload.new && payload.new.sku) {
+        pendingSkus.add(payload.new.sku);
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        updateDeltaStocks();
+      }, 500);
+    };
+
+    const triggerDebouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadStockData(false, true);
+      }, 300);
+    };
+
+    const unsubLog = globalRealtimeStore.subscribe('log_produk', triggerDebouncedDelta);
+    const unsubMaster = globalRealtimeStore.subscribe('master_produk', triggerDebouncedReload);
+
+    setIsRealtimeActive(true);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubLog();
+      unsubMaster();
+    };
+  }, []);
+
+  // On-demand delta fetch for searched SKUs to guarantee instant accuracy
+  useEffect(() => {
+    const term = deferredSearch.trim().toLowerCase();
+    if (!term || term.length < 2) {
+      lastFetchedSearchTerm.current = '';
+      return;
+    }
+    if (lastFetchedSearchTerm.current === term) return;
+    lastFetchedSearchTerm.current = term;
+
+    // Find matching SKUs in productCatalog
+    const matchingSkus = productCatalog
+      .filter((it) => {
+        const s = String(it.k || (it as any).sku || '').toLowerCase();
+        const n = String(it.p || (it as any).nama_produk || '').toLowerCase();
+        return s.includes(term) || n.includes(term);
+      })
+      .map((it) => String(it.k || (it as any).sku || '').trim().toUpperCase())
+      .filter(Boolean)
+      .slice(0, 50);
+
+    if (matchingSkus.length === 0) return;
+
+    // Always fetch live stock from Supabase for searched SKUs to guarantee instant 100% accuracy
+    fetchSupabaseStokFisikBySkus(matchingSkus, true).then((deltaRows) => {
+      if (deltaRows) {
+        const matchingSet = new Set(matchingSkus);
+        setStockList((prev) => {
+          const filtered = prev.filter((p) => !matchingSet.has(String(p.sku || '').trim().toUpperCase()));
+          const merged = [...filtered, ...deltaRows];
+          globalInventoryStockCache = merged;
+          saveInventoryStocksToLocalDb(merged).catch(() => {});
+          return merged;
+        });
+      }
+    }).catch((err) => {
+      console.warn('Search live stock fetch failed:', err);
+    });
+
+    // Also fetch DealPOS channels on-demand for searched items if not yet loaded
+    const missingDealposSkus = matchingSkus.filter((sku) => !dealposDeltaMap[sku] && !fetchedDealposSkusRef.current.has(sku));
+    if (missingDealposSkus.length > 0) {
+      missingDealposSkus.forEach((s) => fetchedDealposSkusRef.current.add(s));
+      fetchMasterProductDealposChannelsBySkus(missingDealposSkus).then((res) => {
+        if (res && Object.keys(res).length > 0) {
+          setDealposDeltaMap((prev) => ({ ...prev, ...res }));
+        }
+      }).catch((err) => {
+        console.warn('Search delta dealpos fetch failed:', err);
+      });
+    }
+  }, [deferredSearch, productCatalog]);
+
+  // Helper string formatter for locations
+  const formatLocationString = (locList?: (string | { lokasi: string; qty?: number })[]) => {
+    if (!Array.isArray(locList) || locList.length === 0) return '-';
+    const locParts: string[] = [];
+    locList.forEach((l) => {
+      if (!l) return;
+      if (typeof l === 'object' && l !== null) {
+        const name = String(l.lokasi || '').trim();
+        const q = Number(l.qty) || 0;
+        if (name) locParts.push(q > 0 ? `${name} (${q})` : name);
+      } else if (typeof l === 'string') {
+        const parts = l.split(':');
+        const name = String(parts[0] || '').trim();
+        const q = Number(parts[1]) || 0;
+        if (name) locParts.push(q > 0 ? `${name} (${q})` : name);
+      }
+    });
+    return locParts.length > 0 ? locParts.join(', ') : '-';
+  };
+
+  // ========================================================
+  // 2. NORMALISASI & 5-KOMPARASI STOCK AGGREGATION (SUPABASE + DEALPOS)
+  // ========================================================
+  const normalizedInventory = useMemo<NormalizedInventoryItem[]>(() => {
+    // A. Build skuStockMap (from Supabase physical stock)
+    const skuStockMap: Record<
+      string,
+      {
+        f: Record<string, number>;
+        l: string[];
+        nama_produk?: string;
+        size?: string;
+        stokStudio: number;
+        stokShp: number;
+        stokTtk: number;
+        stokCuci: number;
+        stokPermak: number;
+        stokDefect: number;
+      }
+    > = {};
+
+    stockList.forEach((sRow) => {
+      const sku = String(sRow.sku || '').trim().toUpperCase();
+      const lokasi = String(sRow.lokasi || '').trim();
+      const area = String(sRow.area || '').trim();
+      const qty = Number(sRow.sisa_stok) || 0;
+      if (
+        !sku ||
+        qty === 0 ||
+        isCorruptedSku(sku) ||
+        isDummyProduct({ k: sku, p: sRow.nama_produk } as any) ||
+        sku.startsWith('#') ||
+        sku.includes('#') ||
+        sku.startsWith('*') ||
+        sku.startsWith('•') ||
+        sku === 'KOLI' ||
+        sku === 'BOX'
+      )
+        return;
+
+      if (!skuStockMap[sku]) {
+        skuStockMap[sku] = {
+          f: {},
+          l: [],
+          nama_produk: sRow.nama_produk,
+          size: sRow.size,
+          stokStudio: 0,
+          stokShp: 0,
+          stokTtk: 0,
+          stokCuci: 0,
+          stokPermak: 0,
+          stokDefect: 0,
+        };
+      }
+
+      const a = area.toUpperCase();
+      const l = lokasi.toUpperCase();
+
+      // Track individual sub-channels for Blok F (Studio, Shopee, TikTok)
+      if (l.includes('STUDIO') || l.includes('SAMPLE') || a.includes('STUDIO')) {
+        skuStockMap[sku].stokStudio = (skuStockMap[sku].stokStudio || 0) + qty;
+      }
+      if (l.includes('SHOPEE') || l.includes('SHP') || a.includes('SHOPEE')) {
+        skuStockMap[sku].stokShp = (skuStockMap[sku].stokShp || 0) + qty;
+      }
+      if (l.includes('TIKTOK') || l.includes('TTK') || l === 'TT' || a.includes('TIKTOK')) {
+        skuStockMap[sku].stokTtk = (skuStockMap[sku].stokTtk || 0) + qty;
+      }
+
+      // Track sub-channels for Perbaikan (Cuci, Permak, Defect)
+      if (l.startsWith('CC') || l.includes('CUCI') || a.includes('CUCI')) {
+        skuStockMap[sku].stokCuci = (skuStockMap[sku].stokCuci || 0) + qty;
+      } else if (l.startsWith('PMK') || l.includes('PERMAK') || a.includes('PERMAK')) {
+        skuStockMap[sku].stokPermak = (skuStockMap[sku].stokPermak || 0) + qty;
+      } else if (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT') || a.includes('DEFECT') || a.includes('CACAT')) {
+        skuStockMap[sku].stokDefect = (skuStockMap[sku].stokDefect || 0) + qty;
+      }
+
+      let kat = 'Gudang Utama';
+
+      if (
+        l.includes('SHOPEE') ||
+        l.includes('TIKTOK') ||
+        l === 'TT' ||
+        l.includes('SHP') ||
+        l.includes('TTK') ||
+        l.includes('LIVE') ||
+        a.includes('LIVE') ||
+        a === 'BLOK F' ||
+        a.includes('BLOK')
+      ) {
+        if (l.includes('STUDIO') || l.includes('SAMPLE') || a.includes('STUDIO')) {
+          kat = 'Sample Studio';
+        } else {
+          kat = 'Barang Live';
+        }
+      } else if (
+        a === 'STUDIO' ||
+        a.includes('STUDIO') ||
+        l.includes('STUDIO') ||
+        l.includes('SAMPLE')
+      ) {
+        kat = 'Sample Studio';
+      } else if (
+        l.startsWith('CC') || l.includes('CUCI') || a.includes('CUCI')
+      ) {
+        kat = 'Cuci';
+      } else if (
+        l.startsWith('PMK') || l.includes('PERMAK') || a.includes('PERMAK')
+      ) {
+        kat = 'Permak';
+      } else if (
+        (a === 'PERBAIKAN' || a.includes('DEFECT') || a.includes('CACAT')) &&
+        (l.startsWith('DF') || l.includes('DEFECT') || l.includes('CACAT'))
+      ) {
+        kat = 'Barang Cacat';
+      } else if (a.includes('PERBAIKAN') || a.includes('DEFECT') || a.includes('PERMAK')) {
+        if (l.startsWith('CC') || l.includes('CUCI')) {
+          kat = 'Cuci';
+        } else if (l.startsWith('PMK') || l.includes('PERMAK')) {
+          kat = 'Permak';
+        } else {
+          kat = 'Barang Cacat';
+        }
+      } else if (a === 'DEALPOS OFFLINE' && l === 'WH') {
+        kat = 'WH';
+      } else if (a === 'DEALPOS OFFLINE' && l === 'QC') {
+        kat = 'QC';
+      } else if (a === 'DEALPOS OFFLINE' && (l === 'DD' || l === 'DEFECT')) {
+        kat = 'Barang Cacat';
+      } else if (a === 'DEALPOS OFFLINE' && l === 'GA') {
+        kat = 'GA';
+      } else {
+        kat = 'Gudang Utama';
+      }
+
+      skuStockMap[sku].f[kat] = (skuStockMap[sku].f[kat] || 0) + qty;
+      skuStockMap[sku].l.push(`${lokasi}:${qty}`);
+    });
+
+    // B. Merge with catalog list & normalize in single-pass
+    const result: NormalizedInventoryItem[] = [];
+    const seenSkus = new Set<string>();
+
+    const normalizeRow = (row: any, sku: string, mapped?: any): NormalizedInventoryItem => {
+      // 1. Physical stock: Strictly derived from live Supabase stok_real_fisik (mapped / skuStockMap)
+      // When stockList has loaded, mapped is the sole authority. If mapped is undefined, physical warehouse stock is 0.
+      const hasRealtimeData = stockList.length > 0;
+
+      let mapFisik = 0;
+      let liveFisik = 0;
+      let studioFisik = 0;
+      let permakFisik = 0;
+      let cuciFisik = 0;
+      let defectFisik = 0;
+      let shpFisik = 0;
+      let ttkFisik = 0;
+      let locList: any[] = [];
+
+      if (mapped) {
+        // Authoritative physical stock from Supabase stok_real_fisik
+        mapFisik = Number(mapped.f?.['Gudang Utama'] ?? mapped.f?.['MAP'] ?? mapped.f?.['Warehouse'] ?? 0);
+        liveFisik = Number(mapped.f?.['Barang Live'] ?? mapped.f?.['LIVE'] ?? 0);
+        studioFisik = Number(mapped.stokStudio ?? mapped.f?.['Sample Studio'] ?? mapped.f?.['STUDIO'] ?? 0);
+        cuciFisik = Number(mapped.stokCuci ?? mapped.f?.['Cuci'] ?? 0);
+        permakFisik = Number(mapped.stokPermak ?? mapped.f?.['Permak'] ?? 0);
+        defectFisik = Number(mapped.stokDefect ?? mapped.f?.['Barang Cacat'] ?? mapped.f?.['DEFECT'] ?? 0);
+        if (cuciFisik === 0 && permakFisik === 0 && mapped.f?.['Permak / Cuci']) {
+          permakFisik = Number(mapped.f['Permak / Cuci']);
+        }
+        shpFisik = Number(mapped.stokShp ?? 0);
+        ttkFisik = Number(mapped.stokTtk ?? 0);
+        locList = Array.isArray(mapped.l) ? mapped.l : [];
+      } else if (!hasRealtimeData && row?.f && typeof row.f === 'object') {
+        // Temporary offline/cold-boot preview ONLY if stockList has not finished loading yet
+        mapFisik = Number(row.f['Gudang Utama'] ?? row.f['MAP'] ?? 0);
+        liveFisik = Number(row.f['Barang Live'] ?? row.f['LIVE'] ?? 0);
+        studioFisik = Number(row.f['Sample Studio'] ?? 0);
+        cuciFisik = Number(row.f['Cuci'] ?? 0);
+        permakFisik = Number(row.f['Permak'] ?? row.f['Permak / Cuci'] ?? 0);
+        defectFisik = Number(row.f['Barang Cacat'] ?? 0);
+        locList = Array.isArray(row.l) ? row.l : (Array.isArray(row.locList) ? row.locList : []);
+      }
+
+      // If locList has CC... or PMK... locations, ensure cuciFisik / permakFisik / defectFisik are accurately recognized
+      if (locList.length > 0 && (cuciFisik === 0 || permakFisik === 0)) {
+        let locCuci = 0;
+        let locPermak = 0;
+        let locDefect = 0;
+        locList.forEach((it: any) => {
+          const lStr = typeof it === 'string' ? it.split(':')[0] : (it.lokasi || '');
+          const qVal = typeof it === 'string' ? (parseInt(it.split(':')[1], 10) || 1) : (Number(it.qty) || 1);
+          const lUp = lStr.toUpperCase();
+          if (lUp.startsWith('CC') || lUp.includes('CUCI')) locCuci += qVal;
+          else if (lUp.startsWith('PMK') || lUp.includes('PERMAK')) locPermak += qVal;
+          else if (lUp.startsWith('DF') || lUp.includes('DEFECT') || lUp.includes('CACAT')) locDefect += qVal;
+        });
+        if (locCuci > 0 && cuciFisik === 0) cuciFisik = locCuci;
+        if (locPermak > 0 && permakFisik === 0) permakFisik = locPermak;
+        if (locDefect > 0 && defectFisik === 0) defectFisik = locDefect;
+      }
+
+      // Ensure liveFisik accurately covers sub-channels shpFisik and ttkFisik
+      if (shpFisik + ttkFisik > liveFisik) {
+        liveFisik = shpFisik + ttkFisik;
+      }
+
+      const parsedLocs = (locList && locList.length > 0) ? parseNormalizedLocations(locList) : [];
+      const locStr = parsedLocs.length > 0 ? parsedLocs.map(l => l.displayStr).join(', ') : '-';
+
+      // 2. DealPOS channels
+      const dpRaw = (row?.dealpos_channels || mapped?.dealpos_channels || {}) as any;
+
+      const d = {
+        ...(typeof dpRaw === 'object' && !Array.isArray(dpRaw) ? dpRaw : {}),
+        ...(typeof dpRaw?.d === 'object' ? dpRaw.d : {}),
+        ...(typeof row?.d === 'object' ? row.d : {}),
+      } as Record<string, number>;
+
+      const b = {
+        ...(typeof dpRaw === 'object' && !Array.isArray(dpRaw) ? dpRaw : {}),
+        ...(typeof dpRaw?.cabang === 'object' ? dpRaw.cabang : {}),
+        ...(typeof dpRaw?.b === 'object' ? dpRaw.b : {}),
+        ...(typeof row?.b === 'object' ? row.b : {}),
+      } as Record<string, number>;
+
+      const mapDp = Number(
+        d['MAP'] ??
+        d['Gudang Utama'] ??
+        d['Marketplace'] ??
+        dpRaw?.MAP ??
+        dpRaw?.['Gudang Utama'] ??
+        dpRaw?.Marketplace ??
+        dpRaw?.d?.MAP ??
+        dpRaw?.d?.['Gudang Utama'] ??
+        row?.q ??
+        0
+      );
+
+      const liveDp = Number(
+        d['LIVE'] ??
+        d['Barang Live'] ??
+        d['Sample Live'] ??
+        dpRaw?.LIVE ??
+        dpRaw?.['Barang Live'] ??
+        dpRaw?.['Sample Live'] ??
+        dpRaw?.d?.LIVE ??
+        0
+      );
+
+      const studioDp = Number(
+        d['STUDIO'] ??
+        d['Sample Studio'] ??
+        dpRaw?.STUDIO ??
+        dpRaw?.['Sample Studio'] ??
+        dpRaw?.d?.STUDIO ??
+        0
+      );
+
+      const permakDp = Number(
+        d['PERMAK'] ??
+        d['Permak / Cuci'] ??
+        d['Permak'] ??
+        dpRaw?.PERMAK ??
+        dpRaw?.['Permak / Cuci'] ??
+        dpRaw?.Permak ??
+        dpRaw?.d?.PERMAK ??
+        0
+      );
+
+      const defectDp = Number(
+        d['DEFECT'] ??
+        d['Barang Cacat'] ??
+        d['Diskon Defect'] ??
+        d['Cacat'] ??
+        dpRaw?.DEFECT ??
+        dpRaw?.['Barang Cacat'] ??
+        dpRaw?.['Diskon Defect'] ??
+        dpRaw?.Cacat ??
+        dpRaw?.d?.DEFECT ??
+        0
+      );
+
+      const singleVals: { [key: string]: number } = {};
+      ALL_AREA_COLS.forEach((code) => {
+        singleVals[code] = Number(
+          b[code] ??
+          d[code] ??
+          dpRaw?.[code] ??
+          dpRaw?.cabang?.[code] ??
+          dpRaw?.b?.[code] ??
+          0
+        );
+      });
+
+      const rawNameCandidate = row?.p || row?.produk || row?.nama_produk || mapped?.nama_produk;
+      const produk = resolveProductName(sku, rawNameCandidate, row);
+      const rawSizeCandidate = row?.s || row?.size || mapped?.size;
+      const size = resolveProductDisplaySize(sku, rawSizeCandidate, row?.s) || '-';
+
+      let sTot = 0;
+      STORE_COLS.forEach((c) => (sTot += singleVals[c] || 0));
+
+      let onTot = 0;
+      ONLINE_COLS.forEach((c) => (onTot += singleVals[c] || 0));
+
+      let offTot = 0;
+      OFFLINE_COLS.forEach((c) => (offTot += singleVals[c] || 0));
+
+      const pLower = produk.toLowerCase();
+      const skuLower = sku.toLowerCase();
+      const sizeLower = size.toLowerCase();
+      const locStrLower = locStr.toLowerCase();
+
+      return {
+        sku,
+        produk,
+        size,
+        locList,
+        parsedLocs,
+        locStr,
+        komparasi: {
+          MAP: { fisik: mapFisik, dp: mapDp },
+          LIVE: { fisik: liveFisik, dp: liveDp },
+          STUDIO: { fisik: studioFisik, dp: studioDp },
+          PERMAK: { fisik: permakFisik + cuciFisik, dp: permakDp },
+          DEFECT: { fisik: defectFisik, dp: defectDp },
+        },
+        singles: singleVals,
+        stokStudio: studioFisik,
+        stokShp: shpFisik,
+        stokTtk: ttkFisik,
+        stokCuci: cuciFisik,
+        stokPermak: permakFisik,
+        stokDefect: defectFisik,
+        totalFisikGudang: mapFisik + liveFisik + studioFisik + permakFisik + cuciFisik + defectFisik,
+        totalStore: sTot,
+        totalOnline: onTot,
+        totalOffline: offTot,
+        _s: `${pLower} ${skuLower} ${sizeLower} ${locStrLower}`,
+        _pLower: pLower,
+        _skuLower: skuLower,
+        _sizeOrder: getSizeOrder(size),
+      };
+    };
+
+    productCatalog.forEach((item) => {
+      if (!item || isDummyProduct(item)) return;
+      const sku = String(item.k || item.sku || '').trim().toUpperCase();
+      if (!sku || isCorruptedSku(sku) || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
+      seenSkus.add(sku);
+      result.push(normalizeRow(item, sku, skuStockMap[sku]));
+    });
+
+    // Produk di luar master_produk tidak boleh ditampilkan di inventori
+    return result;
+  }, [productCatalog, stockList]);
+
+  // ========================================================
+  // 3. FILTERING & SORTING LOGIC (OPTIMIZED WITH FAST COMPARATORS)
+  // ========================================================
+  const filteredInventory = useMemo(() => {
+    let list = normalizedInventory;
+
+    // Search query filter (ultra-fast precomputed search text)
+    if (deferredSearch.trim()) {
+      const keywords = deferredSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      list = list.filter((item) => {
+        const text = item._s || `${item.produk} ${item.sku} ${item.size} ${item.locStr}`.toLowerCase();
+        return keywords.every((kw) => text.includes(kw));
+      });
+    }
+
+    // Filter only items with physical/channel stock
+    if (onlyWithStock) {
+      list = list.filter(
+        (item) =>
+          item.totalFisikGudang !== 0 ||
+          item.totalStore !== 0 ||
+          item.totalOnline !== 0 ||
+          item.totalOffline !== 0 ||
+          item.komparasi.MAP.dp !== 0 ||
+          item.komparasi.LIVE.dp !== 0 ||
+          item.komparasi.STUDIO.dp !== 0 ||
+          item.komparasi.PERMAK.dp !== 0 ||
+          item.komparasi.DEFECT.dp !== 0
+      );
+    }
+
+    // Fast sort with direct string comparison (0.015s vs 4.5s localeCompare)
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      switch (sortOption) {
+        case 'NAME_ASC': {
+          const aP = a._pLower || a.produk.toLowerCase();
+          const bP = b._pLower || b.produk.toLowerCase();
+          if (aP < bP) return -1;
+          if (aP > bP) return 1;
+          const sA = a._sizeOrder ?? 99;
+          const sB = b._sizeOrder ?? 99;
+          if (sA !== sB) return sA - sB;
+          const aS = a._skuLower || a.sku.toLowerCase();
+          const bS = b._skuLower || b.sku.toLowerCase();
+          return aS < bS ? -1 : (aS > bS ? 1 : 0);
+        }
+        case 'NAME_DESC': {
+          const aP = a._pLower || a.produk.toLowerCase();
+          const bP = b._pLower || b.produk.toLowerCase();
+          if (aP > bP) return -1;
+          if (aP < bP) return 1;
+          const aS = a._skuLower || a.sku.toLowerCase();
+          const bS = b._skuLower || b.sku.toLowerCase();
+          return bS < aS ? -1 : (bS > aS ? 1 : 0);
+        }
+        case 'SKU_ASC': {
+          const aS = a._skuLower || a.sku.toLowerCase();
+          const bS = b._skuLower || b.sku.toLowerCase();
+          return aS < bS ? -1 : (aS > bS ? 1 : 0);
+        }
+        case 'SKU_DESC': {
+          const aS = a._skuLower || a.sku.toLowerCase();
+          const bS = b._skuLower || b.sku.toLowerCase();
+          return bS < aS ? -1 : (bS > aS ? 1 : 0);
+        }
+        case 'STOCK_DESC':
+          return b.totalFisikGudang - a.totalFisikGudang;
+        case 'STOCK_ASC':
+          return a.totalFisikGudang - b.totalFisikGudang;
+        case 'DIFF_DESC': {
+          const diffA = a.totalFisikGudang - (a.komparasi.MAP.dp || 0);
+          const diffB = b.totalFisikGudang - (b.komparasi.MAP.dp || 0);
+          return diffB - diffA;
+        }
+        case 'DIFF_ASC': {
+          const diffA = a.totalFisikGudang - (a.komparasi.MAP.dp || 0);
+          const diffB = b.totalFisikGudang - (b.komparasi.MAP.dp || 0);
+          return diffA - diffB;
+        }
+        default: {
+          const aP = a._pLower || a.produk.toLowerCase();
+          const bP = b._pLower || b.produk.toLowerCase();
+          return aP < bP ? -1 : (aP > bP ? 1 : 0);
+        }
+      }
+    });
+
+    return sorted;
+  }, [normalizedInventory, deferredSearch, sortOption, onlyWithStock]);
+
+  // Auto-enrich visible items with DealPOS channels if not yet present (debounced & capped to 30)
+  const visibleSkusNeedingDealpos = useMemo(() => {
+    const skus: string[] = [];
+    const slice = filteredInventory.slice(0, 30);
+    for (let i = 0; i < slice.length; i++) {
+      const it = slice[i];
+      if (!dealposDeltaMap[it.sku] && !fetchedDealposSkusRef.current.has(it.sku)) {
+        const hasDp = (it.komparasi.MAP.dp || 0) > 0 ||
+                      (it.komparasi.PERMAK.dp || 0) > 0 ||
+                      (it.komparasi.LIVE.dp || 0) > 0 ||
+                      (it.komparasi.STUDIO.dp || 0) > 0 ||
+                      (it.komparasi.DEFECT.dp || 0) > 0 ||
+                      it.totalStore > 0 ||
+                      it.totalOnline > 0 ||
+                      it.totalOffline > 0;
+        if (!hasDp) {
+          skus.push(it.sku);
+        }
+      }
+    }
+    return skus;
+  }, [filteredInventory, dealposDeltaMap]);
+
+  useEffect(() => {
+    if (visibleSkusNeedingDealpos.length === 0) return;
+    visibleSkusNeedingDealpos.forEach((s) => fetchedDealposSkusRef.current.add(s));
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      fetchMasterProductDealposChannelsBySkus(visibleSkusNeedingDealpos).then((res) => {
+        if (isMounted && res && Object.keys(res).length > 0) {
+          setDealposDeltaMap((prev) => ({ ...prev, ...res }));
+        }
+      }).catch(() => {});
+    }, 250);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [visibleSkusNeedingDealpos]);
+
+  const itemsWithStockCount = useMemo(() => {
+    let count = 0;
+    for (let i = 0; i < normalizedInventory.length; i++) {
+      const item = normalizedInventory[i];
+      if (
+        item.totalFisikGudang !== 0 ||
+        item.totalStore !== 0 ||
+        item.totalOnline !== 0 ||
+        item.totalOffline !== 0 ||
+        item.komparasi.MAP.dp !== 0 ||
+        item.komparasi.LIVE.dp !== 0 ||
+        item.komparasi.STUDIO.dp !== 0 ||
+        item.komparasi.PERMAK.dp !== 0 ||
+        item.komparasi.DEFECT.dp !== 0
+      ) {
+        count++;
+      }
+    }
+    return count;
+  }, [normalizedInventory]);
+
+  // Baseline KPI calculation (computed once for normalizedInventory)
+  const baseKpiStats = useMemo(() => {
+    let totalMap = 0;
+    let totalBlokF = 0;
+    let totalPerbaikan = 0;
+    let totalRealFisik = 0;
+
+    for (let i = 0; i < normalizedInventory.length; i++) {
+      const it = normalizedInventory[i];
+      totalMap += it.komparasi.MAP.fisik || 0;
+      totalBlokF += (it.komparasi.STUDIO.fisik || 0) + (it.komparasi.LIVE.fisik || 0);
+      totalPerbaikan += (it.komparasi.PERMAK.fisik || 0) + (it.komparasi.DEFECT.fisik || 0);
+      totalRealFisik += it.totalFisikGudang || 0;
+    }
+
+    return {
+      totalSku: normalizedInventory.length,
+      totalMap,
+      totalBlokF,
+      totalPerbaikan,
+      totalRealFisik,
+    };
+  }, [normalizedInventory]);
+
+  // Dynamic KPI Stats (instant for un-filtered, filtered loop only when necessary)
+  const kpiStats = useMemo(() => {
+    const hasActiveFilter = Boolean(deferredSearch.trim() || onlyWithStock);
+    if (!hasActiveFilter) {
+      return baseKpiStats;
+    }
+
+    let totalMap = 0;
+    let totalBlokF = 0;
+    let totalPerbaikan = 0;
+    let totalRealFisik = 0;
+
+    for (let i = 0; i < filteredInventory.length; i++) {
+      const it = filteredInventory[i];
+      totalMap += it.komparasi.MAP.fisik || 0;
+      totalBlokF += (it.komparasi.STUDIO.fisik || 0) + (it.komparasi.LIVE.fisik || 0);
+      totalPerbaikan += (it.komparasi.PERMAK.fisik || 0) + (it.komparasi.DEFECT.fisik || 0);
+      totalRealFisik += it.totalFisikGudang || 0;
+    }
+
+    return {
+      totalSku: filteredInventory.length,
+      totalMap,
+      totalBlokF,
+      totalPerbaikan,
+      totalRealFisik,
+    };
+  }, [baseKpiStats, filteredInventory, deferredSearch, onlyWithStock]);
+
+  // Category detection helper
+  const detectKategori = (produkName: string) => {
+    const name = String(produkName || '').toUpperCase();
+    if (name.includes('DRESS')) return 'Dress';
+    if (name.includes('TOP') || name.includes('SHIRT') || name.includes('BLOUSE') || name.includes('KEMEJA') || name.includes('TEE') || name.includes('POLO')) return 'Top';
+    if (name.includes('BOTTOM') || name.includes('PANTS') || name.includes('CELANA') || name.includes('SHORT') || name.includes('CULOTTE')) return 'Bottom';
+    if (name.includes('SKIRT') || name.includes('ROK')) return 'Skirt';
+    if (name.includes('OUTER') || name.includes('JACKET') || name.includes('COAT') || name.includes('CARDIGAN') || name.includes('BLAZER')) return 'Outer';
+    if (name.includes('SET')) return 'Set';
+    if (name.includes('BASIC')) return 'Basic';
+    if (name.includes('ACC') || name.includes('BAG') || name.includes('BELT') || name.includes('HIJAB') || name.includes('SCARF')) return 'Accessories';
+    return 'Lainnya';
+  };
+
+  // Classify MAP items (A, B, C, D, BELT, Z)
+  const classifyMapItem = (item: NormalizedInventoryItem) => {
+    const nama = String(item.produk || '').trim().toLowerCase();
+    const sku = String(item.sku || '').trim().toLowerCase();
+    const locStr = String(item.locStr || '');
+    const locUpper = locStr.toUpperCase();
+
+    // 1. Z: Slow Moving (Rak Z, SKU Z, or Slow Moving in name)
+    const hasZLoc =
+      locUpper.includes('Z') ||
+      locUpper.includes('SLOW') ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return u.startsWith('Z') || u.includes('SLOW');
+        }));
+
+    if (
+      sku.startsWith('z-') ||
+      sku.startsWith('z_') ||
+      sku === 'z' ||
+      nama.includes('slow moving') ||
+      nama.includes('slowmoving') ||
+      hasZLoc
+    ) {
+      return { code: 'Z', label: 'Z. SLOW MOVING', short: 'Z', icon: '⏳', color: 'bg-slate-500 text-white' };
+    }
+
+    // 2. D: Lokasi / Rak D (D001, D002, ..., D011 etc. excluding DF/Defect) or Sale / Special Condition
+    const hasDLoc =
+      (/(^|[\s,;/|])D\d{1,3}\b/i.test(locStr) && !/(^|[\s,;/|])DF/i.test(locStr)) ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return /^D\d+/i.test(u) && !u.startsWith('DF') && !u.startsWith('DEF');
+        }));
+
+    const isSaleOrSC =
+      sku.startsWith('ds') ||
+      sku.startsWith('sc') ||
+      nama.startsWith('sc -') ||
+      nama.startsWith('sc-') ||
+      nama.startsWith('sc ') ||
+      nama.includes('special condition') ||
+      nama.includes('clearance') ||
+      nama.includes('sale') ||
+      sku.includes('sale');
+
+    if (hasDLoc || isSaleOrSC) {
+      return { code: 'D', label: 'D. SALE / LOKASI D', short: 'D', icon: '🏷️', color: 'bg-primary-500 text-white' };
+    }
+
+    // 3. Belt & Aksesoris
+    const hasBeltLoc =
+      locUpper.includes('BELT') ||
+      locUpper.includes('ACC') ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return u.includes('BELT') || u.includes('ACC');
+        }));
+
+    if (
+      hasBeltLoc ||
+      nama.includes('belt') ||
+      nama.includes('aksesoris') ||
+      nama.includes('accessories') ||
+      nama.includes('acc') ||
+      nama.includes('bag') ||
+      nama.includes('gift') ||
+      nama.includes('box') ||
+      nama.includes('paperbag') ||
+      sku.startsWith('pb-') ||
+      sku.startsWith('acc-') ||
+      sku.startsWith('blt')
+    ) {
+      return { code: 'BELT', label: 'BELT (AKSESORIS)', short: 'BELT', icon: '🎀', color: 'bg-purple-500 text-white' };
+    }
+
+    // 4. B: Bottom (Rak B or Pants/Skirt/Celana/Rok)
+    const hasBLoc =
+      (/(^|[\s,;/|])B\d{1,3}\b/i.test(locStr) && !/(^|[\s,;/|])BLOK/i.test(locStr) && !/(^|[\s,;/|])BELT/i.test(locStr)) ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return /^B\d+/i.test(u) && !u.includes('BLOK') && !u.includes('BELT');
+        }));
+
+    if (
+      hasBLoc ||
+      nama.includes('pants') ||
+      nama.includes('skirt') ||
+      nama.includes('skort') ||
+      nama.includes('culotte') ||
+      nama.includes('shorts') ||
+      nama.includes('bottom') ||
+      nama.includes('jeans') ||
+      nama.includes('trouser') ||
+      nama.includes('celana') ||
+      nama.includes('rok') ||
+      nama.includes('kulot') ||
+      nama.includes('legging')
+    ) {
+      return { code: 'B', label: 'B. BOTTOM', short: 'B', icon: '👖', color: 'bg-blue-500 text-white' };
+    }
+
+    // 5. A: Dress & Set (Rak A or Dress/Set/Jumpsuit)
+    const hasALoc =
+      /(^|[\s,;/|])A\d{1,3}\b/i.test(locStr) ||
+      (Array.isArray(item.locList) &&
+        item.locList.some((l) => {
+          const name = typeof l === 'string' ? l.split(':')[0] : (l as any)?.lokasi;
+          const u = String(name || '').trim().toUpperCase();
+          return /^A\d+/i.test(u);
+        }));
+
+    if (
+      hasALoc ||
+      nama.includes('dress') ||
+      nama.includes('jumpsuit') ||
+      nama.includes('one set') ||
+      nama.includes('oneset') ||
+      nama.includes('set') ||
+      nama.includes('romper') ||
+      nama.includes('gown') ||
+      nama.includes('maxi') ||
+      nama.includes('midi')
+    ) {
+      return { code: 'A', label: 'A. DRESS', short: 'A', icon: '👗', color: 'bg-amber-500 text-white' };
+    }
+
+    // 6. C: Top (Fallback / Atasan)
+    return { code: 'C', label: 'C. TOP', short: 'C', icon: '👚', color: 'bg-emerald-500 text-white' };
+  };
+
+  // ========================================================
+  // 5. AREA CHECKBOX TOGGLE HANDLERS
+  // ========================================================
+  const handleAreaToggle = (code: AreaFilterType) => {
+    if (code === 'ALL') {
+      if (activeAreaFilters.includes('ALL')) {
+        setActiveAreaFilters(['GUDANG']);
+      } else {
+        setActiveAreaFilters(['ALL', 'GUDANG', 'STORE', 'ONLINE', 'OFFLINE']);
+      }
+    } else {
+      let next: AreaFilterType[] = activeAreaFilters.filter((x) => x !== 'ALL');
+      if (next.includes(code)) {
+        next = next.filter((x) => x !== code);
+      } else {
+        next.push(code);
+      }
+
+      if (next.length === 0) {
+        next = ['ALL', 'GUDANG', 'STORE', 'ONLINE', 'OFFLINE'];
+      } else if (next.includes('GUDANG') && next.includes('STORE') && next.includes('ONLINE') && next.includes('OFFLINE')) {
+        next = ['ALL', 'GUDANG', 'STORE', 'ONLINE', 'OFFLINE'];
+      }
+      setActiveAreaFilters(next);
+    }
+  };
+
+  const isAreaActive = (code: AreaFilterType) => {
+    return (
+      activeAreaFilters.includes('ALL') ||
+      activeAreaFilters.includes(code)
+    );
+  };
+
+  // Area Label Text
+  const areaLabelText = useMemo(() => {
+    if (activeAreaFilters.includes('ALL') || (isAreaActive('GUDANG') && isAreaActive('STORE') && isAreaActive('ONLINE') && isAreaActive('OFFLINE'))) {
+      return 'SEMUA AREA';
+    }
+    const names: string[] = [];
+    if (activeAreaFilters.includes('GUDANG')) names.push('GUDANG');
+    if (activeAreaFilters.includes('STORE')) names.push('STORE');
+    if (activeAreaFilters.includes('ONLINE')) names.push('ONLINE');
+    if (activeAreaFilters.includes('OFFLINE')) names.push('OFFLINE');
+    if (names.length === 1) return names[0];
+    return `${names.join(', ')} (${names.length})`;
+  }, [activeAreaFilters]);
+
+  // ========================================================
+  // 6. CSV EXPORT FULL & MODAL
+  // ========================================================
+  const handleExportFullCSV = () => {
+    if (!filteredInventory.length) {
+      if (onNotify) onNotify('Tidak ada data produk yang bisa diekspor.', 'warning');
+      return;
+    }
+
+    const showGudang = isAreaActive('GUDANG');
+    const showOffline = isAreaActive('OFFLINE');
+    const showStore = isAreaActive('STORE');
+    const showOnline = isAreaActive('ONLINE');
+
+    const headers: string[] = ['PRODUK', 'SIZE', 'CODE', 'STOK_REAL_FISIK', 'SELISIH_MAP', 'LOKASI_RAK'];
+    if (showGudang) {
+      KOMPARASI_5.forEach((k) => {
+        headers.push(`${k}_FISIK`, `${k}_DP`);
+      });
+    }
+    if (showOffline) OFFLINE_COLS.forEach((c) => headers.push(c));
+    if (showStore) STORE_COLS.forEach((c) => headers.push(c));
+    if (showOnline) ONLINE_COLS.forEach((c) => headers.push(c));
+
+    const rows = filteredInventory.map((item) => {
+      const diff = item.totalFisikGudang - (item.komparasi.MAP.dp || 0);
+      const row: (string | number)[] = [
+        `"${(item.produk || '').replace(/"/g, '""')}"`,
+        `"${(item.size || '-').replace(/"/g, '""')}"`,
+        `"${(item.sku || '').replace(/"/g, '""')}"`,
+        item.totalFisikGudang,
+        diff,
+        `"${(item.locStr || '-').replace(/"/g, '""')}"`,
+      ];
+
+      if (showGudang) {
+        KOMPARASI_5.forEach((k) => {
+          const kd = item.komparasi[k] || { fisik: 0, dp: 0 };
+          row.push(kd.fisik, kd.dp);
+        });
+      }
+      if (showOffline) OFFLINE_COLS.forEach((c) => row.push(item.singles[c] || 0));
+      if (showStore) STORE_COLS.forEach((c) => row.push(item.singles[c] || 0));
+      if (showOnline) ONLINE_COLS.forEach((c) => row.push(item.singles[c] || 0));
+
+      return row.join(',');
+    });
+
+    const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `WMS_INVENTORY_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    if (onNotify) onNotify(`File CSV Inventory berhasil diunduh (${filteredInventory.length} SKU)!`, 'success');
+  };
+
+  const handleExportModalCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const csvContent = '\uFEFF' + headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(',') + '\n' +
+      rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    if (onNotify) onNotify(`Data ${filename} berhasil diekspor!`, 'success');
+  };
+
+  // Header column toggle sort helper
+  const handleToggleColumnSort = (column: 'NAME' | 'SKU' | 'STOCK' | 'DIFF') => {
+    switch (column) {
+      case 'NAME':
+        setSortOption((prev) => (prev === 'NAME_ASC' ? 'NAME_DESC' : 'NAME_ASC'));
+        break;
+      case 'SKU':
+        setSortOption((prev) => (prev === 'SKU_ASC' ? 'SKU_DESC' : 'SKU_ASC'));
+        break;
+      case 'STOCK':
+        setSortOption((prev) => (prev === 'STOCK_DESC' ? 'STOCK_ASC' : 'STOCK_DESC'));
+        break;
+      case 'DIFF':
+        setSortOption((prev) => (prev === 'DIFF_DESC' ? 'DIFF_ASC' : 'DIFF_DESC'));
+        break;
+    }
+  };
+
+  // ========================================================
+  // 7. RENDER VIEW: UNIFIED MULTI-LEVEL SPREADSHEET TABLE
+  // ========================================================
+  const renderUnifiedTableView = () => {
+    const showGudang = isAreaActive('GUDANG');
+    const showOffline = isAreaActive('OFFLINE');
+    const showStore = isAreaActive('STORE');
+    const showOnline = isAreaActive('ONLINE');
+
+    let totalWidth = 240 + 140 + 55 + 130 + 90 + 75;
+    if (showGudang) totalWidth += 5 * 88;
+    if (showOffline) totalWidth += OFFLINE_COLS.length * 44;
+    if (showStore) totalWidth += STORE_COLS.length * 44;
+    if (showOnline) totalWidth += ONLINE_COLS.length * 44;
+
+    const itemsToRender = filteredInventory.slice(0, displayLimit);
+
+    return (
+      <div className="overflow-x-auto max-h-[68vh] border border-slate-200 dark:border-slate-800 rounded-2xl relative shadow-xs">
+        <table className="w-full text-left text-xs border-collapse font-sans" style={{ minWidth: `${totalWidth}px` }}>
+          <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px] font-bold border-b border-slate-200 dark:border-slate-800 shadow-xs">
+            {/* Top Header Row */}
+            <tr>
+              {/* 1. NAMA PRODUK */}
+              <th rowSpan={2} className="p-3 w-[240px] min-w-[240px] border-r border-slate-200 dark:border-slate-800 align-middle">
+                <button
+                  type="button"
+                  onClick={() => handleToggleColumnSort('NAME')}
+                  className="flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-extrabold uppercase cursor-pointer"
+                >
+                  <span>NAMA PRODUK</span>
+                  {sortOption === 'NAME_ASC' ? (
+                    <ArrowUp className="w-3 h-3 text-amber-500" />
+                  ) : sortOption === 'NAME_DESC' ? (
+                    <ArrowDown className="w-3 h-3 text-amber-500" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </th>
+
+              {/* 2. LOKASI RAK (KOLOM DEDIKASI SENDIRI) */}
+              <th rowSpan={2} className="p-2.5 w-[140px] min-w-[140px] text-center border-r border-slate-200 dark:border-slate-800 align-middle">
+                <span className="font-extrabold uppercase text-slate-700 dark:text-slate-200">LOKASI RAK</span>
+              </th>
+
+              {/* 3. SIZE */}
+              <th rowSpan={2} className="p-2.5 w-[55px] min-w-[55px] text-center border-r border-slate-200 dark:border-slate-800 align-middle">
+                SIZE
+              </th>
+
+              {/* 4. CODE (SKU) */}
+              <th rowSpan={2} className="p-3 w-[130px] min-w-[130px] border-r border-slate-200 dark:border-slate-800 align-middle">
+                <button
+                  type="button"
+                  onClick={() => handleToggleColumnSort('SKU')}
+                  className="flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 font-extrabold uppercase cursor-pointer"
+                >
+                  <span>CODE (SKU)</span>
+                  {sortOption === 'SKU_ASC' ? (
+                    <ArrowUp className="w-3 h-3 text-amber-500" />
+                  ) : sortOption === 'SKU_DESC' ? (
+                    <ArrowDown className="w-3 h-3 text-amber-500" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-40" />
+                  )}
+                </button>
+              </th>
+
+              {showGudang &&
+                KOMPARASI_5.map((k) => (
+                  <th
+                    key={k}
+                    colSpan={2}
+                    className="p-1.5 text-center border-r border-slate-200 dark:border-slate-800 font-black text-slate-800 dark:text-slate-100 bg-amber-500/5 dark:bg-amber-500/10"
+                  >
+                    {k}
+                  </th>
+                ))}
+
+              {showOffline && (
+                <th
+                  colSpan={OFFLINE_COLS.length}
+                  className="p-1.5 text-center border-r border-slate-200 dark:border-slate-800 font-black text-slate-800 dark:text-slate-100 bg-slate-500/5 dark:bg-slate-500/10"
+                >
+                  OFFLINE
+                </th>
+              )}
+
+              {showStore && (
+                <th
+                  colSpan={STORE_COLS.length}
+                  className="p-1.5 text-center border-r border-slate-200 dark:border-slate-800 font-black text-slate-800 dark:text-slate-100 bg-blue-500/5 dark:bg-blue-500/10"
+                >
+                  STORE (15 CABANG)
+                </th>
+              )}
+
+              {showOnline && (
+                <th
+                  colSpan={ONLINE_COLS.length}
+                  className="p-1.5 text-center border-r border-slate-200 dark:border-slate-800 font-black text-slate-800 dark:text-slate-100 bg-emerald-500/5 dark:bg-emerald-500/10"
+                >
+                  ONLINE
+                </th>
+              )}
+            </tr>
+
+            {/* Sub Header Row for Fisik vs DP */}
+            <tr className="border-t border-slate-200/80 dark:border-slate-800/80 text-[9.5px]">
+              {showGudang &&
+                KOMPARASI_5.map((k) => (
+                  <React.Fragment key={`${k}-sub`}>
+                    <th className="p-1 text-center w-[44px] text-amber-600 dark:text-amber-400 font-black border-r border-slate-200 dark:border-slate-800 bg-amber-500/5">
+                      FISIK
+                    </th>
+                    <th className="p-1 text-center w-[44px] text-slate-500 font-medium border-r border-slate-200 dark:border-slate-800">
+                      DP
+                    </th>
+                  </React.Fragment>
+                ))}
+
+              {showOffline &&
+                OFFLINE_COLS.map((c) => (
+                  <th key={c} className="p-1 text-center w-[44px] border-r border-slate-200 dark:border-slate-800 font-bold">
+                    {c}
+                  </th>
+                ))}
+
+              {showStore &&
+                STORE_COLS.map((c) => (
+                  <th key={c} className="p-1 text-center w-[44px] border-r border-slate-200 dark:border-slate-800 font-bold">
+                    {c}
+                  </th>
+                ))}
+
+              {showOnline &&
+                ONLINE_COLS.map((c) => (
+                  <th key={c} className="p-1 text-center w-[44px] border-r border-slate-200 dark:border-slate-800 font-bold">
+                    {c}
+                  </th>
+                ))}
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 bg-white dark:bg-[#0E1420]">
+            {itemsToRender.map((item, idx) => {
+              const displaySize = item.size && item.size.toUpperCase() !== 'DEFAULT' ? item.size : 'ALL';
+              return (
+                <tr key={`${item.sku}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-[#161F30] transition-colors">
+                  {/* 1. Nama Produk */}
+                  <td className="p-3 border-r border-slate-100 dark:border-slate-800/60 max-w-[240px]">
+                    <div className="font-bold text-slate-900 dark:text-slate-100 text-xs leading-snug break-words">
+                      {item.produk}
+                    </div>
+                  </td>
+
+                  {/* 2. Lokasi Rak (Dedicated Column with Smart Progressive Disclosure) */}
+                  <td className="p-2 border-r border-slate-100 dark:border-slate-800/60 min-w-[150px] align-middle">
+                    {(() => {
+                      const locs = item.parsedLocs || parseNormalizedLocations(item.locList);
+                      if (locs.length === 0) {
+                        return <span className="text-[11px] text-slate-400 italic block text-center">-</span>;
+                      }
+
+                      const primaryLocs = locs.slice(0, 2);
+                      const remainingCount = locs.length - 2;
+                      const isPopoverOpen = activeLocPopoverSku === item.sku;
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {primaryLocs.map((loc, lIdx) => (
+                            <button
+                              key={lIdx}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenLokasiExport(loc.cleanLocName);
+                              }}
+                              className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold border inline-flex items-center gap-0.5 transition-colors cursor-pointer ${
+                                loc.isNeg
+                                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/25'
+                                  : 'bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-700 hover:text-amber-800 dark:text-slate-300 dark:hover:text-amber-300 border-slate-200 hover:border-amber-300 dark:border-slate-700'
+                              }`}
+                              title={`Klik untuk ekspor / cetak data lokasi ${loc.cleanLocName} (${loc.qty} pcs)`}
+                            >
+                              <MapPin className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                              <span>{loc.cleanLocName}</span>
+                              {loc.qty !== 0 && (
+                                <span className="text-[8.5px] font-normal opacity-80">({loc.qty})</span>
+                              )}
+                            </button>
+                          ))}
+
+                          {remainingCount > 0 && (
+                            <div className="relative inline-block">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveLocPopoverSku(isPopoverOpen ? null : item.sku);
+                                }}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/15 hover:bg-amber-500/25 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-500/40 inline-flex items-center gap-0.5 transition-colors cursor-pointer shadow-2xs"
+                                title={`Produk ini tersebar di ${locs.length} lokasi rak berbeda. Klik untuk rincian.`}
+                              >
+                                <span>+{remainingCount}</span>
+                                <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-150 ${isPopoverOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {/* Floating Popover Tray */}
+                              {isPopoverOpen && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute z-50 left-0 top-full mt-1 w-60 p-2.5 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-1 duration-150"
+                                >
+                                  <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                      <span className="font-bold text-slate-800 dark:text-slate-200 text-[11px] truncate">
+                                        Semua Lokasi ({locs.length})
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveLocPopoverSku(null)}
+                                      className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  <div className="max-h-48 overflow-y-auto space-y-1 pr-0.5 custom-scrollbar">
+                                    {locs.map((l, lIdx) => (
+                                      <div
+                                        key={lIdx}
+                                        className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-100 dark:border-slate-800 transition-colors"
+                                      >
+                                        <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                                            {l.cleanLocName}
+                                          </span>
+                                          <span
+                                            className={`text-[9.5px] px-1.5 py-0.2 rounded font-mono ${
+                                              l.isNeg
+                                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 font-bold'
+                                                : 'bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                            }`}
+                                          >
+                                            {l.qty} pcs
+                                          </span>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveLocPopoverSku(null);
+                                            handleOpenLokasiExport(l.cleanLocName);
+                                          }}
+                                          className="text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 hover:text-amber-600 dark:text-slate-300 dark:hover:text-amber-300 inline-flex items-center gap-1 shadow-2xs cursor-pointer hover:border-amber-300"
+                                          title={`Ekspor / Cetak Label Rak ${l.cleanLocName}`}
+                                        >
+                                          <Printer className="w-2.5 h-2.5" />
+                                          <span>Cetak</span>
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </td>
+
+                  {/* 3. Size */}
+                  <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60">
+                    <span className="inline-block px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      {displaySize}
+                    </span>
+                  </td>
+
+                  {/* 4. SKU / Code */}
+                  <td className="p-3 border-r border-slate-100 dark:border-slate-800/60">
+                    <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/70 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-700/60">
+                      {item.sku}
+                    </span>
+                  </td>
+
+                  {/* 5 Komparasi: MAP, LIVE, STUDIO, PERMAK, DEFECT */}
+                  {showGudang &&
+                    KOMPARASI_5.map((k) => {
+                      const kd = item.komparasi[k] || { fisik: 0, dp: 0 };
+                      return (
+                        <React.Fragment key={`${k}-val`}>
+                          <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60">
+                            {kd.fisik > 0 ? (
+                              <span className="font-mono text-xs font-black text-amber-600 dark:text-amber-400">
+                                {kd.fisik}
+                              </span>
+                            ) : kd.fisik < 0 ? (
+                              <span className="font-mono text-xs font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">
+                                {kd.fisik}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60">
+                            {kd.dp > 0 ? (
+                              <span className="font-mono text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {kd.dp}
+                              </span>
+                            ) : kd.dp < 0 ? (
+                              <span className="font-mono text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">
+                                {kd.dp}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                            )}
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
+
+                  {/* Offline Columns */}
+                  {showOffline &&
+                    OFFLINE_COLS.map((c) => {
+                      const val = item.singles[c] || 0;
+                      return (
+                        <td key={c} className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
+                          {val > 0 ? (
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{val}</span>
+                          ) : val < 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">{val}</span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                          )}
+                        </td>
+                      );
+                    })}
+
+                  {/* Store Columns */}
+                  {showStore &&
+                    STORE_COLS.map((c) => {
+                      const val = item.singles[c] || 0;
+                      return (
+                        <td key={c} className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
+                          {val > 0 ? (
+                            <span className="font-bold text-blue-600 dark:text-blue-400">{val}</span>
+                          ) : val < 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">{val}</span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                          )}
+                        </td>
+                      );
+                    })}
+
+                  {/* Online Columns */}
+                  {showOnline &&
+                    ONLINE_COLS.map((c) => {
+                      const val = item.singles[c] || 0;
+                      return (
+                        <td key={c} className="p-2 text-center border-r border-slate-100 dark:border-slate-800/60 font-mono text-xs">
+                          {val > 0 ? (
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">{val}</span>
+                          ) : val < 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded border border-rose-200/80 dark:border-rose-900/60">{val}</span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px]">·</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  // ========================================================
+  // 8. RENDER VIEW: MOBILE CARD VIEW
+  // ========================================================
+  const renderCardView = () => {
+    const showGudang = isAreaActive('GUDANG');
+    const showOffline = isAreaActive('OFFLINE');
+    const showStore = isAreaActive('STORE');
+    const showOnline = isAreaActive('ONLINE');
+
+    const itemsToRender = filteredInventory.slice(0, displayLimit);
+
+    return (
+      <div className="space-y-3">
+        {itemsToRender.map((item, idx) => {
+          const displaySize = item.size && item.size.toUpperCase() !== 'DEFAULT' ? item.size : 'ALL';
+          const totalStoreQty = item.totalStore + item.totalOffline + item.totalOnline;
+
+          return (
+            <div
+              key={`${item.sku}_${idx}`}
+              className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 shadow-xs hover:border-amber-500/40 transition-all space-y-3"
+            >
+              {/* Card Header: Product name, size & Stok Real */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                    {item.produk}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                      {item.sku}
+                    </span>
+                    {(() => {
+                      const locs = item.parsedLocs || parseNormalizedLocations(item.locList);
+                      if (locs.length === 0) return null;
+
+                      const primaryLocs = locs.slice(0, 2);
+                      const remainingCount = locs.length - 2;
+                      const isPopoverOpen = activeLocPopoverSku === `${item.sku}_card`;
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {primaryLocs.map((loc, lIdx) => (
+                            <button
+                              key={lIdx}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenLokasiExport(loc.cleanLocName);
+                              }}
+                              className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold border inline-flex items-center gap-0.5 transition-colors cursor-pointer ${
+                                loc.isNeg
+                                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                                  : 'bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-700 hover:text-amber-800 dark:text-slate-300 dark:hover:text-amber-300 border-slate-200 hover:border-amber-300 dark:border-slate-700'
+                              }`}
+                              title={`Klik untuk ekspor / cetak lokasi ${loc.cleanLocName}`}
+                            >
+                              <MapPin className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                              <span>{loc.cleanLocName}</span>
+                              {loc.qty !== 0 && (
+                                <span className="text-[8.5px] font-normal opacity-80">({loc.qty})</span>
+                              )}
+                            </button>
+                          ))}
+
+                          {remainingCount > 0 && (
+                            <div className="relative inline-block">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveLocPopoverSku(isPopoverOpen ? null : `${item.sku}_card`);
+                                }}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/15 hover:bg-amber-500/25 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-500/40 inline-flex items-center gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <span>+{remainingCount} lagi</span>
+                                <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-150 ${isPopoverOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {isPopoverOpen && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute z-50 left-0 top-full mt-1 w-56 p-2 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl text-xs"
+                                >
+                                  <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-100 dark:border-slate-800">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 text-[10.5px]">
+                                      Semua Lokasi ({locs.length})
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveLocPopoverSku(null)}
+                                      className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <div className="max-h-40 overflow-y-auto space-y-1">
+                                    {locs.map((l, lIdx) => (
+                                      <div
+                                        key={lIdx}
+                                        className="flex items-center justify-between p-1 rounded bg-slate-50 dark:bg-slate-800/60 text-[10.5px]"
+                                      >
+                                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                          {l.cleanLocName} ({l.qty} pcs)
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveLocPopoverSku(null);
+                                            handleOpenLokasiExport(l.cleanLocName);
+                                          }}
+                                          className="text-[9.5px] px-1 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 hover:text-amber-600"
+                                        >
+                                          Cetak
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <div className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase">STOK REAL</div>
+                    <div className="px-2 py-0.5 rounded-full font-mono text-xs font-black bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                      {item.totalFisikGudang} <span className="text-[10px] font-normal">pcs</span>
+                    </div>
+                  </div>
+                  <span className="px-2 py-1 rounded font-mono text-xs font-black bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    {displaySize}
+                  </span>
+                </div>
+              </div>
+
+              {/* 5-Komparasi Mini Boxes (Gudang Utama) */}
+              {showGudang && (
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Stok Gudang Utama (Fisik vs DP)</span>
+                    <span className="text-amber-500 font-mono font-bold">
+                      Total: {item.totalFisikGudang} Pcs
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {KOMPARASI_5.map((k) => {
+                      const kd = item.komparasi[k] || { fisik: 0, dp: 0 };
+                      return (
+                        <div
+                          key={k}
+                          className="bg-slate-50 dark:bg-[#0E1420] border border-slate-200/80 dark:border-slate-800 rounded-lg p-1 text-center"
+                        >
+                          <div className="text-[9px] font-extrabold text-slate-500 uppercase">{k}</div>
+                          <div className="text-[10px] flex items-center justify-between px-1 mt-0.5">
+                            <span className="text-[8px] text-slate-400">F:</span>
+                            <span
+                              className={`font-mono ${
+                                kd.fisik < 0
+                                  ? 'font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-0.5 rounded'
+                                  : kd.fisik > 0
+                                  ? 'font-extrabold text-amber-600 dark:text-amber-400'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {kd.fisik !== 0 ? kd.fisik : '·'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] flex items-center justify-between px-1">
+                            <span className="text-[8px] text-slate-400">DP:</span>
+                            <span
+                              className={`font-mono ${
+                                kd.dp < 0
+                                  ? 'font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-0.5 rounded'
+                                  : kd.dp > 0
+                                  ? 'font-semibold text-slate-700 dark:text-slate-300'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {kd.dp !== 0 ? kd.dp : '·'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Collapsible details for Store & Online */}
+              {(showOffline || showStore || showOnline) && (
+                <details className="group border-t border-slate-100 dark:border-slate-800/80 pt-2 text-xs">
+                  <summary className="flex items-center justify-between cursor-pointer list-none text-slate-500 hover:text-amber-500 font-bold text-[11px] py-1">
+                    <span className="flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5" />
+                      <span>Cabang, Store &amp; Online</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-[10px]">
+                      {totalStoreQty} Pcs ▾
+                    </span>
+                  </summary>
+
+                  <div className="pt-2 space-y-2">
+                    {showOffline && (
+                      <div>
+                        <div className="text-[9.5px] font-bold text-slate-400 uppercase mb-1">Offline Dept</div>
+                        <div className="flex flex-wrap gap-1">
+                          {OFFLINE_COLS.map((c) => {
+                            const val = item.singles[c] || 0;
+                            return (
+                              <span
+                                key={c}
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
+                                  val > 0
+                                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white border-slate-300'
+                                    : val < 0
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
+                                    : 'bg-slate-50 dark:bg-slate-900/40 text-slate-400 border-slate-200 dark:border-slate-800'
+                                }`}
+                              >
+                                {c}: {val !== 0 ? val : '·'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {showStore && (
+                      <div>
+                        <div className="text-[9.5px] font-bold text-slate-400 uppercase mb-1">Store Cabang (15)</div>
+                        <div className="flex flex-wrap gap-1">
+                          {STORE_COLS.map((c) => {
+                            const val = item.singles[c] || 0;
+                            return (
+                              <span
+                                key={c}
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
+                                  val > 0
+                                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                                    : val < 0
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
+                                    : 'bg-slate-50 dark:bg-slate-900/40 text-slate-400 border-slate-200 dark:border-slate-800'
+                                }`}
+                              >
+                                {c}: {val !== 0 ? val : '·'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {showOnline && (
+                      <div>
+                        <div className="text-[9.5px] font-bold text-slate-400 uppercase mb-1">Online Marketplace</div>
+                        <div className="flex flex-wrap gap-1">
+                          {ONLINE_COLS.map((c) => {
+                            const val = item.singles[c] || 0;
+                            return (
+                              <span
+                                key={c}
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
+                                  val > 0
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                    : val < 0
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
+                                    : 'bg-slate-50 dark:bg-slate-900/40 text-slate-400 border-slate-200 dark:border-slate-800'
+                                }`}
+                              >
+                                {c}: {val !== 0 ? val : '·'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div id="inventoryViewContainer" className="space-y-2 max-w-7xl mx-auto pb-16">
+      {/* ========================================================
+          1. TOP KPI STAT CARDS (4-GRID DENGAN INTERACTIVE MODAL)
+          ======================================================== */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+        {/* KPI 1: TOTAL SKU */}
+        <div
+          onClick={() => setKpiModal('CATEGORY')}
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-300 group shadow-xs"
+          title="Klik untuk melihat diagram kategori produk"
+        >
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>TOTAL SKU PRODUK</span>
+            <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Package className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
+            {kpiStats.totalSku.toLocaleString('id-ID')}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Katalog terdaftar & aktif
+          </div>
+        </div>
+
+        {/* KPI 2: TOTAL STOK REAL (MAP + KANAL FISIK) */}
+        <div
+          onClick={() => setKpiModal('MAP')}
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-emerald-300 group shadow-xs"
+          title="Klik untuk melihat rincian stok MAP & kanal fisik"
+        >
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>TOTAL STOK REAL</span>
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Building className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+            {kpiStats.totalRealFisik.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            MAP: {kpiStats.totalMap.toLocaleString('id-ID')} pcs · Klik detail
+          </div>
+        </div>
+
+        {/* KPI 3: STOK BLOK F */}
+        <div
+          onClick={() => setKpiModal('BLOK_F')}
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-blue-300 group shadow-xs"
+          title="Klik untuk melihat stok Studio, Shopee & TikTok"
+        >
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>STOK BLOK F</span>
+            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Video className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
+            {kpiStats.totalBlokF.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Sample Live & Studio
+          </div>
+        </div>
+
+        {/* KPI 4: STOK PERBAIKAN & DEFECT */}
+        <div
+          onClick={() => setKpiModal('PERBAIKAN')}
+          className="p-3.5 rounded-2xl border transition-all cursor-pointer bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-primary-300 group shadow-xs"
+          title="Klik untuk melihat daftar antrean Permak, Cuci & Defect"
+        >
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
+            <span>PERBAIKAN & DEFECT</span>
+            <div className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-950/60 text-primary-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Wrench className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-primary-600 dark:text-primary-400 font-mono">
+            {kpiStats.totalPerbaikan.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">pcs</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Permak, Cuci &amp; Defect
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================
+          2. MAIN TOOLBAR & CONTROLS (SEARCH, AREA MULTISELECT, VIEW TABS)
+          ======================================================== */}
+      <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Search Bar */}
+          <div className="relative w-full lg:flex-1 lg:min-w-[200px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              id="inputSearchInventory"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari Nama Produk / SKU / Lokasi Rak..."
+              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Right Action Bar */}
+          <div className="flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 w-full lg:w-auto mt-2 lg:mt-0">
+            {/* ADA STOK FILTER TOGGLE */}
+            <button
+              type="button"
+              id="btnFilterOnlyWithStock"
+              onClick={() => setOnlyWithStock(!onlyWithStock)}
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-1 sm:flex-none ${
+                onlyWithStock
+                  ? 'bg-amber-500 text-black border-amber-500 shadow-xs'
+                  : 'bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+              }`}
+              title={onlyWithStock ? 'Menampilkan HANYA produk yang memiliki stok. Klik untuk menampilkan semua katalog.' : 'Klik untuk memfilter hanya produk yang memiliki stok'}
+            >
+              <Package className="w-4 h-4" />
+              <span className="hidden sm:inline">ADA STOK</span>
+            </button>
+
+            {/* MULTISELECT FILTER AREA DROPDOWN */}
+            <div className="relative flex-1 sm:flex-none" ref={areaDropdownRef}>
+              <button
+                type="button"
+                id="btnFilterArea"
+                onClick={() => setIsAreaDropdownOpen(!isAreaDropdownOpen)}
+                className="w-full px-3 py-2 text-xs font-extrabold bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-800 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                title="Pilih area kolom data yang ingin ditampilkan"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span className="truncate max-w-[130px]">{areaLabelText}</span>
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </button>
+
+              {isAreaDropdownOpen && (
+                <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 p-2 text-xs space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                    Kolom Area Ditampilkan
+                  </div>
+                  <label
+                    onClick={() => handleAreaToggle('ALL')}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer font-bold text-slate-800 dark:text-slate-200"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={activeAreaFilters.includes('ALL')}
+                      onChange={() => {}}
+                      className="rounded text-amber-500 accent-amber-500"
+                    />
+                    <span>SEMUA AREA</span>
+                  </label>
+                  <label
+                    onClick={() => handleAreaToggle('GUDANG')}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isAreaActive('GUDANG')}
+                      onChange={() => {}}
+                      className="rounded text-amber-500 accent-amber-500"
+                    />
+                    <span>GUDANG UTAMA (5 KOMPARASI)</span>
+                  </label>
+                  <label
+                    onClick={() => handleAreaToggle('STORE')}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isAreaActive('STORE')}
+                      onChange={() => {}}
+                      className="rounded text-amber-500 accent-amber-500"
+                    />
+                    <span>STORE (15 CABANG)</span>
+                  </label>
+                  <label
+                    onClick={() => handleAreaToggle('ONLINE')}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isAreaActive('ONLINE')}
+                      onChange={() => {}}
+                      className="rounded text-amber-500 accent-amber-500"
+                    />
+                    <span>ONLINE (MARKETPLACE)</span>
+                  </label>
+                  <label
+                    onClick={() => handleAreaToggle('OFFLINE')}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isAreaActive('OFFLINE')}
+                      onChange={() => {}}
+                      className="rounded text-amber-500 accent-amber-500"
+                    />
+                    <span>OFFLINE (WH/QC/GA/LOG)</span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* VIEW MODE TOGGLE BUTTON */}
+            <button
+              type="button"
+              id="btnToggleViewMode"
+              onClick={() => setViewMode(viewMode === 'CARD' ? 'TABLE' : 'CARD')}
+              className="flex-1 sm:flex-none px-3 py-2 text-xs font-extrabold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              title={viewMode === 'CARD' ? 'Ganti ke Mode Tabel Spreadsheet' : 'Ganti ke Mode Kartu Seluler'}
+            >
+              {viewMode === 'CARD' ? (
+                <>
+                  <Monitor className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="hidden sm:inline">MODE TABEL</span>
+                </>
+              ) : (
+                <>
+                  <Smartphone className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="hidden sm:inline">MODE KARTU</span>
+                </>
+              )}
+            </button>
+
+            {/* REFRESH BUTTON */}
+            <button
+              type="button"
+              disabled={isLoading || isSyncingBackground}
+              onClick={() => loadStockData(true)}
+              className="px-3 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 flex-1 sm:flex-none"
+              title="Perbarui Data Inventori dari Database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading || isSyncingBackground ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">
+                {isSyncingBackground ? 'SYNCING...' : 'REFRESH'}
+              </span>
+            </button>
+
+            {/* CSV EXPORT */}
+            {canExportData && (
+              <button
+                type="button"
+                onClick={handleExportFullCSV}
+                className="px-3 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-none"
+                title="Unduh CSV Inventory Lengkap"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">CSV</span>
+              </button>
+            )}
+
+            {/* EKSPOR & PRINT LOKASI TERTENTU (MISAL CC001) */}
+            <button
+              type="button"
+              id="btnExportLokasiModal"
+              onClick={() => handleOpenLokasiExport()}
+              className="px-3 py-2 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-none shadow-xs"
+              title="Ekspor Data & Cetak PDF Lokasi Tertentu (misal: CC001)"
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">LOKASI & PRINT</span>
+            </button>
+
+            {/* PUSAT DIAGNOSTIK & PERBAIKAN ANOMALI DATA */}
+            <button
+              type="button"
+              id="btnAnomalyModal"
+              onClick={() => setIsAnomalyModalOpen(true)}
+              className={`px-3 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer flex-none shadow-xs ${
+                anomalyCount > 0
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                  : 'bg-slate-50 dark:bg-[#0E1420] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+              }`}
+              title="Pusat Diagnostik & Solusi Perbaikan Anomali Data"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ANOMALI DATA</span>
+              {anomalyCount > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-black bg-rose-600 text-white rounded-full leading-none animate-pulse">
+                  {anomalyCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Warning banner when physical stock has not loaded */}
+      {stockList.length === 0 && !isLoading && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+            <div>
+              <p className="font-bold">Stok Fisik Rak Belum Termuat</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Katalog produk terdata ({productCatalog.length.toLocaleString('id-ID')} SKU), namun data stok fisik lokasi belum berhasil dimuat.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadStockData(true, true)}
+            className="px-2 py-2 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+          >
+            Muat Stok Fisik Sekarang
+          </button>
+        </div>
+      )}
+
+      {/* ========================================================
+          3. MAIN DATA SECTION (TABLE vs CARD RENDER)
+          ======================================================== */}
+      {isLoading && stockList.length === 0 ? (
+        <div className="py-20 flex flex-col items-center justify-center gap-3 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
+          <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+            Memuat inventori langsung dari Supabase...
+          </span>
+        </div>
+      ) : filteredInventory.length === 0 ? (
+        <div className="py-16 text-center space-y-2 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
+          <Boxes className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
+          <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
+            Tidak Ada Produk yang Sesuai Filter
+          </div>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            Coba gunakan kata kunci pencarian lain atau aktifkan area kolom lainnya.
+          </p>
+        </div>
+      ) : viewMode === 'CARD' ? (
+        renderCardView()
+      ) : (
+        renderUnifiedTableView()
+      )}
+
+      {/* Pagination Load More */}
+      {filteredInventory.length > displayLimit && (
+        <div className="flex flex-wrap items-center justify-center gap-2.5 pt-3 pb-1">
+          <button
+            type="button"
+            onClick={() => setDisplayLimit((prev) => prev + RENDER_STEP)}
+            className="px-5 py-2 text-xs font-extrabold bg-white dark:bg-[#161F30] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-xl transition-all shadow-xs cursor-pointer"
+          >
+            ⬇️ Tampilkan +{RENDER_STEP} Produk (Sisa {filteredInventory.length - displayLimit})
+          </button>
+          {filteredInventory.length - displayLimit > 50 && (
+            <button
+              type="button"
+              onClick={() => setDisplayLimit((prev) => Math.min(prev + 100, filteredInventory.length))}
+              className="px-5 py-2 text-xs font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition-all shadow-xs cursor-pointer"
+            >
+              ⚡ Tampilkan +100 Produk
+            </button>
+          )}
+          {displayLimit > 30 && (
+            <button
+              type="button"
+              onClick={() => setDisplayLimit(30)}
+              className="px-2 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800/80 rounded-xl transition-all cursor-pointer"
+            >
+              Tampilkan 30 Saja (Mode Ringan)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================
+          4. INTERACTIVE KPI DRILL-DOWN MODALS
+          ======================================================== */}
+      {kpiModal && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setKpiModal(null);
+          }}
+        >
+          <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">
+                  {kpiModal === 'CATEGORY' ? '📦' : kpiModal === 'MAP' ? '🏢' : kpiModal === 'BLOK_F' ? '🎥' : '🛠️'}
+                </span>
+                <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 uppercase">
+                  {kpiModal === 'CATEGORY'
+                    ? 'Total SKU Berdasarkan Kategori'
+                    : kpiModal === 'MAP'
+                    ? 'Stok Fisik MAP (Gudang Utama)'
+                    : kpiModal === 'BLOK_F'
+                    ? 'Stok Tersedia di Blok F'
+                    : 'Stok Perbaikan (Permak, Cuci & Defect)'}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setKpiModal(null)}
+                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body Content */}
+            <div className="p-2 sm:p-3 overflow-y-auto space-y-2 flex-1">
+              {/* MODAL 1: KATEGORI DOUGHNUT BREAKDOWN */}
+              {kpiModal === 'CATEGORY' && (
+                (() => {
+                  const katMap: Record<string, number> = {};
+                  normalizedInventory.forEach((it) => {
+                    const kat = detectKategori(it.produk);
+                    katMap[kat] = (katMap[kat] || 0) + 1;
+                  });
+                  const sortedKats = Object.keys(katMap).sort((a, b) => katMap[b] - katMap[a]);
+                  const total = normalizedInventory.length || 1;
+
+                  const colors = [
+                    'bg-amber-500 text-amber-500',
+                    'bg-emerald-500 text-emerald-500',
+                    'bg-blue-500 text-blue-500',
+                    'bg-primary-500 text-primary-500',
+                    'bg-purple-500 text-purple-500',
+                    'bg-pink-500 text-pink-500',
+                    'bg-teal-500 text-teal-500',
+                    'bg-cyan-500 text-cyan-500',
+                    'bg-slate-500 text-slate-500',
+                  ];
+
+                  return (
+                    <div className="space-y-2">
+                      {/* Doughnut Chart Progress Visual */}
+                      <div className="p-4 bg-slate-50 dark:bg-[#0E1420] rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center justify-between">
+                          <span>Distribusi Kategori Master Produk</span>
+                          <span className="font-mono">{total} Total SKU</span>
+                        </div>
+                        <div className="h-4 w-full flex rounded-full overflow-hidden gap-0.5">
+                          {sortedKats.map((k, idx) => {
+                            const count = katMap[k];
+                            const pct = ((count / total) * 100).toFixed(1);
+                            const colClass = colors[idx % colors.length].split(' ')[0];
+                            return (
+                              <div
+                                key={k}
+                                style={{ width: `${pct}%` }}
+                                title={`${k}: ${count} SKU (${pct}%)`}
+                                className={`${colClass} h-full transition-all`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* List Table */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-100 dark:bg-[#0E1420] text-[10px] font-extrabold uppercase text-slate-500">
+                            <tr>
+                              <th className="p-3">Kategori</th>
+                              <th className="p-3 text-center">Jumlah SKU</th>
+                              <th className="p-3 text-right">Persentase</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
+                            {sortedKats.map((k, idx) => {
+                              const count = katMap[k];
+                              const pct = ((count / total) * 100).toFixed(1);
+                              const colClass = colors[idx % colors.length].split(' ')[0];
+                              return (
+                                <tr key={k} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                  <td className="p-3 flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${colClass}`} />
+                                    <span>{k}</span>
+                                  </td>
+                                  <td className="p-3 text-center font-mono font-extrabold text-amber-600 dark:text-amber-400">
+                                    {count} SKU
+                                  </td>
+                                  <td className="p-3 text-right font-mono font-bold text-slate-500">
+                                    {pct}%
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* MODAL 2: STOK MAP DRILLDOWN (A/B/C/D/BELT/Z) */}
+              {kpiModal === 'MAP' && (
+                (() => {
+                  let list = normalizedInventory
+                    .filter((p) => (p.komparasi.MAP.fisik || 0) > 0)
+                    .map((p) => ({ ...p, kat: classifyMapItem(p) }));
+
+                  if (kpiMapTab !== 'ALL') {
+                    list = list.filter((p) => p.kat.code === kpiMapTab);
+                  }
+                  if (kpiModalSearch.trim()) {
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.kat.label, p.locStr)
+                    );
+                  }
+
+                  // Sort alphabetically by product name and clothing size
+                  list = sortAlphabeticalAndSize(list, (i) => i.produk || i.sku || '', (i) => i.size || '');
+
+                  const totalPcs = list.reduce((sum, it) => sum + it.komparasi.MAP.fisik, 0);
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Segmented Tabs */}
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        {(
+                          [
+                            { id: 'ALL', label: '🌐 Semua' },
+                            { id: 'A', label: '👗 A. Dress' },
+                            { id: 'B', label: '👖 B. Bottom' },
+                            { id: 'C', label: '👚 C. Top' },
+                            { id: 'D', label: '🏷️ D. Sale' },
+                            { id: 'BELT', label: '🎀 Belt' },
+                            { id: 'Z', label: '⏳ Z. Slow' },
+                          ] as const
+                        ).map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setKpiMapTab(tab.id)}
+                            className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                              kpiMapTab === tab.id
+                                ? 'bg-emerald-600 text-white font-extrabold shadow-[0_0_10px_rgba(5,150,105,0.3)] border border-emerald-500'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok MAP:</b> Daftar barang yang sudah tersedia di gudang utama sesuai kategorinya.
+                        </p>
+                      </div>
+
+                      {/* Search & Export */}
+                      <div className="flex gap-2 items-center w-full">
+                        <div className="relative flex-1">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="Cari Nama Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                          />
+                          {kpiModalSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setKpiModalSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'KATEGORI', 'LOKASI / RAK', 'QTY MAP'];
+                            const rows = list.map((it) => [
+                              it.produk,
+                              it.size,
+                              it.sku,
+                              it.kat.label,
+                              it.locStr || '-',
+                              it.komparasi.MAP.fisik,
+                            ]);
+                            handleExportModalCSV(`stok_map_${kpiMapTab}`, headers, rows);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      {/* Table and Responsive Mobile View */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                              <th className="p-2.5">PRODUK &amp; LOKASI</th>
+                              <th className="p-2.5 text-center w-12">SIZE</th>
+                              <th className="p-2.5 text-center w-14">KAT</th>
+                              <th className="p-2.5 text-center w-16 text-emerald-600 dark:text-emerald-400">QTY MAP</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada produk di area MAP dengan filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => (
+                                  <tr
+                                    key={`${it.sku}_${idx}`}
+                                    className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                  >
+                                    <td className="p-2.5">
+                                      <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                        {it.produk}
+                                      </div>
+                                      <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                        <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                        {it.locStr && it.locStr !== '-' && (
+                                          <>
+                                            <span>&bull;</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                        {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${it.kat.color}`}>
+                                        {it.kat.short}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                                        {it.komparasi.MAP.fisik}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {list.length > modalDisplayLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-right text-[11px] text-slate-500 font-mono">
+                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
+                        <b className="text-amber-500">{totalPcs} Pcs</b> Fisik MAP
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* MODAL 3: STOK BLOK F (STUDIO / SHOPEE / TIKTOK / ALL) */}
+              {kpiModal === 'BLOK_F' && (
+                (() => {
+                  let list = normalizedInventory
+                    .filter((p) => {
+                      const st = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const sh = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const tt = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const lv = p.komparasi.LIVE.fisik || 0;
+                      return (st + sh + tt + lv) > 0;
+                    })
+                    .map((p) => {
+                      const studioQty = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const shpQty = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const ttkQty = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const totalLive = (studioQty + shpQty + ttkQty) > 0
+                        ? (studioQty + shpQty + ttkQty)
+                        : (studioQty + (p.komparasi.LIVE.fisik || 0));
+                      return {
+                        ...p,
+                        studioQty,
+                        shpQty,
+                        ttkQty,
+                        totalLive,
+                      };
+                    });
+
+                  if (kpiBlokFTab === 'STUDIO') list = list.filter((p) => p.studioQty > 0);
+                  else if (kpiBlokFTab === 'SHOPEE') list = list.filter((p) => p.shpQty > 0);
+                  else if (kpiBlokFTab === 'TIKTOK') list = list.filter((p) => p.ttkQty > 0);
+
+                  if (kpiModalSearch.trim()) {
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
+                    );
+                  }
+
+                  // Sort alphabetically by product name and natural clothing size
+                  list = sortAlphabeticalAndSize(list, (i) => i.produk || i.sku || '', (i) => i.size || '');
+
+                  const totalPcs = list.reduce((sum, it) => {
+                    if (kpiBlokFTab === 'STUDIO') return sum + it.studioQty;
+                    if (kpiBlokFTab === 'SHOPEE') return sum + it.shpQty;
+                    if (kpiBlokFTab === 'TIKTOK') return sum + it.ttkQty;
+                    return sum + it.totalLive;
+                  }, 0);
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Channel Switcher Tabs */}
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('STUDIO')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'STUDIO'
+                              ? 'bg-emerald-600 text-white font-extrabold shadow-[0_0_10px_rgba(5,150,105,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          📍 Studio
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('SHOPEE')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'SHOPEE'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🧡 Shopee
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('TIKTOK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'TIKTOK'
+                              ? 'bg-slate-800 text-white font-extrabold shadow-[0_0_10px_rgba(30,41,59,0.3)] border border-slate-700'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🖤 TikTok
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'ALL'
+                              ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🌐 Semua
+                        </button>
+                      </div>
+
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok Blok F (Divisi Live):</b> Daftar barang yang sudah tersedia di channel/lokasi terpilih. Anda dapat memantau ketersediaan fisik Studio, Shopee, &amp; TikTok.
+                        </p>
+                      </div>
+
+                      {/* Search & Export Bar */}
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="🔍 Cari Nama Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'STUDIO', 'SHOPEE', 'TIKTOK', 'TOTAL'];
+                            const rows = list.map((it) => [
+                              it.produk,
+                              it.size,
+                              it.sku,
+                              it.locStr || '-',
+                              it.studioQty,
+                              it.shpQty,
+                              it.ttkQty,
+                              it.totalLive,
+                            ]);
+                            handleExportModalCSV(`stok_blokf_${kpiBlokFTab}`, headers, rows);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      {/* Unified Responsive Table (Exact PeminjamanView Layout) */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            {kpiBlokFTab === 'ALL' ? (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; SKU</th>
+                                <th className="p-2.5 text-center w-12">SIZE</th>
+                                <th className="p-2.5 text-center w-14 text-emerald-600 dark:text-emerald-400">STUDIO</th>
+                                <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">SHOPEE</th>
+                                <th className="p-2.5 text-center w-14 text-slate-700 dark:text-slate-300">TIKTOK</th>
+                                <th className="p-2.5 text-center w-14 text-cyan-600 dark:text-cyan-400">TOTAL</th>
+                              </tr>
+                            ) : (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; LOKASI</th>
+                                <th className="p-2.5 text-center w-14">SIZE</th>
+                                <th className="p-2.5 text-center w-16">
+                                  {kpiBlokFTab === 'STUDIO' ? 'STUDIO' : kpiBlokFTab === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK'}
+                                </th>
+                              </tr>
+                            )}
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={kpiBlokFTab === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada stok pada filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => {
+                                  const displayQty =
+                                    kpiBlokFTab === 'STUDIO'
+                                      ? it.studioQty
+                                      : kpiBlokFTab === 'SHOPEE'
+                                      ? it.shpQty
+                                      : it.ttkQty;
+
+                                  if (kpiBlokFTab === 'ALL') {
+                                    return (
+                                      <tr
+                                        key={`${it.sku}_${idx}`}
+                                        className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                      >
+                                        <td className="p-2.5">
+                                          <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                            {it.produk}
+                                          </div>
+                                          <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                            <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                            {it.locStr && it.locStr !== '-' && (
+                                              <>
+                                                <span>&bull;</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                            {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.studioQty > 0 ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.studioQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.shpQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.shpQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.ttkQty > 0 ? 'text-slate-800 dark:text-slate-200 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.ttkQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
+                                            {it.totalLive}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  return (
+                                    <tr
+                                      key={`${it.sku}_${idx}`}
+                                      className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                    >
+                                      <td className="p-2.5">
+                                        <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                          {it.produk}
+                                        </div>
+                                        <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                          <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                          {it.locStr && it.locStr !== '-' && (
+                                            <>
+                                              <span>&bull;</span>
+                                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        {/* Channel breakdown pills */}
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {it.ttkQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                                              🖤 TikTok: {it.ttkQty}
+                                            </span>
+                                          )}
+                                          {it.shpQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
+                                              🧡 Shopee: {it.shpQty}
+                                            </span>
+                                          )}
+                                          {it.studioQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold">
+                                              📍 Studio: {it.studioQty}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                          {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'Default'}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        {displayQty > 0 ? (
+                                          <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            {displayQty}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary-100 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
+                                            Sold
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {list.length > modalDisplayLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-right text-[11px] text-slate-500 font-mono">
+                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
+                        <b className="text-emerald-500 dark:text-emerald-400">{totalPcs} Pcs</b> Tersedia di Blok F
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* MODAL 4: STOK PERBAIKAN (PERMAK, CUCI & DEFECT) */}
+              {kpiModal === 'PERBAIKAN' && (
+                (() => {
+                  const allPerbaikan = normalizedInventory
+                    .filter((p) => (p.stokPermak || 0) + (p.stokCuci || 0) + (p.stokDefect ?? (p.komparasi.DEFECT.fisik || 0)) > 0)
+                    .map((p) => {
+                      const permakQty = p.stokPermak || 0;
+                      const cuciQty = p.stokCuci || 0;
+                      const defectQty = p.stokDefect ?? (p.komparasi.DEFECT.fisik || 0);
+                      return {
+                        ...p,
+                        permakQty,
+                        cuciQty,
+                        defectQty,
+                        totalPerbaikan: permakQty + cuciQty + defectQty,
+                      };
+                    });
+
+                  const countSemua = allPerbaikan.reduce((sum, it) => sum + it.totalPerbaikan, 0);
+                  const countPermak = allPerbaikan.reduce((sum, it) => sum + it.permakQty, 0);
+                  const countCuci = allPerbaikan.reduce((sum, it) => sum + it.cuciQty, 0);
+                  const countDefect = allPerbaikan.reduce((sum, it) => sum + it.defectQty, 0);
+
+                  let list = allPerbaikan;
+                  if (kpiPerbaikanTab === 'PERMAK') list = list.filter((p) => p.permakQty > 0);
+                  else if (kpiPerbaikanTab === 'CUCI') list = list.filter((p) => p.cuciQty > 0);
+                  else if (kpiPerbaikanTab === 'DEFECT') list = list.filter((p) => p.defectQty > 0);
+
+                  if (kpiModalSearch.trim()) {
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
+                    );
+                  }
+
+                  const totalPcs = list.reduce((sum, it) => sum + it.totalPerbaikan, 0);
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                            kpiPerbaikanTab === 'ALL'
+                              ? 'bg-primary-600 text-white font-extrabold shadow-[0_0_10px_rgba(225,29,72,0.3)] border border-primary-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span>🌐 Semua</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                          }`}>
+                            {countSemua}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('PERMAK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                            kpiPerbaikanTab === 'PERMAK'
+                              ? 'bg-blue-600 text-white font-extrabold shadow-[0_0_10px_rgba(37,99,235,0.3)] border border-blue-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span>🪡 Permak</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'PERMAK' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                          }`}>
+                            {countPermak}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('CUCI')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                            kpiPerbaikanTab === 'CUCI'
+                              ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)] border border-cyan-500'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span>🫧 Cuci</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'CUCI' ? 'bg-white/20 text-white' : 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300'
+                          }`}>
+                            {countCuci}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiPerbaikanTab('DEFECT')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                            kpiPerbaikanTab === 'DEFECT'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)] border border-amber-400'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span>⚠️ Defect</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
+                            kpiPerbaikanTab === 'DEFECT' ? 'bg-white/20 text-white' : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                          }`}>
+                            {countDefect}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-primary-500/5 dark:bg-primary-950/20 border border-primary-500/20 rounded-xl text-[11px] text-primary-800 dark:text-primary-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Klasifikasi Rak Perbaikan:</b> Rak <b>PMK</b> masuk ke tab <b>Permak</b> (Jahit), rak <b>CC</b> masuk ke tab <b>Cuci</b> (Laundry noda), dan rak <b>DF</b> masuk ke tab <b>Defect</b>.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 items-center w-full">
+                        <div className="relative flex-1">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="Cari Produk / SKU..."
+                            className="w-full pl-9 pr-8 py-1.5 text-[11px] bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                          />
+                          {kpiModalSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setKpiModalSearch('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'PERMAK', 'CUCI', 'DEFECT', 'TOTAL'];
+                            const rows = list.map((it) => [
+                              it.produk,
+                              it.size,
+                              it.sku,
+                              it.locStr || '-',
+                              it.permakQty,
+                              it.cuciQty,
+                              it.defectQty,
+                              it.totalPerbaikan,
+                            ]);
+                            handleExportModalCSV(`stok_perbaikan_${kpiPerbaikanTab.toLowerCase()}`, headers, rows);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      {/* Unified Responsive Table */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                              <th className="p-2.5">PRODUK & LOKASI</th>
+                              <th className="p-2.5 text-center w-12">SIZE</th>
+                              <th className="p-2.5 text-center w-14 text-blue-600 dark:text-blue-400">PERMAK</th>
+                              <th className="p-2.5 text-center w-14 text-cyan-600 dark:text-cyan-400">CUCI</th>
+                              <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">DEFECT</th>
+                              <th className="p-2.5 text-center w-14 text-primary-600 dark:text-primary-400">TOTAL</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada produk dalam status perbaikan dengan filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => (
+                                  <tr
+                                    key={`${it.sku}_${idx}`}
+                                    className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                  >
+                                    <td className="p-2.5">
+                                      <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                        {it.produk}
+                                      </div>
+                                      <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                        <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                        {it.locStr && it.locStr !== '-' && (
+                                          <>
+                                            <span>&bull;</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                        {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`font-mono text-xs font-bold ${it.permakQty > 0 ? 'text-blue-600 dark:text-blue-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {it.permakQty || 0}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`font-mono text-xs font-bold ${it.cuciQty > 0 ? 'text-cyan-600 dark:text-cyan-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {it.cuciQty || 0}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className={`font-mono text-xs font-bold ${it.defectQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                        {it.defectQty || 0}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      <span className="font-mono text-xs font-extrabold text-primary-600 dark:text-primary-400">
+                                        {it.totalPerbaikan}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {list.length > modalDisplayLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-right text-[11px] text-slate-500 font-mono">
+                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
+                        <b className={
+                          kpiPerbaikanTab === 'PERMAK' ? 'text-blue-600 dark:text-blue-400' :
+                          kpiPerbaikanTab === 'CUCI' ? 'text-cyan-600 dark:text-cyan-400' :
+                          kpiPerbaikanTab === 'DEFECT' ? 'text-amber-600 dark:text-amber-400' :
+                          'text-primary-500'
+                        }>
+                          {totalPcs} Pcs
+                        </b>{' '}
+                        {kpiPerbaikanTab === 'PERMAK' ? 'Antrean Permak (PMK)' :
+                         kpiPerbaikanTab === 'CUCI' ? 'Antrean Cuci (CC)' :
+                         kpiPerbaikanTab === 'DEFECT' ? 'Barang Defect (DF)' :
+                         'Antrean Perbaikan & Cuci'}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* MODAL 3: STOK BLOK F (STUDIO / SHOPEE / TIKTOK / ALL) */}
+              {kpiModal === 'BLOK_F' && (
+                (() => {
+                  let list = normalizedInventory
+                    .filter((p) => {
+                      const st = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const sh = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const tt = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const lv = p.komparasi.LIVE.fisik || 0;
+                      return (st + sh + tt + lv) > 0;
+                    })
+                    .map((p) => {
+                      const studioQty = (p.stokStudio || 0) || (p.komparasi.STUDIO.fisik || 0);
+                      const shpQty = (p.stokShp || 0) || (p.singles['SHP'] || 0);
+                      const ttkQty = (p.stokTtk || 0) || (p.singles['TTK'] || 0);
+                      const totalLive = (studioQty + shpQty + ttkQty) > 0
+                        ? (studioQty + shpQty + ttkQty)
+                        : (studioQty + (p.komparasi.LIVE.fisik || 0));
+                      return {
+                        ...p,
+                        studioQty,
+                        shpQty,
+                        ttkQty,
+                        totalLive,
+                      };
+                    });
+
+                  if (kpiBlokFTab === 'STUDIO') list = list.filter((p) => p.studioQty > 0);
+                  else if (kpiBlokFTab === 'SHOPEE') list = list.filter((p) => p.shpQty > 0);
+                  else if (kpiBlokFTab === 'TIKTOK') list = list.filter((p) => p.ttkQty > 0);
+
+                  if (kpiModalSearch.trim()) {
+                    list = list.filter((p) =>
+                      partialSearchMatch(kpiModalSearch, p.produk, p.sku, p.size, p.locStr)
+                    );
+                  }
+
+                  // Sort alphabetically by product name and natural clothing size
+                  list = sortAlphabeticalAndSize(list, (i) => i.produk || i.sku || '', (i) => i.size || '');
+
+                  const totalPcs = list.reduce((sum, it) => {
+                    if (kpiBlokFTab === 'STUDIO') return sum + it.studioQty;
+                    if (kpiBlokFTab === 'SHOPEE') return sum + it.shpQty;
+                    if (kpiBlokFTab === 'TIKTOK') return sum + it.ttkQty;
+                    return sum + it.totalLive;
+                  }, 0);
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Channel Switcher Tabs */}
+                      <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('STUDIO')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'STUDIO'
+                              ? 'bg-emerald-600 text-white font-extrabold shadow-[0_0_10px_rgba(5,150,105,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          📍 Studio
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('SHOPEE')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'SHOPEE'
+                              ? 'bg-amber-500 text-white font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🧡 Shopee
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('TIKTOK')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'TIKTOK'
+                              ? 'bg-slate-800 text-white font-extrabold shadow-[0_0_10px_rgba(30,41,59,0.3)] border border-slate-700'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🖤 TikTok
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKpiBlokFTab('ALL')}
+                          className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                            kpiBlokFTab === 'ALL'
+                              ? 'bg-cyan-600 text-white font-extrabold shadow-[0_0_10px_rgba(8,145,178,0.3)]'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          🌐 Semua
+                        </button>
+                      </div>
+
+                      {/* Guide Callout Box */}
+                      <div className="px-3 py-2 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                        <span className="shrink-0 mt-0.5">💡</span>
+                        <p className="leading-snug">
+                          <b>Acuan Stok Blok F (Divisi Live):</b> Daftar barang yang sudah tersedia di channel/lokasi terpilih. Anda dapat memantau ketersediaan fisik Studio, Shopee, &amp; TikTok.
+                        </p>
+                      </div>
+
+                      {/* Search & Export Bar */}
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={kpiModalSearch}
+                            onChange={(e) => setKpiModalSearch(e.target.value)}
+                            placeholder="🔍 Cari Nama Produk / SKU / Lokasi..."
+                            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const headers = ['PRODUK', 'SIZE', 'SKU', 'LOKASI', 'STUDIO', 'SHOPEE', 'TIKTOK', 'TOTAL'];
+                            const rows = list.map((it) => [
+                              it.produk,
+                              it.size,
+                              it.sku,
+                              it.locStr || '-',
+                              it.studioQty,
+                              it.shpQty,
+                              it.ttkQty,
+                              it.totalLive,
+                            ]);
+                            handleExportModalCSV(`stok_blokf_${kpiBlokFTab}`, headers, rows);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20 whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+
+                      {/* Unified Responsive Table (Exact PeminjamanView Layout) */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left text-xs border-collapse font-sans">
+                          <thead className="bg-slate-100 dark:bg-[#0F0F12] text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                            {kpiBlokFTab === 'ALL' ? (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; SKU</th>
+                                <th className="p-2.5 text-center w-12">SIZE</th>
+                                <th className="p-2.5 text-center w-14 text-emerald-600 dark:text-emerald-400">STUDIO</th>
+                                <th className="p-2.5 text-center w-14 text-amber-600 dark:text-amber-400">SHOPEE</th>
+                                <th className="p-2.5 text-center w-14 text-slate-700 dark:text-slate-300">TIKTOK</th>
+                                <th className="p-2.5 text-center w-14 text-cyan-600 dark:text-cyan-400">TOTAL</th>
+                              </tr>
+                            ) : (
+                              <tr>
+                                <th className="p-2.5">PRODUK &amp; LOKASI</th>
+                                <th className="p-2.5 text-center w-14">SIZE</th>
+                                <th className="p-2.5 text-center w-16">
+                                  {kpiBlokFTab === 'STUDIO' ? 'STUDIO' : kpiBlokFTab === 'SHOPEE' ? 'SHOPEE' : 'TIKTOK'}
+                                </th>
+                              </tr>
+                            )}
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                            {list.length === 0 ? (
+                              <tr>
+                                <td colSpan={kpiBlokFTab === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
+                                  Tidak ada stok pada filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              <>
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => {
+                                  const displayQty =
+                                    kpiBlokFTab === 'STUDIO'
+                                      ? it.studioQty
+                                      : kpiBlokFTab === 'SHOPEE'
+                                      ? it.shpQty
+                                      : it.ttkQty;
+
+                                  if (kpiBlokFTab === 'ALL') {
+                                    return (
+                                      <tr
+                                        key={`${it.sku}_${idx}`}
+                                        className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                      >
+                                        <td className="p-2.5">
+                                          <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                            {it.produk}
+                                          </div>
+                                          <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                            <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                            {it.locStr && it.locStr !== '-' && (
+                                              <>
+                                                <span>&bull;</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                            {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.studioQty > 0 ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.studioQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.shpQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.shpQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className={`font-mono text-xs font-bold ${it.ttkQty > 0 ? 'text-slate-800 dark:text-slate-200 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                            {it.ttkQty || 0}
+                                          </span>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
+                                            {it.totalLive}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  return (
+                                    <tr
+                                      key={`${it.sku}_${idx}`}
+                                      className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                    >
+                                      <td className="p-2.5">
+                                        <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                          {it.produk}
+                                        </div>
+                                        <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                          <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                          {it.locStr && it.locStr !== '-' && (
+                                            <>
+                                              <span>&bull;</span>
+                                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        {/* Channel breakdown pills */}
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {it.ttkQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-200 rounded font-mono font-bold">
+                                              🖤 TikTok: {it.ttkQty}
+                                            </span>
+                                          )}
+                                          {it.shpQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-mono font-bold">
+                                              🧡 Shopee: {it.shpQty}
+                                            </span>
+                                          )}
+                                          {it.studioQty > 0 && (
+                                            <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded font-mono font-bold">
+                                              📍 Studio: {it.studioQty}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                          {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'Default'}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        {displayQty > 0 ? (
+                                          <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            {displayQty}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-primary-100 text-primary-600 dark:bg-primary-950/50 dark:text-primary-400 border border-primary-200 dark:border-primary-800">
+                                            Sold
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {list.length > modalDisplayLimit && (
+                        <div className="flex justify-center pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setModalDisplayLimit((prev) => prev + 50)}
+                            className="px-2 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer shadow-xs"
+                          >
+                            ⬇️ Tampilkan +50 Produk (Sisa {list.length - modalDisplayLimit})
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-right text-[11px] text-slate-500 font-mono">
+                        Total: <b className="text-slate-800 dark:text-slate-200">{list.length} SKU</b> &bull;{' '}
+                        <b className="text-emerald-500 dark:text-emerald-400">{totalPcs} Pcs</b> Tersedia di Blok F
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL EKSPOR DATA & CETAK PDF LOKASI TERTENTU (misal CC001)
+          ======================================================== */}
+      <InventoryLokasiExportModal
+        isOpen={isLokasiExportModalOpen}
+        onClose={() => setIsLokasiExportModalOpen(false)}
+        initialLocation={selectedExportLocation}
+        stockList={stockList}
+        productCatalog={productCatalog}
+        currentLocations={currentLocations}
+        session={session}
+        onNotify={onNotify}
+      />
+
+      {/* ========================================================
+          MODAL PUSAT DIAGNOSTIK & PEMBERSIHAN ANOMALI DATA
+          ======================================================== */}
+      <InventoryAnomalyModal
+        isOpen={isAnomalyModalOpen}
+        onClose={() => setIsAnomalyModalOpen(false)}
+        productCatalog={productCatalog}
+        stockList={stockList}
+        userSession={session}
+        onDataFixed={() => {
+          loadStockData(true);
+        }}
+      />
+    </div>
+  );
+});
