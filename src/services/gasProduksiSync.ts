@@ -3,7 +3,23 @@ import { MatrixProductBlock } from '../components/penerimaan/ProduksiSpreadsheet
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 export const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
-export const DEFAULT_PRODUKSI_GAS_URL = 'https://script.google.com/macros/s/AKfycbyrsovwstbIR_e1-zgOovxt2sKCyPTjpON9XbOERShS-mZd-Aj5TgWueZRjwDJ05bponA/exec';
+export const DEFAULT_PRODUKSI_GAS_URL = 'https://script.google.com/macros/s/AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg/exec';
+
+/**
+ * Mendapatkan URL GAS Produksi yang valid & membersihkan URL lama yang sudah 404
+ */
+export function getProduksiGasUrl(): string {
+  try {
+    const custom = localStorage.getItem('wms_produksi_gas_url') || '';
+    if (!custom || !custom.trim() || custom.includes('AKfycbyrsovwstbIR_e1-zgOovxt2sKCyPTjpON9XbOERShS-mZd-Aj5TgWueZRjwDJ05bponA')) {
+      localStorage.setItem('wms_produksi_gas_url', DEFAULT_PRODUKSI_GAS_URL);
+      return DEFAULT_PRODUKSI_GAS_URL;
+    }
+    return custom.trim();
+  } catch {
+    return DEFAULT_PRODUKSI_GAS_URL;
+  }
+}
 
 export interface SuratJalanPushItem {
   kode_produksi: string;
@@ -264,7 +280,7 @@ export async function pushProduksiPerTanggalToGoogleSheet(
   }
 
   const targetSpreadsheetId = customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
-  const gasUrl = localStorage.getItem('wms_produksi_gas_url') || DEFAULT_PRODUKSI_GAS_URL;
+  const gasUrl = getProduksiGasUrl();
 
   // Filter items berdasarkan kategori tab yang aktif (Lokal CMT atau Kargo)
   const categoryFilteredItems = items.filter((it) => {
@@ -470,7 +486,7 @@ export async function pushPenerimaanProduksiToGoogleSheet(
   }
 
   const targetSpreadsheetId = customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
-  const gasUrl = localStorage.getItem('wms_produksi_gas_url') || DEFAULT_PRODUKSI_GAS_URL;
+  const gasUrl = getProduksiGasUrl();
 
   // Format blocks jika ada
   const formattedBlocks = blocks ? blocks.map((b) => ({
@@ -559,7 +575,7 @@ export async function pushSuratJalanToGoogleSheet(
   }
 
   const targetSpreadsheetId = customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
-  const gasUrl = localStorage.getItem('wms_produksi_gas_url') || DEFAULT_PRODUKSI_GAS_URL;
+  const gasUrl = getProduksiGasUrl();
 
   let successCount = 0;
   let lastSheetUrl = `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`;
