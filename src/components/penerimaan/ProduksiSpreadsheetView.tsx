@@ -246,18 +246,30 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         }
       }
 
-      // Extract unique arrival dates
+      // Extract unique arrival dates (Exclude retur-only records)
       const distinctDatangDates = Array.from(
-        new Set(items.map((i) => i.tanggal_penerimaan).filter(Boolean))
+        new Set(
+          items
+            .filter((it) => {
+              const isReturOnly =
+                (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+                (it.keterangan && it.keterangan.includes('RETUR_CMT:')) ||
+                (Number(it.qty_retur) > 0 && (!it.qty || Number(it.qty) === 0));
+              return !isReturOnly && it.tanggal_penerimaan;
+            })
+            .map((i) => i.tanggal_penerimaan)
+            .filter(Boolean) as string[]
+        )
       ).sort();
 
-      // Extract distinct Surat Jalan and map per date
+      // Extract distinct Surat Jalan and map per date (Exclude RETUR sj from arrival columns)
       const sjMap = new Map<string, { no_surat_jalan: string; qty: number; tanggal: string }>();
       const dateToSjMap: Record<string, string[]> = {};
 
       items.forEach((it) => {
         const sj = (it.no_surat_jalan || '').trim().toUpperCase();
-        if (sj) {
+        const isReturOnly = sj.startsWith('RETUR-') || (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
+        if (sj && !isReturOnly) {
           if (!sjMap.has(sj)) {
             sjMap.set(sj, {
               no_surat_jalan: sj,
@@ -283,7 +295,21 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
       // Extract unique return dates (Khusus CMT)
       const distinctReturDates = Array.from(
-        new Set(items.map((i) => i.tanggal_retur).filter(Boolean) as string[])
+        new Set(
+          items
+            .map((i) => {
+              if (i.tanggal_retur) return i.tanggal_retur;
+              if (i.keterangan && i.keterangan.includes('RETUR_CMT:')) {
+                const match = i.keterangan.match(/RETUR_CMT:\d+(?:@([\d-]+))?/);
+                if (match && match[1]) return match[1];
+              }
+              if (i.no_surat_jalan && i.no_surat_jalan.toUpperCase().startsWith('RETUR-') && i.tanggal_penerimaan) {
+                return i.tanggal_penerimaan;
+              }
+              return null;
+            })
+            .filter(Boolean) as string[]
+        )
       ).sort();
 
       const returDateSlots: string[] = Array.from(
@@ -346,9 +372,14 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           let totalSizeRetur = 0;
 
           sItems.forEach((it) => {
+            const isReturItem =
+              (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+              (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
+
             const d = it.tanggal_penerimaan;
             const q = Number(it.qty) || 0;
-            if (d && q > 0) {
+            // Hanya tambahkan ke Barang Datang jika BUKAN baris retur murni
+            if (!isReturItem && d && q > 0) {
               qtyByDate[d] = (qtyByDate[d] || 0) + q;
               totalSizeQty += q;
             }
@@ -363,9 +394,9 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 rQty = parseInt(match[1], 10) || 0;
                 rDate = match[2] || it.tanggal_penerimaan;
               }
-            } else if (!rQty && it.no_surat_jalan && it.no_surat_jalan.startsWith('RETUR-')) {
+            } else if (!rQty && it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) {
               rQty = Number(it.qty) || 0;
-              rDate = it.tanggal_penerimaan;
+              rDate = it.tanggal_retur || it.tanggal_penerimaan;
             }
 
             if (rDate && rQty > 0) {
@@ -447,11 +478,21 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         });
       });
 
-      // Extract catatan / keterangan khusus produk
-      const distinctNotes = Array.from(
-        new Set(items.map((i) => (i.keterangan || (i as any).catatan || '').trim()).filter(Boolean))
-      );
-      const catatan = distinctNotes.join(' | ');
+      // Extract catatan / keterangan khusus produk (bersihkan tag internal RETUR_CMT)
+      const cleanNotesList: string[] = [];
+      items.forEach((i) => {
+        let note = (i.keterangan || (i as any).catatan || '').trim();
+        if (!note) return;
+        note = note.replace(/RETUR_CMT:\d+(@[\d-]+)?/g, '').replace(/\|\s*UP:[^|]*/g, '').replace(/\|\s*\|/g, '|').trim();
+        note = note.replace(/^\|+|\|+$/g, '').trim();
+        if (note && !cleanNotesList.includes(note)) {
+          cleanNotesList.push(note);
+        }
+      });
+      if (cleanNotesList.length === 0 && upVendor) {
+        cleanNotesList.push(upVendor);
+      }
+      const catatan = cleanNotesList.join(' | ') || upVendor || '';
 
       // Kesimpulan metrics
       const savedM = customMetrics[code] || {
@@ -778,7 +819,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             if (returDate && numR > 0) {
               const vendorNote = targetBlock.upVendor ? ` | UP: ${targetBlock.upVendor}` : '';
               newItems.push({
-                tanggal_penerimaan: returDate,
+                tanggal_penerimaan: '',
                 tanggal_retur: returDate,
                 qty_retur: numR,
                 kategori: 'Lokal CMT',
@@ -787,8 +828,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 nama_produk: targetBlock.productName || '',
                 warna: cg.color,
                 size: sz.size,
-                // Supabase schema memiliki default qty=1, kita set 1 atau 0 dengan penanda keterangan RETUR_CMT
-                qty: 1,
+                qty: 0,
                 foto_url: targetBlock.photoUrl || '',
                 keterangan: `RETUR_CMT:${numR}@${returDate}${vendorNote}`,
                 operator: 'Spreadsheet Editor',

@@ -163,10 +163,15 @@ export function buildBlocksFromRawItems(
   mapByCode.forEach((items, code) => {
     const firstItem = items[0];
 
-    // Temukan semua tanggal yang ada
+    // Temukan semua tanggal yang ada (Khusus barang datang, abaikan baris retur)
     const dateSet = new Set<string>();
     items.forEach((it) => {
-      if (it.tanggal_penerimaan) dateSet.add(it.tanggal_penerimaan.trim());
+      const isReturItem =
+        (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+        (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
+      if (!isReturItem && it.tanggal_penerimaan && Number(it.qty) > 0) {
+        dateSet.add(it.tanggal_penerimaan.trim());
+      }
     });
     const itemDates = Array.from(dateSet).sort().reverse();
     const finalDateSlots = customDateSlots && customDateSlots.length > 0 ? customDateSlots : itemDates;
@@ -208,12 +213,15 @@ export function buildBlocksFromRawItems(
         cItems
           .filter((it) => (it.size || 'ALL SIZE').trim().toUpperCase() === szName)
           .forEach((it) => {
+            const isReturItem =
+              (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+              (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
             const tgl = it.tanggal_penerimaan?.trim();
             const q = Number(it.qty) || 0;
-            if (tgl) {
+            if (!isReturItem && tgl && q > 0) {
               qtyByDate[tgl] = (qtyByDate[tgl] || 0) + q;
+              totalSizeQty += q;
             }
-            totalSizeQty += q;
           });
 
         return {
