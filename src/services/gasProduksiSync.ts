@@ -3,15 +3,15 @@ import { MatrixProductBlock } from '../components/penerimaan/ProduksiSpreadsheet
 
 export const PRODUKSI_SPREADSHEET_ID = '1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk';
 export const PRODUKSI_SCRIPT_ID = '1vYGP1u5mCAvjFYbJQHbc7mLruxrtwUmlKh27djBJ6oBlomuOCCKy-scb';
-export const DEFAULT_PRODUKSI_GAS_URL = 'https://script.google.com/macros/s/AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg/exec';
+export const DEFAULT_PRODUKSI_GAS_URL = 'https://script.google.com/macros/s/AKfycbyrsovwstbIR_e1-zgOovxt2sKCyPTjpON9XbOERShS-mZd-Aj5TgWueZRjwDJ05bponA/exec';
 
 /**
- * Mendapatkan URL GAS Produksi yang valid & membersihkan URL lama yang sudah 404
+ * Mendapatkan URL GAS Produksi yang valid
  */
 export function getProduksiGasUrl(): string {
   try {
     const custom = localStorage.getItem('wms_produksi_gas_url') || '';
-    if (!custom || !custom.trim() || custom.includes('AKfycbyrsovwstbIR_e1-zgOovxt2sKCyPTjpON9XbOERShS-mZd-Aj5TgWueZRjwDJ05bponA')) {
+    if (!custom || !custom.trim() || custom.includes('AKfycby4J497I-m4H99KSvBDkkSr6_kn9BoIDwALRa3lE1ZiPyJPIAd0AYE6-r6yqCdFONmpSg')) {
       localStorage.setItem('wms_produksi_gas_url', DEFAULT_PRODUKSI_GAS_URL);
       return DEFAULT_PRODUKSI_GAS_URL;
     }
@@ -440,11 +440,16 @@ export async function pushProduksiPerTanggalToGoogleSheet(
 
         if (subRes.ok) {
           const json = await subRes.json().catch(() => ({ success: true }));
-          if (json.success !== false) {
+          if (json && json.success !== false && !json.error) {
             successCount++;
             if (json.sheetUrl) lastSheetUrl = json.sheetUrl;
           } else {
-            lastErrorMsg = json.message || `Gagal menulis tab ${ds.sheetName}`;
+            const errDetail = json?.error || json?.message;
+            if (errDetail === 'Unauthorized') {
+              lastErrorMsg = 'Endpoint Web App mengembalikan Unauthorized. Silakan masukkan Web App URL dari Deployment Spreadsheet Produksi (Who has access: Anyone) pada Pengaturan Endpoint.';
+            } else {
+              lastErrorMsg = errDetail || `Gagal menulis tab ${ds.sheetName}`;
+            }
           }
         } else {
           lastErrorMsg = `HTTP ${subRes.status}: ${subRes.statusText}`;

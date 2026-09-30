@@ -12,6 +12,9 @@ import {
   CalendarDays,
   Sparkles,
   ChevronRight,
+  Settings2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import {
@@ -123,6 +126,40 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   const [isPushing, setIsPushing] = useState<boolean>(false);
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [lastSheetUrl, setLastSheetUrl] = useState<string | null>(null);
+
+  // Endpoint configuration
+  const [showEndpointConfig, setShowEndpointConfig] = useState<boolean>(false);
+  const [gasUrlInput, setGasUrlInput] = useState<string>(() => getProduksiGasUrl());
+  const [isTestingGas, setIsTestingGas] = useState<boolean>(false);
+  const [gasStatusMsg, setGasStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const handleSaveGasUrl = () => {
+    const clean = gasUrlInput.trim();
+    if (!clean) return;
+    localStorage.setItem('wms_produksi_gas_url', clean);
+    onShowToast('URL Endpoint GAS Produksi berhasil disimpan!', 'success');
+  };
+
+  const handleTestGasEndpoint = async () => {
+    try {
+      setIsTestingGas(true);
+      setGasStatusMsg(null);
+      const cleanUrl = gasUrlInput.trim();
+      const res = await fetch(cleanUrl, { redirect: 'follow' });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json) {
+        setGasStatusMsg({ text: `🟢 Terhubung Aktif: ${json?.message || 'Online'}`, ok: true });
+        localStorage.setItem('wms_produksi_gas_url', cleanUrl);
+        onShowToast('Endpoint GAS Produksi online & terhubung!', 'success');
+      } else {
+        setGasStatusMsg({ text: `🔴 HTTP ${res.status}: ${res.statusText}`, ok: false });
+      }
+    } catch (err: any) {
+      setGasStatusMsg({ text: `🔴 Gagal: ${err?.message || err}`, ok: false });
+    } finally {
+      setIsTestingGas(false);
+    }
+  };
 
   // Sync state if modal reopens or tab switches
   React.useEffect(() => {
@@ -376,6 +413,87 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* PENGATURAN ENDPOINT & BANTUAN GAS PRODUKSI */}
+          <div className="bg-slate-50 dark:bg-slate-850/60 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowEndpointConfig(!showEndpointConfig)}
+                className="text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-emerald-600 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Settings2 className="w-3.5 h-3.5 text-slate-500" />
+                <span>Pengaturan Endpoint Web App GAS Produksi</span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  ({showEndpointConfig ? 'Sembunyikan' : 'Klik untuk Ubah URL'})
+                </span>
+              </button>
+
+              <a
+                href={`https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-semibold text-emerald-600 hover:underline flex items-center gap-1"
+              >
+                <span>Buka Spreadsheet Produksi</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            {showEndpointConfig && (
+              <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 text-xs">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                    URL Web App Google Apps Script (dari Deploy &gt; Web app):
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={gasUrlInput}
+                      onChange={(e) => setGasUrlInput(e.target.value)}
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveGasUrl}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                    >
+                      Simpan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTestGasEndpoint}
+                      disabled={isTestingGas}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                    >
+                      {isTestingGas ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      <span>Test Koneksi</span>
+                    </button>
+                  </div>
+                </div>
+
+                {gasStatusMsg && (
+                  <div className={`p-2 rounded-lg text-[11px] font-medium ${gasStatusMsg.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'}`}>
+                    {gasStatusMsg.text}
+                  </div>
+                )}
+
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-lg p-2.5 text-[11px] text-amber-900 dark:text-amber-200 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Petunjuk Deploy Google Apps Script di Spreadsheet:</span>
+                  </p>
+                  <ol className="list-decimal list-inside space-y-0.5 text-[10.5px] text-amber-800 dark:text-amber-300 pl-1 leading-relaxed">
+                    <li>Buka Spreadsheet Produksi &gt; Menu <strong>Extensions</strong> &gt; <strong>Apps Script</strong>.</li>
+                    <li>Pastikan file <code>produksi_sheet.js</code> sudah terpasang.</li>
+                    <li>Klik tombol biru <strong>Deploy</strong> &gt; <strong>Manage deployments</strong> &gt; Edit (✏️) &gt; Pilih <strong>New version</strong> &gt; <strong>Deploy</strong>.</li>
+                    <li>Salin Web App URL yang muncul, lalu tempel pada kotak di atas jika URL baru berbeda.</li>
+                  </ol>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* PREVIEW DAFTAR TAB SHEET YANG AKAN DITULIS */}

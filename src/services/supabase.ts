@@ -7311,7 +7311,7 @@ export async function syncOfflinePenerimaanProduksi(): Promise<{ synced: number,
 }
 
 /**
- * Clean up mismatched notes (e.g. BIS Florence copied to all products under SJ-KARGOCHN 2509-01 12 KOLI)
+ * Clean up mismatched notes and remove duplicate rows caused by multiple saves
  */
 export async function cleanMismatchedPenerimaanNotesInSupabase(): Promise<number> {
   let cleanedCount = 0;
@@ -7328,27 +7328,43 @@ export async function cleanMismatchedPenerimaanNotesInSupabase(): Promise<number
     console.warn('Gagal patch Supabase cleanup:', err);
   }
 
-  // 2. Update in LocalStorage & In-Memory Cache
+  // 2. Deduplicate and clean local storage
   try {
     const cached = localStorage.getItem('wms_local_penerimaan_produksi');
     if (cached) {
       const list: PenerimaanProduksiItem[] = JSON.parse(cached);
-      const newList = list.map((item) => {
+      const seen = new Set<string>();
+      const deduped: PenerimaanProduksiItem[] = [];
+
+      list.forEach((item) => {
+        const idStr = item.id !== undefined && item.id !== null ? String(item.id) : '';
         const sj = (item.no_surat_jalan || '').trim().toUpperCase();
         const kp = (item.kode_produksi || '').trim().toUpperCase();
-        const ket = (item.keterangan || '').trim();
+        const w = (item.warna || '').trim().toUpperCase();
+        const sz = (item.size || '').trim().toUpperCase();
+        const tgl = (item.tanggal_penerimaan || '').trim();
+        const qty = Number(item.qty) || 0;
+        let ket = (item.keterangan || '').trim();
 
         if (
           (sj === 'SJ-KARGOCHN 2509-01 12 KOLI' && kp !== '2508' && (ket === 'BIS Florence' || ket.includes('BIS Florence'))) ||
           (kp !== '2508' && ket === 'BIS Florence')
         ) {
           cleanedCount++;
-          return { ...item, keterangan: '' };
+          ket = '';
         }
-        return item;
+
+        // Deduplication key
+        const uniqueKey = idStr ? `ID_${idStr}` : `SIG_${sj}_${kp}_${w}_${sz}_${tgl}_${qty}`;
+        if (!seen.has(uniqueKey)) {
+          seen.add(uniqueKey);
+          deduped.push({ ...item, keterangan: ket });
+        } else {
+          cleanedCount++;
+        }
       });
 
-      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(newList));
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(deduped));
     }
   } catch (err) {
     console.warn('Gagal update local cache cleanup:', err);
@@ -7356,6 +7372,64 @@ export async function cleanMismatchedPenerimaanNotesInSupabase(): Promise<number
 
   memoryPenerimaanProduksiCache = null; // Clear memory cache
   return cleanedCount;
+}
+
+/**
+ * Update foto produk penerimaan secara spesifik (0ms latency, tanpa mengubah kuantitas atau menduplikasi baris)
+ */
+export async function updatePenerimaanPhotoInSupabase(
+  kodeProduksi: string,
+  newPhotoUrl: string,
+  noSuratJalan?: string
+): Promise<void> {
+  const cleanCode = (kodeProduksi || '').trim().toUpperCase();
+  if (!cleanCode) return;
+
+  // 1. Update in LocalStorage
+  try {
+    const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+    if (cached) {
+      let list: PenerimaanProduksiItem[] = JSON.parse(cached);
+      let changed = false;
+      list = list.map((it) => {
+        const itemCode = (it.kode_produksi || '').trim().toUpperCase();
+        const itemSJ = (it.no_surat_jalan || '').trim().toUpperCase();
+        const matchesSJ = !noSuratJalan || itemSJ === noSuratJalan.trim().toUpperCase();
+
+        if (itemCode === cleanCode && matchesSJ) {
+          changed = true;
+          return { ...it, foto_url: newPhotoUrl };
+        }
+        return it;
+      });
+      if (changed) {
+        localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
+      }
+    }
+  } catch {}
+
+  // 2. Patch in Supabase
+  try {
+    const query = noSuratJalan
+      ? `kode_produksi=eq.${encodeURIComponent(cleanCode)}&no_surat_jalan=eq.${encodeURIComponent(noSuratJalan.trim().toUpperCase())}`
+      : `kode_produksi=eq.${encodeURIComponent(cleanCode)}`;
+
+    await supabaseFetch('penerimaan_produksi', 'PATCH', { foto_url: newPhotoUrl }, query);
+  } catch (err) {
+    console.warn('Gagal patch foto di Supabase:', err);
+  }
+
+  // 3. Invalidate Memory Cache & Dispatch update event
+  memoryPenerimaanProduksiCache = null;
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('wms_penerimaan_produksi_updated', {
+          detail: { action: 'photo_update', kode_produksi: cleanCode, photoUrl: newPhotoUrl },
+        })
+      );
+    } catch {}
+  }
 }
 
 /**

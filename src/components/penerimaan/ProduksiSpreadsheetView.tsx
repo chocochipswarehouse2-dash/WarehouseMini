@@ -30,7 +30,7 @@ import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
 import { pushPenerimaanProduksiToGoogleSheet } from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
-import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase } from '../../services/supabase';
+import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase, updatePenerimaanPhotoInSupabase } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
 
@@ -800,32 +800,54 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       });
     });
 
-    // Update LocalStorage cache
+    // Check if only photo/catatan changed (quantities & sizes unchanged)
+    const originalItems = dataList.filter(
+      (it) => (it.kode_produksi || '').trim().toUpperCase() === targetBlock.code
+    );
+    const origTotalQty = originalItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+    const newTotalQty = newItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+
+    const isOnlyMetaChange = originalItems.length > 0 && origTotalQty === newTotalQty && newItems.length === originalItems.length;
+
+    if (isOnlyMetaChange) {
+      // Fast path: Only patch foto_url & catatan without deleting or re-inserting rows
+      try {
+        if (targetBlock.photoUrl) {
+          await updatePenerimaanPhotoInSupabase(targetBlock.code, targetBlock.photoUrl);
+        }
+        if (targetBlock.catatan !== undefined) {
+          await supabaseFetch(
+            'penerimaan_produksi',
+            'PATCH',
+            { keterangan: targetBlock.catatan || '' },
+            `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`
+          );
+        }
+      } catch (errFast) {
+        console.warn('Fast patch error:', errFast);
+      }
+    } else {
+      // Full update path: replace rows cleanly
+      try {
+        // 1. Delete previous rows for this code in Supabase
+        await supabaseFetch('penerimaan_produksi', 'DELETE', undefined, `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`);
+        // 2. Direct insert new rows in Supabase
+        if (newItems.length > 0) {
+          await supabaseFetch('penerimaan_produksi', 'POST', newItems);
+        }
+      } catch (errSupabase) {
+        console.warn('Gagal sync block save ke Supabase:', errSupabase);
+      }
+    }
+
+    // Update LocalStorage cache (single, clean write with deduplication)
     try {
       const cached = localStorage.getItem('wms_local_penerimaan_produksi');
       let list: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
       list = list.filter((it) => (it.kode_produksi || '').trim().toUpperCase() !== targetBlock.code);
-      list = [...list, ...newItems];
+      list = [...newItems, ...list];
       localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
     } catch {}
-
-    // Async push to Supabase Cloud
-    try {
-      // 1. Delete previous rows for this code in Supabase
-      await supabaseFetch('penerimaan_produksi', 'DELETE', undefined, `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`);
-      // 2. Insert new rows in Supabase
-      if (newItems.length > 0) {
-        await simpanBatchPenerimaanProduksiToSupabase({
-          tanggal: targetBlock.dateSlots[0] || new Date().toISOString().split('T')[0],
-          kategori: targetBlock.kategori || (isCMT ? 'Lokal CMT' : 'Kargo'),
-          no_surat_jalan: targetBlock.distinctSjs[0]?.no_surat_jalan || `SJ-${targetBlock.code}`,
-          keterangan: targetBlock.catatan || '',
-          items: newItems,
-        });
-      }
-    } catch (errSupabase) {
-      console.warn('Gagal sync block save ke Supabase:', errSupabase);
-    }
 
     if (onRefreshData) {
       try {
@@ -846,7 +868,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
     setEditingBlockId(null);
     setBackupBlock(null);
-    onShowToast(`Tabel Kode ${targetBlock.code} (termasuk Qty Retur & Cloud Sync) berhasil disimpan!`, 'success');
+    onShowToast(`Tabel Kode ${targetBlock.code} berhasil disimpan!`, 'success');
   };
 
   // Switch Tab
@@ -1113,6 +1135,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         prev.map((b) => (b.id === blockId ? { ...b, photoUrl: res.dataUrl } : b))
       );
       setPhotoUrlInput(res.dataUrl);
+
+      // Instantly patch photo to Supabase & Local cache without touching any row quantities or duplicates
+      await updatePenerimaanPhotoInSupabase(blockId, res.dataUrl);
+
       onShowToast(`Foto produk berhasil diterapkan (${Math.round(res.compressedSize / 1024)} KB)!`, 'success');
       if (photoModalBlockId === blockId) setPhotoModalBlockId(null);
     } catch (err) {
