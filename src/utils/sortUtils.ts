@@ -1,14 +1,24 @@
 export function getSizeWeight(size: string): number {
   const s = (size || '').toUpperCase().trim();
-  if (s === 'XS') return 1;
-  if (s === 'S') return 2;
-  if (s === 'M') return 3;
-  if (s === 'L') return 4;
-  if (s === 'XL') return 5;
-  if (s === 'XXL' || s === '2XL') return 6;
-  if (s === 'XXXL' || s === '3XL') return 7;
-  if (s === 'ALL') return 98;
+  if (s === 'XXS' || s === '2XS') return 1;
+  if (s === 'XS') return 2;
+  if (s === 'S') return 3;
+  if (s === 'M') return 4;
+  if (s === 'L') return 5;
+  if (s === 'XL') return 6;
+  if (s === 'XXL' || s === '2XL') return 7;
+  if (s === 'XXXL' || s === '3XL') return 8;
+  if (s === 'XXXXL' || s === '4XL') return 9;
+  if (s === '5XL') return 10;
+  if (s === 'ALL' || s === 'ALLSIZE' || s === 'ALL SIZE' || s === 'FREESIZE' || s === 'FREE SIZE' || s === 'OS' || s === 'ONESIZE' || s === 'ONE SIZE') return 98;
   if (s === 'DEFAULT' || s === '-' || s === '') return 99;
+
+  // Numerical sizes like 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36...
+  const num = parseFloat(s);
+  if (!isNaN(num)) {
+    return 20 + num;
+  }
+
   return 50; // other unknown sizes
 }
 

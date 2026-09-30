@@ -49,6 +49,7 @@ import {
   pushMasterRecountDeltaToGoogleSheet,
   MasterRecountDeltaItem,
 } from '../../services/gasProduksiSync';
+import { getSizeWeight } from '../../utils/sortUtils';
 
 export interface AuditHitungUlangTabProps {
   session: UserSession | null;
@@ -454,7 +455,12 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         last_notes: lastNotes,
         catatan_petunjuk: qMeta?.catatan_petunjuk || '',
         distinct_colors: Array.from(grp.distinct_colors),
-        distinct_sizes: Array.from(grp.distinct_sizes),
+        distinct_sizes: Array.from(grp.distinct_sizes).sort((a, b) => {
+          const wa = getSizeWeight(a);
+          const wb = getSizeWeight(b);
+          if (wa !== wb) return wa - wb;
+          return a.localeCompare(b);
+        }),
         distinct_dates: Array.from(grp.distinct_dates),
         items: grp.items,
       });
@@ -574,6 +580,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     return Array.from(map.values()).sort((a, b) => {
       const c = a.warna.localeCompare(b.warna);
       if (c !== 0) return c;
+      const weightA = getSizeWeight(a.size);
+      const weightB = getSizeWeight(b.size);
+      if (weightA !== weightB) return weightA - weightB;
       return a.size.localeCompare(b.size);
     });
   }, [activeGroup]);
