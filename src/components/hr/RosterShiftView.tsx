@@ -27,6 +27,11 @@ import {
   Lock,
   ChevronDown,
   Sparkles,
+  ArrowRight,
+  ListFilter,
+  CheckSquare,
+  Square,
+  Layers,
 } from 'lucide-react';
 import { UserSession, RosterShiftRecord, KaryawanRecord, MasterShiftRecord } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
@@ -181,6 +186,29 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
 
   // Delete Confirm State
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Template Generator Modal States (Range Tanggal & Pilih Karyawan)
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState<boolean>(false);
+  const [templateStartDate, setTemplateStartDate] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  });
+  const [templateEndDate, setTemplateEndDate] = useState<string>(() => {
+    const d = new Date();
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+  });
+  const [selectedTemplateEmployeeNiks, setSelectedTemplateEmployeeNiks] = useState<string[]>([]);
+  const [templateDeptFilter, setTemplateDeptFilter] = useState<string>('all');
+  const [templateEmployeeSearch, setTemplateEmployeeSearch] = useState<string>('');
+  const [templatePattern, setTemplatePattern] = useState<string>('DEFAULT'); // 'DEFAULT' | '5_2_WEEKEND_OFF' | '6_1_SUNDAY_OFF' | 'ROTATING'
+  const [templateDefaultShift, setTemplateDefaultShift] = useState<string>('Shift 1');
+  const [templateDefaultKeterangan, setTemplateDefaultKeterangan] = useState<string>('Jadwal Reguler');
+  const [isApplyingTemplate, setIsApplyingTemplate] = useState<boolean>(false);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -515,43 +543,187 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     }
   };
 
-  // Download CSV Template
-  const handleDownloadCsvTemplate = () => {
-    const headers = ['NIK', 'Nama Staf', 'Tanggal (YYYY-MM-DD)', 'Shift', 'Jam Masuk (HH:MM)', 'Jam Pulang (HH:MM)', 'Keterangan'];
-    
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const d = String(today.getDate()).padStart(2, '0');
-    const todayStr = `${y}-${m}-${d}`;
+  // Helper untuk mendapatkan array tanggal dalam rentang start - end
+  const getDatesInRange = (startDateStr: string, endDateStr: string): string[] => {
+    const dates: string[] = [];
+    if (!startDateStr || !endDateStr) return dates;
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return dates;
 
-    const sampleRows: string[][] = [];
-    if (karyawanList.length > 0) {
-      karyawanList.slice(0, 8).forEach((k, idx) => {
-        let shiftName = 'Shift 1';
-        let jm = '08:00';
-        let jp = '17:00';
-        if (idx % 3 === 1) {
-          shiftName = 'Shift 2';
-          jm = '09:00';
-          jp = '18:00';
-        } else if (idx % 3 === 2) {
-          shiftName = 'Shift 3';
-          jm = '12:00';
-          jp = '21:00';
-        }
-        sampleRows.push([k.nik, k.nama || '', todayStr, shiftName, jm, jp, 'Jadwal Reguler']);
-      });
-    } else {
-      sampleRows.push(['WH0001', 'Staff Gudang 1', todayStr, 'Shift 1', '08:00', '17:00', 'Jadwal Normal']);
-      sampleRows.push(['WH0002', 'Staff Gudang 2', todayStr, 'Shift 2', '09:00', '18:00', 'Piket Siang']);
-      sampleRows.push(['WH0003', 'Staff Gudang 3', todayStr, 'Libur', '', '', 'Off Mingguan']);
+    const current = new Date(start);
+    while (current <= end) {
+      const y = current.getFullYear();
+      const m = String(current.getMonth() + 1).padStart(2, '0');
+      const d = String(current.getDate()).padStart(2, '0');
+      dates.push(`${y}-${m}-${d}`);
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  };
+
+  // Quick Preset Range Tanggal Generator
+  const handleSetTemplatePresetDates = (preset: 'today' | 'this_week' | 'next_week' | 'this_month' | 'next_month') => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const d = now.getDate();
+
+    const formatDateStr = (date: Date) => {
+      const yr = date.getFullYear();
+      const mo = String(date.getMonth() + 1).padStart(2, '0');
+      const dt = String(date.getDate()).padStart(2, '0');
+      return `${yr}-${mo}-${dt}`;
+    };
+
+    if (preset === 'today') {
+      const todayStr = formatDateStr(now);
+      setTemplateStartDate(todayStr);
+      setTemplateEndDate(todayStr);
+    } else if (preset === 'this_week') {
+      const day = now.getDay();
+      const diffMon = d - day + (day === 0 ? -6 : 1);
+      const mon = new Date(y, m, diffMon);
+      const sun = new Date(y, m, diffMon + 6);
+      setTemplateStartDate(formatDateStr(mon));
+      setTemplateEndDate(formatDateStr(sun));
+    } else if (preset === 'next_week') {
+      const day = now.getDay();
+      const diffMon = d - day + (day === 0 ? -6 : 1) + 7;
+      const mon = new Date(y, m, diffMon);
+      const sun = new Date(y, m, diffMon + 6);
+      setTemplateStartDate(formatDateStr(mon));
+      setTemplateEndDate(formatDateStr(sun));
+    } else if (preset === 'this_month') {
+      const firstDay = new Date(y, m, 1);
+      const lastDay = new Date(y, m + 1, 0);
+      setTemplateStartDate(formatDateStr(firstDay));
+      setTemplateEndDate(formatDateStr(lastDay));
+    } else if (preset === 'next_month') {
+      const firstDay = new Date(y, m + 1, 1);
+      const lastDay = new Date(y, m + 2, 0);
+      setTemplateStartDate(formatDateStr(firstDay));
+      setTemplateEndDate(formatDateStr(lastDay));
+    }
+  };
+
+  // Open Template Modal & initialize employee selections
+  const handleOpenTemplateModal = () => {
+    // Default select all active employees
+    if (selectedTemplateEmployeeNiks.length === 0 && karyawanList.length > 0) {
+      setSelectedTemplateEmployeeNiks(karyawanList.map((k) => k.nik));
+    }
+    setTemplateEmployeeSearch('');
+    setTemplateDeptFilter('all');
+    setIsTemplateModalOpen(true);
+  };
+
+  // Generate Array Baris Template Jadwal Shift
+  const generateTemplateRecords = (): Array<{
+    nik: string;
+    nama: string;
+    tanggal: string;
+    shift: string;
+    jam_masuk: string;
+    jam_pulang: string;
+    keterangan: string;
+  }> => {
+    const dates = getDatesInRange(templateStartDate, templateEndDate);
+    const selectedEmployees = karyawanList.filter((k) => selectedTemplateEmployeeNiks.includes(k.nik));
+
+    if (dates.length === 0 || selectedEmployees.length === 0) {
+      return [];
     }
 
+    const rows: Array<{
+      nik: string;
+      nama: string;
+      tanggal: string;
+      shift: string;
+      jam_masuk: string;
+      jam_pulang: string;
+      keterangan: string;
+    }> = [];
+
+    const defaultPreset = DEFAULT_SHIFTS[templateDefaultShift] || { masuk: '08:00', pulang: '17:00' };
+
+    dates.forEach((dStr, dIdx) => {
+      const dateObj = new Date(dStr);
+      const dayOfWeek = dateObj.getDay(); // 0 = Minggu, 6 = Sabtu
+
+      selectedEmployees.forEach((emp, empIdx) => {
+        let shiftName = templateDefaultShift;
+        let jamMasuk = defaultPreset.masuk || '08:00';
+        let jamPulang = defaultPreset.pulang || '17:00';
+        let ket = templateDefaultKeterangan || 'Jadwal Reguler';
+
+        if (templatePattern === '5_2_WEEKEND_OFF') {
+          // Sabtu & Minggu Libur
+          if (dayOfWeek === 0 || dayOfWeek === 6) {
+            shiftName = 'Libur';
+            jamMasuk = '';
+            jamPulang = '';
+            ket = 'Off Akhir Pekan';
+          }
+        } else if (templatePattern === '6_1_SUNDAY_OFF') {
+          // Hanya Minggu Libur
+          if (dayOfWeek === 0) {
+            shiftName = 'Libur';
+            jamMasuk = '';
+            jamPulang = '';
+            ket = 'Off Mingguan';
+          }
+        } else if (templatePattern === 'ROTATING') {
+          // Rotasi Shift 1 & Shift 2
+          if (dayOfWeek === 0) {
+            shiftName = 'Libur';
+            jamMasuk = '';
+            jamPulang = '';
+            ket = 'Off Mingguan';
+          } else {
+            const isShift2 = (empIdx + dIdx) % 2 === 1;
+            shiftName = isShift2 ? 'Shift 2' : 'Shift 1';
+            const p = DEFAULT_SHIFTS[shiftName];
+            jamMasuk = p?.masuk || '08:00';
+            jamPulang = p?.pulang || '17:00';
+            ket = isShift2 ? 'Rotasi Shift Siang' : 'Rotasi Shift Pagi';
+          }
+        } else if (templateDefaultShift === 'Kosong') {
+          shiftName = '';
+          jamMasuk = '';
+          jamPulang = '';
+        }
+
+        rows.push({
+          nik: emp.nik,
+          nama: emp.nama || '',
+          tanggal: dStr,
+          shift: shiftName,
+          jam_masuk: jamMasuk,
+          jam_pulang: jamPulang,
+          keterangan: ket,
+        });
+      });
+    });
+
+    return rows;
+  };
+
+  // Download CSV Template hasil generate range tanggal & karyawan terpilih
+  const handleDownloadGeneratedTemplate = () => {
+    const rows = generateTemplateRecords();
+    if (rows.length === 0) {
+      onShowToast('Pilih setidaknya 1 rentang tanggal valid dan 1 karyawan', 'warning');
+      return;
+    }
+
+    const headers = ['NIK', 'Nama Staf', 'Tanggal (YYYY-MM-DD)', 'Shift', 'Jam Masuk (HH:MM)', 'Jam Pulang (HH:MM)', 'Keterangan'];
     const csvContent = [
       headers.join(','),
-      ...sampleRows.map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+      ...rows.map((r) =>
+        [r.nik, r.nama, r.tanggal, r.shift, r.jam_masuk, r.jam_pulang, r.keterangan]
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(',')
       ),
     ].join('\n');
 
@@ -559,12 +731,56 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Template_Jadwal_Roster_Shift_WMS.csv`);
+    link.setAttribute('download', `Template_Jadwal_Shift_${templateStartDate}_sd_${templateEndDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    onShowToast('Template CSV jadwal shift berhasil didownload', 'info');
+    onShowToast(`Template CSV berhasil diunduh (${rows.length} baris jadwal untuk ${selectedTemplateEmployeeNiks.length} karyawan)`, 'success');
+  };
+
+  // Terapkan Langsung Template ke Database (Batch Save & Auto Sync Presensi)
+  const handleApplyTemplateDirectlyToDatabase = async () => {
+    if (!userIsAdmin) {
+      onShowToast('Hanya Admin yang dapat menerapkan jadwal shift ke database', 'warning');
+      return;
+    }
+    const rows = generateTemplateRecords();
+    if (rows.length === 0) {
+      onShowToast('Pilih setidaknya 1 rentang tanggal valid dan 1 karyawan', 'warning');
+      return;
+    }
+
+    if (!window.confirm(`Konfirmasi pembuatan ${rows.length} jadwal shift untuk ${selectedTemplateEmployeeNiks.length} karyawan (${templateStartDate} s/d ${templateEndDate})? Jadwal yang sudah ada pada tanggal tersebut akan diperbarui.`)) {
+      return;
+    }
+
+    setIsApplyingTemplate(true);
+    try {
+      const recordsToSave: Partial<RosterShiftRecord>[] = rows.map((r) => ({
+        nik: r.nik,
+        tanggal: r.tanggal,
+        shift: r.shift || 'Shift 1',
+        jam_masuk: r.jam_masuk || '08:00',
+        jam_pulang: r.jam_pulang || '17:00',
+        keterangan: r.keterangan || 'Generate Template Massal',
+      }));
+
+      const res = await batchSaveRosterShifts(recordsToSave);
+      onShowToast(`Berhasil menyimpan ${res.success} jadwal shift ke database & menyinkronkan presensi!`, 'success');
+      await loadData();
+      setIsTemplateModalOpen(false);
+    } catch (err: any) {
+      console.error('Error applying template batch save:', err);
+      onShowToast(`Gagal menerapkan jadwal: ${err.message || String(err)}`, 'error');
+    } finally {
+      setIsApplyingTemplate(false);
+    }
+  };
+
+  // Download CSV Template Quick (Standard 8-row fallback)
+  const handleDownloadCsvTemplate = () => {
+    handleOpenTemplateModal();
   };
 
   // Export Filtered / All Roster Data to CSV
@@ -838,6 +1054,29 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     return { bg: 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700', text: 'text-slate-700 dark:text-slate-300' };
   };
 
+  // Computed helper for Template Modal employee filtering
+  const filteredEmployeesForTemplate = useMemo(() => {
+    return karyawanList.filter((k) => {
+      if (templateDeptFilter !== 'all' && k.divisi !== templateDeptFilter) {
+        return false;
+      }
+      if (templateEmployeeSearch.trim()) {
+        const q = templateEmployeeSearch.toLowerCase().trim();
+        const text = `${k.nik} ${k.nama || ''} ${k.divisi || ''} ${k.jabatan || ''}`.toLowerCase();
+        if (!text.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [karyawanList, templateDeptFilter, templateEmployeeSearch]);
+
+  const templateDatesCount = useMemo(() => {
+    return getDatesInRange(templateStartDate, templateEndDate).length;
+  }, [templateStartDate, templateEndDate]);
+
+  const templateTotalRowsCount = useMemo(() => {
+    return templateDatesCount * selectedTemplateEmployeeNiks.length;
+  }, [templateDatesCount, selectedTemplateEmployeeNiks]);
+
   return (
     <div className="space-y-4 sm:space-y-6 pb-12">
       {/* TOP STATS & ACTIONS BAR */}
@@ -868,15 +1107,15 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Download Template CSV */}
+            {/* Generator & Download Template CSV (Range Tanggal & Pilih Karyawan) */}
             <button
               type="button"
-              onClick={handleDownloadCsvTemplate}
-              className="px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
-              title="Download format CSV untuk import jadwal"
+              onClick={handleOpenTemplateModal}
+              className="px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Buat template jadwal shift dengan pilihan range tanggal & daftar karyawan"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Template CSV</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Template Jadwal Shift</span>
             </button>
 
             {/* Export Roster CSV */}
@@ -1983,6 +2222,438 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEMPLATE JADWAL SHIFT GENERATOR MODAL (PILIH RANGE TANGGAL & PILIH KARYAWAN) */}
+      {isTemplateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-3xl bg-white dark:bg-[#131d31] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-indigo-50/50 via-white to-white dark:from-indigo-950/20 dark:via-[#131d31] dark:to-[#131d31]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 shadow-xs">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Template & Generator Jadwal Shift</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      Range & Staff
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Pilih rentang tanggal dan karyawan untuk mengunduh template CSV atau menerapkan jadwal secara massal
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTemplateModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1 divide-y divide-slate-100 dark:divide-slate-800/80">
+              {/* STEP 1: PILIH RENTANG TANGGAL */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>1. Pilih Rentang Tanggal</span>
+                  </label>
+                  <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    {templateDatesCount} Hari Terpilih
+                  </span>
+                </div>
+
+                {/* Quick Date Range Preset Chips */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSetTemplatePresetDates('today')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                  >
+                    Hari Ini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetTemplatePresetDates('this_week')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                  >
+                    Minggu Ini (Sen - Min)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetTemplatePresetDates('next_week')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                  >
+                    Minggu Depan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetTemplatePresetDates('this_month')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 transition-colors cursor-pointer"
+                  >
+                    Bulan Ini (Tgl 01 s/d Akhir)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetTemplatePresetDates('next_month')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                  >
+                    Bulan Depan
+                  </button>
+                </div>
+
+                {/* Date Inputs Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Tanggal Mulai (Start Date)
+                    </label>
+                    <input
+                      type="date"
+                      value={templateStartDate}
+                      onChange={(e) => setTemplateStartDate(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 dark:text-white font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Tanggal Selesai (End Date)
+                    </label>
+                    <input
+                      type="date"
+                      value={templateEndDate}
+                      min={templateStartDate}
+                      onChange={(e) => setTemplateEndDate(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 dark:text-white font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* STEP 2: PILIH KARYAWAN */}
+              <div className="space-y-3 pt-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>2. Pilih Karyawan</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
+                      <strong>{selectedTemplateEmployeeNiks.length}</strong> dari {karyawanList.length} Staf Terpilih
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const filteredNiks = filteredEmployeesForTemplate.map((k) => k.nik);
+                        setSelectedTemplateEmployeeNiks((prev) => {
+                          const set = new Set([...prev, ...filteredNiks]);
+                          return Array.from(set);
+                        });
+                      }}
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 cursor-pointer"
+                    >
+                      Pilih Semua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTemplateEmployeeNiks([])}
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter and Search Employee Bar */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Cari nama, NIK, atau jabatan..."
+                      value={templateEmployeeSearch}
+                      onChange={(e) => setTemplateEmployeeSearch(e.target.value)}
+                      className="w-full pl-8.5 pr-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 dark:text-white"
+                    />
+                  </div>
+                  <select
+                    value={templateDeptFilter}
+                    onChange={(e) => setTemplateDeptFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 dark:text-white font-bold"
+                  >
+                    <option value="all">Semua Divisi / Departemen ({karyawanList.length})</option>
+                    {departments.map((dept) => (
+                      <option key={dept} value={dept}>
+                        Divisi: {dept} ({karyawanList.filter((k) => k.divisi === dept).length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Employee Checklist Box */}
+                <div className="max-h-52 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 p-2 space-y-1.5 bg-slate-50/50 dark:bg-slate-900/40 divide-y divide-slate-100 dark:divide-slate-800/60">
+                  {filteredEmployeesForTemplate.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400 font-medium">
+                      Tidak ditemukan karyawan yang cocok dengan pencarian / divisi.
+                    </div>
+                  ) : (
+                    filteredEmployeesForTemplate.map((emp) => {
+                      const isChecked = selectedTemplateEmployeeNiks.includes(emp.nik);
+                      return (
+                        <label
+                          key={emp.nik}
+                          className={`pt-1.5 first:pt-0 flex items-center justify-between p-2 rounded-xl cursor-pointer transition-colors ${
+                            isChecked
+                              ? 'bg-indigo-50/60 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-100'
+                              : 'hover:bg-slate-100/60 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTemplateEmployeeNiks((prev) => [...prev, emp.nik]);
+                                } else {
+                                  setSelectedTemplateEmployeeNiks((prev) => prev.filter((nik) => nik !== emp.nik));
+                                }
+                              }}
+                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-700 cursor-pointer"
+                            />
+                            <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-black text-[11px] flex items-center justify-center shrink-0">
+                              {(emp.nama || emp.nik).charAt(0).toUpperCase()}
+                            </div>
+                            <div className="truncate">
+                              <div className="text-xs font-bold truncate flex items-center gap-1.5">
+                                <span>{emp.nama || 'Tanpa Nama'}</span>
+                                <span className="font-mono text-[10px] text-slate-400">({emp.nik})</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                {emp.divisi || 'Warehouse'} {emp.jabatan ? `• ${emp.jabatan}` : ''}
+                              </div>
+                            </div>
+                          </div>
+
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                            emp.status_aktif === false
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                              : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {emp.divisi || 'Warehouse'}
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* STEP 3: PENGATURAN POLA / DEFAULT SHIFT */}
+              <div className="space-y-3 pt-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>3. Pengaturan Pola / Default Shift</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400">Otomatisasi pengisian jadwal</span>
+                </div>
+
+                {/* Pattern Selector Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplatePattern('DEFAULT');
+                      setTemplateDefaultShift('Shift 1');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                      templatePattern === 'DEFAULT' && templateDefaultShift === 'Shift 1'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="font-extrabold text-[11px]">Shift 1 Reguler</div>
+                    <div className="text-[10px] text-slate-400 font-mono">08:00 - 17:00 (Setiap Hari)</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplatePattern('DEFAULT');
+                      setTemplateDefaultShift('Shift 2');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                      templatePattern === 'DEFAULT' && templateDefaultShift === 'Shift 2'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="font-extrabold text-[11px]">Shift 2 Siang</div>
+                    <div className="text-[10px] text-slate-400 font-mono">09:00 - 18:00 (Setiap Hari)</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplatePattern('5_2_WEEKEND_OFF');
+                      setTemplateDefaultShift('Shift 1');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                      templatePattern === '5_2_WEEKEND_OFF'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="font-extrabold text-[11px]">5 Hari Kerja (Sabtu-Min Off)</div>
+                    <div className="text-[10px] text-slate-400">Sen-Jum Shift 1, Weekend Libur</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplatePattern('6_1_SUNDAY_OFF');
+                      setTemplateDefaultShift('Shift 1');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                      templatePattern === '6_1_SUNDAY_OFF'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="font-extrabold text-[11px]">6 Hari Kerja (Minggu Off)</div>
+                    <div className="text-[10px] text-slate-400">Sen-Sab Shift 1, Minggu Libur</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplatePattern('ROTATING');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                      templatePattern === 'ROTATING'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="font-extrabold text-[11px]">Rotasi Shift Bergantian</div>
+                    <div className="text-[10px] text-slate-400">Shift 1 & 2 bergantian otomatis</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplatePattern('DEFAULT');
+                      setTemplateDefaultShift('Kosong');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                      templatePattern === 'DEFAULT' && templateDefaultShift === 'Kosong'
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="font-extrabold text-[11px]">Dikosongkan (Isi Manual)</div>
+                    <div className="text-[10px] text-slate-400">Kolom shift kosong di Excel</div>
+                  </button>
+                </div>
+
+                {/* Default Keterangan input */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Keterangan Default
+                  </label>
+                  <input
+                    type="text"
+                    value={templateDefaultKeterangan}
+                    onChange={(e) => setTemplateDefaultKeterangan(e.target.value)}
+                    placeholder="Contoh: Jadwal Reguler, Piket Gudang, dll."
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-indigo-500 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* SUMMARY OUTPUT METRIC CARD */}
+              <div className="pt-4">
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-blue-500/10 border border-indigo-200 dark:border-indigo-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black text-xs shadow-sm">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-900 dark:text-white">
+                        Estimasi Output Template:
+                      </div>
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                        {templateDatesCount} Hari ({templateStartDate} s/d {templateEndDate}) × {selectedTemplateEmployeeNiks.length} Karyawan
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-baseline gap-1 text-right self-end sm:self-auto">
+                    <span className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                      {templateTotalRowsCount.toLocaleString()}
+                    </span>
+                    <span className="text-xs font-bold text-slate-500">Baris Jadwal</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-slate-50/60 dark:bg-slate-900/40">
+              <button
+                type="button"
+                onClick={() => setIsTemplateModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 cursor-pointer"
+              >
+                Tutup
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Download Template CSV Button */}
+                <button
+                  type="button"
+                  onClick={handleDownloadGeneratedTemplate}
+                  disabled={templateTotalRowsCount === 0}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-2 shadow-sm shadow-indigo-500/20 cursor-pointer disabled:opacity-50 transition-all"
+                  title="Unduh file CSV terisi untuk diedit atau disimpan"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Template CSV ({templateTotalRowsCount} Baris)</span>
+                </button>
+
+                {/* Apply Directly to DB (Admin Only) */}
+                {userIsAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleApplyTemplateDirectlyToDatabase}
+                    disabled={isApplyingTemplate || templateTotalRowsCount === 0}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-sm shadow-emerald-500/20 cursor-pointer disabled:opacity-50 transition-all"
+                    title="Simpan langsung jadwal ini ke database tanpa download & upload"
+                  >
+                    {isApplyingTemplate ? (
+                      <>
+                        <RotateCcw className="w-4 h-4 animate-spin" />
+                        <span>Menerapkan ke Database...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Terapkan Langsung ke Jadwal</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
