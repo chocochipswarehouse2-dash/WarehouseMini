@@ -103,6 +103,8 @@ const ALL_TABLES = [
   'log_produk',
   'stock_opname_queue',
   'penerimaan_produksi',
+  'penerimaan_recount_queue',
+  'penerimaan_recount_logs',
   'penerimaan_mutasi_store',
   'penerimaan_paket',
   'picking_list',

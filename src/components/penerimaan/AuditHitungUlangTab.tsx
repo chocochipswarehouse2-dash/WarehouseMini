@@ -41,6 +41,8 @@ import {
   updatePenerimaanProduksiItemsInSupabase,
   savePenerimaanRecountLog,
   fetchPenerimaanRecountLogs,
+  fetchPenerimaanRecountQueueFromSupabase,
+  savePenerimaanRecountQueueToSupabase,
 } from '../../services/supabase';
 import {
   pushMasterRecountDeltaToGoogleSheet,
@@ -133,11 +135,52 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   // Queue Map: { [kode_produksi]: { catatan_petunjuk?: string, added_at?: string } }
   const [queueMap, setQueueMap] = useState<Record<string, QueueItemMetadata>>(() => loadStoredQueueMap());
 
-  const saveQueueMap = (updated: Record<string, QueueItemMetadata>) => {
+  // Load and sync queue from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+    const syncQueueFromCloud = async () => {
+      try {
+        const cloudQueue = await fetchPenerimaanRecountQueueFromSupabase();
+        if (isMounted && cloudQueue && typeof cloudQueue === 'object') {
+          // Merge with local queue if local has newer items, otherwise adopt cloud state
+          setQueueMap((prev) => {
+            const merged = { ...cloudQueue, ...prev };
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.warn('Gagal fetch antrian hitung ulang dari cloud:', err);
+      }
+    };
+
+    syncQueueFromCloud();
+
+    // Listen to real-time broadcast / window events from other tabs/users
+    const handleQueueSyncEvent = (e: any) => {
+      if (e.detail?.queueMap && isMounted) {
+        setQueueMap(e.detail.queueMap);
+      }
+    };
+
+    window.addEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
+    };
+  }, []);
+
+  const saveQueueMap = async (updated: Record<string, QueueItemMetadata>) => {
     setQueueMap(updated);
     try {
       localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE, JSON.stringify(updated));
     } catch {}
+
+    // Async push to Supabase cloud
+    try {
+      await savePenerimaanRecountQueueToSupabase(updated);
+    } catch (err) {
+      console.warn('Gagal simpan queue ke Supabase:', err);
+    }
   };
 
   const handleAddMultipleToQueue = (items: { kode_produksi: string; catatan_petunjuk?: string }[]) => {
@@ -946,9 +989,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 {/* Refresh */}
                 <button
                   type="button"
-                  onClick={onRefreshData}
+                  onClick={async () => {
+                    try {
+                      const q = await fetchPenerimaanRecountQueueFromSupabase();
+                      if (q && typeof q === 'object') setQueueMap(q);
+                    } catch {}
+                    await onRefreshData();
+                  }}
                   className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition border border-slate-200 dark:border-slate-700"
-                  title="Muat Ulang Data"
+                  title="Muat Ulang Data &amp; Antrian Cloud"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>

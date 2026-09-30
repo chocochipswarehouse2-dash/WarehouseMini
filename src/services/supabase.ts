@@ -613,6 +613,15 @@ CREATE TABLE IF NOT EXISTS public.penerimaan_produksi (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- 5b. TABEL ANTRIAN HITUNG ULANG PRODUKSI (MULTI-USER CLOUD SYNC)
+CREATE TABLE IF NOT EXISTS public.penerimaan_recount_queue (
+  kode_produksi TEXT PRIMARY KEY,
+  catatan_petunjuk TEXT DEFAULT '',
+  added_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- 6. TABEL FULFILLMENT PICKING LIST
 CREATE TABLE IF NOT EXISTS public.picking_list (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -758,12 +767,14 @@ ALTER TABLE public.picking_list ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.peminjaman ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.perbaikan_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.qc_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.penerimaan_recount_queue ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public all access" ON public.wms_users FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.log_produk FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.stock_opname_queue FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.penerimaan_produksi FOR ALL USING (true);
+CREATE POLICY "Allow public all access" ON public.penerimaan_recount_queue FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.picking_list FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.peminjaman FOR ALL USING (true);
 CREATE POLICY "Allow public all access" ON public.perbaikan_tickets FOR ALL USING (true);
@@ -8389,6 +8400,154 @@ export async function deleteNote(id: string): Promise<void> {
         window.dispatchEvent(new CustomEvent('wms_notes_updated', { detail: { deletedId: id } }));
       }
     } catch {}
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PENERIMAAN RECOUNT QUEUE (MULTI-USER REALTIME CLOUD SYNC)
+// ---------------------------------------------------------------------------
+
+export interface RecountQueueCloudRecord {
+  kode_produksi: string;
+  catatan_petunjuk?: string;
+  added_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+const LOCAL_STORAGE_RECOUNT_QUEUE_KEY = 'wms_recount_selected_queue';
+
+/**
+ * Mengambil antrian hitung ulang produksi terpusat dari Supabase.
+ * Sinkron untuk seluruh tim/user sehingga siapapun yang memanggil kode langsung terlihat oleh user lain.
+ */
+export async function fetchPenerimaanRecountQueueFromSupabase(): Promise<Record<string, { catatan_petunjuk?: string; added_at?: string; added_by?: string }>> {
+  let resultMap: Record<string, { catatan_petunjuk?: string; added_at?: string; added_by?: string }> = {};
+
+  // 1. Coba fetch dari tabel khusus `penerimaan_recount_queue`
+  try {
+    const rows = await supabaseFetch<RecountQueueCloudRecord[]>(
+      'penerimaan_recount_queue',
+      'GET',
+      null,
+      'select=*&order=created_at.desc'
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      rows.forEach((r) => {
+        if (r.kode_produksi) {
+          resultMap[r.kode_produksi.toUpperCase()] = {
+            catatan_petunjuk: r.catatan_petunjuk || '',
+            added_at: r.created_at || r.updated_at,
+            added_by: r.added_by,
+          };
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY, JSON.stringify(resultMap));
+      }
+      return resultMap;
+    }
+  } catch (err) {
+    // Fallback jika tabel khusus belum dimigrasi
+  }
+
+  // 2. Fallback: coba fetch dari wms_system_docs key 'recount_active_queue'
+  try {
+    const doc = await supabaseFetch<SystemDoc[]>(
+      'wms_system_docs',
+      'GET',
+      null,
+      'section_id=eq.recount_active_queue'
+    );
+    if (doc && doc[0] && doc[0].content) {
+      const parsed = JSON.parse(doc[0].content);
+      if (typeof parsed === 'object' && parsed !== null) {
+        resultMap = parsed;
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY, JSON.stringify(resultMap));
+        }
+        return resultMap;
+      }
+    }
+  } catch (err) {
+    console.warn('Fallback fetch queue dari wms_system_docs error:', err);
+  }
+
+  // 3. Fallback: baca dari local cache jika offline
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return parsed;
+        }
+      }
+    } catch {}
+  }
+
+  return resultMap;
+}
+
+/**
+ * Menyimpan / memperbarui daftar antrian hitung ulang ke database Supabase agar langsung tersinkronisasi ke semua user.
+ */
+export async function savePenerimaanRecountQueueToSupabase(
+  queueMap: Record<string, { catatan_petunjuk?: string; added_at?: string; added_by?: string }>
+): Promise<void> {
+  // Update local cache & dispatch local event
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE_KEY, JSON.stringify(queueMap));
+      window.dispatchEvent(
+        new CustomEvent('wms_recount_queue_updated', {
+          detail: { queueMap },
+        })
+      );
+    } catch {}
+  }
+
+  const nowIso = new Date().toISOString();
+  const queueArray = Object.keys(queueMap).map((code) => ({
+    kode_produksi: code.toUpperCase(),
+    catatan_petunjuk: queueMap[code]?.catatan_petunjuk || '',
+    added_by: queueMap[code]?.added_by || 'User',
+    created_at: queueMap[code]?.added_at || nowIso,
+    updated_at: nowIso,
+  }));
+
+  // 1. Simpan ke tabel khusus `penerimaan_recount_queue`
+  let savedToDedicatedTable = false;
+  try {
+    await supabaseFetch('penerimaan_recount_queue', 'DELETE', null, 'kode_produksi=neq.DUMMY');
+    if (queueArray.length > 0) {
+      await supabaseFetch('penerimaan_recount_queue', 'POST', queueArray);
+    }
+    savedToDedicatedTable = true;
+  } catch (err) {
+    // Fallback simpan ke wms_system_docs
+  }
+
+  // 2. Selalu sinkronkan juga ke wms_system_docs untuk redundansi & compatibility
+  try {
+    await supabaseFetch(
+      'wms_system_docs',
+      'POST',
+      [
+        {
+          section_id: 'recount_active_queue',
+          content: JSON.stringify(queueMap),
+          updated_at: nowIso,
+          updated_by: 'WMS Auditor',
+        },
+      ],
+      'on_conflict=section_id',
+      true
+    );
+  } catch (docErr) {
+    if (!savedToDedicatedTable) {
+      console.warn('Gagal simpan antrian hitung ulang ke Supabase:', docErr);
+    }
   }
 }
 
