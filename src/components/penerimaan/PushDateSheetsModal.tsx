@@ -38,11 +38,14 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   onClose,
   dataList,
   blocks,
-  activeTab,
+  activeTab: initialActiveTab,
   initialDateFilter,
   productCatalog = [],
   onShowToast,
 }) => {
+  // Category state inside modal (allows switching between CMT and Kargo on the fly)
+  const [currentTab, setCurrentTab] = useState<'CMT' | 'Kargo'>(initialActiveTab || 'CMT');
+
   // Pre-build product lookup map to ensure names & sizes match master catalog
   const catalogMap = useMemo(() => buildProductLookupMap(productCatalog), [productCatalog]);
 
@@ -65,15 +68,32 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
     });
   }, [dataList, catalogMap]);
 
-  // Filter items by category matching activeTab
+  // Filter items by category matching currentTab
   const categoryItems = useMemo(() => {
     return sanitizedItems.filter((it) => {
-      if (activeTab === 'CMT') {
+      if (currentTab === 'CMT') {
         return !it.kategori || it.kategori === 'Lokal CMT';
       }
       return it.kategori === 'Kargo';
     });
-  }, [sanitizedItems, activeTab]);
+  }, [sanitizedItems, currentTab]);
+
+  // Count distinct dates per category
+  const cmtDatesCount = useMemo(() => {
+    const s = new Set<string>();
+    sanitizedItems.forEach((it) => {
+      if ((!it.kategori || it.kategori === 'Lokal CMT') && it.tanggal_penerimaan) s.add(it.tanggal_penerimaan.trim());
+    });
+    return s.size;
+  }, [sanitizedItems]);
+
+  const kargoDatesCount = useMemo(() => {
+    const s = new Set<string>();
+    sanitizedItems.forEach((it) => {
+      if (it.kategori === 'Kargo' && it.tanggal_penerimaan) s.add(it.tanggal_penerimaan.trim());
+    });
+    return s.size;
+  }, [sanitizedItems]);
 
   // Extract all distinct dates in category items
   const availableDates = useMemo(() => {
@@ -81,7 +101,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
     categoryItems.forEach((it) => {
       if (it.tanggal_penerimaan) datesSet.add(it.tanggal_penerimaan.trim());
     });
-    if (blocks) {
+    if (blocks && currentTab === initialActiveTab) {
       blocks.forEach((b) => {
         b.dateSlots.forEach((d) => {
           if (d) datesSet.add(d.trim());
@@ -89,7 +109,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
       });
     }
     return Array.from(datesSet).sort().reverse();
-  }, [categoryItems, blocks]);
+  }, [categoryItems, blocks, currentTab, initialActiveTab]);
 
   // Determine initial mode & selected date
   const hasInitialDate = !!(initialDateFilter && initialDateFilter !== 'all' && availableDates.includes(initialDateFilter));
@@ -104,21 +124,20 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [lastSheetUrl, setLastSheetUrl] = useState<string | null>(null);
 
-  // Sync state if modal reopens with different initialDateFilter
+  // Sync state if modal reopens or tab switches
   React.useEffect(() => {
     if (isOpen) {
       if (initialDateFilter && initialDateFilter !== 'all' && availableDates.includes(initialDateFilter)) {
         setMode('single');
         setSelectedDate(initialDateFilter);
       } else {
-        setMode('all');
         if (availableDates.length > 0 && !availableDates.includes(selectedDate)) {
           setSelectedDate(availableDates[0]);
         }
       }
       setLastSheetUrl(null);
     }
-  }, [isOpen, initialDateFilter, availableDates]);
+  }, [isOpen, initialDateFilter, availableDates, currentTab]);
 
   // Summary per Date for Preview
   const dateSummaries = useMemo(() => {
@@ -126,7 +145,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
       const dateItems = categoryItems.filter((it) => it.tanggal_penerimaan === dStr);
       const totalQty = dateItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
       const uniqueCodes = Array.from(new Set(dateItems.map((it) => it.kode_produksi).filter(Boolean)));
-      const tabName = formatDateTabName(dStr, activeTab);
+      const tabName = formatDateTabName(dStr, currentTab);
 
       return {
         dateStr: dStr,
@@ -137,7 +156,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         uniqueCodesCount: uniqueCodes.length,
       };
     });
-  }, [availableDates, categoryItems, activeTab]);
+  }, [availableDates, categoryItems, currentTab]);
 
   const activeSummary = useMemo(() => {
     if (mode === 'single') {
@@ -172,7 +191,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
       const res = await pushProduksiPerTanggalToGoogleSheet({
         items: categoryItems,
         blocks,
-        activeTab,
+        activeTab: currentTab,
         targetDate: target,
         onProgress: (cur, tot, sheetName) => {
           setProgressMsg(`Mengirim tab ${cur}/${tot}: ${sheetName}...`);
@@ -213,7 +232,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-400 font-medium">
-                Kategori: <strong className="text-emerald-400">{activeTab === 'CMT' ? 'Lokal CMT' : 'Kargo'}</strong> &bull; Setiap tanggal kedatangan dibuatkan tab sheet tersendiri
+                Setiap tanggal kedatangan dibuatkan tab sheet tersendiri di Google Spreadsheet
               </p>
             </div>
           </div>
@@ -229,10 +248,43 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
 
         {/* MODAL BODY */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* CATEGORY SWITCHER INSIDE MODAL */}
+          <div className="bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentTab('CMT')}
+              className={`flex-1 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
+                currentTab === 'CMT'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>🧵 Lokal CMT</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${currentTab === 'CMT' ? 'bg-rose-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                {cmtDatesCount} Tanggal
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentTab('Kargo')}
+              className={`flex-1 py-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
+                currentTab === 'Kargo'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span>📦 Kargo</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${currentTab === 'Kargo' ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                {kargoDatesCount} Tanggal
+              </span>
+            </button>
+          </div>
+
           {/* NOTICE PILIHAN TANGGAL */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-              Pilih Lingkup Push Tanggal:
+              Pilih Lingkup Push Tanggal ({currentTab === 'CMT' ? 'Lokal CMT' : 'Kargo'}):
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -268,17 +320,23 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
 
                     {mode === 'single' && (
                       <div className="pt-2">
-                        <select
-                          value={selectedDate}
-                          onChange={(e) => setSelectedDate(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-emerald-400 dark:border-emerald-600 rounded-lg text-xs font-bold text-slate-900 dark:text-white outline-none"
-                        >
-                          {availableDates.map((dStr) => (
-                            <option key={dStr} value={dStr}>
-                              {formatDateIndo(dStr)} ({formatDateTabName(dStr, activeTab)})
-                            </option>
-                          ))}
-                        </select>
+                        {availableDates.length === 0 ? (
+                          <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 rounded text-xs font-bold">
+                            Belum ada tanggal kedatangan untuk kategori {currentTab}
+                          </div>
+                        ) : (
+                          <select
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-emerald-400 dark:border-emerald-600 rounded-lg text-xs font-bold text-slate-900 dark:text-white outline-none"
+                          >
+                            {availableDates.map((dStr) => (
+                              <option key={dStr} value={dStr}>
+                                {formatDateIndo(dStr)} ({formatDateTabName(dStr, currentTab)})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     )}
                   </div>
@@ -304,7 +362,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                   />
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="text-xs font-black text-slate-900 dark:text-white flex items-center justify-between">
-                      <span>Semua Tanggal Penerimaan</span>
+                      <span>Semua Tanggal Sekaligus</span>
                       {mode === 'all' && (
                         <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.2 rounded">
                           Aktif
@@ -312,7 +370,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Sistem akan membuat <strong>{availableDates.length} tab sheet berbeda</strong> sesuai masing-masing tanggal penerimaan.
+                      Sistem akan membuat <strong>{availableDates.length} tab sheet</strong> berbeda untuk setiap tanggal penerimaan {currentTab}.
                     </p>
                   </div>
                 </div>

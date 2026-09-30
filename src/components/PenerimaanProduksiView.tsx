@@ -2364,6 +2364,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 onOpenLightbox={(img) => setLightboxImage(img)}
                 onShowToast={onShowToast}
                 onOpenHitungUlang={handleOpenHitungUlang}
+                onOpenEditBatch={handleOpenEditBatch}
+                onRefreshData={loadData}
               />
             ) : viewMode === 'card' ? (
             /* Card View Layout: 1 Surat Jalan Container = Kumpulan Kartu Produk (1 Produk = 1 Kode Produk) */

@@ -30,6 +30,7 @@ import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
 import { pushPenerimaanProduksiToGoogleSheet } from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
+import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
 
@@ -40,6 +41,8 @@ interface ProduksiSpreadsheetViewProps {
   onOpenLightbox: (img: { url: string; title: string; subtitle?: string }) => void;
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   onOpenHitungUlang?: (kode?: string, tanggal?: string) => void;
+  onOpenEditBatch?: (noSuratJalan: string) => void;
+  onRefreshData?: () => Promise<void>;
 }
 
 export interface MatrixSizeItem {
@@ -75,6 +78,8 @@ export interface MatrixProductBlock {
   kategori: string; // 'Lokal CMT' | 'Kargo'
   photoUrl?: string; // Hasil upload GDrive
   catatan?: string; // Catatan / Keterangan khusus produk
+  distinctSjs: { no_surat_jalan: string; qty: number; tanggal: string }[];
+  dateToSjMap?: Record<string, string[]>;
   colorGroups: MatrixColorGroup[];
   dateSlots: string[]; // 10 slots of arrival dates
   returDateSlots?: string[]; // 5 slots of return dates (for CMT)
@@ -105,6 +110,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   onOpenLightbox,
   onShowToast,
   onOpenHitungUlang,
+  onOpenEditBatch,
+  onRefreshData,
 }) => {
   // Tab State: 'CMT' | 'Kargo'
   const [activeTab, setActiveTab] = useState<'CMT' | 'Kargo'>(() => {
@@ -243,6 +250,31 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       const distinctDatangDates = Array.from(
         new Set(items.map((i) => i.tanggal_penerimaan).filter(Boolean))
       ).sort();
+
+      // Extract distinct Surat Jalan and map per date
+      const sjMap = new Map<string, { no_surat_jalan: string; qty: number; tanggal: string }>();
+      const dateToSjMap: Record<string, string[]> = {};
+
+      items.forEach((it) => {
+        const sj = (it.no_surat_jalan || '').trim().toUpperCase();
+        if (sj) {
+          if (!sjMap.has(sj)) {
+            sjMap.set(sj, {
+              no_surat_jalan: sj,
+              qty: 0,
+              tanggal: it.tanggal_penerimaan || '',
+            });
+          }
+          sjMap.get(sj)!.qty += Number(it.qty) || 0;
+          if (it.tanggal_penerimaan) {
+            if (!dateToSjMap[it.tanggal_penerimaan]) dateToSjMap[it.tanggal_penerimaan] = [];
+            if (!dateToSjMap[it.tanggal_penerimaan].includes(sj)) {
+              dateToSjMap[it.tanggal_penerimaan].push(sj);
+            }
+          }
+        }
+      });
+      const distinctSjs = Array.from(sjMap.values()).sort((a, b) => b.qty - a.qty);
 
       const dateSlots: string[] = Array.from(
         { length: FIXED_DATE_COLUMNS_COUNT },
@@ -441,6 +473,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         kategori: targetCategory,
         photoUrl,
         catatan,
+        distinctSjs,
+        dateToSjMap,
         colorGroups,
         dateSlots,
         returDateSlots,
@@ -775,6 +809,30 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
     } catch {}
 
+    // Async push to Supabase Cloud
+    try {
+      // 1. Delete previous rows for this code in Supabase
+      await supabaseFetch('penerimaan_produksi', 'DELETE', undefined, `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`);
+      // 2. Insert new rows in Supabase
+      if (newItems.length > 0) {
+        await simpanBatchPenerimaanProduksiToSupabase({
+          tanggal: targetBlock.dateSlots[0] || new Date().toISOString().split('T')[0],
+          kategori: targetBlock.kategori || (isCMT ? 'Lokal CMT' : 'Kargo'),
+          no_surat_jalan: targetBlock.distinctSjs[0]?.no_surat_jalan || `SJ-${targetBlock.code}`,
+          keterangan: targetBlock.catatan || '',
+          items: newItems,
+        });
+      }
+    } catch (errSupabase) {
+      console.warn('Gagal sync block save ke Supabase:', errSupabase);
+    }
+
+    if (onRefreshData) {
+      try {
+        await onRefreshData();
+      } catch {}
+    }
+
     // Dispatch global event
     if (typeof window !== 'undefined') {
       try {
@@ -788,7 +846,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
     setEditingBlockId(null);
     setBackupBlock(null);
-    onShowToast(`Tabel Kode ${targetBlock.code} (termasuk Qty Retur) berhasil disimpan!`, 'success');
+    onShowToast(`Tabel Kode ${targetBlock.code} (termasuk Qty Retur & Cloud Sync) berhasil disimpan!`, 'success');
   };
 
   // Switch Tab
@@ -1008,6 +1066,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       productName: '',
       upVendor: activeTab === 'CMT' ? 'BIS' : '',
       kategori: activeTab === 'CMT' ? 'Lokal CMT' : 'Kargo',
+      distinctSjs: [],
+      dateToSjMap: {},
       colorGroups: [
         {
           color: 'DEFAULT',
@@ -1493,7 +1553,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                   }`}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-mono text-[11px] border border-rose-300 dark:border-rose-800">
+                    <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-mono text-[11px] font-black border border-rose-300 dark:border-rose-800">
                       KODE: {block.code}
                     </span>
 
@@ -1513,6 +1573,32 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                         <span>Net: <strong className="text-emerald-600 dark:text-emerald-400">{block.totalNet} pcs</strong></span>
                       </>
                     )}
+
+                    {/* SURAT JALAN BADGES & QUICK EDIT */}
+                    <span className="text-slate-400">•</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                        <FileText className="w-3.5 h-3.5 text-blue-600" />
+                        <span>No. SJ ({block.distinctSjs?.length || 0}):</span>
+                      </span>
+                      {(!block.distinctSjs || block.distinctSjs.length === 0) ? (
+                        <span className="text-[11px] text-slate-400 italic">Otomatis (SJ-{block.code})</span>
+                      ) : (
+                        block.distinctSjs.map((sjObj) => (
+                          <button
+                            key={sjObj.no_surat_jalan}
+                            type="button"
+                            onClick={() => onOpenEditBatch && onOpenEditBatch(sjObj.no_surat_jalan)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono text-[11px] font-bold border border-blue-200 dark:border-blue-800 transition cursor-pointer group shadow-2xs"
+                            title={`Klik untuk Edit Surat Jalan ${sjObj.no_surat_jalan} (Total ${sjObj.qty} pcs, ${sjObj.tanggal})`}
+                          >
+                            <span>📄 {sjObj.no_surat_jalan}</span>
+                            <span className="text-[10px] text-blue-500 font-semibold">({sjObj.qty} pcs)</span>
+                            <Edit3 className="w-3 h-3 text-blue-400 group-hover:text-blue-600 transition" />
+                          </button>
+                        ))
+                      )}
+                    </div>
 
                     {/* DISPLAY CATATAN / KETERANGAN DATA */}
                     {isEditingThisBlock ? (
@@ -1540,7 +1626,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                   </div>
 
                   {/* Mode Edit & Save Controls */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {isEditingThisBlock ? (
                       <>
                         <button
@@ -1557,7 +1643,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                           type="button"
                           onClick={() => handleSaveBlockChanges(block.id)}
                           className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                          title="Konfirmasi & Simpan Perubahan"
+                          title="Konfirmasi & Simpan Perubahan ke Supabase Cloud"
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>Simpan</span>
@@ -1575,6 +1661,45 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                       </>
                     ) : (
                       <>
+                        {/* Edit Surat Jalan Action Button */}
+                        {onOpenEditBatch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!block.distinctSjs || block.distinctSjs.length === 0) {
+                                onOpenEditBatch(`SJ-${block.code}`);
+                              } else if (block.distinctSjs.length === 1) {
+                                onOpenEditBatch(block.distinctSjs[0].no_surat_jalan);
+                              } else {
+                                const sjNames = block.distinctSjs
+                                  .map((s, i) => `${i + 1}. ${s.no_surat_jalan} (${s.qty} pcs, ${s.tanggal})`)
+                                  .join('\n');
+                                const selectedIdx = window.prompt(
+                                  `Kode ${block.code} memiliki ${block.distinctSjs.length} Nomor Surat Jalan:\n\n${sjNames}\n\nKetik nomor (1 - ${block.distinctSjs.length}) yang ingin diedit:`,
+                                  '1'
+                                );
+                                if (selectedIdx) {
+                                  const idx = parseInt(selectedIdx, 10) - 1;
+                                  if (block.distinctSjs[idx]) {
+                                    onOpenEditBatch(block.distinctSjs[idx].no_surat_jalan);
+                                  }
+                                }
+                              }
+                            }}
+                            className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-bold border border-blue-200 dark:border-blue-800 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title={
+                              block.distinctSjs && block.distinctSjs.length > 1
+                                ? `Pilih salah satu dari ${block.distinctSjs.length} Surat Jalan untuk diedit`
+                                : `Buka Form Edit Surat Jalan untuk Kode ${block.code}`
+                            }
+                          >
+                            <FileText className="w-3.5 h-3.5 text-blue-600" />
+                            <span>
+                              Edit SJ {block.distinctSjs && block.distinctSjs.length > 1 ? `(${block.distinctSjs.length})` : ''}
+                            </span>
+                          </button>
+                        )}
+
                         {onOpenHitungUlang && (
                           <button
                             type="button"
@@ -1591,7 +1716,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                           type="button"
                           onClick={() => handleStartEditBlock(block)}
                           className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-black border border-rose-300 dark:border-rose-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                          title="Buka Mode Edit untuk tabel ini"
+                          title="Buka Mode Edit Inline untuk tabel ini"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                           <span>Edit Tabel</span>
@@ -1684,13 +1809,31 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 handleEditDatePrompt(block.id, idx, 'datang', dStr);
                               }
                             }}
-                            className={`py-1 px-1.5 min-w-[48px] max-w-[55px] font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 ${
+                            className={`py-1 px-1.5 min-w-[48px] max-w-[62px] font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 ${
                               isEditingThisBlock ? 'cursor-pointer hover:bg-rose-300/80 bg-rose-100 dark:bg-rose-900/60' : ''
                             }`}
-                            title={isEditingThisBlock ? 'Klik untuk ubah tanggal datang' : undefined}
+                            title={
+                              dStr && block.dateToSjMap?.[dStr]
+                                ? `Tanggal ${dStr} - No. SJ: ${block.dateToSjMap[dStr].join(', ')}`
+                                : isEditingThisBlock
+                                ? 'Klik untuk ubah tanggal datang'
+                                : undefined
+                            }
                           >
                             {dStr ? (
-                              formatDateHeader(dStr)
+                              <div className="flex flex-col items-center">
+                                <span>{formatDateHeader(dStr)}</span>
+                                {block.dateToSjMap?.[dStr] && (
+                                  <span
+                                    className="text-[8px] font-normal text-blue-700 dark:text-blue-300 truncate max-w-[55px] block leading-tight mt-0.5"
+                                    title={`No. SJ: ${block.dateToSjMap[dStr].join(', ')}`}
+                                  >
+                                    {block.dateToSjMap[dStr].length === 1
+                                      ? block.dateToSjMap[dStr][0].replace(/^SJ-?/i, '')
+                                      : `${block.dateToSjMap[dStr].length} SJ`}
+                                  </span>
+                                )}
+                              </div>
                             ) : isEditingThisBlock ? (
                               <span className="text-rose-600 dark:text-rose-400 font-normal hover:underline">+ Tgl</span>
                             ) : (
