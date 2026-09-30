@@ -299,14 +299,29 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     }));
   }, [masterShifts]);
 
+  // Helper untuk standarisasi nama Shift
+  const standardizeShiftName = (rawShift: string): string => {
+    const s = (rawShift || '').replace(/['"]/g, '').trim();
+    const lower = s.toLowerCase();
+    if (lower === '1' || lower === 'shift 1' || lower === 'shift1') return 'Shift 1';
+    if (lower === '2' || lower === 'shift 2' || lower === 'shift2') return 'Shift 2';
+    if (lower === '3' || lower === 'shift 3' || lower === 'shift3') return 'Shift 3';
+    if (lower === '3a' || lower === 'shift 3a' || lower === 'shift3a') return 'Shift 3a';
+    if (lower === '3b' || lower === 'shift 3b' || lower === 'shift3b') return 'Shift 3b';
+    if (lower === 'libur' || lower === 'off' || lower === 'libur (off)') return 'Libur';
+    if (lower === 'cuti' || lower === 'cuti tahunan') return 'Cuti';
+    if (lower === 'izin' || lower === 'ijin' || lower === 'sakit') return 'Izin';
+    return s || 'Shift 1';
+  };
+
   // Helper untuk menyelesaikan jam kerja otomatis berdasarkan aturan Shift
   const resolveShiftHours = (
     shiftName: string,
     providedJm?: string,
     providedJp?: string
   ): { jamMasuk: string; jamPulang: string } => {
-    const sTrim = (shiftName || '').replace(/['"]/g, '').trim();
-    const sLower = sTrim.toLowerCase();
+    const std = standardizeShiftName(shiftName);
+    const sLower = std.toLowerCase();
 
     // 1. Jika Libur / Off / Cuti / Izin / Sakit -> jam kerja kosong
     if (
@@ -321,7 +336,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     }
 
     // 2. Cocokkan langsung dengan allShiftOptions (Master Shift & Default Presets)
-    const exact = allShiftOptions.find((opt) => opt.name.toLowerCase() === sLower) || DEFAULT_SHIFTS[sTrim];
+    const exact = allShiftOptions.find((opt) => opt.name.toLowerCase() === sLower) || DEFAULT_SHIFTS[std];
     if (exact && (exact.masuk || exact.pulang)) {
       return { jamMasuk: exact.masuk || '08:00', jamPulang: exact.pulang || '17:00' };
     }
@@ -502,20 +517,14 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   // Handle Preset or Droplist Shift Selection in Modal
   const handleSelectShift = (shiftName: string) => {
     if (!editingShift) return;
-    const match = allShiftOptions.find((s) => s.name === shiftName) || DEFAULT_SHIFTS[shiftName];
-    if (match) {
-      setEditingShift({
-        ...editingShift,
-        shift: shiftName,
-        jam_masuk: match.masuk || '',
-        jam_pulang: match.pulang || '',
-      });
-    } else {
-      setEditingShift({
-        ...editingShift,
-        shift: shiftName,
-      });
-    }
+    const std = standardizeShiftName(shiftName);
+    const hours = resolveShiftHours(std);
+    setEditingShift({
+      ...editingShift,
+      shift: std,
+      jam_masuk: hours.jamMasuk,
+      jam_pulang: hours.jamPulang,
+    });
     setIsShiftDropdownOpen(false);
   };
 
@@ -780,11 +789,12 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       return;
     }
 
-    const headers = ['NIK', 'Nama Staf', 'Tanggal (YYYY-MM-DD)', 'Shift', 'Jam Masuk (HH:MM)', 'Jam Pulang (HH:MM)', 'Keterangan'];
+    // Template ringkas & praktis: cukup NIK, Nama, Tanggal, Shift, dan Keterangan (Jam kerja diselaraskan otomatis oleh sistem)
+    const headers = ['NIK', 'Nama Staf', 'Tanggal (YYYY-MM-DD)', 'Shift', 'Keterangan'];
     const csvContent = [
       headers.join(','),
       ...rows.map((r) =>
-        [r.nik, r.nama, r.tanggal, r.shift, r.jam_masuk, r.jam_pulang, r.keterangan]
+        [r.nik, r.nama, r.tanggal, r.shift, r.keterangan]
           .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
           .join(',')
       ),
@@ -2522,6 +2532,14 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                     <span>3. Pengaturan Pola / Default Shift</span>
                   </label>
                   <span className="text-[11px] text-slate-400">Otomatisasi pengisian jadwal</span>
+                </div>
+
+                {/* Banner Info: Auto Shift Rule */}
+                <div className="p-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-[11px] text-indigo-800 dark:text-indigo-300 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-black">Jam Kerja 100% Otomatis dari Sistem:</strong> Anda cukup mengisi nama shift (misal: <em>Shift 1, Shift 2, Shift 3, Shift 3a,</em> atau <em>Libur</em>). Sistem web akan langsung menyelaraskan jam masuk & pulang serta kalkulasi keterlambatan secara otomatis.
+                  </div>
                 </div>
 
                 {/* Pattern Selector Grid */}

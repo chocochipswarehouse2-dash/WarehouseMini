@@ -48,6 +48,7 @@ import {
 import {
   pushMasterRecountDeltaToGoogleSheet,
   MasterRecountDeltaItem,
+  formatDatesSummary,
 } from '../../services/gasProduksiSync';
 import { getSizeWeight } from '../../utils/sortUtils';
 
@@ -749,6 +750,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       // 4. AUTO-PUSH TARGETED DELTA KE MASTER SHEET DI GOOGLE SPREADSHEET (ANTI-TIMEOUT)
       setIsSyncingSheet(true);
       try {
+        const arrivalDates = Array.from(activeGroup.distinct_dates || []);
+        const arrivalDatesInfo = formatDatesSummary(arrivalDates);
+
         const deltaItems: MasterRecountDeltaItem[] = activeVariants.map((v) => {
           const key = `${v.warna}_${v.size}`;
           const sv = variantInputs[key];
@@ -767,6 +771,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             round: nextRound,
             auditor: auditorName || 'Auditor',
             catatan: sv?.note || generalNotes || '',
+            tanggal_kedatangan_info: arrivalDatesInfo,
             updated_at: nowIso,
           };
         });

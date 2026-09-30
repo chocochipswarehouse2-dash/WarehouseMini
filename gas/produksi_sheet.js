@@ -952,10 +952,45 @@ function updateMasterRecountDelta(ss, data) {
       headerRange.setHorizontalAlignment('center');
       headerRange.setVerticalAlignment('middle');
       headerRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+      sheet.setColumnWidth(colFisik, 115);
+      sheet.setColumnWidth(colSelisih, 95);
+      sheet.setColumnWidth(colStatus, 115);
+      sheet.setColumnWidth(colLog, 280);
     }
 
-    // 2. Baca Kolom CODE (Col 2), COLOR (Col 6), SIZE (Col 7) untuk pemetaan baris super cepat
-    var rowsData = sheet.getRange(3, 1, lastRow - 2, 7).getValues();
+    // 2. Petakan Baris dengan Penanganan Sel Ter-Merge (CODE & COLOR)
+    var rawRows = sheet.getRange(3, 1, lastRow - 2, 7).getValues();
+    var mappedRows = [];
+    var curCode = '';
+    var curColor = '';
+
+    for (var r = 0; r < rawRows.length; r++) {
+      var rowNum = r + 3;
+      var c1 = String(rawRows[r][0] || '').trim();
+      var cCode = String(rawRows[r][1] || '').trim().toUpperCase();
+      var cColor = String(rawRows[r][5] || '').trim().toUpperCase();
+      var cSize = String(rawRows[r][6] || '').trim().toUpperCase();
+
+      if (cCode === 'CODE' || cCode.indexOf('CATATAN') !== -1 || c1 === 'NO') {
+        continue;
+      }
+      if (cCode && cCode !== '-') {
+        curCode = cCode;
+      }
+      if (cColor && cColor !== '-') {
+        curColor = cColor;
+      }
+      if (cSize && cSize !== '-' && cSize !== 'SIZE') {
+        mappedRows.push({
+          rowNum: rowNum,
+          code: curCode,
+          color: curColor,
+          size: cSize
+        });
+      }
+    }
+
     var updatedCount = 0;
 
     for (var i = 0; i < items.length; i++) {
@@ -964,17 +999,14 @@ function updateMasterRecountDelta(ss, data) {
       var targetColor = String(it.warna || '').trim().toUpperCase();
       var targetSize = String(it.size || '').trim().toUpperCase();
 
-      for (var r = 0; r < rowsData.length; r++) {
-        var rowCode = String(rowsData[r][1] || '').trim().toUpperCase();
-        var rowColor = String(rowsData[r][5] || '').trim().toUpperCase();
-        var rowSize = String(rowsData[r][6] || '').trim().toUpperCase();
-
-        var isMatch = (rowCode === targetCode) &&
-                      (!targetColor || !rowColor || rowColor === targetColor) &&
-                      (!targetSize || !rowSize || rowSize === targetSize);
+      for (var m = 0; m < mappedRows.length; m++) {
+        var mRow = mappedRows[m];
+        var isMatch = (mRow.code === targetCode) &&
+                      (!targetColor || !mRow.color || mRow.color === targetColor) &&
+                      (!targetSize || !mRow.size || mRow.size === targetSize);
 
         if (isMatch) {
-          var targetRowNum = r + 3; // +3 karena offset 2 baris header
+          var targetRowNum = mRow.rowNum;
 
           // Set Nilai Fisik & Selisih
           sheet.getRange(targetRowNum, colFisik).setValue(Number(it.qty_fisik) || 0).setNumberFormat('0');
@@ -999,9 +1031,13 @@ function updateMasterRecountDelta(ss, data) {
             statusRange.setBackground('#DCFCE7').setFontColor('#166534').setFontWeight('bold');
           }
 
-          // Catat Log Putaran & Petugas
+          // Catat Log Putaran, Info Tanggal Kedatangan & Petugas
           var logDateStr = it.updated_at ? formatDateIndo(it.updated_at) : formatDateIndo(new Date().toISOString());
-          var logText = 'Rev ' + (it.round || 1) + ' [' + logDateStr + '] (' + (it.auditor || 'Auditor') + ')';
+          var logText = 'Rev ' + (it.round || 1) + ' [' + logDateStr + ']';
+          if (it.tanggal_kedatangan_info) {
+            logText += ' (Kedatangan: ' + it.tanggal_kedatangan_info + ')';
+          }
+          logText += ' (' + (it.auditor || 'Auditor') + ')';
           if (it.catatan) logText += ': ' + it.catatan;
           
           sheet.getRange(targetRowNum, colLog).setValue(logText).setFontSize(8.5);

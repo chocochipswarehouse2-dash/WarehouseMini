@@ -53,7 +53,7 @@ function doPost(e) {
     }
 
     // 2. Action router khusus WMS Produksi Sheet Sync
-    if (payload.action === 'pushPenerimaanProduksi') {
+    if (payload.action === 'pushPenerimaanProduksi' || payload.action === 'update_master_recount_delta') {
       return jsonResponse(handlePushPenerimaanProduksi(payload));
     }
 

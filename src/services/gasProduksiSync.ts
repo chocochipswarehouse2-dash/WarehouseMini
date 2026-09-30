@@ -118,6 +118,33 @@ export function formatDateIndo(dateStr?: string): string {
   }
 }
 
+/**
+ * Format tanggal pendek: "2026-09-23" -> "23 Sep"
+ */
+export function formatDateShort(dateStr?: string): string {
+  if (!dateStr || !dateStr.trim()) return '';
+  try {
+    const d = new Date(dateStr.trim());
+    if (isNaN(d.getTime())) return dateStr;
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    return `${d.getDate()} ${monthNames[d.getMonth()]}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Format ringkasan tanggal-tanggal kedatangan: ["2026-09-23", "2026-09-24"] -> "23 Sep & 24 Sep"
+ */
+export function formatDatesSummary(dates: (string | undefined)[]): string {
+  const valid = Array.from(new Set(dates.filter(Boolean) as string[])).sort();
+  if (valid.length === 0) return '';
+  const formatted = valid.map((d) => formatDateShort(d));
+  if (formatted.length === 1) return formatted[0];
+  if (formatted.length === 2) return `${formatted[0]} & ${formatted[1]}`;
+  return `${formatted.slice(0, -1).join(', ')} & ${formatted[formatted.length - 1]}`;
+}
+
 export interface PushProduksiDateOptions {
   items: PenerimaanProduksiItem[];
   blocks?: MatrixProductBlock[];
@@ -867,6 +894,7 @@ export interface MasterRecountDeltaItem {
   round?: number;
   auditor?: string;
   catatan?: string;
+  tanggal_kedatangan_info?: string; // Info tanggal kedatangan yang diaudit (misal "23 Sep & 24 Sep")
   updated_at?: string;
 }
 

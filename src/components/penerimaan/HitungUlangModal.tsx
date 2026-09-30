@@ -27,6 +27,7 @@ import {
   SuratJalanPushPayload,
   pushMasterRecountDeltaToGoogleSheet,
   MasterRecountDeltaItem,
+  formatDatesSummary,
 } from '../../services/gasProduksiSync';
 import {
   updatePenerimaanProduksiItemsInSupabase,
@@ -674,23 +675,31 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
       // 3. AUTO-PUSH TARGETED DELTA KE MASTER SHEET DI GOOGLE SPREADSHEET (ANTI-TIMEOUT)
       try {
         const deltaItems: MasterRecountDeltaItem[] = [];
-        const sizeMap = new Map<string, { qtyAsli: number; qtyFisik: number | null; note?: string }>();
+        const sizeMap = new Map<string, { qtyAsli: number; qtyFisik: number | null; note?: string; dates: Set<string> }>();
 
         updatedItems.forEach((it) => {
           const key = `${it.warna}_${it.size}`;
           if (!sizeMap.has(key)) {
-            sizeMap.set(key, { qtyAsli: 0, qtyFisik: it.recount_qty ?? null, note: it.recount_notes });
+            sizeMap.set(key, { qtyAsli: 0, qtyFisik: it.recount_qty ?? null, note: it.recount_notes, dates: new Set() });
           }
           sizeMap.get(key)!.qtyAsli += Number(it.qty) || 0;
+          if (it.tanggal_penerimaan) {
+            sizeMap.get(key)!.dates.add(it.tanggal_penerimaan);
+          }
           if (it.recount_qty !== undefined && it.recount_qty !== null) {
             sizeMap.get(key)!.qtyFisik = it.recount_qty;
           }
         });
 
+        // Tanggal kedatangan umum dari seluruh item kode ini
+        const allDates = Array.from(new Set(updatedItems.map((it) => it.tanggal_penerimaan).filter(Boolean)));
+        const defaultDateInfo = formatDatesSummary(allDates);
+
         sizeMap.forEach((val, key) => {
           const [warna, size] = key.split('_');
           const selisih = val.qtyFisik !== null ? val.qtyFisik - val.qtyAsli : 0;
           const status = val.qtyFisik === null ? 'BELUM' : selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH';
+          const variantDateInfo = val.dates.size > 0 ? formatDatesSummary(Array.from(val.dates)) : defaultDateInfo;
           deltaItems.push({
             kode_produksi: selectedCode,
             warna,
@@ -702,6 +711,7 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
             round: (updatedItems[0]?.recount_round || 1),
             auditor: auditorName || 'Auditor',
             catatan: val.note || '',
+            tanggal_kedatangan_info: variantDateInfo,
             updated_at: new Date().toISOString(),
           });
         });
