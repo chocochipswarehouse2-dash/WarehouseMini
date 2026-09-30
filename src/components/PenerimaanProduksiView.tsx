@@ -107,12 +107,23 @@ export interface SuratJalanGroup {
 
 export const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'ALL SIZE', 'FREE SIZE', 'Default'];
 
-export const getNextSize = (currentSize: string): string => {
+export const getNextSize = (currentSize: string, existingSizes?: string[]): string => {
+  const existing = new Set((existingSizes || []).map((s) => s.toUpperCase()));
   const idx = STANDARD_SIZES.findIndex((s) => s.toUpperCase() === (currentSize || '').toUpperCase());
-  if (idx !== -1 && idx < STANDARD_SIZES.length - 1) {
-    return STANDARD_SIZES[idx + 1];
+  if (idx !== -1) {
+    for (let i = idx + 1; i < STANDARD_SIZES.length; i++) {
+      const candidate = STANDARD_SIZES[i];
+      if (!existing.has(candidate.toUpperCase())) {
+        return candidate;
+      }
+    }
   }
-  return 'L';
+  for (const sz of STANDARD_SIZES) {
+    if (!existing.has(sz.toUpperCase())) {
+      return sz;
+    }
+  }
+  return 'XL';
 };
 
 export const POPULAR_COLORS = [
@@ -937,7 +948,22 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 
   // Level 3: Size & Qty Handlers
   const getNextSuggestedSize = (currentSizes: FormVariantSize[]): string => {
+    if (!currentSizes || currentSizes.length === 0) return 'S';
     const existing = new Set(currentSizes.map((s) => s.size.toUpperCase()));
+    const lastSize = currentSizes[currentSizes.length - 1]?.size?.toUpperCase() || '';
+
+    // Cari kelanjutan size setelah size terakhir
+    const lastIdx = STANDARD_SIZES.findIndex((s) => s.toUpperCase() === lastSize);
+    if (lastIdx !== -1) {
+      for (let i = lastIdx + 1; i < STANDARD_SIZES.length; i++) {
+        const candidate = STANDARD_SIZES[i];
+        if (!existing.has(candidate.toUpperCase())) {
+          return candidate;
+        }
+      }
+    }
+
+    // Fallback: cari dari awal jika semua size setelah lastSize sudah ada
     for (const sz of STANDARD_SIZES) {
       if (!existing.has(sz.toUpperCase())) {
         return sz;
