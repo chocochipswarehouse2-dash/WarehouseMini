@@ -26,6 +26,7 @@ import {
   HelpCircle,
   TrendingDown,
   TrendingUp,
+  Trash2,
 } from 'lucide-react';
 import {
   UserSession,
@@ -75,6 +76,8 @@ export interface CodeAuditGroup {
   items: PenerimaanProduksiItem[];
 }
 
+const LOCAL_STORAGE_RECOUNT_QUEUE = 'wms_recount_selected_queue';
+
 export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   session,
   penerimaanItems,
@@ -87,6 +90,40 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   // Current active mode: 'queue' (Antrian & Daftar Pekerjaan) | 'workspace' (Lembar Kerja Input Fisik)
   const [activeMode, setActiveMode] = useState<'queue' | 'workspace'>('queue');
   const [selectedCode, setSelectedCode] = useState<string>(initialTargetCode || '');
+
+  // Queue of explicitly selected codes for recount
+  const [queuedCodes, setQueuedCodes] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_RECOUNT_QUEUE);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveQueuedCodes = (list: string[]) => {
+    setQueuedCodes(list);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE, JSON.stringify(list));
+    } catch {}
+  };
+
+  const handleAddToQueue = (code: string) => {
+    const norm = code.trim().toUpperCase();
+    if (!norm) return;
+    if (!queuedCodes.includes(norm)) {
+      const updated = [norm, ...queuedCodes];
+      saveQueuedCodes(updated);
+    }
+  };
+
+  const handleRemoveFromQueue = (code: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const norm = code.trim().toUpperCase();
+    const updated = queuedCodes.filter((c) => c !== norm);
+    saveQueuedCodes(updated);
+    onShowToast(`Kode ${norm} dikeluarkan dari antrian hitung ulang.`, 'info');
+  };
 
   // Queue Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -120,13 +157,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   // Auto-open workspace if initialTargetCode is given
   useEffect(() => {
     if (initialTargetCode) {
-      setSelectedCode(initialTargetCode);
+      const norm = initialTargetCode.trim().toUpperCase();
+      handleAddToQueue(norm);
+      setSelectedCode(norm);
       setActiveMode('workspace');
     }
   }, [initialTargetCode]);
 
-  // Aggregate all items by `kode_produksi` into structured groups
-  const codeGroups = useMemo<CodeAuditGroup[]>(() => {
+  // Aggregate ALL arrival items by `kode_produksi` (for picker search)
+  const allCodeGroups = useMemo<CodeAuditGroup[]>(() => {
     const map = new Map<string, {
       items: PenerimaanProduksiItem[];
       nama_produk: string;
@@ -177,7 +216,6 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       let lastRound: number | undefined = undefined;
       let lastNotes: string | undefined = undefined;
 
-      // Group per variant (warna + size) to calculate aggregated physical count vs aggregated original count
       const varMap = new Map<string, { asli: number; fisik: number | null; selisih: number | null }>();
 
       grp.items.forEach((it) => {
@@ -241,7 +279,6 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       });
     });
 
-    // Default sorting: prioritize items that have differences, then uncounted, then newest
     return results.sort((a, b) => {
       if (a.has_diff && !b.has_diff) return -1;
       if (!a.has_diff && b.has_diff) return 1;
@@ -251,7 +288,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     });
   }, [penerimaanItems]);
 
-  // Summary Metrics KPI
+  // SELECTIVE QUEUE: Only include codes that are in `queuedCodes` OR already have recount data
+  const codeGroups = useMemo<CodeAuditGroup[]>(() => {
+    return allCodeGroups.filter((g) => {
+      const isExplicitlyQueued = queuedCodes.includes(g.kode_produksi);
+      const isAlreadyCounted = g.is_counted;
+      return isExplicitlyQueued || isAlreadyCounted;
+    });
+  }, [allCodeGroups, queuedCodes]);
+
+  // Summary Metrics KPI (Based on Selective Queue)
   const metrics = useMemo(() => {
     let uncounted = 0;
     let diff = 0;
@@ -305,8 +351,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   // Selected code group for workspace
   const activeGroup = useMemo(() => {
     if (!selectedCode) return null;
-    return codeGroups.find((g) => g.kode_produksi === selectedCode) || null;
-  }, [codeGroups, selectedCode]);
+    return allCodeGroups.find((g) => g.kode_produksi === selectedCode) || null;
+  }, [allCodeGroups, selectedCode]);
 
   // Group active code items into distinct variants (Warna + Size)
   const activeVariants = useMemo(() => {
@@ -426,9 +472,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     onShowToast('Kolom input fisik telah dikosongkan.', 'info');
   };
 
-  // Open Workspace for a specific code
+  // Open Workspace for a specific code (and ensure it is in the queue)
   const handleOpenWorkspace = (code: string) => {
-    setSelectedCode(code);
+    const norm = code.trim().toUpperCase();
+    handleAddToQueue(norm);
+    setSelectedCode(norm);
     setActiveMode('workspace');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -556,6 +604,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         setIsSyncingSheet(false);
       }
 
+      // Pastikan kode tersimpan dalam antrian terpilih
+      handleAddToQueue(activeGroup.kode_produksi);
+
       // 5. Muat ulang data induk dan kembali ke daftar antrian
       await onRefreshData();
       setActiveMode('queue');
@@ -568,7 +619,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   };
 
   // Open History Logs Modal for a code
-  const handleOpenHistoryModal = async (code: string) => {
+  const handleOpenHistoryModal = async (code: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setHistoryTargetCode(code);
     setIsHistoryModalOpen(true);
     setIsLoadingHistory(true);
@@ -624,10 +676,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   return (
     <div className="space-y-4">
       {/* ========================================================
-          1. STATS METRICS & KPI CARDS
+          1. STATS METRICS & KPI CARDS (TERPILIH DI ANTRIAN)
           ======================================================== */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-        {/* Total Kode */}
+        {/* Total Kode Terpilih */}
         <div
           onClick={() => {
             setFilterStatus('all');
@@ -640,11 +692,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Total Kode</span>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-75">Antrian Terpilih</span>
             <Layers className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-xl sm:text-2xl font-black mt-1">{metrics.total}</div>
-          <div className="text-[10px] opacity-70 mt-0.5">Semua kode penerimaan</div>
+          <div className="text-[10px] opacity-70 mt-0.5">Kode masuk antrian audit</div>
         </div>
 
         {/* Belum Dihitung (Antrian) */}
@@ -666,7 +718,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           <div className="text-xl sm:text-2xl font-black mt-1 text-amber-600 dark:text-amber-400">
             {metrics.uncounted}
           </div>
-          <div className="text-[10px] opacity-70 mt-0.5">Menunggu audit fisik</div>
+          <div className="text-[10px] opacity-70 mt-0.5">Menunggu hitung fisik</div>
         </div>
 
         {/* Ada Selisih */}
@@ -730,7 +782,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Cari Kode Produksi, Nama Produk, Petugas, Warna..."
+                  placeholder="Cari Kode Produksi, Nama Produk, Petugas di Antrian..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-9 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 transition"
@@ -755,7 +807,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>+ Panggil Kode Audit</span>
+                  <span>+ Panggil / Tambah Kode Audit</span>
                 </button>
 
                 {/* Refresh */}
@@ -817,14 +869,35 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
           {/* Antrian List / Cards */}
           {filteredQueue.length === 0 ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-2">
-              <Scale className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
-              <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                Tidak ada kode antrian pada filter ini
-              </p>
-              <p className="text-xs text-slate-400">
-                Silakan ganti filter pencarian atau klik "+ Panggil Kode Audit" untuk memilih kode barang.
-              </p>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 sm:p-14 text-center text-slate-400 space-y-3">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <Scale className="w-7 h-7" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <p className="text-base font-extrabold text-slate-700 dark:text-slate-200">
+                  {codeGroups.length === 0
+                    ? 'Belum Ada Kode di Antrian Hitung Ulang'
+                    : 'Tidak ada kode antrian yang sesuai filter'}
+                </p>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  {codeGroups.length === 0
+                    ? 'Hanya kode penerimaan terpilih yang akan masuk ke antrian ini. Klik tombol di bawah untuk memanggil kode yang perlu diverifikasi fisiknya.'
+                    : 'Coba ubah kata kunci pencarian atau ganti status filter di atas.'}
+                </p>
+              </div>
+
+              {codeGroups.length === 0 && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPickerModalOpen(true)}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black inline-flex items-center gap-2 shadow-sm transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Panggil / Tambah Kode Audit Sekarang</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -841,7 +914,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     }`}
                   >
                     <div>
-                      {/* Top Bar: Code Badge + Category */}
+                      {/* Top Bar: Code Badge + Category + Remove Queue Button */}
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex items-center gap-2">
                           {/* Thumbnail */}
@@ -875,29 +948,41 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                           </div>
                         </div>
 
-                        {/* Status Badge */}
-                        <div>
-                          {!item.is_counted ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-800">
-                              <Clock className="w-3 h-3" />
-                              <span>Belum Dihitung</span>
-                            </span>
-                          ) : item.total_selisih === 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800">
-                              <CheckCircle2 className="w-3 h-3" />
-                              <span>✅ Match (0)</span>
-                            </span>
-                          ) : (item.total_selisih || 0) < 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800">
-                              <TrendingDown className="w-3 h-3" />
-                              <span>⚠️ Kurang ({item.total_selisih} pcs)</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
-                              <TrendingUp className="w-3 h-3" />
-                              <span>📦 Lebih (+{item.total_selisih} pcs)</span>
-                            </span>
-                          )}
+                        {/* Status Badge & Close button */}
+                        <div className="flex items-center gap-1.5">
+                          <div>
+                            {!item.is_counted ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-800">
+                                <Clock className="w-3 h-3" />
+                                <span>Belum Dihitung</span>
+                              </span>
+                            ) : item.total_selisih === 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>✅ Match (0)</span>
+                              </span>
+                            ) : (item.total_selisih || 0) < 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800">
+                                <TrendingDown className="w-3 h-3" />
+                                <span>⚠️ Kurang ({item.total_selisih} pcs)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                                <TrendingUp className="w-3 h-3" />
+                                <span>📦 Lebih (+{item.total_selisih} pcs)</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Tombol Hapus dari Antrian */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveFromQueue(item.kode_produksi, e)}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition cursor-pointer"
+                            title="Keluarkan dari antrian terpilih"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
@@ -971,11 +1056,20 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => handleOpenHistoryModal(item.kode_produksi)}
+                        onClick={(e) => handleOpenHistoryModal(item.kode_produksi, e)}
                         className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer"
                         title="Lihat Log Riwayat Putaran"
                       >
                         <History className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleRemoveFromQueue(item.kode_produksi, e)}
+                        className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-rose-100 hover:text-rose-600 text-slate-400 rounded-xl text-xs font-bold transition cursor-pointer"
+                        title="Hapus / Keluarkan dari Antrian"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -1126,7 +1220,6 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   {activeVariants.map((v, idx) => {
                     const key = `${v.warna}_${v.size}`;
                     const inp = variantInputs[key] || { recountQty: null, note: '' };
-                    const fisikVal = inp.recountQty !== null ? inp.recountQty : v.qty_asli;
                     const isCustomEntered = inp.recountQty !== null;
                     const selisih = isCustomEntered ? (inp.recountQty - v.qty_asli) : 0;
 
@@ -1308,15 +1401,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           ======================================================== */}
       {isPickerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950 text-rose-600">
                   <Scale className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white">Panggil Kode Produksi</h3>
-                  <p className="text-[11px] text-slate-500">Pilih kode kedatangan untuk mulai hitung fisik</p>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">Panggil Kode Produksi ke Antrian</h3>
+                  <p className="text-[11px] text-slate-500">Pilih kode barang dari riwayat kedatangan untuk diverifikasi</p>
                 </div>
               </div>
               <button
@@ -1334,7 +1427,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Ketik kode produksi / nama produk..."
+                  placeholder="Ketik kode produksi / nama produk / vendor UP..."
                   value={pickerSearch}
                   onChange={(e) => setPickerSearch(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
@@ -1343,50 +1436,72 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               </div>
             </div>
 
-            {/* List of Available Codes */}
+            {/* List of Available Codes across entire history */}
             <div className="p-3 overflow-y-auto space-y-1.5 flex-1 divide-y divide-slate-100 dark:divide-slate-800">
-              {codeGroups
+              {allCodeGroups
                 .filter(
                   (g) =>
                     !pickerSearch.trim() ||
                     g.kode_produksi.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                    g.nama_produk.toLowerCase().includes(pickerSearch.toLowerCase())
+                    g.nama_produk.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+                    (g.vendor_up && g.vendor_up.toLowerCase().includes(pickerSearch.toLowerCase()))
                 )
-                .slice(0, 30)
-                .map((g) => (
-                  <div
-                    key={g.kode_produksi}
-                    onClick={() => {
-                      setIsPickerModalOpen(false);
-                      handleOpenWorkspace(g.kode_produksi);
-                    }}
-                    className="p-2.5 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 rounded-xl transition cursor-pointer flex items-center justify-between gap-2"
-                  >
-                    <div>
-                      <span className="font-mono text-xs font-black text-rose-600 dark:text-rose-400">
-                        {g.kode_produksi}
-                      </span>
-                      <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
-                        {g.nama_produk || 'Produk'}
-                      </p>
-                      <span className="text-[10px] text-slate-400">
-                        {g.kategori} • Total: {g.total_asli} pcs
-                      </span>
-                    </div>
+                .slice(0, 40)
+                .map((g) => {
+                  const isInQueue = queuedCodes.includes(g.kode_produksi);
+                  return (
+                    <div
+                      key={g.kode_produksi}
+                      onClick={() => {
+                        setIsPickerModalOpen(false);
+                        handleOpenWorkspace(g.kode_produksi);
+                      }}
+                      className="p-2.5 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 rounded-xl transition cursor-pointer flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {g.photo_url ? (
+                          <img
+                            src={g.photo_url}
+                            alt={g.kode_produksi}
+                            className="w-9 h-9 rounded-lg object-contain bg-slate-100 dark:bg-slate-800 border border-slate-200"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                            <ImageIcon className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-mono text-xs font-black text-rose-600 dark:text-rose-400">
+                            {g.kode_produksi}
+                          </span>
+                          <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
+                            {g.nama_produk || 'Produk Tanpa Nama'}
+                          </p>
+                          <span className="text-[10px] text-slate-400">
+                            {g.kategori} • Total: {g.total_asli} pcs
+                          </span>
+                        </div>
+                      </div>
 
-                    <div className="text-right">
-                      {g.is_counted ? (
-                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                          Sudah Diaudit
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                          Belum
-                        </span>
-                      )}
+                      <div className="text-right flex items-center gap-1.5">
+                        {g.is_counted ? (
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                            {g.total_selisih === 0 ? '✅ Match' : `⚠️ Selisih: ${g.total_selisih}`}
+                          </span>
+                        ) : isInQueue ? (
+                          <span className="text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800">
+                            Di Antrian
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                            + Pilih
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           </div>
         </div>
