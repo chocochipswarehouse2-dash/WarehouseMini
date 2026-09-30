@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
   Printer,
@@ -15,6 +15,9 @@ import {
   Save,
   Edit3,
   CloudUpload,
+  UploadCloud,
+  Clipboard,
+  Link as LinkIcon,
   Filter,
   CheckSquare,
   Square,
@@ -26,6 +29,7 @@ import {
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
 import { pushPenerimaanProduksiToGoogleSheet } from '../../services/gasProduksiSync';
+import { compressImage } from '../../utils/imageCompressor';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
 
@@ -144,6 +148,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   const [selectedExportSjs, setSelectedExportSjs] = useState<string[]>([]);
   const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
   const [exportProgressMsg, setExportProgressMsg] = useState<string>('');
+
+  // Photo Upload, Drag & Drop, and Paste state
+  const [photoModalBlockId, setPhotoModalBlockId] = useState<string | null>(null);
+  const [photoUrlInput, setPhotoUrlInput] = useState<string>('');
+  const [dragOverBlockId, setDragOverBlockId] = useState<string | null>(null);
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Format date helper: "2026-07-13" -> "13 Jul"
   const formatDateHeader = (dateStr: string): string => {
@@ -1033,15 +1044,78 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     onShowToast(`Tabel Kode ${blockId} telah dihapus.`, 'info');
   };
 
-  // Change Photo URL
+  // Process File -> Compress WebP -> Apply to Block
+  const handleApplyImageFileToBlock = async (blockId: string, file: File) => {
+    try {
+      setIsCompressingPhoto(true);
+      const res = await compressImage(file, 1024, 0.75);
+      setBlocks((prev) =>
+        prev.map((b) => (b.id === blockId ? { ...b, photoUrl: res.dataUrl } : b))
+      );
+      setPhotoUrlInput(res.dataUrl);
+      onShowToast(`Foto produk berhasil diterapkan (${Math.round(res.compressedSize / 1024)} KB)!`, 'success');
+      if (photoModalBlockId === blockId) setPhotoModalBlockId(null);
+    } catch (err) {
+      console.error('Gagal kompres foto:', err);
+      onShowToast('Gagal memproses file gambar.', 'error');
+    } finally {
+      setIsCompressingPhoto(false);
+    }
+  };
+
+  // Global Paste (Ctrl+V) listener when editing block or photo modal
+  useEffect(() => {
+    const handleGlobalPaste = async (e: ClipboardEvent) => {
+      const targetBlockId = photoModalBlockId || editingBlockId;
+      if (!targetBlockId) return;
+
+      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+        const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
+        if (file) {
+          e.preventDefault();
+          await handleApplyImageFileToBlock(targetBlockId, file);
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [editingBlockId, photoModalBlockId]);
+
+  // Drag & Drop cell handlers
+  const handleCellDragOver = (e: React.DragEvent, blockId: string) => {
+    if (editingBlockId !== blockId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverBlockId(blockId);
+  };
+
+  const handleCellDragLeave = (e: React.DragEvent, blockId: string) => {
+    if (editingBlockId !== blockId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragOverBlockId === blockId) setDragOverBlockId(null);
+  };
+
+  const handleCellDrop = async (e: React.DragEvent, blockId: string) => {
+    if (editingBlockId !== blockId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverBlockId(null);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'));
+      if (file) {
+        await handleApplyImageFileToBlock(blockId, file);
+      }
+    }
+  };
+
+  // Open Photo Management Modal
   const handleEditPhoto = (blockId: string) => {
     const current = blocks.find((b) => b.id === blockId)?.photoUrl || '';
-    const url = window.prompt('Masukkan Link Foto GDrive / Gambar Produk:', current);
-    if (url !== null) {
-      setBlocks((prev) =>
-        prev.map((b) => (b.id === blockId ? { ...b, photoUrl: url.trim() } : b))
-      );
-    }
+    setPhotoUrlInput(current);
+    setPhotoModalBlockId(blockId);
   };
 
   const isCMT = activeTab === 'CMT';
@@ -1737,13 +1811,26 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                 </td>
                               )}
 
-                              {/* 5. PHOTO (TAMPIL UTUH & PROPORSIONAL) */}
+                              {/* 5. PHOTO (TAMPIL UTUH & PROPORSIONAL + DRAG & DROP + COPAS) */}
                               {isFirstRowOfBlock && (
                                 <td
                                   rowSpan={totalSubRows}
-                                  className="p-2 text-center align-middle bg-slate-50/50 dark:bg-slate-850/50"
+                                  onDragOver={(e) => handleCellDragOver(e, block.id)}
+                                  onDragLeave={(e) => handleCellDragLeave(e, block.id)}
+                                  onDrop={(e) => handleCellDrop(e, block.id)}
+                                  className={`p-2 text-center align-middle transition-colors ${
+                                    dragOverBlockId === block.id
+                                      ? 'bg-rose-100/70 dark:bg-rose-950/70 ring-2 ring-rose-500 ring-inset'
+                                      : 'bg-slate-50/50 dark:bg-slate-850/50'
+                                  }`}
                                 >
-                                  {block.photoUrl ? (
+                                  {dragOverBlockId === block.id ? (
+                                    <div className="w-48 h-48 mx-auto rounded-2xl border-2 border-dashed border-rose-500 bg-rose-50/80 dark:bg-rose-950/80 flex flex-col items-center justify-center text-rose-600 animate-pulse p-4">
+                                      <UploadCloud className="w-8 h-8 mb-2" />
+                                      <span className="text-xs font-black">Lepaskan Foto di Sini!</span>
+                                      <span className="text-[10px] text-rose-500/80 mt-1">Otomatis Terkompresi WebP</span>
+                                    </div>
+                                  ) : block.photoUrl ? (
                                     <div className="relative group w-64 h-64 sm:w-80 sm:h-80 mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-800 p-0.5">
                                       <img
                                         src={block.photoUrl}
@@ -1759,27 +1846,51 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                         }
                                       />
                                       {isEditingThisBlock && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleEditPhoto(block.id)}
-                                          className="absolute bottom-1 right-1 px-2 py-0.5 bg-black/75 hover:bg-black text-white rounded text-[10px] font-bold transition cursor-pointer"
-                                        >
-                                          Ganti
-                                        </button>
+                                        <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleEditPhoto(block.id)}
+                                            className="px-2.5 py-1 bg-white/90 hover:bg-white text-slate-900 rounded-lg text-[10px] font-black shadow-xs transition flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <Edit3 className="w-3 h-3" />
+                                            <span>Ganti / Copas</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setBlocks((prev) =>
+                                                prev.map((b) => (b.id === block.id ? { ...b, photoUrl: '' } : b))
+                                              );
+                                            }}
+                                            className="p-1 bg-rose-600/90 hover:bg-rose-700 text-white rounded-lg text-[10px] transition cursor-pointer"
+                                            title="Hapus Foto"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      disabled={!isEditingThisBlock}
-                                      onClick={() => handleEditPhoto(block.id)}
-                                      className={`w-24 h-28 mx-auto rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/40 transition ${
-                                        isEditingThisBlock ? 'hover:text-rose-600 hover:border-rose-400 cursor-pointer' : ''
+                                    <div
+                                      onClick={() => isEditingThisBlock && handleEditPhoto(block.id)}
+                                      className={`w-36 h-36 mx-auto rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/40 p-3 transition ${
+                                        isEditingThisBlock
+                                          ? 'hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50/20 cursor-pointer group shadow-2xs'
+                                          : ''
                                       }`}
                                     >
-                                      <ImageIcon className="w-5 h-5 mb-1" />
-                                      <span className="text-[10px] font-semibold">{isEditingThisBlock ? '+ Foto' : 'No Photo'}</span>
-                                    </button>
+                                      <div className="p-2 rounded-xl bg-slate-200/60 dark:bg-slate-700 group-hover:bg-rose-100 dark:group-hover:bg-rose-950 text-slate-500 group-hover:text-rose-600 mb-1.5 transition">
+                                        <UploadCloud className="w-5 h-5" />
+                                      </div>
+                                      <span className="text-xs font-black text-slate-700 dark:text-slate-300 group-hover:text-rose-600">
+                                        {isEditingThisBlock ? '+ Tambah Foto' : 'No Photo'}
+                                      </span>
+                                      {isEditingThisBlock && (
+                                        <span className="text-[9px] text-slate-400 text-center mt-1 leading-tight">
+                                          Drag &amp; Drop / Klik / Copas (Ctrl+V)
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
                                 </td>
                               )}
@@ -1989,6 +2100,146 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         productCatalog={productCatalog}
         onShowToast={onShowToast}
       />
+
+      {/* PHOTO UPLOAD / DRAG & DROP / PASTE MODAL */}
+      {photoModalBlockId && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-100 dark:bg-rose-950 text-rose-600 rounded-xl">
+                  <ImageIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    Kelola Foto Produk: {photoModalBlockId}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Bisa Drag &amp; Drop, Copas (Ctrl+V), Pilih File, atau Input Link
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoModalBlockId(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Drag and Drop Zone & Paste Listener Box */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'));
+                  if (file) {
+                    await handleApplyImageFileToBlock(photoModalBlockId, file);
+                  }
+                }
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-rose-300 dark:border-rose-800 hover:border-rose-500 bg-rose-50/30 dark:bg-rose-950/20 hover:bg-rose-50/60 rounded-2xl p-6 text-center cursor-pointer transition space-y-2 group"
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    await handleApplyImageFileToBlock(photoModalBlockId, e.target.files[0]);
+                  }
+                }}
+              />
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 flex items-center justify-center group-hover:scale-110 transition">
+                {isCompressingPhoto ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  <UploadCloud className="w-6 h-6" />
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-black text-slate-800 dark:text-slate-100">
+                  {isCompressingPhoto ? 'Sedang Mengompres Foto...' : 'Klik untuk Pilih File atau Drag & Drop Gambar ke Sini'}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  💡 Tips Cepat: Tekan <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded font-mono font-bold text-rose-600">Ctrl + V</kbd> (Copas dari Clipboard) kapan saja!
+                </p>
+              </div>
+            </div>
+
+            {/* Input Direct Link URL */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <LinkIcon className="w-3.5 h-3.5 text-slate-400" />
+                <span>Atau Masukkan Link Foto / Google Drive URL:</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="https://drive.google.com/... atau https://..."
+                  value={photoUrlInput}
+                  onChange={(e) => setPhotoUrlInput(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBlocks((prev) =>
+                      prev.map((b) => (b.id === photoModalBlockId ? { ...b, photoUrl: photoUrlInput.trim() } : b))
+                    );
+                    onShowToast('Link foto produk berhasil diterapkan.', 'success');
+                    setPhotoModalBlockId(null);
+                  }}
+                  className="px-3.5 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-black hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Terapkan
+                </button>
+              </div>
+            </div>
+
+            {/* Current Preview if exists */}
+            {photoUrlInput && (
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between gap-3 border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <img
+                    src={photoUrlInput}
+                    alt="Preview"
+                    className="w-12 h-12 rounded-lg object-contain bg-white dark:bg-slate-900 border border-slate-200 shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="truncate text-xs">
+                    <span className="font-bold text-slate-700 dark:text-slate-200 block truncate">Foto Terpasang</span>
+                    <span className="text-[10px] text-slate-400 truncate block">{photoUrlInput.startsWith('data:') ? 'Gambar Terkompresi' : photoUrlInput}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhotoUrlInput('');
+                    setBlocks((prev) =>
+                      prev.map((b) => (b.id === photoModalBlockId ? { ...b, photoUrl: '' } : b))
+                    );
+                    onShowToast('Foto produk dihapus.', 'info');
+                    setPhotoModalBlockId(null);
+                  }}
+                  className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs font-bold transition cursor-pointer shrink-0"
+                  title="Hapus Foto"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
