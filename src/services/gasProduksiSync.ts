@@ -416,6 +416,15 @@ export async function pushProduksiPerTanggalToGoogleSheet(
         spreadsheetId: targetSpreadsheetId,
         activeTab: activeTab,
         sheetName: ds.sheetName,
+        date_sheets: [
+          {
+            tanggal: ds.tanggal,
+            sheetName: ds.sheetName,
+            kategori: activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT',
+            items: ds.items,
+            blocks: ds.blocks && ds.blocks.length > 0 ? ds.blocks : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab),
+          },
+        ],
         blocks: ds.blocks && ds.blocks.length > 0 ? ds.blocks : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab),
         items: ds.items,
         targetDate: ds.tanggal,
