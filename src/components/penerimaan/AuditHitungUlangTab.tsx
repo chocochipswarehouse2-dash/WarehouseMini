@@ -27,6 +27,9 @@ import {
   TrendingDown,
   TrendingUp,
   Trash2,
+  Edit3,
+  MessageSquare,
+  ListPlus,
 } from 'lucide-react';
 import {
   UserSession,
@@ -70,13 +73,49 @@ export interface CodeAuditGroup {
   last_audit_date?: string;
   last_round?: number;
   last_notes?: string;
+  catatan_petunjuk?: string; // Catatan petunjuk per kode (misal: "petunjuk kurang 23")
   distinct_colors: string[];
   distinct_sizes: string[];
   distinct_dates: string[];
   items: PenerimaanProduksiItem[];
 }
 
+export interface QueueItemMetadata {
+  catatan_petunjuk?: string;
+  added_at?: string;
+  added_by?: string;
+}
+
 const LOCAL_STORAGE_RECOUNT_QUEUE = 'wms_recount_selected_queue';
+
+// Helper to load map of queued items
+const loadStoredQueueMap = (): Record<string, QueueItemMetadata> => {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_RECOUNT_QUEUE);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const map: Record<string, QueueItemMetadata> = {};
+      parsed.forEach((it: any) => {
+        if (typeof it === 'string') {
+          map[it.toUpperCase()] = { catatan_petunjuk: '' };
+        } else if (it && it.kode_produksi) {
+          map[it.kode_produksi.toUpperCase()] = {
+            catatan_petunjuk: it.catatan_petunjuk || '',
+            added_at: it.added_at,
+            added_by: it.added_by,
+          };
+        }
+      });
+      return map;
+    } else if (typeof parsed === 'object' && parsed !== null) {
+      return parsed;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+};
 
 export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   session,
@@ -91,38 +130,54 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const [activeMode, setActiveMode] = useState<'queue' | 'workspace'>('queue');
   const [selectedCode, setSelectedCode] = useState<string>(initialTargetCode || '');
 
-  // Queue of explicitly selected codes for recount
-  const [queuedCodes, setQueuedCodes] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_RECOUNT_QUEUE);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Queue Map: { [kode_produksi]: { catatan_petunjuk?: string, added_at?: string } }
+  const [queueMap, setQueueMap] = useState<Record<string, QueueItemMetadata>>(() => loadStoredQueueMap());
 
-  const saveQueuedCodes = (list: string[]) => {
-    setQueuedCodes(list);
+  const saveQueueMap = (updated: Record<string, QueueItemMetadata>) => {
+    setQueueMap(updated);
     try {
-      localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE, JSON.stringify(list));
+      localStorage.setItem(LOCAL_STORAGE_RECOUNT_QUEUE, JSON.stringify(updated));
     } catch {}
   };
 
-  const handleAddToQueue = (code: string) => {
-    const norm = code.trim().toUpperCase();
-    if (!norm) return;
-    if (!queuedCodes.includes(norm)) {
-      const updated = [norm, ...queuedCodes];
-      saveQueuedCodes(updated);
-    }
+  const handleAddMultipleToQueue = (items: { kode_produksi: string; catatan_petunjuk?: string }[]) => {
+    const updated = { ...queueMap };
+    const nowIso = new Date().toISOString();
+    const userName = session?.nama || session?.username || session?.email || 'User';
+
+    items.forEach((item) => {
+      const norm = item.kode_produksi.trim().toUpperCase();
+      if (!norm) return;
+      updated[norm] = {
+        catatan_petunjuk: item.catatan_petunjuk !== undefined ? item.catatan_petunjuk : (updated[norm]?.catatan_petunjuk || ''),
+        added_at: updated[norm]?.added_at || nowIso,
+        added_by: updated[norm]?.added_by || userName,
+      };
+    });
+
+    saveQueueMap(updated);
   };
 
   const handleRemoveFromQueue = (code: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const norm = code.trim().toUpperCase();
-    const updated = queuedCodes.filter((c) => c !== norm);
-    saveQueuedCodes(updated);
+    const updated = { ...queueMap };
+    delete updated[norm];
+    saveQueueMap(updated);
     onShowToast(`Kode ${norm} dikeluarkan dari antrian hitung ulang.`, 'info');
+  };
+
+  const handleUpdateCodeNote = (code: string, note: string) => {
+    const norm = code.trim().toUpperCase();
+    const updated = {
+      ...queueMap,
+      [norm]: {
+        ...queueMap[norm],
+        catatan_petunjuk: note,
+      },
+    };
+    saveQueueMap(updated);
+    onShowToast(`Catatan untuk kode ${norm} diperbarui.`, 'success');
   };
 
   // Queue Filters & Search
@@ -130,9 +185,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const [filterStatus, setFilterStatus] = useState<'all' | 'uncounted' | 'diff' | 'match'>('all');
   const [filterKategori, setFilterKategori] = useState<string>('Semua');
 
-  // Quick Code Picker Modal State
+  // Quick Code Picker Modal State (Multiple Choice + Notes)
   const [isPickerModalOpen, setIsPickerModalOpen] = useState<boolean>(false);
   const [pickerSearch, setPickerSearch] = useState<string>('');
+  const [selectedPickerCodes, setSelectedPickerCodes] = useState<Set<string>>(new Set());
+  const [pickerCodeNotes, setPickerCodeNotes] = useState<Record<string, string>>({});
 
   // History Log Modal State
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
@@ -158,7 +215,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   useEffect(() => {
     if (initialTargetCode) {
       const norm = initialTargetCode.trim().toUpperCase();
-      handleAddToQueue(norm);
+      handleAddMultipleToQueue([{ kode_produksi: norm }]);
       setSelectedCode(norm);
       setActiveMode('workspace');
     }
@@ -256,6 +313,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         else statusAudit = 'LEBIH';
       }
 
+      const qMeta = queueMap[code];
+
       results.push({
         kode_produksi: code,
         nama_produk: grp.nama_produk,
@@ -272,6 +331,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         last_audit_date: lastAuditDate,
         last_round: lastRound,
         last_notes: lastNotes,
+        catatan_petunjuk: qMeta?.catatan_petunjuk || '',
         distinct_colors: Array.from(grp.distinct_colors),
         distinct_sizes: Array.from(grp.distinct_sizes),
         distinct_dates: Array.from(grp.distinct_dates),
@@ -286,16 +346,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       if (a.is_counted && !b.is_counted) return 1;
       return a.kode_produksi.localeCompare(b.kode_produksi);
     });
-  }, [penerimaanItems]);
+  }, [penerimaanItems, queueMap]);
 
-  // SELECTIVE QUEUE: Only include codes that are in `queuedCodes` OR already have recount data
+  // SELECTIVE QUEUE: Only include codes that are in `queueMap` OR already have recount data
   const codeGroups = useMemo<CodeAuditGroup[]>(() => {
     return allCodeGroups.filter((g) => {
-      const isExplicitlyQueued = queuedCodes.includes(g.kode_produksi);
+      const isExplicitlyQueued = queueMap.hasOwnProperty(g.kode_produksi);
       const isAlreadyCounted = g.is_counted;
       return isExplicitlyQueued || isAlreadyCounted;
     });
-  }, [allCodeGroups, queuedCodes]);
+  }, [allCodeGroups, queueMap]);
 
   // Summary Metrics KPI (Based on Selective Queue)
   const metrics = useMemo(() => {
@@ -341,6 +401,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           g.nama_produk.toLowerCase().includes(q) ||
           (g.vendor_up && g.vendor_up.toLowerCase().includes(q)) ||
           (g.last_auditor && g.last_auditor.toLowerCase().includes(q)) ||
+          (g.catatan_petunjuk && g.catatan_petunjuk.toLowerCase().includes(q)) ||
           g.distinct_colors.some((c) => c.toLowerCase().includes(q))
       );
     }
@@ -472,10 +533,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     onShowToast('Kolom input fisik telah dikosongkan.', 'info');
   };
 
-  // Open Workspace for a specific code (and ensure it is in the queue)
+  // Open Workspace for a specific code
   const handleOpenWorkspace = (code: string) => {
     const norm = code.trim().toUpperCase();
-    handleAddToQueue(norm);
+    handleAddMultipleToQueue([{ kode_produksi: norm }]);
     setSelectedCode(norm);
     setActiveMode('workspace');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -605,7 +666,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       }
 
       // Pastikan kode tersimpan dalam antrian terpilih
-      handleAddToQueue(activeGroup.kode_produksi);
+      handleAddMultipleToQueue([{ kode_produksi: activeGroup.kode_produksi }]);
 
       // 5. Muat ulang data induk dan kembali ke daftar antrian
       await onRefreshData();
@@ -631,6 +692,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       console.warn('Error loading recount logs:', err);
     } finally {
       setIsLoadingHistory(false);
+    }
+  };
+
+  // Prompt to edit card instruction note
+  const handlePromptEditCardNote = (code: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const currentNote = queueMap[code]?.catatan_petunjuk || '';
+    const newNote = window.prompt(`Masukkan petunjuk / catatan untuk Kode ${code} (misal: petunjuk kurang 23 pcs):`, currentNote);
+    if (newNote !== null) {
+      handleUpdateCodeNote(code, newNote.trim());
     }
   };
 
@@ -663,6 +734,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-family: monospace; }
             .sign-box { margin-top: 30px; display: flex; justify-content: space-between; text-align: center; font-size: 10px; }
             .sign-line { margin-top: 45px; border-top: 1px solid #475569; width: 130px; }
+            .note-box { background-color: #fffbeb; border: 1px solid #fef3c7; padding: 6px; border-radius: 4px; margin-top: 6px; font-size: 10px; }
           </style>
         </head>
         <body onload="window.print(); window.close();">
@@ -671,6 +743,63 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       </html>
     `);
     printWindow.document.close();
+  };
+
+  // Filtered list in Picker Modal
+  const pickerFilteredCodes = useMemo(() => {
+    return allCodeGroups.filter(
+      (g) =>
+        !pickerSearch.trim() ||
+        g.kode_produksi.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+        g.nama_produk.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+        (g.vendor_up && g.vendor_up.toLowerCase().includes(pickerSearch.toLowerCase()))
+    );
+  }, [allCodeGroups, pickerSearch]);
+
+  // Modal multiple selection handlers
+  const handleTogglePickerCode = (code: string) => {
+    const next = new Set(selectedPickerCodes);
+    if (next.has(code)) {
+      next.delete(code);
+    } else {
+      next.add(code);
+      // Pre-fill note from existing if any
+      if (!pickerCodeNotes[code] && queueMap[code]?.catatan_petunjuk) {
+        setPickerCodeNotes((prev) => ({
+          ...prev,
+          [code]: queueMap[code]?.catatan_petunjuk || '',
+        }));
+      }
+    }
+    setSelectedPickerCodes(next);
+  };
+
+  const handleSelectAllFilteredInPicker = () => {
+    const next = new Set(selectedPickerCodes);
+    pickerFilteredCodes.forEach((g) => next.add(g.kode_produksi));
+    setSelectedPickerCodes(next);
+  };
+
+  const handleDeselectAllInPicker = () => {
+    setSelectedPickerCodes(new Set());
+  };
+
+  const handleConfirmAddSelectedToQueue = () => {
+    if (selectedPickerCodes.size === 0) {
+      onShowToast('Pilih setidaknya 1 kode untuk dimasukkan ke antrian.', 'warning');
+      return;
+    }
+
+    const payload = Array.from(selectedPickerCodes).map((code) => ({
+      kode_produksi: code,
+      catatan_petunjuk: pickerCodeNotes[code]?.trim() || '',
+    }));
+
+    handleAddMultipleToQueue(payload);
+    onShowToast(`${payload.length} kode berhasil dimasukkan ke antrian hitung ulang!`, 'success');
+    setIsPickerModalOpen(false);
+    setSelectedPickerCodes(new Set());
+    setPickerCodeNotes({});
   };
 
   return (
@@ -782,7 +911,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Cari Kode Produksi, Nama Produk, Petugas di Antrian..."
+                  placeholder="Cari Kode Produksi, Nama Produk, Petugas, Catatan Petunjuk..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-9 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 transition"
@@ -800,14 +929,18 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2 shrink-0">
-                {/* Button Panggil Kode / Audit Baru */}
+                {/* Button Panggil / Multiple Choice Modal */}
                 <button
                   type="button"
-                  onClick={() => setIsPickerModalOpen(true)}
+                  onClick={() => {
+                    setSelectedPickerCodes(new Set());
+                    setPickerCodeNotes({});
+                    setIsPickerModalOpen(true);
+                  }}
                   className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Panggil / Tambah Kode Audit</span>
+                  <ListPlus className="w-4 h-4" />
+                  <span>+ Panggil Kode (Multiple)</span>
                 </button>
 
                 {/* Refresh */}
@@ -881,7 +1014,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 </p>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   {codeGroups.length === 0
-                    ? 'Hanya kode penerimaan terpilih yang akan masuk ke antrian ini. Klik tombol di bawah untuk memanggil kode yang perlu diverifikasi fisiknya.'
+                    ? 'Pilih kode barang melalui fitur Multiple Choice di bawah untuk memasukkan beberapa kode sekaligus lengkap dengan petunjuk instruksi.'
                     : 'Coba ubah kata kunci pencarian atau ganti status filter di atas.'}
                 </p>
               </div>
@@ -890,11 +1023,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 <div className="pt-2">
                   <button
                     type="button"
-                    onClick={() => setIsPickerModalOpen(true)}
+                    onClick={() => {
+                      setSelectedPickerCodes(new Set());
+                      setPickerCodeNotes({});
+                      setIsPickerModalOpen(true);
+                    }}
                     className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black inline-flex items-center gap-2 shadow-sm transition cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Panggil / Tambah Kode Audit Sekarang</span>
+                    <ListPlus className="w-4 h-4" />
+                    <span>Pilih Kode ke Antrian (Multiple)</span>
                   </button>
                 </div>
               )}
@@ -1024,6 +1161,32 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                           </span>
                         </div>
                       </div>
+
+                      {/* Catatan / Petunjuk Khusus Kode (Highlight Box) */}
+                      {item.catatan_petunjuk ? (
+                        <div
+                          onClick={(e) => handlePromptEditCardNote(item.kode_produksi, e)}
+                          className="mt-2 p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-xs flex items-start justify-between gap-1.5 cursor-pointer hover:border-amber-300 transition"
+                          title="Klik untuk mengubah petunjuk"
+                        >
+                          <div className="flex items-start gap-1.5 overflow-hidden">
+                            <span className="text-amber-600 font-black text-[11px] shrink-0">📌 Petunjuk:</span>
+                            <span className="text-amber-900 dark:text-amber-200 font-bold text-[11px] leading-tight break-words">
+                              {item.catatan_petunjuk}
+                            </span>
+                          </div>
+                          <Edit3 className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => handlePromptEditCardNote(item.kode_produksi, e)}
+                          className="mt-2 text-[10px] font-bold text-slate-400 hover:text-amber-600 flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Beri Petunjuk Khusus (misal: kurang 23 pcs)</span>
+                        </button>
+                      )}
 
                       {/* Auditor & Timestamp Footer */}
                       <div className="mt-2 text-[10px] text-slate-500 space-y-0.5">
@@ -1174,6 +1337,30 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Instruction Note Banner in Workspace */}
+            {activeGroup.catatan_petunjuk ? (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📌</span>
+                  <div>
+                    <span className="text-[10px] uppercase font-black tracking-wider text-amber-700 dark:text-amber-400 block">
+                      Petunjuk Instruksi Khusus Kode Ini:
+                    </span>
+                    <span className="text-xs font-bold text-amber-950 dark:text-amber-100">
+                      {activeGroup.catatan_petunjuk}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => handlePromptEditCardNote(activeGroup.kode_produksi, e)}
+                  className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline shrink-0"
+                >
+                  Ubah Petunjuk
+                </button>
+              </div>
+            ) : null}
 
             {/* Quick Helper Actions */}
             <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
@@ -1397,111 +1584,217 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       )}
 
       {/* ========================================================
-          3. MODAL: PANGGIL KODE AUDIT CEPAT (+ BUAT ANTRIAN)
+          3. MODAL: MULTIPLE CHOICE KODE + NOTES PER KODE
           ======================================================== */}
       {isPickerModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950 text-rose-600">
-                  <Scale className="w-5 h-5" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-rose-50 dark:bg-rose-950 text-rose-600">
+                  <ListPlus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white">Panggil Kode Produksi ke Antrian</h3>
-                  <p className="text-[11px] text-slate-500">Pilih kode barang dari riwayat kedatangan untuk diverifikasi</p>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    Pilih Kode Produksi ke Antrian (Multiple Choice)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Pilih satu atau beberapa kode kedatangan &amp; berikan petunjuk/catatan per kode
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsPickerModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600"
+                className="p-1 text-slate-400 hover:text-slate-600 transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Search in picker */}
-            <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+            {/* Search & Batch Selection Bar */}
+            <div className="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2.5 bg-slate-50/50 dark:bg-slate-850/50">
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Ketik kode produksi / nama produk / vendor UP..."
+                  placeholder="Ketik kode produksi (misal: 26550) / nama produk / vendor UP..."
                   value={pickerSearch}
                   onChange={(e) => setPickerSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
                   autoFocus
                 />
               </div>
+
+              {/* Batch Action Helpers */}
+              <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-500">
+                    Terpilih:{' '}
+                    <strong className="text-rose-600 font-black text-sm">
+                      {selectedPickerCodes.size}
+                    </strong>{' '}
+                    kode
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllFilteredInPicker}
+                    className="text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:text-rose-600 underline cursor-pointer"
+                  >
+                    Pilih Semua ({pickerFilteredCodes.length})
+                  </button>
+                  {selectedPickerCodes.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllInPicker}
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-700 underline cursor-pointer"
+                    >
+                      Batal Pilih
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* List of Available Codes across entire history */}
-            <div className="p-3 overflow-y-auto space-y-1.5 flex-1 divide-y divide-slate-100 dark:divide-slate-800">
-              {allCodeGroups
-                .filter(
-                  (g) =>
-                    !pickerSearch.trim() ||
-                    g.kode_produksi.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                    g.nama_produk.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-                    (g.vendor_up && g.vendor_up.toLowerCase().includes(pickerSearch.toLowerCase()))
-                )
-                .slice(0, 40)
-                .map((g) => {
-                  const isInQueue = queuedCodes.includes(g.kode_produksi);
+            {/* List of Available Codes with Checkboxes & Note Inputs */}
+            <div className="p-3 overflow-y-auto space-y-2 flex-1 divide-y divide-slate-100 dark:divide-slate-800">
+              {pickerFilteredCodes.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  <p className="text-xs">Tidak ada kode yang cocok dengan pencarian "{pickerSearch}".</p>
+                </div>
+              ) : (
+                pickerFilteredCodes.slice(0, 50).map((g) => {
+                  const isChecked = selectedPickerCodes.has(g.kode_produksi);
+                  const isAlreadyInQueue = queueMap.hasOwnProperty(g.kode_produksi);
+                  const currentNote = pickerCodeNotes[g.kode_produksi] ?? (queueMap[g.kode_produksi]?.catatan_petunjuk || '');
+
                   return (
                     <div
                       key={g.kode_produksi}
-                      onClick={() => {
-                        setIsPickerModalOpen(false);
-                        handleOpenWorkspace(g.kode_produksi);
-                      }}
-                      className="p-2.5 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 rounded-xl transition cursor-pointer flex items-center justify-between gap-2"
+                      className={`pt-2 pb-2 rounded-2xl transition border ${
+                        isChecked
+                          ? 'bg-rose-50/40 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/60 p-3'
+                          : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/40 p-2'
+                      }`}
                     >
-                      <div className="flex items-center gap-2.5">
-                        {g.photo_url ? (
-                          <img
-                            src={g.photo_url}
-                            alt={g.kode_produksi}
-                            className="w-9 h-9 rounded-lg object-contain bg-slate-100 dark:bg-slate-800 border border-slate-200"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
-                            <ImageIcon className="w-4 h-4" />
+                      {/* Top Row: Checkbox, Code info, Thumbnail, Status */}
+                      <div
+                        onClick={() => handleTogglePickerCode(g.kode_produksi)}
+                        className="flex items-start justify-between gap-3 cursor-pointer"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          {/* Checkbox */}
+                          <div className="pt-0.5 text-rose-600">
+                            {isChecked ? (
+                              <CheckSquare className="w-5 h-5" />
+                            ) : (
+                              <Square className="w-5 h-5 text-slate-300 dark:text-slate-600" />
+                            )}
                           </div>
-                        )}
-                        <div>
-                          <span className="font-mono text-xs font-black text-rose-600 dark:text-rose-400">
-                            {g.kode_produksi}
-                          </span>
-                          <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
-                            {g.nama_produk || 'Produk Tanpa Nama'}
-                          </p>
-                          <span className="text-[10px] text-slate-400">
-                            {g.kategori} • Total: {g.total_asli} pcs
-                          </span>
+
+                          {/* Thumbnail */}
+                          {g.photo_url ? (
+                            <img
+                              src={g.photo_url}
+                              alt={g.kode_produksi}
+                              className="w-10 h-10 rounded-lg object-contain bg-slate-100 dark:bg-slate-800 border border-slate-200"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                              <ImageIcon className="w-4 h-4" />
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-sm font-black text-rose-600 dark:text-rose-400">
+                                {g.kode_produksi}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                {g.kategori}
+                              </span>
+                            </div>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
+                              {g.nama_produk || 'Produk Tanpa Nama'}
+                            </p>
+                            <span className="text-[10px] text-slate-400">
+                              Total Kedatangan: <strong>{g.total_asli} pcs</strong>
+                              {g.vendor_up ? ` • UP: ${g.vendor_up}` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Right Badge */}
+                        <div className="text-right shrink-0">
+                          {g.is_counted ? (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 block">
+                              {g.total_selisih === 0 ? '✅ Match' : `⚠️ Selisih: ${g.total_selisih}`}
+                            </span>
+                          ) : isAlreadyInQueue ? (
+                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 block">
+                              Di Antrian
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded block">
+                              Tersedia
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      <div className="text-right flex items-center gap-1.5">
-                        {g.is_counted ? (
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                            {g.total_selisih === 0 ? '✅ Match' : `⚠️ Selisih: ${g.total_selisih}`}
-                          </span>
-                        ) : isInQueue ? (
-                          <span className="text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800">
-                            Di Antrian
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-                            + Pilih
-                          </span>
-                        )}
-                      </div>
+                      {/* INLINE NOTE FIELD (WHEN SELECTED / EXPANDED) */}
+                      {isChecked && (
+                        <div className="mt-2.5 pt-2 border-t border-rose-100 dark:border-rose-900/40 flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4 text-rose-500 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Kasih petunjuk/catatan kode ini (misal: petunjuk kurang 23, cek jahitan)..."
+                            value={currentNote}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setPickerCodeNotes((prev) => ({
+                                ...prev,
+                                [g.kode_produksi]: val,
+                              }));
+                            }}
+                            className="w-full text-xs font-semibold px-3 py-1.5 bg-white dark:bg-slate-850 border border-rose-200 dark:border-rose-800 rounded-xl text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 shadow-2xs"
+                          />
+                        </div>
+                      )}
                     </div>
                   );
-                })}
+                })
+              )}
+            </div>
+
+            {/* Modal Bottom Footer Actions */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850/80 flex items-center justify-between flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPickerModalOpen(false)}
+                className="px-4 py-2 bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={selectedPickerCodes.size === 0}
+                  onClick={handleConfirmAddSelectedToQueue}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-400 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>
+                    Masukkan ({selectedPickerCodes.size}) Kode ke Antrian
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1625,6 +1918,12 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <div><strong>Petugas:</strong> {auditorName || '................'}</div>
                 </div>
               </div>
+
+              {activeGroup.catatan_petunjuk && (
+                <div className="note-box">
+                  <strong>📌 Petunjuk Khusus:</strong> {activeGroup.catatan_petunjuk}
+                </div>
+              )}
             </div>
 
             <table>
