@@ -45,6 +45,7 @@ import {
   Tag,
   CopyCheck,
   SlidersHorizontal,
+  Scale,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -58,6 +59,7 @@ import {
 } from '../types';
 import { PenerimaanProductCardItem } from './penerimaan/PenerimaanProductCardItem';
 import { QcPengerjaanTab } from './penerimaan/QcPengerjaanTab';
+import { AuditHitungUlangTab } from './penerimaan/AuditHitungUlangTab';
 import { ProduksiSpreadsheetView } from './penerimaan/ProduksiSpreadsheetView';
 import { PushSuratJalanModal } from './penerimaan/PushSuratJalanModal';
 import { PushDateSheetsModal } from './penerimaan/PushDateSheetsModal';
@@ -89,7 +91,7 @@ interface PenerimaanProduksiViewProps {
   onShowToast: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type TabMode = 'riwayat' | 'input' | 'qc_pengerjaan';
+type TabMode = 'riwayat' | 'input' | 'qc_pengerjaan' | 'audit_hitung_ulang';
 
 export interface SuratJalanGroup {
   no_surat_jalan: string;
@@ -331,10 +333,11 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TabMode>('riwayat');
   const [selectedQcTargetCode, setSelectedQcTargetCode] = useState<string | undefined>(undefined);
+  const [selectedAuditTargetCode, setSelectedAuditTargetCode] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // Hitung Ulang Modal State
+  // Hitung Ulang Modal State (Bisa juga membuka tab Audit Hitung Ulang langsung)
   const [isHitungUlangModalOpen, setIsHitungUlangModalOpen] = useState<boolean>(false);
   const [hitungUlangTargetKode, setHitungUlangTargetKode] = useState<string>('');
   const [hitungUlangTargetTanggal, setHitungUlangTargetTanggal] = useState<string>('all');
@@ -343,9 +346,10 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
 
   const handleOpenHitungUlang = (kode?: string, tanggal?: string) => {
-    setHitungUlangTargetKode(kode || '');
-    setHitungUlangTargetTanggal(tanggal || 'all');
-    setIsHitungUlangModalOpen(true);
+    if (kode) {
+      setSelectedAuditTargetCode(kode);
+    }
+    setActiveTab('audit_hitung_ulang');
   };
 
   // View Mode: 'matrix' (Spreadsheet Excel Matrix), 'card' (1 Kartu = 1 No. Surat Jalan), atau 'table' (1 Baris = 1 Varian)
@@ -1581,7 +1585,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Top-Level Tab Switcher */}
-          <div className="flex-1 grid grid-cols-3 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-2">
+          <div className="flex-1 grid grid-cols-2 sm:flex sm:bg-transparent sm:dark:bg-transparent sm:p-0 sm:gap-2">
             <button
               type="button"
               onClick={() => {
@@ -1639,6 +1643,28 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             >
               <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Pengerjaan QC</span>
+            </button>
+
+            <button
+              id="btn-tab-audit-hitung-ulang"
+              type="button"
+              onClick={() => {
+                setSelectedQcTargetCode(undefined);
+                setActiveTab('audit_hitung_ulang');
+              }}
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 py-2 sm:px-3 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs cursor-pointer ${
+                activeTab === 'audit_hitung_ulang'
+                  ? 'bg-white dark:bg-slate-700 text-rose-700 dark:text-rose-300 sm:bg-rose-600 sm:text-white sm:shadow-rose-600/25 sm:ring-2 sm:ring-rose-600/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 sm:bg-slate-100 sm:dark:bg-slate-800 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700 sm:text-slate-700 sm:dark:text-slate-300'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Audit Hitung Ulang</span>
+              {recountCounts.diff > 0 ? (
+                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-rose-500 text-white animate-pulse">
+                  {recountCounts.diff}
+                </span>
+              ) : null}
             </button>
           </div>
           
@@ -2945,6 +2971,21 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           productCatalog={productCatalog}
           targetJobCode={selectedQcTargetCode}
           onShowToast={onShowToast}
+        />
+      )}
+
+      {/* ========================================================
+          TAB 4: AUDIT HITUNG ULANG FISIK & ANTRIAN VERIFIKASI
+          ======================================================== */}
+      {activeTab === 'audit_hitung_ulang' && (
+        <AuditHitungUlangTab
+          session={session}
+          penerimaanItems={dataList}
+          productCatalog={productCatalog}
+          initialTargetCode={selectedAuditTargetCode}
+          onShowToast={onShowToast}
+          onRefreshData={loadData}
+          onOpenLightbox={(img) => setLightboxImage(img)}
         />
       )}
 
@@ -4378,12 +4419,12 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                     type="button"
                     onClick={() => {
                       setIsFilterModalOpen(false);
-                      handleOpenHitungUlang();
+                      setActiveTab('audit_hitung_ulang');
                     }}
                     className="p-2.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold flex items-center gap-2 border border-rose-200 dark:border-rose-800 cursor-pointer"
                   >
-                    <Layers className="w-4 h-4 text-rose-500" />
-                    <span>Lembar Hitung Ulang</span>
+                    <Scale className="w-4 h-4 text-rose-500" />
+                    <span>Buka Tab Audit Hitung Ulang</span>
                   </button>
 
                   <button
