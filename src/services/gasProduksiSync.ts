@@ -411,21 +411,16 @@ export async function pushProduksiPerTanggalToGoogleSheet(
       const ds = dateSheets[i];
       onProgress?.(i + 1, dateSheets.length, ds.sheetName);
 
+      const effectiveBlocks = ds.blocks && ds.blocks.length > 0
+        ? ds.blocks
+        : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab);
+
       const singlePayload = {
         action: 'pushPenerimaanProduksi',
         spreadsheetId: targetSpreadsheetId,
         activeTab: activeTab,
         sheetName: ds.sheetName,
-        date_sheets: [
-          {
-            tanggal: ds.tanggal,
-            sheetName: ds.sheetName,
-            kategori: activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT',
-            items: ds.items,
-            blocks: ds.blocks && ds.blocks.length > 0 ? ds.blocks : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab),
-          },
-        ],
-        blocks: ds.blocks && ds.blocks.length > 0 ? ds.blocks : buildBlocksFromRawItems(ds.items, [ds.tanggal], activeTab),
+        blocks: effectiveBlocks,
         items: ds.items,
         targetDate: ds.tanggal,
       };
@@ -485,16 +480,138 @@ export async function pushProduksiPerTanggalToGoogleSheet(
   }
 }
 
+export interface PushMasterProduksiOptions {
+  items: PenerimaanProduksiItem[];
+  blocks?: MatrixProductBlock[];
+  activeTab?: 'CMT' | 'Kargo';
+  customSpreadsheetId?: string;
+}
+
+/**
+ * Helper untuk menyusun MatrixProductBlock dari flat items jika blocks belum disediakan
+ */
+export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCMT: boolean): MatrixProductBlock[] {
+  const codeMap = new Map<string, PenerimaanProduksiItem[]>();
+  items.forEach((it) => {
+    const code = it.kode_produksi || 'TANPA_KODE';
+    if (!codeMap.has(code)) codeMap.set(code, []);
+    codeMap.get(code)!.push(it);
+  });
+
+  const blocks: MatrixProductBlock[] = [];
+  let no = 1;
+
+  for (const [code, codeItems] of codeMap.entries()) {
+    const first = codeItems[0];
+    const productName = first?.nama_produk || '';
+    const upVendor = first?.keterangan || (isCMT ? 'CMT' : 'KARGO');
+    const photoUrl = first?.foto_url || '';
+
+    const dateSet = new Set<string>();
+    codeItems.forEach((it) => {
+      if (it.tanggal_penerimaan) dateSet.add(it.tanggal_penerimaan);
+    });
+    const dateSlots = Array.from(dateSet).sort();
+
+    const colorMap = new Map<string, PenerimaanProduksiItem[]>();
+    codeItems.forEach((it) => {
+      const col = it.warna || 'DEFAULT';
+      if (!colorMap.has(col)) colorMap.set(col, []);
+      colorMap.get(col)!.push(it);
+    });
+
+    const colorGroups = [];
+    let blockTotalDatang = 0;
+
+    for (const [colName, colItems] of colorMap.entries()) {
+      const sizeMap = new Map<string, PenerimaanProduksiItem[]>();
+      colItems.forEach((it) => {
+        const sz = it.size || 'ALL SIZE';
+        if (!sizeMap.has(sz)) sizeMap.set(sz, []);
+        sizeMap.get(sz)!.push(it);
+      });
+
+      const sizes = [];
+      let cgTotal = 0;
+
+      for (const [szName, szItems] of sizeMap.entries()) {
+        const qtyByDate: Record<string, number> = {};
+        let szTotal = 0;
+        szItems.forEach((it) => {
+          const d = it.tanggal_penerimaan || '';
+          const q = Number(it.qty) || 0;
+          qtyByDate[d] = (qtyByDate[d] || 0) + q;
+          szTotal += q;
+        });
+
+        sizes.push({
+          sizeName: szName,
+          qtyByDate,
+          returQtyByDate: {},
+          totalSizeQty: szTotal,
+          totalReturSizeQty: 0,
+          totalNetSizeQty: szTotal,
+        });
+
+        cgTotal += szTotal;
+      }
+
+      colorGroups.push({
+        colorName: colName,
+        sizes,
+        totalColorQty: cgTotal,
+        totalReturColorQty: 0,
+        totalNetColorQty: cgTotal,
+      });
+
+      blockTotalDatang += cgTotal;
+    }
+
+    blocks.push({
+      no: no++,
+      productCode: code,
+      productName,
+      upVendor,
+      photoUrl,
+      dateSlots,
+      returDateSlots: [],
+      colorGroups,
+      totalDatang: blockTotalDatang,
+      totalRetur: 0,
+      totalNet: blockTotalDatang,
+      stockOpname: 0,
+      selisih: 0,
+    });
+  }
+
+  return blocks;
+}
+
 /**
  * Push data penerimaan produksi ke Google Spreadsheet dengan format Master Matrix Spreadsheet (=IMAGE)
  * Spreadsheet ID: 1fnW49pCI8X8-lYtmXljxB0GsZWKkQtKshV2R5-mlodk
  */
 export async function pushPenerimaanProduksiToGoogleSheet(
-  items: PenerimaanProduksiItem[],
-  blocks?: MatrixProductBlock[],
-  activeTab: 'CMT' | 'Kargo' = 'CMT',
-  customSpreadsheetId?: string
+  itemsOrOptions: PenerimaanProduksiItem[] | PushMasterProduksiOptions,
+  maybeBlocks?: MatrixProductBlock[],
+  maybeActiveTab: 'CMT' | 'Kargo' = 'CMT',
+  maybeCustomSpreadsheetId?: string
 ): Promise<PushProduksiResponse> {
+  let items: PenerimaanProduksiItem[] = [];
+  let blocks: MatrixProductBlock[] | undefined = maybeBlocks;
+  let activeTab: 'CMT' | 'Kargo' = maybeActiveTab;
+  let customSpreadsheetId: string | undefined = maybeCustomSpreadsheetId;
+
+  if (itemsOrOptions && !Array.isArray(itemsOrOptions) && typeof itemsOrOptions === 'object') {
+    const opts = itemsOrOptions as PushMasterProduksiOptions;
+    items = Array.isArray(opts.items) ? opts.items : [];
+    blocks = opts.blocks;
+    activeTab = opts.activeTab || 'CMT';
+    customSpreadsheetId = opts.customSpreadsheetId;
+  } else if (Array.isArray(itemsOrOptions)) {
+    items = itemsOrOptions;
+  }
+
   if ((!items || items.length === 0) && (!blocks || blocks.length === 0)) {
     return { success: false, message: 'Tidak ada data item untuk dikirim.' };
   }
@@ -502,14 +619,19 @@ export async function pushPenerimaanProduksiToGoogleSheet(
   const targetSpreadsheetId = customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
   const gasUrl = getProduksiGasUrl();
 
+  // Jika blocks belum ada tapi items ada, susun blocks secara otomatis
+  const effectiveBlocks = (blocks && blocks.length > 0)
+    ? blocks
+    : buildMatrixBlocksFromItems(items, activeTab === 'CMT');
+
   // Format blocks jika ada
-  const formattedBlocks = blocks ? blocks.map((b) => ({
+  const formattedBlocks = effectiveBlocks.map((b) => ({
     ...b,
     photoUrl: formatImageUrlForSheets(b.photoUrl),
-  })) : undefined;
+  }));
 
   // Format flat items
-  const formattedItems = items ? items.map((it) => ({
+  const formattedItems = items && Array.isArray(items) ? items.map((it) => ({
     tanggal_penerimaan: it.tanggal_penerimaan || '',
     kategori: it.kategori || 'Lokal CMT',
     no_surat_jalan: it.no_surat_jalan || '',

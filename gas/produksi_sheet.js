@@ -129,7 +129,7 @@ function handlePushPenerimaanProduksi(data) {
     }
 
     // =========================================================================
-    // FALLBACK / MODE MATRIKS BLOCKS
+    // FALLBACK / MODE MATRIKS BLOCKS (Master Produksi)
     // =========================================================================
     var activeTab = data.activeTab || 'CMT';
     var targetSheetName = data.sheetName || ('Master Produksi (' + activeTab + ')');
@@ -140,229 +140,20 @@ function handlePushPenerimaanProduksi(data) {
     }
 
     var blocks = data.blocks || [];
+    var items = data.items || [];
+    var isCMT = activeTab === 'CMT';
+
+    if ((!blocks || blocks.length === 0) && items.length > 0) {
+      blocks = buildBlocksFromItemsGAS(items, isCMT, null);
+    }
+
     if (blocks && blocks.length > 0) {
-      sheet.clearContents();
-      sheet.clearFormats();
-      try {
-        sheet.getRange(1, 1, Math.max(100, sheet.getMaxRows()), Math.max(25, sheet.getMaxColumns())).setNumberFormat('@');
-      } catch (eFmt) {}
-
-      var isCMT = activeTab === 'CMT';
-      var currentRow = 1;
-
-      for (var b = 0; b < blocks.length; b++) {
-        var block = blocks[b];
-        var headerRow1Index = currentRow;
-        var headerRow2Index = currentRow + 1;
-
-        var dateSlots = block.dateSlots || [];
-        var returSlots = isCMT ? (block.returDateSlots || []) : [];
-        var numDateCols = Math.max(10, dateSlots.length);
-        var numReturCols = isCMT ? Math.max(5, returSlots.length) : 0;
-        var totalCols = 7 + numDateCols + numReturCols + 1 + 4; // Ditambah 4 kolom audit: FISIK HITUNG, SELISIH, STATUS, LOG
-
-        var row1Vals = ['NO', 'CODE', 'PRODUCT NAME', 'UP', 'PHOTO', 'COLOR', 'SIZE'];
-        for (var d = 0; d < numDateCols; d++) {
-          row1Vals.push(d === 0 ? 'QTY DATANG' : '');
-        }
-        if (isCMT && numReturCols > 0) {
-          for (var r = 0; r < numReturCols; r++) {
-            row1Vals.push(r === 0 ? 'RETUR PRODUKSI' : '');
-          }
-        }
-        row1Vals.push('TOTAL NET');
-        row1Vals.push('FISIK HASIL HITUNG');
-        row1Vals.push('SELISIH');
-        row1Vals.push('STATUS AUDIT');
-        row1Vals.push('LOG HITUNG ULANG');
-
-        var row2Vals = ['', '', '', '', '', '', ''];
-        for (var d1 = 0; d1 < numDateCols; d1++) {
-          var dateLabel = dateSlots[d1] ? formatDateHeader(dateSlots[d1]) : '-';
-          row2Vals.push(dateLabel ? ("'" + dateLabel) : '-');
-        }
-        if (isCMT && numReturCols > 0) {
-          for (var r1 = 0; r1 < numReturCols; r1++) {
-            var returLabel = returSlots[r1] ? formatDateHeader(returSlots[r1]) : '-';
-            row2Vals.push(returLabel ? ("'" + returLabel) : '-');
-          }
-        }
-        row2Vals.push(''); // TOTAL NET
-        row2Vals.push(''); // FISIK HASIL HITUNG
-        row2Vals.push(''); // SELISIH
-        row2Vals.push(''); // STATUS AUDIT
-        row2Vals.push(''); // LOG HITUNG ULANG
-
-        sheet.getRange(headerRow1Index, 1, 1, row1Vals.length).setValues([row1Vals]);
-        sheet.getRange(headerRow2Index, 1, 1, row2Vals.length).setValues([row2Vals]);
-        sheet.getRange(headerRow1Index, 1, 2, totalCols).setNumberFormat('@');
-
-        sheet.getRange(headerRow1Index, 1, 2, 1).merge();
-        sheet.getRange(headerRow1Index, 2, 2, 1).merge();
-        sheet.getRange(headerRow1Index, 3, 2, 1).merge();
-        sheet.getRange(headerRow1Index, 4, 2, 1).merge();
-        sheet.getRange(headerRow1Index, 5, 2, 1).merge();
-        sheet.getRange(headerRow1Index, 6, 2, 1).merge();
-        sheet.getRange(headerRow1Index, 7, 2, 1).merge();
-
-        sheet.getRange(headerRow1Index, 8, 1, numDateCols).merge();
-        var nextColPointer = 8 + numDateCols;
-        if (isCMT && numReturCols > 0) {
-          sheet.getRange(headerRow1Index, nextColPointer, 1, numReturCols).merge();
-          nextColPointer += numReturCols;
-        }
-        sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // TOTAL NET
-        sheet.getRange(headerRow1Index, nextColPointer + 1, 2, 1).merge(); // FISIK HASIL HITUNG
-        sheet.getRange(headerRow1Index, nextColPointer + 2, 2, 1).merge(); // SELISIH
-        sheet.getRange(headerRow1Index, nextColPointer + 3, 2, 1).merge(); // STATUS AUDIT
-        sheet.getRange(headerRow1Index, nextColPointer + 4, 2, 1).merge(); // LOG HITUNG ULANG
-
-        var headerRange = sheet.getRange(headerRow1Index, 1, 2, totalCols);
-        headerRange.setBackground('#FCE8E6');
-        headerRange.setFontColor('#0F172A');
-        headerRange.setFontWeight('bold');
-        headerRange.setFontSize(9);
-        headerRange.setHorizontalAlignment('center');
-        headerRange.setVerticalAlignment('middle');
-        headerRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
-
-        currentRow += 2;
-
-        var startDataRowIndex = currentRow;
-        var colorGroups = block.colorGroups || [];
-        var totalSubRowsInBlock = 0;
-        for (var cgIdx = 0; cgIdx < colorGroups.length; cgIdx++) {
-          totalSubRowsInBlock += Math.max(1, (colorGroups[cgIdx].sizes || []).length);
-        }
-        var targetBlockHeightPx = Math.max(320, totalSubRowsInBlock * 32);
-        var calculatedRowHeight = Math.max(32, Math.floor(targetBlockHeightPx / Math.max(1, totalSubRowsInBlock)));
-
-        for (var c = 0; c < colorGroups.length; c++) {
-          var cg = colorGroups[c];
-          var startColorRowIndex = currentRow;
-          var sizes = cg.sizes || [];
-          for (var s = 0; s < sizes.length; s++) {
-            var sz = sizes[s];
-            var dataRowVals = [
-              (b + 1),
-              "'" + (block.code || ''),
-              block.productName || '',
-              block.upVendor || '',
-              '',
-              cg.color,
-              "'" + (sz.size || '')
-            ];
-
-            for (var d2 = 0; d2 < numDateCols; d2++) {
-              var dKey = dateSlots[d2];
-              var qVal = (dKey && sz.qtyByDate && sz.qtyByDate[dKey] !== undefined && sz.qtyByDate[dKey] !== '')
-                ? Number(sz.qtyByDate[dKey])
-                : '';
-              dataRowVals.push(qVal);
-            }
-            if (isCMT) {
-              for (var r2 = 0; r2 < numReturCols; r2++) {
-                var rKey = returSlots[r2];
-                var rqVal = (rKey && sz.qtyReturByDate && sz.qtyReturByDate[rKey] !== undefined && sz.qtyReturByDate[rKey] !== '')
-                  ? Number(sz.qtyReturByDate[rKey])
-                  : '';
-                dataRowVals.push(rqVal);
-              }
-            }
-            dataRowVals.push(Number(block.totalNet) || 0);
-
-            var fVal = (sz.recountFisik !== undefined && sz.recountFisik !== null && sz.recountFisik !== '') ? Number(sz.recountFisik) : '';
-            var sVal = (sz.recountSelisih !== undefined && sz.recountSelisih !== null && sz.recountSelisih !== '') 
-              ? Number(sz.recountSelisih) 
-              : (fVal !== '' ? (Number(fVal) - Number(sz.totalSizeQty || 0)) : '');
-            var stVal = sz.recountStatus || (sVal !== '' ? (sVal === 0 ? 'MATCH' : sVal < 0 ? 'KURANG (' + sVal + ')' : 'LEBIH (+' + sVal + ')') : '');
-            var lgVal = sz.recountNotes || '';
-
-            dataRowVals.push(fVal);
-            dataRowVals.push(sVal);
-            dataRowVals.push(stVal);
-            dataRowVals.push(lgVal);
-
-            sheet.getRange(currentRow, 1, 1, dataRowVals.length).setValues([dataRowVals]);
-            sheet.getRange(currentRow, 1, 1, 7).setNumberFormat('@');
-            sheet.getRange(currentRow, 8, 1, totalCols - 7).setNumberFormat('0');
-            sheet.setRowHeight(currentRow, calculatedRowHeight);
-            currentRow++;
-          }
-          var endColorRowIndex = currentRow - 1;
-          if (endColorRowIndex > startColorRowIndex) {
-            sheet.getRange(startColorRowIndex, 6, (endColorRowIndex - startColorRowIndex + 1), 1).merge();
-          }
-        }
-
-        var endDataRowIndex = currentRow - 1;
-        var numBlockRows = endDataRowIndex - startDataRowIndex + 1;
-        if (numBlockRows > 0) {
-          if (numBlockRows > 1) {
-            sheet.getRange(startDataRowIndex, 1, numBlockRows, 1).merge();
-            sheet.getRange(startDataRowIndex, 2, numBlockRows, 1).merge();
-            sheet.getRange(startDataRowIndex, 3, numBlockRows, 1).merge();
-            sheet.getRange(startDataRowIndex, 4, numBlockRows, 1).merge();
-            sheet.getRange(startDataRowIndex, 5, numBlockRows, 1).merge();
-            sheet.getRange(startDataRowIndex, totalCols, numBlockRows, 1).merge();
-          }
-
-          var rawPhotoUrl = String(block.photoUrl || '').trim();
-          if (rawPhotoUrl && (rawPhotoUrl.indexOf('http://') === 0 || rawPhotoUrl.indexOf('https://') === 0)) {
-            sheet.getRange(startDataRowIndex, 5).setFormula('=IMAGE("' + rawPhotoUrl + '", 1)');
-          }
-
-          var blockDataRange = sheet.getRange(startDataRowIndex, 1, numBlockRows, totalCols);
-          blockDataRange.setVerticalAlignment('middle');
-          blockDataRange.setHorizontalAlignment('center');
-          blockDataRange.setFontSize(9.5);
-          blockDataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
-
-          // Pastikan format kolom teks & kode adalah Plain Text (@) agar tidak diubah Google Sheets
-          sheet.getRange(startDataRowIndex, 1, numBlockRows, 7).setNumberFormat('@');
-          // Pastikan format kolom quantity (datang, retur, total) adalah Integer Number ('0') agar 55 tidak menjadi '23 Feb'
-          sheet.getRange(startDataRowIndex, 8, numBlockRows, totalCols - 7).setNumberFormat('0');
-        }
-
-        var blockCatatan = String(block.catatan || block.keterangan || '').trim();
-        if (blockCatatan) {
-          var noteRowIndex = currentRow;
-          var noteRowVals = ['CATATAN / KETERANGAN:', blockCatatan];
-          for (var nc = 2; nc < totalCols; nc++) noteRowVals.push('');
-          sheet.getRange(noteRowIndex, 1, 1, noteRowVals.length).setValues([noteRowVals]);
-          sheet.getRange(noteRowIndex, 2, 1, totalCols - 1).merge();
-          var noteRange = sheet.getRange(noteRowIndex, 1, 1, totalCols);
-          noteRange.setFontSize(8.5);
-          noteRange.setFontWeight('bold');
-          noteRange.setFontColor('#92400E');
-          noteRange.setBackground('#FEF3C7');
-          noteRange.setVerticalAlignment('middle');
-          noteRange.setHorizontalAlignment('left');
-          noteRange.setBorder(true, true, true, true, true, true, '#FDE68A', SpreadsheetApp.BorderStyle.SOLID);
-          sheet.setRowHeight(noteRowIndex, 22);
-          currentRow++;
-        }
-
-        currentRow += 2;
-      }
-
-      sheet.setColumnWidth(1, 45);
-      sheet.setColumnWidth(2, 90);
-      sheet.setColumnWidth(3, 160);
-      sheet.setColumnWidth(4, 90);
-      sheet.setColumnWidth(5, 360);
-      sheet.setColumnWidth(6, 110);
-      sheet.setColumnWidth(7, 70);
-      for (var colIdx = 8; colIdx <= 8 + numDateCols + numReturCols; colIdx++) {
-        sheet.setColumnWidth(colIdx, 65);
-      }
-      sheet.setColumnWidth(totalCols, 120);
-
+      var resMatrix = renderProductBlocksMatrix(sheet, blocks, isCMT, null);
       return {
         success: true,
         message: 'Sukses menulis ' + blocks.length + ' Master Tabel Kode Produk ke Google Sheet (' + targetSheetName + ')!',
         count: blocks.length,
-        sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit#gid=' + sheet.getSheetId()
+        sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ssId + '/edit#gid=' + resMatrix.sheetId
       };
     }
 
@@ -654,8 +445,324 @@ function formatDateIndo(dateStr) {
 }
 
 /**
+ * Helper untuk membangun struktur Blok Matriks dari flat items di dalam GAS
+ */
+function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
+  var codeMap = {};
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var code = String(it.kode_produksi || 'TANPA_KODE').trim();
+    if (!codeMap[code]) codeMap[code] = [];
+    codeMap[code].push(it);
+  }
+
+  var blocks = [];
+  var no = 1;
+
+  for (var codeKey in codeMap) {
+    var codeItems = codeMap[codeKey];
+    var first = codeItems[0];
+    var productName = first.nama_produk || '';
+    var upVendor = first.up_vendor || first.keterangan || (isCMT ? 'CMT' : 'KARGO');
+    var photoUrl = first.foto_url || '';
+    var catatan = first.catatan || '';
+
+    var dateSet = {};
+    for (var d = 0; d < codeItems.length; d++) {
+      if (codeItems[d].tanggal_penerimaan) {
+        dateSet[codeItems[d].tanggal_penerimaan] = true;
+      }
+    }
+    var dateSlots = specificDateStr ? [specificDateStr] : Object.keys(dateSet).sort();
+
+    var colorMap = {};
+    for (var c = 0; c < codeItems.length; c++) {
+      var col = String(codeItems[c].warna || 'DEFAULT').trim();
+      if (!colorMap[col]) colorMap[col] = [];
+      colorMap[col].push(codeItems[c]);
+    }
+
+    var colorGroups = [];
+    var blockTotalDatang = 0;
+
+    for (var colKey in colorMap) {
+      var colItems = colorMap[colKey];
+      var sizeMap = {};
+      for (var s = 0; s < colItems.length; s++) {
+        var sz = String(colItems[s].size || 'ALL SIZE').trim();
+        if (!sizeMap[sz]) sizeMap[sz] = [];
+        sizeMap[sz].push(colItems[s]);
+      }
+
+      var sizes = [];
+      var cgTotal = 0;
+
+      for (var szKey in sizeMap) {
+        var szItems = sizeMap[szKey];
+        var qtyByDate = {};
+        var szTotal = 0;
+        for (var q = 0; q < szItems.length; q++) {
+          var tgl = szItems[q].tanggal_penerimaan || '';
+          var qtyVal = Number(szItems[q].qty) || 0;
+          qtyByDate[tgl] = (qtyByDate[tgl] || 0) + qtyVal;
+          szTotal += qtyVal;
+        }
+
+        sizes.push({
+          size: szKey,
+          qtyByDate: qtyByDate,
+          totalSizeQty: szTotal
+        });
+        cgTotal += szTotal;
+      }
+
+      colorGroups.push({
+        color: colKey,
+        sizes: sizes,
+        totalColorQty: cgTotal
+      });
+      blockTotalDatang += cgTotal;
+    }
+
+    blocks.push({
+      no: no++,
+      code: codeKey,
+      productName: productName,
+      upVendor: upVendor,
+      photoUrl: photoUrl,
+      catatan: catatan,
+      dateSlots: dateSlots,
+      colorGroups: colorGroups,
+      totalDatang: blockTotalDatang,
+      totalNet: blockTotalDatang
+    });
+  }
+
+  return blocks;
+}
+
+/**
+ * Merender tabel Produk Berdasarkan Blok Matriks (Format Resmi Master & Tanggal Produksi)
+ * Sesuai format standar: Header Pink, Foto Produk Merged =IMAGE(...), Warna Merged, Size, Kolom Tanggal, Total Datang, Baris Catatan Kuning
+ */
+function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
+  sheet.clearContents();
+  sheet.clearFormats();
+  try {
+    sheet.getRange(1, 1, Math.max(100, sheet.getMaxRows()), Math.max(25, sheet.getMaxColumns())).setNumberFormat('@');
+  } catch (eFmt) {}
+
+  var currentRow = 1;
+  var isSpecificDate = !!specificDateStr;
+
+  for (var b = 0; b < blocks.length; b++) {
+    var block = blocks[b];
+    var headerRow1Index = currentRow;
+    var headerRow2Index = currentRow + 1;
+
+    // Jika mode tanggal spesifik (1 Tanggal = 1 Tab)
+    var dateSlots = isSpecificDate ? [specificDateStr] : (block.dateSlots || []);
+    var returSlots = isCMT ? (isSpecificDate ? (block.returDateSlots && block.returDateSlots.indexOf(specificDateStr) > -1 ? [specificDateStr] : []) : (block.returDateSlots || [])) : [];
+
+    var numDateCols = Math.max(10, dateSlots.length);
+    var numReturCols = isCMT ? (isSpecificDate ? Math.max(0, returSlots.length) : Math.max(5, returSlots.length)) : 0;
+    var totalCols = 7 + numDateCols + (numReturCols > 0 ? numReturCols : 0) + 1;
+
+    // Header Baris 1
+    var row1Vals = ['NO', 'CODE', 'PRODUCT NAME', 'UP', 'PHOTO', 'COLOR', 'SIZE'];
+    for (var d = 0; d < numDateCols; d++) {
+      row1Vals.push(d === 0 ? 'QTY BARANG DATANG' : '');
+    }
+    if (isCMT && numReturCols > 0) {
+      for (var r = 0; r < numReturCols; r++) {
+        row1Vals.push(r === 0 ? 'RETUR PRODUKSI' : '');
+      }
+    }
+    row1Vals.push('TOTAL DATANG (NET)');
+
+    // Header Baris 2
+    var row2Vals = ['', '', '', '', '', '', ''];
+    for (var d1 = 0; d1 < numDateCols; d1++) {
+      var dateLabel = dateSlots[d1] ? formatDateHeader(dateSlots[d1]) : '-';
+      row2Vals.push(dateLabel ? ("'" + dateLabel) : '-');
+    }
+    if (isCMT && numReturCols > 0) {
+      for (var r1 = 0; r1 < numReturCols; r1++) {
+        var returLabel = returSlots[r1] ? formatDateHeader(returSlots[r1]) : '-';
+        row2Vals.push(returLabel ? ("'" + returLabel) : '-');
+      }
+    }
+    row2Vals.push(''); // TOTAL DATANG (NET)
+
+    sheet.getRange(headerRow1Index, 1, 1, row1Vals.length).setValues([row1Vals]);
+    sheet.getRange(headerRow2Index, 1, 1, row2Vals.length).setValues([row2Vals]);
+    sheet.getRange(headerRow1Index, 1, 2, totalCols).setNumberFormat('@');
+
+    // Merge Header Kolom 1-7
+    sheet.getRange(headerRow1Index, 1, 2, 1).merge(); // NO
+    sheet.getRange(headerRow1Index, 2, 2, 1).merge(); // CODE
+    sheet.getRange(headerRow1Index, 3, 2, 1).merge(); // PRODUCT NAME
+    sheet.getRange(headerRow1Index, 4, 2, 1).merge(); // UP
+    sheet.getRange(headerRow1Index, 5, 2, 1).merge(); // PHOTO
+    sheet.getRange(headerRow1Index, 6, 2, 1).merge(); // COLOR
+    sheet.getRange(headerRow1Index, 7, 2, 1).merge(); // SIZE
+
+    // Merge Header Kolom Tanggal
+    sheet.getRange(headerRow1Index, 8, 1, numDateCols).merge();
+    var nextColPointer = 8 + numDateCols;
+    if (isCMT && numReturCols > 0) {
+      sheet.getRange(headerRow1Index, nextColPointer, 1, numReturCols).merge();
+      nextColPointer += numReturCols;
+    }
+    sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // TOTAL DATANG (NET)
+
+    var headerRange = sheet.getRange(headerRow1Index, 1, 2, totalCols);
+    headerRange.setBackground('#FCE8E6');
+    headerRange.setFontColor('#0F172A');
+    headerRange.setFontWeight('bold');
+    headerRange.setFontSize(9);
+    headerRange.setHorizontalAlignment('center');
+    headerRange.setVerticalAlignment('middle');
+    headerRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+    currentRow += 2;
+
+    var startDataRowIndex = currentRow;
+    var colorGroups = block.colorGroups || [];
+    var totalSubRowsInBlock = 0;
+    for (var cgIdx = 0; cgIdx < colorGroups.length; cgIdx++) {
+      totalSubRowsInBlock += Math.max(1, (colorGroups[cgIdx].sizes || []).length);
+    }
+    var targetBlockHeightPx = Math.max(320, totalSubRowsInBlock * 32);
+    var calculatedRowHeight = Math.max(32, Math.floor(targetBlockHeightPx / Math.max(1, totalSubRowsInBlock)));
+
+    for (var c = 0; c < colorGroups.length; c++) {
+      var cg = colorGroups[c];
+      var startColorRowIndex = currentRow;
+      var sizes = cg.sizes || [];
+
+      for (var s = 0; s < sizes.length; s++) {
+        var sz = sizes[s];
+        var dataRowVals = [
+          (b + 1),
+          "'" + (block.code || block.productCode || ''),
+          block.productName || '',
+          block.upVendor || '',
+          '',
+          cg.color || cg.colorName || '',
+          "'" + (sz.size || sz.sizeName || '')
+        ];
+
+        var rowDatang = 0;
+        for (var d2 = 0; d2 < numDateCols; d2++) {
+          var dKey = dateSlots[d2];
+          var qVal = (dKey && sz.qtyByDate && sz.qtyByDate[dKey] !== undefined && sz.qtyByDate[dKey] !== '')
+            ? Number(sz.qtyByDate[dKey])
+            : '';
+          if (qVal !== '') rowDatang += Number(qVal);
+          dataRowVals.push(qVal);
+        }
+
+        var rowRetur = 0;
+        if (isCMT && numReturCols > 0) {
+          for (var r2 = 0; r2 < numReturCols; r2++) {
+            var rKey = returSlots[r2];
+            var rqVal = (rKey && sz.qtyReturByDate && sz.qtyReturByDate[rKey] !== undefined && sz.qtyReturByDate[rKey] !== '')
+              ? Number(sz.qtyReturByDate[rKey])
+              : '';
+            if (rqVal !== '') rowRetur += Number(rqVal);
+            dataRowVals.push(rqVal);
+          }
+        }
+
+        var rowNet = (isSpecificDate && rowDatang > 0) ? rowDatang : (Number(sz.totalSizeQty) || (rowDatang - rowRetur));
+        dataRowVals.push(rowNet);
+
+        sheet.getRange(currentRow, 1, 1, dataRowVals.length).setValues([dataRowVals]);
+        sheet.getRange(currentRow, 1, 1, 7).setNumberFormat('@');
+        sheet.getRange(currentRow, 8, 1, totalCols - 7).setNumberFormat('0');
+        sheet.setRowHeight(currentRow, calculatedRowHeight);
+        currentRow++;
+      }
+
+      var endColorRowIndex = currentRow - 1;
+      if (endColorRowIndex > startColorRowIndex) {
+        sheet.getRange(startColorRowIndex, 6, (endColorRowIndex - startColorRowIndex + 1), 1).merge();
+      }
+    }
+
+    var endDataRowIndex = currentRow - 1;
+    var numBlockRows = endDataRowIndex - startDataRowIndex + 1;
+    if (numBlockRows > 0) {
+      if (numBlockRows > 1) {
+        sheet.getRange(startDataRowIndex, 1, numBlockRows, 1).merge();
+        sheet.getRange(startDataRowIndex, 2, numBlockRows, 1).merge();
+        sheet.getRange(startDataRowIndex, 3, numBlockRows, 1).merge();
+        sheet.getRange(startDataRowIndex, 4, numBlockRows, 1).merge();
+        sheet.getRange(startDataRowIndex, 5, numBlockRows, 1).merge();
+        sheet.getRange(startDataRowIndex, totalCols, numBlockRows, 1).merge();
+      }
+
+      var rawPhotoUrl = String(block.photoUrl || '').trim();
+      if (rawPhotoUrl && (rawPhotoUrl.indexOf('http://') === 0 || rawPhotoUrl.indexOf('https://') === 0)) {
+        sheet.getRange(startDataRowIndex, 5).setFormula('=IMAGE("' + rawPhotoUrl + '", 1)');
+      }
+
+      var blockDataRange = sheet.getRange(startDataRowIndex, 1, numBlockRows, totalCols);
+      blockDataRange.setVerticalAlignment('middle');
+      blockDataRange.setHorizontalAlignment('center');
+      blockDataRange.setFontSize(9.5);
+      blockDataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+      sheet.getRange(startDataRowIndex, 1, numBlockRows, 7).setNumberFormat('@');
+      sheet.getRange(startDataRowIndex, 8, numBlockRows, totalCols - 7).setNumberFormat('0');
+    }
+
+    // Baris Catatan Kuning jika ada
+    var blockCatatan = String(block.catatan || block.keterangan || '').trim();
+    if (blockCatatan) {
+      var noteRowIndex = currentRow;
+      var noteRowVals = ['CATATAN: ' + blockCatatan];
+      for (var nc = 1; nc < totalCols; nc++) noteRowVals.push('');
+      sheet.getRange(noteRowIndex, 1, 1, noteRowVals.length).setValues([noteRowVals]);
+      sheet.getRange(noteRowIndex, 1, 1, totalCols).merge();
+      var noteRange = sheet.getRange(noteRowIndex, 1, 1, totalCols);
+      noteRange.setFontSize(8.5);
+      noteRange.setFontWeight('bold');
+      noteRange.setFontColor('#92400E');
+      noteRange.setBackground('#FEF3C7');
+      noteRange.setVerticalAlignment('middle');
+      noteRange.setHorizontalAlignment('left');
+      noteRange.setBorder(true, true, true, true, true, true, '#FDE68A', SpreadsheetApp.BorderStyle.SOLID);
+      sheet.setRowHeight(noteRowIndex, 22);
+      currentRow++;
+    }
+
+    // Pemisah antar blok
+    currentRow += 1;
+  }
+
+  sheet.setColumnWidth(1, 45);
+  sheet.setColumnWidth(2, 90);
+  sheet.setColumnWidth(3, 160);
+  sheet.setColumnWidth(4, 90);
+  sheet.setColumnWidth(5, 360);
+  sheet.setColumnWidth(6, 110);
+  sheet.setColumnWidth(7, 70);
+  for (var colIdx = 8; colIdx <= 8 + numDateCols + (numReturCols > 0 ? numReturCols : 0); colIdx++) {
+    sheet.setColumnWidth(colIdx, 65);
+  }
+  sheet.setColumnWidth(totalCols, 120);
+
+  return {
+    success: true,
+    sheetId: sheet.getSheetId()
+  };
+}
+
+/**
  * Menulis / Meng-update 1 Sheet Khusus Per Tanggal Penerimaan (1 Tanggal = 1 Tab Sheet)
- * Menampilkan KOP Tanggal, Foto Produk (=IMAGE), Kode, Nama Produk, Vendor/UP, Warna, Size, Qty, dan Catatan
+ * Menampilkan Format Matriks Produk yang SAMA PERSIS dengan Master & Tab Tanggal Sebelumnya
  */
 function writeSingleDateSheet(ss, dateObj, defaultActiveTab) {
   try {
@@ -666,198 +773,21 @@ function writeSingleDateSheet(ss, dateObj, defaultActiveTab) {
     var sheet = ss.getSheetByName(targetSheetName);
     if (!sheet) {
       sheet = ss.insertSheet(targetSheetName);
-    } else {
-      sheet.clearContents();
-      sheet.clearFormats();
     }
 
-    var items = dateObj.items || [];
+    var isCMT = (kategori !== 'Kargo');
     var blocks = dateObj.blocks || [];
-    var displayDate = formatDateIndo(rawDate);
+    var items = dateObj.items || [];
 
-    // Hitung total kuantitas
-    var totalPcs = 0;
-    if (items.length > 0) {
-      for (var i = 0; i < items.length; i++) {
-        totalPcs += Number(items[i].qty) || 0;
-      }
-    } else if (blocks.length > 0) {
-      for (var b = 0; b < blocks.length; b++) {
-        totalPcs += Number(blocks[b].totalNet || blocks[b].totalDatang) || 0;
-      }
+    if (!blocks || blocks.length === 0) {
+      blocks = buildBlocksFromItemsGAS(items, isCMT, rawDate);
     }
 
-    // 1. KOP TANGGAL PENERIMAAN
-    var kopVals = [
-      ['PENERIMAAN PRODUKSI (' + (kategori === 'Kargo' ? 'KARGO' : 'LOKAL CMT') + ') - TANGGAL: ' + displayDate.toUpperCase(), '', '', '', '', '', '', '', ''],
-      ['Tanggal Penerimaan:', displayDate, '', 'Kategori:', kategori, '', 'Total Datang:', totalPcs + ' pcs', ''],
-      ['Waktu Sinkronisasi:', Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd HH:mm:ss') + ' WIB', '', 'Status Sheet:', 'Per Tanggal (1 Tanggal = 1 Tab)', '', 'Jumlah Varian:', (items.length || blocks.length) + ' baris', '']
-    ];
-    sheet.getRange(1, 1, 3, 9).setValues(kopVals);
-
-    // Styling KOP
-    sheet.getRange(1, 1, 1, 9).merge();
-    sheet.getRange(1, 1).setFontSize(13).setFontWeight('bold').setBackground('#0F172A').setFontColor('#FFFFFF').setHorizontalAlignment('center').setVerticalAlignment('middle');
-    sheet.setRowHeight(1, 34);
-
-    var metaRange = sheet.getRange(2, 1, 2, 9);
-    metaRange.setFontSize(9).setBackground('#F8FAFC');
-    sheet.getRange('A2').setFontWeight('bold');
-    sheet.getRange('A3').setFontWeight('bold');
-    sheet.getRange('D2').setFontWeight('bold');
-    sheet.getRange('D3').setFontWeight('bold');
-    sheet.getRange('G2').setFontWeight('bold');
-    sheet.getRange('G3').setFontWeight('bold');
-    sheet.getRange('B2').setFontWeight('bold').setFontColor('#BE123C');
-    sheet.getRange('H2').setFontWeight('bold').setFontColor('#0369A1');
-    metaRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
-    sheet.setRowHeight(2, 22);
-    sheet.setRowHeight(3, 22);
-
-    // 2. HEADER TABEL ITEM
-    var headerRowIndex = 5;
-    var tableHeaders = ['NO', 'FOTO', 'KODE PRODUKSI', 'NAMA PRODUK', 'UP / VENDOR', 'WARNA', 'SIZE', 'QTY (PCS)', 'NO. SJ / CATATAN'];
-    sheet.getRange(headerRowIndex, 1, 1, tableHeaders.length).setValues([tableHeaders]);
-    var tableHeaderRange = sheet.getRange(headerRowIndex, 1, 1, tableHeaders.length);
-    tableHeaderRange.setBackground('#BE123C').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(9.5).setHorizontalAlignment('center').setVerticalAlignment('middle');
-    sheet.setRowHeight(headerRowIndex, 28);
-
-    // 3. ISI TABEL DARI BLOCKS ATAU ITEMS
-    var currentRow = 6;
-    var startDataRow = currentRow;
-
-    if (blocks && blocks.length > 0) {
-      // MODE BLOCKS (Grouped Hierarchically by Kode Produksi)
-      for (var bIdx = 0; bIdx < blocks.length; bIdx++) {
-        var blk = blocks[bIdx];
-        var startBlockRow = currentRow;
-        var colorGroups = blk.colorGroups || [];
-
-        for (var cgIdx = 0; cgIdx < colorGroups.length; cgIdx++) {
-          var cg = colorGroups[cgIdx];
-          var sizes = cg.sizes || [];
-
-          for (var szIdx = 0; szIdx < sizes.length; szIdx++) {
-            var sz = sizes[szIdx];
-            var q = 0;
-            if (sz.qtyByDate && sz.qtyByDate[rawDate] !== undefined) {
-              q = Number(sz.qtyByDate[rawDate]) || 0;
-            } else {
-              q = Number(sz.totalSizeQty) || 0;
-            }
-
-            var rowVals = [
-              (bIdx + 1),
-              '',
-              blk.code || '',
-              blk.productName || '',
-              blk.upVendor || '',
-              cg.color || '',
-              sz.size || '',
-              q,
-              blk.catatan || ''
-            ];
-            sheet.getRange(currentRow, 1, 1, rowVals.length).setValues([rowVals]);
-            sheet.setRowHeight(currentRow, 46);
-            currentRow++;
-          }
-        }
-
-        var endBlockRow = currentRow - 1;
-        var numBlockRows = endBlockRow - startBlockRow + 1;
-        if (numBlockRows > 1) {
-          sheet.getRange(startBlockRow, 1, numBlockRows, 1).merge(); // NO
-          sheet.getRange(startBlockRow, 2, numBlockRows, 1).merge(); // FOTO
-          sheet.getRange(startBlockRow, 3, numBlockRows, 1).merge(); // KODE
-          sheet.getRange(startBlockRow, 4, numBlockRows, 1).merge(); // NAMA
-          sheet.getRange(startBlockRow, 5, numBlockRows, 1).merge(); // UP
-          sheet.getRange(startBlockRow, 9, numBlockRows, 1).merge(); // CATATAN
-        }
-
-        // Tampilkan gambar produk
-        var photoUrl = String(blk.photoUrl || '').trim();
-        if (photoUrl && (photoUrl.indexOf('http://') === 0 || photoUrl.indexOf('https://') === 0)) {
-          sheet.getRange(startBlockRow, 2).setFormula('=IMAGE("' + photoUrl + '", 1)');
-        }
-      }
-    } else if (items && items.length > 0) {
-      // MODE FLAT ITEMS
-      for (var itIdx = 0; itIdx < items.length; itIdx++) {
-        var it = items[itIdx];
-        var note = it.no_surat_jalan ? ('[' + it.no_surat_jalan + '] ') : '';
-        note += (it.keterangan || it.catatan || '');
-
-        var itRowVals = [
-          (itIdx + 1),
-          '',
-          it.kode_produksi || '',
-          it.nama_produk || '',
-          it.up_vendor || it.keterangan || '',
-          it.warna || '',
-          it.size || '',
-          Number(it.qty) || 0,
-          note.trim()
-        ];
-        sheet.getRange(currentRow, 1, 1, itRowVals.length).setValues([itRowVals]);
-
-        var itPhoto = String(it.foto_url || '').trim();
-        if (itPhoto && (itPhoto.indexOf('http://') === 0 || itPhoto.indexOf('https://') === 0)) {
-          sheet.getRange(currentRow, 2).setFormula('=IMAGE("' + itPhoto + '", 1)');
-        }
-
-        sheet.setRowHeight(currentRow, 46);
-        currentRow++;
-      }
-    }
-
-    var lastDataRow = currentRow - 1;
-    if (lastDataRow >= startDataRow) {
-      var dataRange = sheet.getRange(startDataRow, 1, (lastDataRow - startDataRow + 1), tableHeaders.length);
-      dataRange.setFontSize(9).setVerticalAlignment('middle');
-      dataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
-      sheet.getRange(startDataRow, 1, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('center'); // NO
-      sheet.getRange(startDataRow, 2, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('center'); // FOTO
-      sheet.getRange(startDataRow, 3, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('center').setFontWeight('bold').setFontFamily('monospace'); // KODE
-      sheet.getRange(startDataRow, 4, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('left'); // NAMA
-      sheet.getRange(startDataRow, 5, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('left'); // UP
-      sheet.getRange(startDataRow, 6, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('left').setFontWeight('bold'); // WARNA
-      sheet.getRange(startDataRow, 7, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('center').setFontWeight('bold'); // SIZE
-      sheet.getRange(startDataRow, 8, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#0369A1').setBackground('#F0F9FF'); // QTY
-      sheet.getRange(startDataRow, 9, (lastDataRow - startDataRow + 1), 1).setHorizontalAlignment('left'); // CATATAN
-
-      // Format Text vs Number
-      sheet.getRange(startDataRow, 1, (lastDataRow - startDataRow + 1), 7).setNumberFormat('@');
-      sheet.getRange(startDataRow, 8, (lastDataRow - startDataRow + 1), 1).setNumberFormat('0');
-      sheet.getRange(startDataRow, 9, (lastDataRow - startDataRow + 1), 1).setNumberFormat('@');
-    }
-
-    // 4. FOOTER TOTAL KESELURUHAN
-    var totalRowIndex = currentRow;
-    var footerVals = ['TOTAL KESELURUHAN', '', '', '', '', '', '', totalPcs, (items.length || blocks.length) + ' Varian'];
-    sheet.getRange(totalRowIndex, 1, 1, footerVals.length).setValues([footerVals]);
-    sheet.getRange(totalRowIndex, 1, 1, 7).merge();
-    var footerRange = sheet.getRange(totalRowIndex, 1, 1, footerVals.length);
-    footerRange.setFontSize(10).setFontWeight('bold').setBackground('#E2E8F0').setFontColor('#0F172A').setVerticalAlignment('middle');
-    sheet.getRange(totalRowIndex, 1).setHorizontalAlignment('right');
-    sheet.getRange(totalRowIndex, 8).setHorizontalAlignment('center').setFontColor('#BE123C').setBackground('#FFE4E6');
-    sheet.getRange(totalRowIndex, 9).setHorizontalAlignment('left').setFontColor('#475569');
-    footerRange.setBorder(true, true, true, true, true, true, '#94A3B8', SpreadsheetApp.BorderStyle.SOLID);
-    sheet.setRowHeight(totalRowIndex, 30);
-
-    // 5. Lebar Kolom
-    sheet.setColumnWidth(1, 40);  // NO
-    sheet.setColumnWidth(2, 65);  // FOTO
-    sheet.setColumnWidth(3, 100); // KODE
-    sheet.setColumnWidth(4, 200); // NAMA
-    sheet.setColumnWidth(5, 110); // UP / VENDOR
-    sheet.setColumnWidth(6, 110); // WARNA
-    sheet.setColumnWidth(7, 70);  // SIZE
-    sheet.setColumnWidth(8, 85);  // QTY
-    sheet.setColumnWidth(9, 220); // CATATAN
+    var resMatrix = renderProductBlocksMatrix(sheet, blocks, isCMT, rawDate);
 
     return {
       success: true,
-      sheetId: sheet.getSheetId(),
+      sheetId: resMatrix.sheetId,
       sheetName: targetSheetName
     };
   } catch (err) {

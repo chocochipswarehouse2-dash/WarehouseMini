@@ -12,13 +12,11 @@ import {
   CalendarDays,
   Sparkles,
   ChevronRight,
-  Settings2,
-  Copy,
-  Check,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import {
   pushProduksiPerTanggalToGoogleSheet,
+  pushPenerimaanProduksiToGoogleSheet,
   formatDateTabName,
   formatDateIndo,
 } from '../../services/gasProduksiSync';
@@ -117,7 +115,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   // Determine initial mode & selected date
   const hasInitialDate = !!(initialDateFilter && initialDateFilter !== 'all' && availableDates.includes(initialDateFilter));
 
-  const [mode, setMode] = useState<'single' | 'all'>(() => (hasInitialDate ? 'single' : 'all'));
+  const [mode, setMode] = useState<'single' | 'all' | 'master'>(() => (hasInitialDate ? 'single' : 'all'));
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     if (hasInitialDate && initialDateFilter) return initialDateFilter;
     return availableDates[0] || '';
@@ -126,40 +124,6 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   const [isPushing, setIsPushing] = useState<boolean>(false);
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [lastSheetUrl, setLastSheetUrl] = useState<string | null>(null);
-
-  // Endpoint configuration
-  const [showEndpointConfig, setShowEndpointConfig] = useState<boolean>(false);
-  const [gasUrlInput, setGasUrlInput] = useState<string>(() => getProduksiGasUrl());
-  const [isTestingGas, setIsTestingGas] = useState<boolean>(false);
-  const [gasStatusMsg, setGasStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
-
-  const handleSaveGasUrl = () => {
-    const clean = gasUrlInput.trim();
-    if (!clean) return;
-    localStorage.setItem('wms_produksi_gas_url', clean);
-    onShowToast('URL Endpoint GAS Produksi berhasil disimpan!', 'success');
-  };
-
-  const handleTestGasEndpoint = async () => {
-    try {
-      setIsTestingGas(true);
-      setGasStatusMsg(null);
-      const cleanUrl = gasUrlInput.trim();
-      const res = await fetch(cleanUrl, { redirect: 'follow' });
-      const json = await res.json().catch(() => null);
-      if (res.ok && json) {
-        setGasStatusMsg({ text: `🟢 Terhubung Aktif: ${json?.message || 'Online'}`, ok: true });
-        localStorage.setItem('wms_produksi_gas_url', cleanUrl);
-        onShowToast('Endpoint GAS Produksi online & terhubung!', 'success');
-      } else {
-        setGasStatusMsg({ text: `🔴 HTTP ${res.status}: ${res.statusText}`, ok: false });
-      }
-    } catch (err: any) {
-      setGasStatusMsg({ text: `🔴 Gagal: ${err?.message || err}`, ok: false });
-    } finally {
-      setIsTestingGas(false);
-    }
-  };
 
   // Sync state if modal reopens or tab switches
   React.useEffect(() => {
@@ -195,6 +159,14 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
     });
   }, [availableDates, categoryItems, currentTab]);
 
+  const totalMasterQty = useMemo(() => {
+    return categoryItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+  }, [categoryItems]);
+
+  const totalMasterCodes = useMemo(() => {
+    return Array.from(new Set(categoryItems.map((it) => it.kode_produksi).filter(Boolean))).length;
+  }, [categoryItems]);
+
   const activeSummary = useMemo(() => {
     if (mode === 'single') {
       const found = dateSummaries.find((ds) => ds.dateStr === selectedDate);
@@ -203,6 +175,13 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         totalQty: found?.totalQty || 0,
         totalVariants: found?.variantsCount || 0,
         tabNames: found ? [found.tabName] : [],
+      };
+    } else if (mode === 'master') {
+      return {
+        targetCount: 1,
+        totalQty: totalMasterQty,
+        totalVariants: categoryItems.length,
+        tabNames: [`Master Produksi (${currentTab})`],
       };
     } else {
       const totalQty = dateSummaries.reduce((acc, ds) => acc + ds.totalQty, 0);
@@ -214,34 +193,52 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
         tabNames: dateSummaries.map((ds) => ds.tabName),
       };
     }
-  }, [mode, selectedDate, dateSummaries]);
+  }, [mode, selectedDate, dateSummaries, totalMasterQty, categoryItems.length, currentTab]);
 
   if (!isOpen) return null;
 
   const handleExecutePush = async () => {
     try {
       setIsPushing(true);
-      setProgressMsg('Menyiapkan data penerimaan...');
 
-      const target = mode === 'single' ? selectedDate : null;
+      if (mode === 'master') {
+        setProgressMsg(`Menulis Master Matrix ${currentTab} ke Google Spreadsheet...`);
+        const res = await pushPenerimaanProduksiToGoogleSheet({
+          items: categoryItems,
+          blocks,
+          activeTab: currentTab,
+        });
 
-      const res = await pushProduksiPerTanggalToGoogleSheet({
-        items: categoryItems,
-        blocks,
-        activeTab: currentTab,
-        targetDate: target,
-        onProgress: (cur, tot, sheetName) => {
-          setProgressMsg(`Mengirim tab ${cur}/${tot}: ${sheetName}...`);
-        },
-      });
-
-      if (res.success) {
-        onShowToast(res.message, 'success');
-        if (res.sheetUrl) {
-          setLastSheetUrl(res.sheetUrl);
+        if (res.success) {
+          onShowToast(res.message || `Sukses update tab Master Produksi (${currentTab})!`, 'success');
+          if (res.sheetUrl) {
+            setLastSheetUrl(res.sheetUrl);
+          }
+        } else {
+          onShowToast(res.message || 'Gagal push Master Produksi', 'error');
         }
       } else {
-        onShowToast(res.message || 'Gagal push ke Google Sheets', 'error');
+        setProgressMsg('Menyiapkan data penerimaan...');
+        const target = mode === 'single' ? selectedDate : null;
+
+        const res = await pushProduksiPerTanggalToGoogleSheet({
+          items: categoryItems,
+          blocks,
+          activeTab: currentTab,
+          targetDate: target,
+          onProgress: (cur, tot, sheetName) => {
+            setProgressMsg(`Mengirim tab ${cur}/${tot}: ${sheetName}...`);
+          },
+        });
+
+        if (res.success) {
+          onShowToast(res.message, 'success');
+          if (res.sheetUrl) {
+            setLastSheetUrl(res.sheetUrl);
+          }
+        } else {
+          onShowToast(res.message || 'Gagal push ke Google Sheets', 'error');
+        }
       }
     } catch (err: any) {
       console.error('Error in handleExecutePush:', err);
@@ -265,11 +262,11 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
               <h2 className="text-base font-black tracking-tight flex items-center gap-2">
                 <span>Push Sheet Penerimaan Produksi</span>
                 <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-extrabold rounded-md uppercase tracking-wider">
-                  1 Sheet Per Tanggal
+                  {mode === 'master' ? 'Master Rekap' : mode === 'single' ? '1 Tanggal' : 'Per Tanggal'}
                 </span>
               </h2>
               <p className="text-xs text-slate-400 font-medium">
-                Setiap tanggal kedatangan dibuatkan tab sheet tersendiri di Google Spreadsheet
+                Pilih push per tanggal spesifik, semua tab tanggal, atau update tab Master Produksi
               </p>
             </div>
           </div>
@@ -324,7 +321,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
               Pilih Lingkup Push Tanggal ({currentTab === 'CMT' ? 'Lokal CMT' : 'Kargo'}):
             </label>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* OPSI 1: HANYA TANGGAL TERTENTU */}
               <div
                 onClick={() => setMode('single')}
@@ -334,7 +331,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                     : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-850/50'
                 }`}
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2.5">
                   <input
                     type="radio"
                     name="pushMode"
@@ -344,7 +341,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                   />
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="text-xs font-black text-slate-900 dark:text-white flex items-center justify-between">
-                      <span>Hanya Tanggal Tertentu</span>
+                      <span>1 Tanggal Spesifik</span>
                       {mode === 'single' && (
                         <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.2 rounded">
                           Aktif
@@ -352,20 +349,20 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Hanya membuat / mengupdate <strong>1 tab sheet</strong> khusus untuk tanggal yang dipilih.
+                      Buat / perbarui <strong>1 tab sheet</strong> tanggal ini.
                     </p>
 
                     {mode === 'single' && (
                       <div className="pt-2">
                         {availableDates.length === 0 ? (
                           <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 rounded text-xs font-bold">
-                            Belum ada tanggal kedatangan untuk kategori {currentTab}
+                            Belum ada tanggal kedatangan untuk {currentTab}
                           </div>
                         ) : (
                           <select
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-emerald-400 dark:border-emerald-600 rounded-lg text-xs font-bold text-slate-900 dark:text-white outline-none"
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-emerald-400 dark:border-emerald-600 rounded-lg text-xs font-bold text-slate-900 dark:text-white outline-none"
                           >
                             {availableDates.map((dStr) => (
                               <option key={dStr} value={dStr}>
@@ -389,7 +386,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                     : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-850/50'
                 }`}
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2.5">
                   <input
                     type="radio"
                     name="pushMode"
@@ -399,7 +396,7 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                   />
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="text-xs font-black text-slate-900 dark:text-white flex items-center justify-between">
-                      <span>Semua Tanggal Sekaligus</span>
+                      <span>Semua Tab Tanggal</span>
                       {mode === 'all' && (
                         <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.2 rounded">
                           Aktif
@@ -407,93 +404,45 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Sistem akan membuat <strong>{availableDates.length} tab sheet</strong> berbeda untuk setiap tanggal penerimaan {currentTab}.
+                      Buat <strong>{availableDates.length} tab sheet</strong> terpisah per tanggal.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* OPSI 3: MASTER PRODUKSI REKAP */}
+              <div
+                onClick={() => setMode('master')}
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                  mode === 'master'
+                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-850/50'
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="radio"
+                    name="pushMode"
+                    checked={mode === 'master'}
+                    onChange={() => setMode('master')}
+                    className="mt-0.5 w-4 h-4 text-emerald-600 focus:ring-emerald-500 accent-emerald-600"
+                  />
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="text-xs font-black text-slate-900 dark:text-white flex items-center justify-between">
+                      <span>Master Produksi</span>
+                      {mode === 'master' && (
+                        <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.2 rounded">
+                          Aktif
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Tulis tab <strong>Master Produksi ({currentTab})</strong> (semua tanggal dalam 1 matriks).
                     </p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* PENGATURAN ENDPOINT & BANTUAN GAS PRODUKSI */}
-          <div className="bg-slate-50 dark:bg-slate-850/60 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setShowEndpointConfig(!showEndpointConfig)}
-                className="text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-emerald-600 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Settings2 className="w-3.5 h-3.5 text-slate-500" />
-                <span>Pengaturan Endpoint Web App GAS Produksi</span>
-                <span className="text-[10px] text-slate-400 font-normal">
-                  ({showEndpointConfig ? 'Sembunyikan' : 'Klik untuk Ubah URL'})
-                </span>
-              </button>
-
-              <a
-                href={`https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] font-semibold text-emerald-600 hover:underline flex items-center gap-1"
-              >
-                <span>Buka Spreadsheet Produksi</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            {showEndpointConfig && (
-              <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 text-xs">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                    URL Web App Google Apps Script (dari Deploy &gt; Web app):
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={gasUrlInput}
-                      onChange={(e) => setGasUrlInput(e.target.value)}
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-emerald-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveGasUrl}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition cursor-pointer"
-                    >
-                      Simpan
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleTestGasEndpoint}
-                      disabled={isTestingGas}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                    >
-                      {isTestingGas ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                      <span>Test Koneksi</span>
-                    </button>
-                  </div>
-                </div>
-
-                {gasStatusMsg && (
-                  <div className={`p-2 rounded-lg text-[11px] font-medium ${gasStatusMsg.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'}`}>
-                    {gasStatusMsg.text}
-                  </div>
-                )}
-
-                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-lg p-2.5 text-[11px] text-amber-900 dark:text-amber-200 space-y-1">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Petunjuk Deploy Google Apps Script di Spreadsheet:</span>
-                  </p>
-                  <ol className="list-decimal list-inside space-y-0.5 text-[10.5px] text-amber-800 dark:text-amber-300 pl-1 leading-relaxed">
-                    <li>Buka Spreadsheet Produksi &gt; Menu <strong>Extensions</strong> &gt; <strong>Apps Script</strong>.</li>
-                    <li>Pastikan file <code>produksi_sheet.js</code> sudah terpasang.</li>
-                    <li>Klik tombol biru <strong>Deploy</strong> &gt; <strong>Manage deployments</strong> &gt; Edit (✏️) &gt; Pilih <strong>New version</strong> &gt; <strong>Deploy</strong>.</li>
-                    <li>Salin Web App URL yang muncul, lalu tempel pada kotak di atas jika URL baru berbeda.</li>
-                  </ol>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* PREVIEW DAFTAR TAB SHEET YANG AKAN DITULIS */}
@@ -509,36 +458,61 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
             </div>
 
             <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {(mode === 'single'
-                ? dateSummaries.filter((d) => d.dateStr === selectedDate)
-                : dateSummaries
-              ).map((ds) => (
-                <div
-                  key={ds.dateStr}
-                  className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs"
-                >
+              {mode === 'master' ? (
+                <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border-2 border-emerald-500/40 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2.5">
-                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <Layers className="w-4 h-4 text-emerald-600" />
                     <div>
                       <div className="font-mono font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>{ds.tabName}</span>
-                        <span className="text-[10px] font-sans font-semibold text-slate-400">
-                          ({ds.displayDate})
+                        <span>Master Produksi ({currentTab})</span>
+                        <span className="text-[10px] font-sans font-extrabold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded">
+                          Matriks Gabungan Rekap
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                        {ds.uniqueCodesCount} Kode Produk &bull; {ds.variantsCount} Varian Baris
+                        {totalMasterCodes} Kode Produk &bull; {categoryItems.length} Varian Baris &bull; {availableDates.length} Tanggal Kedatangan
                       </div>
                     </div>
                   </div>
 
                   <div className="text-right">
                     <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
-                      {ds.totalQty.toLocaleString('id-ID')} pcs
+                      {totalMasterQty.toLocaleString('id-ID')} pcs
                     </span>
                   </div>
                 </div>
-              ))}
+              ) : (
+                (mode === 'single'
+                  ? dateSummaries.filter((d) => d.dateStr === selectedDate)
+                  : dateSummaries
+                ).map((ds) => (
+                  <div
+                    key={ds.dateStr}
+                    className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Calendar className="w-4 h-4 text-slate-400" />
+                      <div>
+                        <div className="font-mono font-black text-slate-900 dark:text-white flex items-center gap-2">
+                          <span>{ds.tabName}</span>
+                          <span className="text-[10px] font-sans font-semibold text-slate-400">
+                            ({ds.displayDate})
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                          {ds.uniqueCodesCount} Kode Produk &bull; {ds.variantsCount} Varian Baris
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                        {ds.totalQty.toLocaleString('id-ID')} pcs
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -601,6 +575,8 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
                   <span>
                     {mode === 'single'
                       ? `Push Sheet Tanggal ${formatDateIndo(selectedDate)}`
+                      : mode === 'master'
+                      ? `Push Update Tab Master Produksi (${currentTab})`
                       : `Push Semua (${activeSummary.targetCount} Sheet Tanggal)`}
                   </span>
                 </>
