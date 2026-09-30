@@ -85,6 +85,22 @@ const DEFAULT_SHIFTS: Record<string, ShiftPreset> = {
     badgeBg: 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800',
     badgeText: 'text-purple-700 dark:text-purple-300',
   },
+  'Shift 3a': {
+    masuk: '12:00',
+    pulang: '21:00',
+    color: 'purple',
+    label: 'Shift 3a (12:00 - 21:00)',
+    badgeBg: 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800',
+    badgeText: 'text-purple-700 dark:text-purple-300',
+  },
+  'Shift 3b': {
+    masuk: '13:00',
+    pulang: '22:00',
+    color: 'purple',
+    label: 'Shift 3b (13:00 - 22:00)',
+    badgeBg: 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800',
+    badgeText: 'text-purple-700 dark:text-purple-300',
+  },
   'Libur': {
     masuk: '',
     pulang: '',
@@ -282,6 +298,59 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       ...config,
     }));
   }, [masterShifts]);
+
+  // Helper untuk menyelesaikan jam kerja otomatis berdasarkan aturan Shift
+  const resolveShiftHours = (
+    shiftName: string,
+    providedJm?: string,
+    providedJp?: string
+  ): { jamMasuk: string; jamPulang: string } => {
+    const sTrim = (shiftName || '').replace(/['"]/g, '').trim();
+    const sLower = sTrim.toLowerCase();
+
+    // 1. Jika Libur / Off / Cuti / Izin / Sakit -> jam kerja kosong
+    if (
+      sLower.includes('libur') ||
+      sLower.includes('off') ||
+      sLower.includes('cuti') ||
+      sLower.includes('izin') ||
+      sLower.includes('ijin') ||
+      sLower.includes('sakit')
+    ) {
+      return { jamMasuk: '', jamPulang: '' };
+    }
+
+    // 2. Cocokkan langsung dengan allShiftOptions (Master Shift & Default Presets)
+    const exact = allShiftOptions.find((opt) => opt.name.toLowerCase() === sLower) || DEFAULT_SHIFTS[sTrim];
+    if (exact && (exact.masuk || exact.pulang)) {
+      return { jamMasuk: exact.masuk || '08:00', jamPulang: exact.pulang || '17:00' };
+    }
+
+    // 3. Pencocokan cerdas / fuzzy keyword shift:
+    if (sLower.includes('3b')) {
+      const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('3b'));
+      return { jamMasuk: opt?.masuk || '13:00', jamPulang: opt?.pulang || '22:00' };
+    }
+    if (sLower.includes('3a') || sLower.includes('shift 3') || sLower === '3') {
+      const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('3'));
+      return { jamMasuk: opt?.masuk || '12:00', jamPulang: opt?.pulang || '21:00' };
+    }
+    if (sLower.includes('shift 2') || sLower === '2') {
+      const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('2'));
+      return { jamMasuk: opt?.masuk || '09:00', jamPulang: opt?.pulang || '18:00' };
+    }
+    if (sLower.includes('shift 1') || sLower === '1') {
+      const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('1'));
+      return { jamMasuk: opt?.masuk || '08:00', jamPulang: opt?.pulang || '17:00' };
+    }
+
+    // 4. Jika custom shift dan jam kerja valid disediakan
+    if (providedJm && providedJp && /^\d{1,2}:\d{2}$/.test(providedJm) && /^\d{1,2}:\d{2}$/.test(providedJp)) {
+      return { jamMasuk: providedJm, jamPulang: providedJp };
+    }
+
+    return { jamMasuk: '08:00', jamPulang: '17:00' };
+  };
 
   // Filtered Employees for Droplist in Edit Modal
   const filteredEmployeesForModal = useMemo(() => {
@@ -661,38 +730,32 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           // Sabtu & Minggu Libur
           if (dayOfWeek === 0 || dayOfWeek === 6) {
             shiftName = 'Libur';
-            jamMasuk = '';
-            jamPulang = '';
             ket = 'Off Akhir Pekan';
           }
         } else if (templatePattern === '6_1_SUNDAY_OFF') {
           // Hanya Minggu Libur
           if (dayOfWeek === 0) {
             shiftName = 'Libur';
-            jamMasuk = '';
-            jamPulang = '';
             ket = 'Off Mingguan';
           }
         } else if (templatePattern === 'ROTATING') {
           // Rotasi Shift 1 & Shift 2
           if (dayOfWeek === 0) {
             shiftName = 'Libur';
-            jamMasuk = '';
-            jamPulang = '';
             ket = 'Off Mingguan';
           } else {
             const isShift2 = (empIdx + dIdx) % 2 === 1;
             shiftName = isShift2 ? 'Shift 2' : 'Shift 1';
-            const p = DEFAULT_SHIFTS[shiftName];
-            jamMasuk = p?.masuk || '08:00';
-            jamPulang = p?.pulang || '17:00';
             ket = isShift2 ? 'Rotasi Shift Siang' : 'Rotasi Shift Pagi';
           }
         } else if (templateDefaultShift === 'Kosong') {
           shiftName = '';
-          jamMasuk = '';
-          jamPulang = '';
         }
+
+        // Sinkronisasi otomatis jam kerja sesuai aturan Shift (Shift Rules)
+        const resolved = resolveShiftHours(shiftName);
+        jamMasuk = shiftName ? resolved.jamMasuk : '';
+        jamPulang = shiftName ? resolved.jamPulang : '';
 
         rows.push({
           nik: emp.nik,
@@ -927,21 +990,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             validDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
           }
 
-          // Default shift hours
+          // Otomatis sinkronkan Jam Kerja sesuai aturan Shift (Shift Rules)
           rawShift = rawShift.replace(/['"]/g, '').trim();
-          if (!rawJm && !rawJp) {
-            const sLower = rawShift.toLowerCase();
-            if (sLower.includes('1') || sLower.includes('shift 1')) {
-              rawJm = '08:00';
-              rawJp = '17:00';
-            } else if (sLower.includes('2') || sLower.includes('shift 2')) {
-              rawJm = '09:00';
-              rawJp = '18:00';
-            } else if (sLower.includes('3') || sLower.includes('shift 3')) {
-              rawJm = '12:00';
-              rawJp = '21:00';
-            }
-          }
+          const resolvedHours = resolveShiftHours(rawShift, rawJm, rawJp);
+          rawJm = resolvedHours.jamMasuk;
+          rawJp = resolvedHours.jamPulang;
 
           let isValid = true;
           let errorMsg = '';
@@ -991,14 +1044,17 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
 
     setImporting(true);
     try {
-      const payload = validRows.map((r) => ({
-        nik: r.nik,
-        tanggal: r.tanggal,
-        shift: r.shift,
-        jam_masuk: r.jam_masuk || null,
-        jam_pulang: r.jam_pulang || null,
-        keterangan: r.keterangan || 'Import CSV',
-      }));
+      const payload = validRows.map((r) => {
+        const hours = resolveShiftHours(r.shift, r.jam_masuk, r.jam_pulang);
+        return {
+          nik: r.nik,
+          tanggal: r.tanggal,
+          shift: r.shift,
+          jam_masuk: hours.jamMasuk || null,
+          jam_pulang: hours.jamPulang || null,
+          keterangan: r.keterangan || 'Import CSV',
+        };
+      });
 
       const result = await batchSaveRosterShifts(payload);
       onShowToast(
