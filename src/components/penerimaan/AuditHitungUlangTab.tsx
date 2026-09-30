@@ -30,6 +30,7 @@ import {
   Edit3,
   MessageSquare,
   ListPlus,
+  CloudUpload,
 } from 'lucide-react';
 import {
   UserSession,
@@ -134,22 +135,50 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
   // Queue Map: { [kode_produksi]: { catatan_petunjuk?: string, added_at?: string } }
   const [queueMap, setQueueMap] = useState<Record<string, QueueItemMetadata>>(() => loadStoredQueueMap());
+  const [isSyncingCloudQueue, setIsSyncingCloudQueue] = useState<boolean>(false);
 
   // Load and sync queue from Supabase on mount
   useEffect(() => {
     let isMounted = true;
     const syncQueueFromCloud = async () => {
       try {
+        setIsSyncingCloudQueue(true);
         const cloudQueue = await fetchPenerimaanRecountQueueFromSupabase();
-        if (isMounted && cloudQueue && typeof cloudQueue === 'object') {
-          // Merge with local queue if local has newer items, otherwise adopt cloud state
-          setQueueMap((prev) => {
-            const merged = { ...cloudQueue, ...prev };
-            return merged;
+        if (isMounted) {
+          const localQueue = loadStoredQueueMap();
+          // Merge: start with local items (what user already set on this computer)
+          const merged: Record<string, QueueItemMetadata> = { ...localQueue, ...(cloudQueue || {}) };
+
+          // Automatically include any items from penerimaanItems that have recount notes / audit history
+          penerimaanItems.forEach((it) => {
+            const norm = (it.kode_produksi || '').trim().toUpperCase();
+            if (norm && (it.recount_notes || it.recount_round || (it.recount_qty !== undefined && it.recount_qty !== null))) {
+              if (!merged[norm]) {
+                merged[norm] = {
+                  catatan_petunjuk: it.recount_notes || (it as any).catatan || '',
+                  added_at: it.recount_updated_at || it.created_at,
+                  added_by: it.recount_auditor,
+                };
+              } else if (!merged[norm].catatan_petunjuk && it.recount_notes) {
+                merged[norm].catatan_petunjuk = it.recount_notes;
+              }
+            }
           });
+
+          // If local or penerimaan items have codes not yet in cloudQueue, auto-publish to cloud!
+          const cloudKeyCount = Object.keys(cloudQueue || {}).length;
+          const mergedKeyCount = Object.keys(merged).length;
+          if (mergedKeyCount > 0 && mergedKeyCount > cloudKeyCount) {
+            console.log('[RECOUNT SYNC] Mengunggah antrian & catatan lokal ke database Cloud...');
+            await savePenerimaanRecountQueueToSupabase(merged);
+          }
+
+          setQueueMap(merged);
         }
       } catch (err) {
         console.warn('Gagal fetch antrian hitung ulang dari cloud:', err);
+      } finally {
+        if (isMounted) setIsSyncingCloudQueue(false);
       }
     };
 
@@ -167,7 +196,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       isMounted = false;
       window.removeEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
     };
-  }, []);
+  }, [penerimaanItems]);
 
   const saveQueueMap = async (updated: Record<string, QueueItemMetadata>) => {
     setQueueMap(updated);
@@ -177,13 +206,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
     // Async push to Supabase cloud
     try {
+      setIsSyncingCloudQueue(true);
       await savePenerimaanRecountQueueToSupabase(updated);
     } catch (err) {
       console.warn('Gagal simpan queue ke Supabase:', err);
+    } finally {
+      setIsSyncingCloudQueue(false);
     }
   };
 
-  const handleAddMultipleToQueue = (items: { kode_produksi: string; catatan_petunjuk?: string }[]) => {
+  const handleAddMultipleToQueue = async (items: { kode_produksi: string; catatan_petunjuk?: string }[]) => {
     const updated = { ...queueMap };
     const nowIso = new Date().toISOString();
     const userName = session?.nama || session?.username || session?.email || 'User';
@@ -198,19 +230,36 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       };
     });
 
-    saveQueueMap(updated);
+    await saveQueueMap(updated);
+
+    // Sync notes to penerimaan_produksi rows in Supabase
+    try {
+      const patchList: PenerimaanProduksiItem[] = [];
+      items.forEach((item) => {
+        if (item.catatan_petunjuk) {
+          const norm = item.kode_produksi.trim().toUpperCase();
+          const matched = penerimaanItems.filter((it) => (it.kode_produksi || '').toUpperCase() === norm);
+          matched.forEach((it) => {
+            patchList.push({ ...it, recount_notes: item.catatan_petunjuk });
+          });
+        }
+      });
+      if (patchList.length > 0) {
+        await updatePenerimaanProduksiItemsInSupabase(patchList);
+      }
+    } catch (e) {}
   };
 
-  const handleRemoveFromQueue = (code: string, e?: React.MouseEvent) => {
+  const handleRemoveFromQueue = async (code: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const norm = code.trim().toUpperCase();
     const updated = { ...queueMap };
     delete updated[norm];
-    saveQueueMap(updated);
+    await saveQueueMap(updated);
     onShowToast(`Kode ${norm} dikeluarkan dari antrian hitung ulang.`, 'info');
   };
 
-  const handleUpdateCodeNote = (code: string, note: string) => {
+  const handleUpdateCodeNote = async (code: string, note: string) => {
     const norm = code.trim().toUpperCase();
     const updated = {
       ...queueMap,
@@ -219,8 +268,37 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         catatan_petunjuk: note,
       },
     };
-    saveQueueMap(updated);
-    onShowToast(`Catatan untuk kode ${norm} diperbarui.`, 'success');
+    await saveQueueMap(updated);
+
+    // Also update recount_notes on rows in Supabase
+    try {
+      const itemsForThisCode = penerimaanItems.filter((it) => (it.kode_produksi || '').toUpperCase() === norm);
+      if (itemsForThisCode.length > 0) {
+        const patchList = itemsForThisCode.map((it) => ({
+          ...it,
+          recount_notes: note,
+        }));
+        await updatePenerimaanProduksiItemsInSupabase(patchList);
+      }
+    } catch (e) {
+      console.warn('Gagal update catatan ke Supabase rows:', e);
+    }
+
+    onShowToast(`Catatan untuk kode ${norm} diperbarui & disinkronkan ke semua user.`, 'success');
+  };
+
+  // Force Push Entire Local Queue to Supabase
+  const handleForceSyncQueueToCloud = async () => {
+    try {
+      setIsSyncingCloudQueue(true);
+      await savePenerimaanRecountQueueToSupabase(queueMap);
+      onShowToast(`Berhasil! ${Object.keys(queueMap).length} kode antrian & catatan telah disinkronkan ke Cloud dan dapat dilihat semua user.`, 'success');
+    } catch (err) {
+      console.error('Gagal sinkron manual antrian:', err);
+      onShowToast('Gagal sinkron ke Cloud.', 'error');
+    } finally {
+      setIsSyncingCloudQueue(false);
+    }
   };
 
   // Queue Filters & Search
@@ -984,6 +1062,20 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 >
                   <ListPlus className="w-4 h-4" />
                   <span>+ Panggil Kode (Multiple)</span>
+                </button>
+
+                {/* Cloud Sync Manual Push */}
+                <button
+                  type="button"
+                  onClick={handleForceSyncQueueToCloud}
+                  disabled={isSyncingCloudQueue}
+                  className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  title="Upload antrian & petunjuk lokal ke database Cloud agar langsung terbaca di semua user"
+                >
+                  <CloudUpload className={`w-4 h-4 ${isSyncingCloudQueue ? 'animate-bounce text-indigo-500' : ''}`} />
+                  <span className="hidden sm:inline">
+                    {isSyncingCloudQueue ? 'Sinkron Cloud...' : 'Sinkron Cloud'}
+                  </span>
                 </button>
 
                 {/* Refresh */}
