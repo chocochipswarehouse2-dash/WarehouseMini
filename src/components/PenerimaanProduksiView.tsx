@@ -379,8 +379,26 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const [filterKategori, setFilterKategori] = useState<string>('Semua');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterRecountStatus, setFilterRecountStatus] = useState<'all' | 'diff' | 'counted' | 'uncounted'>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const rowsPerPage = 50;
+
+  // Hitung jumlah data per status audit untuk badge modal
+  const recountCounts = useMemo(() => {
+    let diff = 0;
+    let counted = 0;
+    let uncounted = 0;
+
+    dataList.forEach((it) => {
+      const isCounted = it.recount_qty !== null && it.recount_qty !== undefined;
+      const hasDiff = it.recount_selisih !== null && it.recount_selisih !== undefined && it.recount_selisih !== 0;
+      if (hasDiff) diff++;
+      if (isCounted) counted++;
+      else uncounted++;
+    });
+
+    return { all: dataList.length, diff, counted, uncounted };
+  }, [dataList]);
 
   // Draft Recovery for in-progress goods receipt form (protects against reload, tab close, or app crash)
   const initialFormDraft = useMemo(() => {
@@ -593,6 +611,17 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       if (filterEndDate && item.tanggal_penerimaan > filterEndDate) {
         return false;
       }
+      // Filter Status Audit Hitung Ulang Fisik
+      if (filterRecountStatus === 'diff') {
+        const hasDiff = item.recount_selisih !== null && item.recount_selisih !== undefined && item.recount_selisih !== 0;
+        if (!hasDiff) return false;
+      } else if (filterRecountStatus === 'counted') {
+        const isCounted = item.recount_qty !== null && item.recount_qty !== undefined;
+        if (!isCounted) return false;
+      } else if (filterRecountStatus === 'uncounted') {
+        const isCounted = item.recount_qty !== null && item.recount_qty !== undefined;
+        if (isCounted) return false;
+      }
       // Filter Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -607,7 +636,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       }
       return true;
     });
-  }, [dataList, filterKategori, filterStartDate, filterEndDate, searchQuery]);
+  }, [dataList, filterKategori, filterStartDate, filterEndDate, filterRecountStatus, searchQuery]);
 
   // Summary Metrics
   const metrics = useMemo(() => {
@@ -2139,7 +2168,8 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         const activeFilterCount =
           (filterKategori !== 'Semua' ? 1 : 0) +
           (filterStartDate ? 1 : 0) +
-          (filterEndDate ? 1 : 0);
+          (filterEndDate ? 1 : 0) +
+          (filterRecountStatus !== 'all' ? 1 : 0);
 
         return (
           <div className="space-y-3">
@@ -2210,7 +2240,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             </div>
 
             {/* Active Filter Chips (if any filter is active) */}
-            {(filterKategori !== 'Semua' || filterStartDate || filterEndDate) && (
+            {(filterKategori !== 'Semua' || filterStartDate || filterEndDate || filterRecountStatus !== 'all') && (
               <div className="flex items-center gap-2 flex-wrap text-xs px-1">
                 <span className="text-[11px] font-bold text-slate-400">Filter Aktif:</span>
                 {filterKategori !== 'Semua' && (
@@ -2240,12 +2270,31 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                     </button>
                   </span>
                 )}
+                {filterRecountStatus !== 'all' && (
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${
+                    filterRecountStatus === 'diff'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                      : filterRecountStatus === 'counted'
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}>
+                    {filterRecountStatus === 'diff' ? '⚠️ Audit: Ada Selisih' : filterRecountStatus === 'counted' ? '🕒 Audit: Sudah Dihitung' : '⏳ Audit: Belum Dihitung'}
+                    <button
+                      type="button"
+                      onClick={() => setFilterRecountStatus('all')}
+                      className="hover:opacity-75 cursor-pointer ml-0.5"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => {
                     setFilterKategori('Semua');
                     setFilterStartDate('');
                     setFilterEndDate('');
+                    setFilterRecountStatus('all');
                   }}
                   className="text-[11px] font-bold text-rose-500 hover:underline cursor-pointer ml-1"
                 >
@@ -4241,7 +4290,85 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                 </div>
               </div>
 
-              {/* 4. Aksi & Alat Pendukung */}
+              {/* 4. Filter Status Audit Hitung Ulang Fisik */}
+              <div className="space-y-2">
+                <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                  Status Audit / Hitung Ulang Fisik
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterRecountStatus('all');
+                      setCurrentPage(1);
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col gap-0.5 transition cursor-pointer ${
+                      filterRecountStatus === 'all'
+                        ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-white font-bold'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold">Semua</span>
+                    <span className="text-[10px] opacity-75">{recountCounts.all} varian</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterRecountStatus('diff');
+                      setCurrentPage(1);
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col gap-0.5 transition cursor-pointer ${
+                      filterRecountStatus === 'diff'
+                        ? 'bg-rose-600 text-white border-rose-600 font-bold shadow-xs'
+                        : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100/60'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold flex items-center gap-1">
+                      <span>⚠️</span> Ada Selisih
+                    </span>
+                    <span className="text-[10px] font-black">{recountCounts.diff} varian</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterRecountStatus('counted');
+                      setCurrentPage(1);
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col gap-0.5 transition cursor-pointer ${
+                      filterRecountStatus === 'counted'
+                        ? 'bg-blue-600 text-white border-blue-600 font-bold shadow-xs'
+                        : 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100/60'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold flex items-center gap-1">
+                      <span>🕒</span> Dihitung
+                    </span>
+                    <span className="text-[10px] opacity-85">{recountCounts.counted} varian</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterRecountStatus('uncounted');
+                      setCurrentPage(1);
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex flex-col gap-0.5 transition cursor-pointer ${
+                      filterRecountStatus === 'uncounted'
+                        ? 'bg-slate-700 text-white border-slate-700 font-bold shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold flex items-center gap-1">
+                      <span>⏳</span> Belum
+                    </span>
+                    <span className="text-[10px] opacity-75">{recountCounts.uncounted} varian</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 5. Aksi & Alat Pendukung */}
               <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
                   Aksi &amp; Alat Pendukung
@@ -4283,6 +4410,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
                   setFilterKategori('Semua');
                   setFilterStartDate('');
                   setFilterEndDate('');
+                  setFilterRecountStatus('all');
                   setCurrentPage(1);
                 }}
                 className="px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition cursor-pointer"
