@@ -20,6 +20,8 @@ import {
   Square,
   Sparkles,
   FileText,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
@@ -43,6 +45,13 @@ export interface MatrixSizeItem {
   qtyReturByDate?: Record<string, number>; // dateString -> qty retur (Khusus CMT)
   totalSizeQty: number;
   totalSizeRetur?: number;
+  // Audit & Hitung Ulang Fisik
+  recountFisik?: number | null;
+  recountSelisih?: number | null;
+  recountRound?: number;
+  recountNotes?: string;
+  recountAuditor?: string;
+  recountUpdatedAt?: string;
 }
 
 export interface MatrixColorGroup {
@@ -68,6 +77,11 @@ export interface MatrixProductBlock {
   totalDatang: number; // Gross datang
   totalRetur?: number; // Total retur
   totalNet: number; // Datang - Retur
+  // Recount metrics for the block
+  totalRecountFisik?: number | null;
+  totalRecountSelisih?: number | null;
+  hasRecount?: boolean;
+  hasDiff?: boolean;
   // Kesimpulan metrics
   kg: number;
   ongkirPerKg: number;
@@ -320,6 +334,28 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           totalColorQty += totalSizeQty;
           totalColorRetur += totalSizeRetur;
 
+          // Ekstrak hasil hitung ulang fisik terkini untuk size ini
+          let rFisik: number | null = null;
+          let rSelisih: number | null = null;
+          let rRound: number | undefined = undefined;
+          let rNotes: string | undefined = undefined;
+          let rAuditor: string | undefined = undefined;
+          let rUpdatedAt: string | undefined = undefined;
+
+          for (const it of sItems) {
+            if (it.recount_qty !== undefined && it.recount_qty !== null) {
+              rFisik = Number(it.recount_qty);
+              rSelisih = it.recount_selisih !== undefined && it.recount_selisih !== null
+                ? Number(it.recount_selisih)
+                : (rFisik - totalSizeQty);
+              rRound = it.recount_round;
+              rNotes = it.recount_notes;
+              rAuditor = it.recount_auditor;
+              rUpdatedAt = it.recount_updated_at;
+              break;
+            }
+          }
+
           return {
             id: sItems[0]?.id,
             size: sz,
@@ -327,6 +363,12 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             qtyReturByDate,
             totalSizeQty,
             totalSizeRetur,
+            recountFisik: rFisik,
+            recountSelisih: rSelisih,
+            recountRound: rRound,
+            recountNotes: rNotes,
+            recountAuditor: rAuditor,
+            recountUpdatedAt: rUpdatedAt,
           };
         });
 
@@ -342,6 +384,25 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       });
 
       const totalNet = Math.max(0, totalDatang - (isCMT ? totalRetur : 0));
+
+      // Hitung agregat audit hitung ulang untuk kode produk ini
+      let blockRecountFisik: number | null = null;
+      let blockRecountSelisih: number | null = null;
+      let blockHasRecount = false;
+      let blockHasDiff = false;
+
+      colorGroups.forEach((cg) => {
+        cg.sizes.forEach((sz) => {
+          if (sz.recountFisik !== null && sz.recountFisik !== undefined) {
+            blockHasRecount = true;
+            blockRecountFisik = (blockRecountFisik || 0) + sz.recountFisik;
+            if (sz.recountSelisih !== null && sz.recountSelisih !== undefined) {
+              blockRecountSelisih = (blockRecountSelisih || 0) + sz.recountSelisih;
+              if (sz.recountSelisih !== 0) blockHasDiff = true;
+            }
+          }
+        });
+      });
 
       // Extract catatan / keterangan khusus produk
       const distinctNotes = Array.from(
@@ -375,6 +436,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         totalDatang,
         totalRetur,
         totalNet,
+        totalRecountFisik: blockRecountFisik,
+        totalRecountSelisih: blockRecountSelisih,
+        hasRecount: blockHasRecount,
+        hasDiff: blockHasDiff,
         kg,
         ongkirPerKg,
         totalOngkir,
@@ -473,7 +538,10 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     setIsExportModalOpen(true);
   };
 
-  // Filter blocks according to date filter & search query
+  // Quick Filter Hitung Ulang: 'all' | 'diff' (ada selisih) | 'counted' | 'uncounted'
+  const [recountFilter, setRecountFilter] = useState<'all' | 'diff' | 'counted' | 'uncounted'>('all');
+
+  // Filter blocks according to date filter, recount status & search query
   const effectiveQuery = (searchQuery !== undefined ? searchQuery : search).trim().toLowerCase();
 
   const filteredBlocks = useMemo(() => {
@@ -482,6 +550,15 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     // Filter per tanggal penerimaan jika dipilih spesifik
     if (selectedDateFilter && selectedDateFilter !== 'all') {
       result = result.filter((b) => b.dateSlots.includes(selectedDateFilter));
+    }
+
+    // Filter status audit hitung ulang
+    if (recountFilter === 'diff') {
+      result = result.filter((b) => b.hasDiff);
+    } else if (recountFilter === 'counted') {
+      result = result.filter((b) => b.hasRecount);
+    } else if (recountFilter === 'uncounted') {
+      result = result.filter((b) => !b.hasRecount);
     }
 
     if (!effectiveQuery) return result;
@@ -493,7 +570,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         (b.upVendor && b.upVendor.toLowerCase().includes(effectiveQuery)) ||
         (b.catatan && b.catatan.toLowerCase().includes(effectiveQuery))
     );
-  }, [blocks, selectedDateFilter, effectiveQuery]);
+  }, [blocks, selectedDateFilter, recountFilter, effectiveQuery]);
 
   // Export Modern Excel with selected multi-choice filters
   const handleExportModernExcelWithFilters = async () => {
@@ -1108,6 +1185,60 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         </div>
       </div>
 
+      {/* QUICK FILTER STATUS AUDIT / HITUNG ULANG */}
+      <div className="flex items-center gap-1.5 flex-wrap px-1 print:hidden">
+        <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+          <Layers className="w-3.5 h-3.5 text-slate-400" />
+          Filter Audit:
+        </span>
+        <button
+          type="button"
+          onClick={() => setRecountFilter('all')}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+            recountFilter === 'all'
+              ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-2xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+          }`}
+        >
+          Semua ({blocks.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setRecountFilter('diff')}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+            recountFilter === 'diff'
+              ? 'bg-rose-600 text-white shadow-2xs'
+              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
+          }`}
+        >
+          <AlertTriangle className="w-3 h-3 text-rose-500" />
+          <span>⚠️ Ada Selisih ({blocks.filter((b) => b.hasDiff).length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRecountFilter('counted')}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+            recountFilter === 'counted'
+              ? 'bg-blue-600 text-white shadow-2xs'
+              : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+          }`}
+        >
+          <Clock className="w-3 h-3 text-blue-500" />
+          <span>🕒 Sudah Dihitung ({blocks.filter((b) => b.hasRecount).length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setRecountFilter('uncounted')}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+            recountFilter === 'uncounted'
+              ? 'bg-slate-600 text-white shadow-2xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+          }`}
+        >
+          Belum Dihitung ({blocks.filter((b) => !b.hasRecount).length})
+        </button>
+      </div>
+
       {/* EXPORT OPTIONS MODAL (MULTI-CHOICE SELECTION) */}
       {isExportModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1505,9 +1636,20 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                           </th>
                         )}
 
-                        {/* TOTAL DATANG (NET) - NOTE: TABEL KESIMPULAN DIBUANG SESUAI PERMINTAAN */}
-                        <th rowSpan={2} className="py-2.5 px-3 min-w-[110px] bg-[#fce8e6] dark:bg-[#3d1e22]">
+                        {/* TOTAL DATANG (NET) */}
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[95px] bg-[#fce8e6] dark:bg-[#3d1e22]">
                           TOTAL<br />{isCMT ? 'DATANG (NET)' : 'DATANG'}
+                        </th>
+
+                        {/* KOLOM AUDIT / HASIL HITUNG ULANG FISIK */}
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[90px] bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
+                          FISIK<br />HITUNG
+                        </th>
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[80px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
+                          SELISIH
+                        </th>
+                        <th rowSpan={2} className="py-2.5 px-3 min-w-[105px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                          STATUS
                         </th>
                       </tr>
 
@@ -1814,6 +1956,69 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                   ) : null}
                                 </td>
                               )}
+
+                              {/* 11. FISIK HITUNG (Per Varian Size) */}
+                              <td className="py-2 px-2 text-center font-mono font-bold text-xs bg-blue-50/20 dark:bg-blue-950/20">
+                                {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
+                                  <div>
+                                    <span className="text-blue-700 dark:text-blue-300 font-black">{sizeItem.recountFisik}</span>
+                                    {sizeItem.recountRound ? (
+                                      <span className="block text-[9px] font-normal text-slate-400">Rev {sizeItem.recountRound}</span>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300 dark:text-slate-700">-</span>
+                                )}
+                              </td>
+
+                              {/* 12. SELISIH (Per Varian Size) */}
+                              <td className="py-2 px-1 text-center font-mono font-bold text-xs">
+                                {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
+                                  sizeItem.recountSelisih !== null && sizeItem.recountSelisih !== undefined ? (
+                                    sizeItem.recountSelisih === 0 ? (
+                                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                        0
+                                      </span>
+                                    ) : sizeItem.recountSelisih < 0 ? (
+                                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                        {sizeItem.recountSelisih}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-black bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                                        +{sizeItem.recountSelisih}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )
+                                ) : (
+                                  <span className="text-slate-300 dark:text-slate-700">-</span>
+                                )}
+                              </td>
+
+                              {/* 13. STATUS (Per Varian Size) */}
+                              <td className="py-2 px-2 text-center text-[10px]">
+                                {sizeItem.recountFisik !== null && sizeItem.recountFisik !== undefined ? (
+                                  sizeItem.recountSelisih === 0 ? (
+                                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800">
+                                      ✅ Match
+                                    </span>
+                                  ) : (sizeItem.recountSelisih || 0) < 0 ? (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800"
+                                      title={sizeItem.recountNotes ? `Catatan: ${sizeItem.recountNotes}` : undefined}
+                                    >
+                                      ⚠️ Kurang
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                                      📦 Lebih
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-slate-400 text-[10px] italic">Belum</span>
+                                )}
+                              </td>
                             </tr>
                           );
                         });

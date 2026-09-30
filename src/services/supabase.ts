@@ -7718,6 +7718,13 @@ export async function updatePenerimaanProduksiItemsInSupabase(
     if ((item as any).catatan !== undefined) patchPayload.catatan = (item as any).catatan;
     if (item.qty_retur !== undefined) patchPayload.qty_retur = Number(item.qty_retur) || 0;
     if (item.tanggal_retur !== undefined) patchPayload.tanggal_retur = item.tanggal_retur;
+    if (item.recount_qty !== undefined) patchPayload.recount_qty = item.recount_qty;
+    if (item.recount_selisih !== undefined) patchPayload.recount_selisih = item.recount_selisih;
+    if (item.recount_status !== undefined) patchPayload.recount_status = item.recount_status;
+    if (item.recount_round !== undefined) patchPayload.recount_round = item.recount_round;
+    if (item.recount_notes !== undefined) patchPayload.recount_notes = item.recount_notes;
+    if (item.recount_auditor !== undefined) patchPayload.recount_auditor = item.recount_auditor;
+    if (item.recount_updated_at !== undefined) patchPayload.recount_updated_at = item.recount_updated_at;
 
     try {
       if (item.id && typeof item.id === 'number' && item.id < 1000000000) {

@@ -614,13 +614,22 @@ export interface PenerimaanProduksiItem {
   sku?: string;
   warna: string;
   size: string;
-  qty: number;
+  qty: number; // QTY surat jalan kedatangan asli (IMMUTABLE, TIDAK DIUBAH SAAT HITUNG ULANG)
   qty_retur?: number;
   tanggal_retur?: string;
   foto_url?: string;
   keterangan?: string;
   operator: string;
   created_at?: string;
+
+  // Dedicated Hasil Hitung Ulang Fisik & Audit Trail
+  recount_qty?: number | null; // Hasil fisik riil terkini
+  recount_selisih?: number | null; // recount_qty - total_asli
+  recount_status?: 'MATCH' | 'KURANG' | 'LEBIH' | string;
+  recount_round?: number; // Revisi putaran ke-1, ke-2, dst.
+  recount_notes?: string;
+  recount_auditor?: string;
+  recount_updated_at?: string;
 }
 
 export interface SimpanPenerimaanPayload {

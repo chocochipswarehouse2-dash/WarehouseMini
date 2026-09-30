@@ -711,3 +711,77 @@ export async function pushSuratJalanToGoogleSheet(
     error: lastError,
   };
 }
+
+export interface MasterRecountDeltaItem {
+  kode_produksi: string;
+  warna: string;
+  size: string;
+  qty_asli: number; // Surat Jalan
+  qty_fisik: number; // Hasil hitung ulang
+  selisih: number; // qty_fisik - qty_asli
+  status: 'MATCH' | 'KURANG' | 'LEBIH' | string;
+  round?: number;
+  auditor?: string;
+  catatan?: string;
+  updated_at?: string;
+}
+
+export interface MasterRecountDeltaPayload {
+  spreadsheetId?: string;
+  activeTab?: 'CMT' | 'Kargo' | string;
+  kode_produksi: string;
+  items: MasterRecountDeltaItem[];
+}
+
+/**
+ * PUSH TARGETED DELTA HITUNG ULANG KE MASTER MATRIX SPREADSHEET
+ * Hanya memperbarui baris SKU/Kode yang bersangkutan tanpa menulis ulang ribuan baris lain (Anti-Timeout)
+ */
+export async function pushMasterRecountDeltaToGoogleSheet(
+  payload: MasterRecountDeltaPayload
+): Promise<PushProduksiResponse> {
+  const gasUrl = getProduksiGasUrl();
+  const targetSpreadsheetId = payload.spreadsheetId || PRODUKSI_SPREADSHEET_ID;
+
+  const reqPayload = {
+    action: 'update_master_recount_delta',
+    spreadsheetId: targetSpreadsheetId,
+    activeTab: payload.activeTab || 'CMT',
+    kode_produksi: payload.kode_produksi,
+    items: payload.items,
+  };
+
+  try {
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(reqPayload),
+      redirect: 'follow',
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        message: `HTTP Error ${res.status}: Gagal memperbarui Master Sheet`,
+      };
+    }
+
+    const data = await res.json();
+    return {
+      success: data.success !== false,
+      message: data.message || `Sukses update hitung ulang Kode ${payload.kode_produksi} di Master Sheet!`,
+      sheetUrl: data.sheetUrl,
+      error: data.error,
+    };
+  } catch (err: any) {
+    console.warn('Gagal push recount delta ke Google Sheet:', err);
+    return {
+      success: false,
+      message: `Gagal menghubungkan ke Google Apps Script: ${err.message || err}`,
+      error: err.message || String(err),
+    };
+  }
+}
+

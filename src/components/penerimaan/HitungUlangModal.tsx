@@ -22,7 +22,12 @@ import {
   Clock,
 } from 'lucide-react';
 import { PenerimaanProduksiItem } from '../../types';
-import { pushSuratJalanToGoogleSheet, SuratJalanPushPayload } from '../../services/gasProduksiSync';
+import {
+  pushSuratJalanToGoogleSheet,
+  SuratJalanPushPayload,
+  pushMasterRecountDeltaToGoogleSheet,
+  MasterRecountDeltaItem,
+} from '../../services/gasProduksiSync';
 import {
   updatePenerimaanProduksiItemsInSupabase,
   savePenerimaanRecountLog,
@@ -603,10 +608,23 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
       const updatedItems: PenerimaanProduksiItem[] = filteredRawItems.map((it, idx) => {
         const rowKey = `${it.id || idx}-${it.kode_produksi}-${it.warna}-${it.size}-${it.tanggal_penerimaan}`;
         const stateVal = recountValues[rowKey];
-        const newQty = stateVal && stateVal.recountQty !== null ? stateVal.recountQty : it.qty;
+        const isCounted = stateVal && stateVal.recountQty !== null;
+        const countFisik = isCounted ? stateVal.recountQty : it.recount_qty ?? null;
+        const selisih = countFisik !== null ? countFisik - it.qty : null;
+        const status = selisih === null ? undefined : selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH';
+        const nextRound = isCounted ? (Number(it.recount_round) || 0) + 1 : it.recount_round;
+
         return {
           ...it,
-          qty: newQty,
+          // PENTING: it.qty TETAP ASLI (IMMUTABLE/TIDAK DIUBAH)!
+          qty: it.qty,
+          recount_qty: countFisik,
+          recount_selisih: selisih,
+          recount_status: status,
+          recount_round: nextRound,
+          recount_notes: stateVal?.note || it.recount_notes,
+          recount_auditor: auditorName || it.recount_auditor || 'Auditor',
+          recount_updated_at: new Date().toISOString(),
           keterangan: stateVal?.note
             ? `${it.keterangan ? it.keterangan + ' | ' : ''}Audit Re-count: ${stateVal.note}`
             : it.keterangan,
@@ -651,6 +669,56 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
         await loadRecountHistory();
       } catch (logErr) {
         console.warn('Gagal catat riwayat hitung ulang:', logErr);
+      }
+
+      // 3. AUTO-PUSH TARGETED DELTA KE MASTER SHEET DI GOOGLE SPREADSHEET (ANTI-TIMEOUT)
+      try {
+        const deltaItems: MasterRecountDeltaItem[] = [];
+        const sizeMap = new Map<string, { qtyAsli: number; qtyFisik: number | null; note?: string }>();
+
+        updatedItems.forEach((it) => {
+          const key = `${it.warna}_${it.size}`;
+          if (!sizeMap.has(key)) {
+            sizeMap.set(key, { qtyAsli: 0, qtyFisik: it.recount_qty ?? null, note: it.recount_notes });
+          }
+          sizeMap.get(key)!.qtyAsli += Number(it.qty) || 0;
+          if (it.recount_qty !== undefined && it.recount_qty !== null) {
+            sizeMap.get(key)!.qtyFisik = it.recount_qty;
+          }
+        });
+
+        sizeMap.forEach((val, key) => {
+          const [warna, size] = key.split('_');
+          const selisih = val.qtyFisik !== null ? val.qtyFisik - val.qtyAsli : 0;
+          const status = val.qtyFisik === null ? 'BELUM' : selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH';
+          deltaItems.push({
+            kode_produksi: selectedCode,
+            warna,
+            size,
+            qty_asli: val.qtyAsli,
+            qty_fisik: val.qtyFisik !== null ? val.qtyFisik : val.qtyAsli,
+            selisih,
+            status,
+            round: (updatedItems[0]?.recount_round || 1),
+            auditor: auditorName || 'Auditor',
+            catatan: val.note || '',
+            updated_at: new Date().toISOString(),
+          });
+        });
+
+        const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
+          activeTab: productInfo?.kategori === 'Kargo' ? 'Kargo' : 'CMT',
+          kode_produksi: selectedCode,
+          items: deltaItems,
+        });
+
+        if (deltaRes.success) {
+          onShowToast(`Auto-push Master Sheet berhasil: Data hitung ulang Kode ${selectedCode} telah diperbarui di Google Sheets!`, 'success');
+        } else {
+          console.warn('Auto-push delta response:', deltaRes.message);
+        }
+      } catch (gasErr: any) {
+        console.warn('Auto-push delta ke Google Sheet tertunda/gagal:', gasErr);
       }
 
       // 3. Panggil callback induk jika ada

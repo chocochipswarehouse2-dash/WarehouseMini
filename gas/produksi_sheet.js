@@ -66,6 +66,13 @@ function handlePushPenerimaanProduksi(data) {
     }
 
     // =========================================================================
+    // JIKA ACTION: UPDATE TARGETED DELTA HITUNG ULANG (SUPER CEPAT ANTI-TIMEOUT)
+    // =========================================================================
+    if (data.action === 'update_master_recount_delta') {
+      return updateMasterRecountDelta(ss, data);
+    }
+
+    // =========================================================================
     // JIKA MODE PER SHEET PER TANGGAL (date_sheets atau groupByDate)
     // =========================================================================
     var dateSheets = data.date_sheets || data.dateSheets || [];
@@ -152,7 +159,7 @@ function handlePushPenerimaanProduksi(data) {
         var returSlots = isCMT ? (block.returDateSlots || []) : [];
         var numDateCols = Math.max(10, dateSlots.length);
         var numReturCols = isCMT ? Math.max(5, returSlots.length) : 0;
-        var totalCols = 7 + numDateCols + numReturCols + 1;
+        var totalCols = 7 + numDateCols + numReturCols + 1 + 4; // Ditambah 4 kolom audit: FISIK HITUNG, SELISIH, STATUS, LOG
 
         var row1Vals = ['NO', 'CODE', 'PRODUCT NAME', 'UP', 'PHOTO', 'COLOR', 'SIZE'];
         for (var d = 0; d < numDateCols; d++) {
@@ -164,6 +171,10 @@ function handlePushPenerimaanProduksi(data) {
           }
         }
         row1Vals.push('TOTAL NET');
+        row1Vals.push('FISIK HASIL HITUNG');
+        row1Vals.push('SELISIH');
+        row1Vals.push('STATUS AUDIT');
+        row1Vals.push('LOG HITUNG ULANG');
 
         var row2Vals = ['', '', '', '', '', '', ''];
         for (var d1 = 0; d1 < numDateCols; d1++) {
@@ -176,7 +187,11 @@ function handlePushPenerimaanProduksi(data) {
             row2Vals.push(returLabel ? ("'" + returLabel) : '-');
           }
         }
-        row2Vals.push('');
+        row2Vals.push(''); // TOTAL NET
+        row2Vals.push(''); // FISIK HASIL HITUNG
+        row2Vals.push(''); // SELISIH
+        row2Vals.push(''); // STATUS AUDIT
+        row2Vals.push(''); // LOG HITUNG ULANG
 
         sheet.getRange(headerRow1Index, 1, 1, row1Vals.length).setValues([row1Vals]);
         sheet.getRange(headerRow2Index, 1, 1, row2Vals.length).setValues([row2Vals]);
@@ -196,7 +211,11 @@ function handlePushPenerimaanProduksi(data) {
           sheet.getRange(headerRow1Index, nextColPointer, 1, numReturCols).merge();
           nextColPointer += numReturCols;
         }
-        sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge();
+        sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // TOTAL NET
+        sheet.getRange(headerRow1Index, nextColPointer + 1, 2, 1).merge(); // FISIK HASIL HITUNG
+        sheet.getRange(headerRow1Index, nextColPointer + 2, 2, 1).merge(); // SELISIH
+        sheet.getRange(headerRow1Index, nextColPointer + 3, 2, 1).merge(); // STATUS AUDIT
+        sheet.getRange(headerRow1Index, nextColPointer + 4, 2, 1).merge(); // LOG HITUNG ULANG
 
         var headerRange = sheet.getRange(headerRow1Index, 1, 2, totalCols);
         headerRange.setBackground('#FCE8E6');
@@ -251,6 +270,18 @@ function handlePushPenerimaanProduksi(data) {
               }
             }
             dataRowVals.push(Number(block.totalNet) || 0);
+
+            var fVal = (sz.recountFisik !== undefined && sz.recountFisik !== null && sz.recountFisik !== '') ? Number(sz.recountFisik) : '';
+            var sVal = (sz.recountSelisih !== undefined && sz.recountSelisih !== null && sz.recountSelisih !== '') 
+              ? Number(sz.recountSelisih) 
+              : (fVal !== '' ? (Number(fVal) - Number(sz.totalSizeQty || 0)) : '');
+            var stVal = sz.recountStatus || (sVal !== '' ? (sVal === 0 ? 'MATCH' : sVal < 0 ? 'KURANG (' + sVal + ')' : 'LEBIH (+' + sVal + ')') : '');
+            var lgVal = sz.recountNotes || '';
+
+            dataRowVals.push(fVal);
+            dataRowVals.push(sVal);
+            dataRowVals.push(stVal);
+            dataRowVals.push(lgVal);
 
             sheet.getRange(currentRow, 1, 1, dataRowVals.length).setValues([dataRowVals]);
             sheet.getRange(currentRow, 1, 1, 7).setNumberFormat('@');
@@ -919,3 +950,145 @@ function updateIndexDaftarTanggal(ss) {
     Logger.log('updateIndexDaftarTanggal error: ' + err.toString());
   }
 }
+
+/**
+ * TARGETED DELTA UPDATE UNTUK HITUNG ULANG DI MASTER SHEET
+ * Hanya mencari baris yang cocok (CODE + COLOR + SIZE) dan meng-update kolom recount tanpa menyentuh baris lain.
+ * Menghindari timeout Google Apps Script ketika data Master Sheet sudah mencapai ribuan baris!
+ */
+function updateMasterRecountDelta(ss, data) {
+  try {
+    var activeTab = data.activeTab || 'CMT';
+    var targetSheetName = data.sheetName || ('Master Produksi (' + activeTab + ')');
+    var sheet = ss.getSheetByName(targetSheetName);
+    
+    if (!sheet) {
+      return {
+        success: false,
+        error: 'Tab Master Sheet "' + targetSheetName + '" tidak ditemukan. Silakan lakukan push Master Sheet awal terlebih dahulu.'
+      };
+    }
+
+    var items = data.items || [];
+    if (!items || items.length === 0) {
+      return { success: true, message: 'Tidak ada item hitung ulang yang dikirim.', updatedCount: 0 };
+    }
+
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 3) {
+      return { success: false, error: 'Master sheet belum memiliki data yang valid.' };
+    }
+
+    // 1. Dapatkan Header untuk menemukan atau membuat kolom audit
+    var headerRow1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    
+    var colFisik = -1;
+    var colSelisih = -1;
+    var colStatus = -1;
+    var colLog = -1;
+
+    for (var c = 0; c < headerRow1.length; c++) {
+      var hText = String(headerRow1[c]).trim().toUpperCase();
+      if (hText.indexOf('FISIK') !== -1) colFisik = c + 1;
+      else if (hText.indexOf('SELISIH') !== -1) colSelisih = c + 1;
+      else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') colStatus = c + 1;
+      else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) colLog = c + 1;
+    }
+
+    // Jika kolom audit belum ada di Master Sheet, sisipkan otomatis di paling kanan
+    if (colFisik === -1 || colSelisih === -1 || colStatus === -1 || colLog === -1) {
+      var startNewCol = lastCol + 1;
+      sheet.insertColumnsAfter(lastCol, 4);
+      
+      colFisik = startNewCol;
+      colSelisih = startNewCol + 1;
+      colStatus = startNewCol + 2;
+      colLog = startNewCol + 3;
+
+      var newHeaders = [['FISIK HASIL HITUNG', 'SELISIH', 'STATUS AUDIT', 'LOG HITUNG ULANG']];
+      sheet.getRange(1, startNewCol, 1, 4).setValues(newHeaders);
+      sheet.getRange(2, startNewCol, 1, 4).setValues([['', '', '', '']]);
+      
+      for (var hi = 0; hi < 4; hi++) {
+        sheet.getRange(1, startNewCol + hi, 2, 1).merge();
+      }
+
+      var headerRange = sheet.getRange(1, startNewCol, 2, 4);
+      headerRange.setBackground('#FCE8E6');
+      headerRange.setFontColor('#0F172A');
+      headerRange.setFontWeight('bold');
+      headerRange.setFontSize(9);
+      headerRange.setHorizontalAlignment('center');
+      headerRange.setVerticalAlignment('middle');
+      headerRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+    }
+
+    // 2. Baca Kolom CODE (Col 2), COLOR (Col 6), SIZE (Col 7) untuk pemetaan baris super cepat
+    var rowsData = sheet.getRange(3, 1, lastRow - 2, 7).getValues();
+    var updatedCount = 0;
+
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var targetCode = String(it.kode_produksi || '').trim().toUpperCase();
+      var targetColor = String(it.warna || '').trim().toUpperCase();
+      var targetSize = String(it.size || '').trim().toUpperCase();
+
+      for (var r = 0; r < rowsData.length; r++) {
+        var rowCode = String(rowsData[r][1] || '').trim().toUpperCase();
+        var rowColor = String(rowsData[r][5] || '').trim().toUpperCase();
+        var rowSize = String(rowsData[r][6] || '').trim().toUpperCase();
+
+        var isMatch = (rowCode === targetCode) &&
+                      (!targetColor || !rowColor || rowColor === targetColor) &&
+                      (!targetSize || !rowSize || rowSize === targetSize);
+
+        if (isMatch) {
+          var targetRowNum = r + 3; // +3 karena offset 2 baris header
+
+          // Set Nilai Fisik & Selisih
+          sheet.getRange(targetRowNum, colFisik).setValue(Number(it.qty_fisik) || 0).setNumberFormat('0');
+          
+          var selisihVal = Number(it.selisih) || 0;
+          var selisihRange = sheet.getRange(targetRowNum, colSelisih);
+          selisihRange.setValue(selisihVal).setNumberFormat('0');
+
+          var statusRange = sheet.getRange(targetRowNum, colStatus);
+          var statusText = it.status || (selisihVal === 0 ? 'MATCH' : selisihVal < 0 ? 'KURANG (' + selisihVal + ')' : 'LEBIH (+' + selisihVal + ')');
+          statusRange.setValue(statusText);
+
+          // Format Pewarnaan Otomatis Selisih & Status
+          if (selisihVal < 0) {
+            selisihRange.setBackground('#FEE2E2').setFontColor('#991B1B').setFontWeight('bold');
+            statusRange.setBackground('#FEE2E2').setFontColor('#991B1B').setFontWeight('bold');
+          } else if (selisihVal > 0) {
+            selisihRange.setBackground('#DBEAFE').setFontColor('#1E40AF').setFontWeight('bold');
+            statusRange.setBackground('#DBEAFE').setFontColor('#1E40AF').setFontWeight('bold');
+          } else {
+            selisihRange.setBackground('#DCFCE7').setFontColor('#166534').setFontWeight('bold');
+            statusRange.setBackground('#DCFCE7').setFontColor('#166534').setFontWeight('bold');
+          }
+
+          // Catat Log Putaran & Petugas
+          var logDateStr = it.updated_at ? formatDateIndo(it.updated_at) : formatDateIndo(new Date().toISOString());
+          var logText = 'Rev ' + (it.round || 1) + ' [' + logDateStr + '] (' + (it.auditor || 'Auditor') + ')';
+          if (it.catatan) logText += ': ' + it.catatan;
+          
+          sheet.getRange(targetRowNum, colLog).setValue(logText).setFontSize(8.5);
+          updatedCount++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Sukses memperbarui ' + updatedCount + ' baris hasil hitung ulang Kode ' + (data.kode_produksi || '') + ' di Master Sheet secara instan!',
+      updatedCount: updatedCount,
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/edit#gid=' + sheet.getSheetId()
+    };
+  } catch (err) {
+    Logger.log('updateMasterRecountDelta error: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
