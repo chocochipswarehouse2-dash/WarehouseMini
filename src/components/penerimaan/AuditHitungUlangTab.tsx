@@ -647,7 +647,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       };
     });
     setVariantInputs(updated);
-    onShowToast('Seluruh kuantitas fisik telah diisi sama persis dengan kedatangan asli.', 'info');
+    onShowToast('Seluruh kuantitas fisik telah diisi sesuai dengan hitungan awal.', 'info');
   };
 
   // Quick Action: Reset all inputs
@@ -1529,7 +1529,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   onClick={handleQuickFillSameAsOriginal}
                   className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-lg text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition cursor-pointer"
                 >
-                  ⚡ Set Semua Sesuai Asli
+                  ⚡ Set Sesuai Hitungan Awal
                 </button>
                 <button
                   type="button"
@@ -1549,9 +1549,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     <th className="py-2.5 px-3 text-center w-12">No</th>
                     <th className="py-2.5 px-3">Warna</th>
                     <th className="py-2.5 px-3 text-center w-16">Size</th>
-                    <th className="py-2.5 px-3 text-center w-28">Kedatangan Asli</th>
+                    <th className="py-2.5 px-3 text-center w-28">Hitungan Awal</th>
                     <th className="py-2.5 px-3 text-center w-36 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200">
-                      Input Qty Fisik
+                      Qty Hitung Ulang
                     </th>
                     <th className="py-2.5 px-3 text-center w-24">Selisih</th>
                     <th className="py-2.5 px-3 text-center w-28">Status</th>
@@ -2087,8 +2087,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <th style={{ width: '30px' }}>No</th>
                   <th>Warna</th>
                   <th style={{ width: '60px' }}>Size</th>
-                  <th style={{ width: '90px' }}>Qty Asli SJ</th>
-                  <th style={{ width: '100px' }}>Hasil Fisik</th>
+                  <th style={{ width: '90px' }}>Hitungan Awal</th>
+                  <th style={{ width: '100px' }}>Qty Hitung Ulang</th>
                   <th style={{ width: '80px' }}>Selisih</th>
                   <th>Keterangan / Kondisi Barang</th>
                 </tr>

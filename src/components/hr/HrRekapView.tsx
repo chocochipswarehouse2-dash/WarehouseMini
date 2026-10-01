@@ -32,6 +32,7 @@ import {
   updateCutiStatus,
   updateCutiRecord,
   deleteCutiRecord,
+  removeRosterShiftForCuti,
   updatePresensiRecord,
   deletePresensiRecord,
 } from '../../services/supabase';
@@ -212,6 +213,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     setActionLoadingId(item.id);
     try {
       await updateCutiStatus(item.id, 'Diajukan', '');
+      await removeRosterShiftForCuti(item);
       setCutiList((prev) =>
         prev.map((c) => (c.id === item.id ? { ...c, status: 'Diajukan', approved_by: undefined } : c))
       );
@@ -230,6 +232,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     setActionLoadingId(item.id);
     try {
       await deleteCutiRecord(item.id);
+      await removeRosterShiftForCuti(item);
       setCutiList((prev) => prev.filter((c) => c.id !== item.id));
       playSuccessBeep();
       onShowToast(`Data cuti ${item.nama} berhasil dihapus permanen.`, 'success');

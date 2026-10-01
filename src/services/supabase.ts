@@ -6605,35 +6605,109 @@ export async function recordPerbaikanStockMutation(params: {
  */
 export async function upsertRosterShiftForCuti(cuti: PerijinanCutiRecord): Promise<void> {
   const sb = getSupabaseClient();
-  const dStart = new Date(cuti.tgl_mulai);
-  const dEnd = new Date(cuti.tgl_selesai);
-  
-  const dates = [];
-  let current = new Date(dStart);
-  while (current <= dEnd) {
-    const year = current.getFullYear();
-    const month = String(current.getMonth() + 1).padStart(2, '0');
-    const day = String(current.getDate()).padStart(2, '0');
-    dates.push(`${year}-${month}-${day}`);
-    current.setDate(current.getDate() + 1);
+  if (!cuti.tgl_mulai || !cuti.tgl_selesai || !cuti.nik) return;
+
+  const dates: string[] = [];
+  try {
+    const [sY, sM, sD] = cuti.tgl_mulai.split("-").map(Number);
+    const [eY, eM, eD] = cuti.tgl_selesai.split("-").map(Number);
+    const current = new Date(sY, sM - 1, sD);
+    const end = new Date(eY, eM - 1, eD);
+
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, "0");
+      const day = String(current.getDate()).padStart(2, "0");
+      dates.push(`${year}-${month}-${day}`);
+      current.setDate(current.getDate() + 1);
+    }
+  } catch (err) {
+    console.warn("Gagal parsing rentang tanggal cuti:", err);
+    dates.push(cuti.tgl_mulai);
   }
-  
-  const payload = dates.map(tanggal => ({
-    nik: cuti.nik,
-    tanggal,
-    shift: cuti.jenis.toUpperCase().includes('CUTI') ? 'CUTI' : 'IJIN',
-    keterangan: cuti.alasan,
-  }));
-  
-  // Using upsert on NIK & Tanggal requires unique constraint on (nik, tanggal), 
-  // but let's just insert/update each sequentially or use upsert if supported.
-  for (const record of payload) {
-    // Check if exists
-    const { data: existing } = await sb.from('roster_shift').select('id').eq('nik', record.nik).eq('tanggal', record.tanggal).limit(1);
-    if (existing && existing.length > 0) {
-      await sb.from('roster_shift').update(record).eq('id', existing[0].id);
-    } else {
-      await sb.from('roster_shift').insert([record]);
+
+  const jUpper = (cuti.jenis || "").toUpperCase();
+  let shiftLabel = "Cuti";
+  if (jUpper.includes("SAKIT")) {
+    shiftLabel = "Sakit";
+  } else if (jUpper.includes("IZIN") || jUpper.includes("IJIN")) {
+    shiftLabel = "Izin";
+  }
+
+  const ketText = `[${cuti.jenis || shiftLabel}] ${cuti.alasan || ""}`.trim();
+
+  for (const tanggal of dates) {
+    const record = {
+      nik: cuti.nik,
+      tanggal,
+      shift: shiftLabel,
+      jam_masuk: "",
+      jam_pulang: "",
+      keterangan: ketText,
+    };
+
+    try {
+      const { data: existing } = await sb
+        .from("roster_shift")
+        .select("id")
+        .eq("nik", cuti.nik)
+        .eq("tanggal", tanggal)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        await sb.from("roster_shift").update(record).eq("id", existing[0].id);
+      } else {
+        await sb.from("roster_shift").insert([record]);
+      }
+    } catch (eRecord) {
+      console.warn("Gagal upsert roster shift untuk cuti:", eRecord);
+    }
+  }
+}
+
+/**
+ * Hapus / reset roster shift cuti saat pengajuan cuti ditolak / direset
+ */
+export async function removeRosterShiftForCuti(cuti: PerijinanCutiRecord): Promise<void> {
+  const sb = getSupabaseClient();
+  if (!cuti.tgl_mulai || !cuti.tgl_selesai || !cuti.nik) return;
+
+  const dates: string[] = [];
+  try {
+    const [sY, sM, sD] = cuti.tgl_mulai.split("-").map(Number);
+    const [eY, eM, eD] = cuti.tgl_selesai.split("-").map(Number);
+    const current = new Date(sY, sM - 1, sD);
+    const end = new Date(eY, eM - 1, eD);
+
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, "0");
+      const day = String(current.getDate()).padStart(2, "0");
+      dates.push(`${year}-${month}-${day}`);
+      current.setDate(current.getDate() + 1);
+    }
+  } catch {
+    dates.push(cuti.tgl_mulai);
+  }
+
+  for (const tanggal of dates) {
+    try {
+      const { data: existing } = await sb
+        .from("roster_shift")
+        .select("id, shift")
+        .eq("nik", cuti.nik)
+        .eq("tanggal", tanggal)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        const s = (existing[0].shift || "").toLowerCase();
+        if (s.includes("cuti") || s.includes("izin") || s.includes("ijin") || s.includes("sakit")) {
+          // Reset kembali ke shift normal atau hapus dari roster khusus
+          await sb.from("roster_shift").delete().eq("id", existing[0].id);
+        }
+      }
+    } catch (eDel) {
+      console.warn("Gagal remove roster shift cuti:", eDel);
     }
   }
 }

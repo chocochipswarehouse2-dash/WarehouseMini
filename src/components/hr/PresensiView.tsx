@@ -24,6 +24,7 @@ import {
   FileText,
   Lock,
   Unlock,
+  Palmtree,
 } from 'lucide-react';
 import {
   UserSession,
@@ -46,6 +47,7 @@ import {
   fetchKaryawanDirectory,
   fetchIzinPulangAwalList,
   submitIzinPulangAwalRecord,
+  fetchCutiRecords,
   fetchTukarShiftList,
   submitTukarShiftRecord,
   fetchLemburRecords,
@@ -142,17 +144,42 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     if (!todayIso || !userNik) return;
     setLoading(true);
     try {
-      const [presensi, masterShifts, roster, kList, izinPulang, tukarShift] = await Promise.all([
+      const [presensi, masterShifts, roster, kList, izinPulang, tukarShift, cutis] = await Promise.all([
         fetchPresensiToday(userNik, todayIso),
         fetchMasterShiftList(),
         fetchRosterShiftList(userNik, todayIso),
         fetchKaryawanDirectory(),
         fetchIzinPulangAwalList(userNik, todayIso),
         fetchTukarShiftList(userNik),
+        fetchCutiRecords(userNik),
       ]);
       setTodayPresensi(presensi);
       setShifts(masterShifts);
-      setUpcomingRoster(roster.slice(0, 7));
+
+      let effectiveRoster = [...roster];
+      const todayApprovedCuti = (cutis || []).find(
+        (c) => c.status === 'Disetujui' && c.tgl_mulai <= todayIso && c.tgl_selesai >= todayIso
+      );
+      if (todayApprovedCuti) {
+        const jUpper = (todayApprovedCuti.jenis || '').toUpperCase();
+        const leaveShift = jUpper.includes('SAKIT') ? 'Sakit' : jUpper.includes('CUTI') ? 'Cuti' : 'Izin';
+        const existingIdx = effectiveRoster.findIndex((r) => r.tanggal === todayIso);
+        const cutiRec = {
+          nik: userNik,
+          tanggal: todayIso,
+          shift: leaveShift,
+          jam_masuk: '',
+          jam_pulang: '',
+          keterangan: `[${todayApprovedCuti.jenis || leaveShift}] ${todayApprovedCuti.alasan || ''}`.trim(),
+        };
+        if (existingIdx !== -1) {
+          effectiveRoster[existingIdx] = { ...effectiveRoster[existingIdx], ...cutiRec };
+        } else {
+          effectiveRoster.push(cutiRec);
+        }
+      }
+
+      setUpcomingRoster(effectiveRoster.slice(0, 7));
       setKaryawanList(kList);
       setIzinPulangList(izinPulang);
       setTukarShiftList(tukarShift);
@@ -241,7 +268,13 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   }, [activeTab, loadMyKpi]);
 
   const todayRoster = upcomingRoster.find((r) => r.tanggal === todayIso);
-  const isShiftLibur = todayRoster?.shift?.toLowerCase().includes('libur');
+  const isShiftLibur = Boolean(todayRoster?.shift?.toLowerCase().includes('libur'));
+  const isShiftCutiOrIzin = Boolean(
+    todayRoster?.shift?.toLowerCase().includes('cuti') ||
+    todayRoster?.shift?.toLowerCase().includes('izin') ||
+    todayRoster?.shift?.toLowerCase().includes('ijin') ||
+    todayRoster?.shift?.toLowerCase().includes('sakit')
+  );
 
   // Determine standard shift end time
   const shiftStandarPulang = useMemo(() => {
@@ -581,6 +614,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                           <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
                             <Coffee className="w-4 h-4" /> Libur
                           </span>
+                        ) : isShiftCutiOrIzin ? (
+                          <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold">
+                            <Palmtree className="w-4 h-4" /> {todayRoster?.shift || 'Cuti / Izin'}
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-amber-500">
                             <AlertCircle className="w-4 h-4" /> Belum Presensi
@@ -611,6 +648,21 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     </div>
                   </div>
                 </div>
+
+                {/* CUTI / IZIN RESMI NOTICE */}
+                {isShiftCutiOrIzin && (
+                  <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+                    <Palmtree className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-extrabold text-sm flex items-center gap-1.5">
+                        <span>Status Hari Ini: {todayRoster?.shift} Resmi (Disetujui)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                        {todayRoster?.keterangan || "Anda sedang dalam masa cuti / izin resmi. Anda bebas dari kewajiban presensi masuk & pulang hari ini."}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* EARLY CHECKOUT NOTICE / BADGE */}
                 {todayApprovedEarlyCheckout && !todayPresensi?.jam_pulang && (
@@ -651,11 +703,11 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     <button
                       type="button"
                       onClick={handleAbsenMasuk}
-                      disabled={submitting || loading || isShiftLibur}
+                      disabled={submitting || loading || isShiftLibur || isShiftCutiOrIzin}
                       className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <LogIn className="w-5 h-5" />
-                      <span>{submitting ? 'Memproses...' : 'Presensi Masuk Sekarang'}</span>
+                      <span>{submitting ? 'Memproses...' : isShiftCutiOrIzin ? `Sedang ${todayRoster?.shift || 'Cuti / Izin'}` : isShiftLibur ? 'Hari Ini Libur (Off)' : 'Presensi Masuk Sekarang'}</span>
                     </button>
                   ) : (
                     <div className="py-3.5 px-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center justify-center gap-2">

@@ -33,7 +33,7 @@ import {
   Square,
   Layers,
 } from 'lucide-react';
-import { UserSession, RosterShiftRecord, KaryawanRecord, MasterShiftRecord } from '../../types';
+import { UserSession, RosterShiftRecord, KaryawanRecord, MasterShiftRecord, PerijinanCutiRecord } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import {
   fetchRosterShiftList,
@@ -42,6 +42,7 @@ import {
   batchSaveRosterShifts,
   deleteRosterShift,
   fetchMasterShiftList,
+  fetchCutiRecords,
 } from '../../services/supabase';
 
 interface RosterShiftViewProps {
@@ -117,6 +118,14 @@ const DEFAULT_SHIFTS: Record<string, ShiftPreset> = {
     badgeBg: 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800',
     badgeText: 'text-amber-700 dark:text-amber-300',
   },
+  'Sakit': {
+    masuk: '',
+    pulang: '',
+    color: 'rose',
+    label: 'Izin Sakit',
+    badgeBg: 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800',
+    badgeText: 'text-rose-700 dark:text-rose-300',
+  },
   'Izin': {
     masuk: '',
     pulang: '',
@@ -132,6 +141,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   const [rosterList, setRosterList] = useState<RosterShiftRecord[]>([]);
   const [karyawanList, setKaryawanList] = useState<KaryawanRecord[]>([]);
   const [masterShifts, setMasterShifts] = useState<MasterShiftRecord[]>([]);
+  const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
 
   // Access check: Edit & Hapus restricted to Admin & Superadmin only
   const userIsAdmin = useMemo(() => {
@@ -244,14 +254,74 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
   const loadData = async () => {
     setLoading(true);
     try {
-      const [roster, employees, shifts] = await Promise.all([
+      const [roster, employees, shifts, cutis] = await Promise.all([
         fetchRosterShiftList(),
         fetchKaryawanDirectory(),
         fetchMasterShiftList(),
+        fetchCutiRecords(),
       ]);
-      setRosterList(roster);
+      setCutiList(cutis || []);
       setKaryawanList(employees);
       setMasterShifts(shifts);
+
+      // Auto-merge cuti/izin/sakit yang sudah disetujui (Disetujui) ke dalam roster shift
+      const approvedCutis = (cutis || []).filter((c) => c.status === 'Disetujui');
+      const mergedRoster = [...(roster || [])];
+
+      approvedCutis.forEach((cuti) => {
+        if (!cuti.tgl_mulai || !cuti.tgl_selesai || !cuti.nik) return;
+        try {
+          const [sY, sM, sD] = cuti.tgl_mulai.split('-').map(Number);
+          const [eY, eM, eD] = cuti.tgl_selesai.split('-').map(Number);
+          const cur = new Date(sY, sM - 1, sD);
+          const end = new Date(eY, eM - 1, eD);
+
+          const jUpper = (cuti.jenis || '').toUpperCase();
+          const leaveShift = jUpper.includes('SAKIT')
+            ? 'Sakit'
+            : jUpper.includes('CUTI')
+            ? 'Cuti'
+            : 'Izin';
+          const ket = `[${cuti.jenis || leaveShift}] ${cuti.alasan || ''}`.trim();
+
+          while (cur <= end) {
+            const y = cur.getFullYear();
+            const m = String(cur.getMonth() + 1).padStart(2, '0');
+            const d = String(cur.getDate()).padStart(2, '0');
+            const dateStr = `${y}-${m}-${d}`;
+
+            const existingIdx = mergedRoster.findIndex(
+              (r) => r.nik === cuti.nik && r.tanggal === dateStr
+            );
+
+            if (existingIdx !== -1) {
+              mergedRoster[existingIdx] = {
+                ...mergedRoster[existingIdx],
+                shift: leaveShift,
+                jam_masuk: '',
+                jam_pulang: '',
+                keterangan: ket,
+              };
+            } else {
+              mergedRoster.push({
+                nik: cuti.nik,
+                nama: cuti.nama,
+                tanggal: dateStr,
+                shift: leaveShift,
+                jam_masuk: '',
+                jam_pulang: '',
+                keterangan: ket,
+              });
+            }
+
+            cur.setDate(cur.getDate() + 1);
+          }
+        } catch (eDate) {
+          console.warn('Gagal parsing rentang cuti:', eDate);
+        }
+      });
+
+      setRosterList(mergedRoster);
     } catch (err) {
       console.warn('Gagal memuat jadwal roster:', err);
       onShowToast('Gagal memuat jadwal roster', 'error');
@@ -730,6 +800,34 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       const dayOfWeek = dateObj.getDay(); // 0 = Minggu, 6 = Sabtu
 
       selectedEmployees.forEach((emp, empIdx) => {
+        // Cek apakah karyawan memiliki cuti/izin/sakit yang sudah disetujui pada tanggal ini
+        const activeLeave = cutiList.find(
+          (c) =>
+            c.status === 'Disetujui' &&
+            c.nik === emp.nik &&
+            c.tgl_mulai <= dStr &&
+            c.tgl_selesai >= dStr
+        );
+
+        if (activeLeave) {
+          const jUpper = (activeLeave.jenis || '').toUpperCase();
+          const leaveShift = jUpper.includes('SAKIT')
+            ? 'Sakit'
+            : jUpper.includes('CUTI')
+            ? 'Cuti'
+            : 'Izin';
+          rows.push({
+            nik: emp.nik,
+            nama: emp.nama,
+            tanggal: dStr,
+            shift: leaveShift,
+            jam_masuk: '',
+            jam_pulang: '',
+            keterangan: `[${activeLeave.jenis || leaveShift}] ${activeLeave.alasan || ''}`.trim(),
+          });
+          return;
+        }
+
         let shiftName = templateDefaultShift;
         let jamMasuk = defaultPreset.masuk || '08:00';
         let jamPulang = defaultPreset.pulang || '17:00';
@@ -1117,6 +1215,8 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     if (sLower.includes('3')) return { bg: DEFAULT_SHIFTS['Shift 3'].badgeBg, text: DEFAULT_SHIFTS['Shift 3'].badgeText };
     if (sLower.includes('libur') || sLower.includes('off')) return { bg: DEFAULT_SHIFTS['Libur'].badgeBg, text: DEFAULT_SHIFTS['Libur'].badgeText };
     if (sLower.includes('cuti')) return { bg: DEFAULT_SHIFTS['Cuti'].badgeBg, text: DEFAULT_SHIFTS['Cuti'].badgeText };
+    if (sLower.includes('izin') || sLower.includes('ijin')) return { bg: DEFAULT_SHIFTS['Izin'].badgeBg, text: DEFAULT_SHIFTS['Izin'].badgeText };
+    if (sLower.includes('sakit')) return { bg: DEFAULT_SHIFTS['Sakit'].badgeBg, text: DEFAULT_SHIFTS['Sakit'].badgeText };
     return { bg: 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700', text: 'text-slate-700 dark:text-slate-300' };
   };
 

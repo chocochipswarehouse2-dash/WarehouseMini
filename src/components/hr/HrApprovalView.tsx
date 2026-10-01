@@ -36,6 +36,8 @@ import {
   updateCutiStatus,
   updateCutiRecord,
   deleteCutiRecord,
+  upsertRosterShiftForCuti,
+  removeRosterShiftForCuti,
   fetchTukarShiftList,
   updateTukarShiftStatus,
   deleteTukarShiftRecord,
@@ -170,6 +172,7 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     setProcessingId(item.id);
     try {
       await deleteCutiRecord(item.id);
+      await removeRosterShiftForCuti(item);
       setCutiList((prev) => prev.filter((c) => c.id !== item.id));
       playSuccessBeep();
       onShowToast(`Permohonan cuti ${item.nama} berhasil dihapus permanen.`, 'info');
