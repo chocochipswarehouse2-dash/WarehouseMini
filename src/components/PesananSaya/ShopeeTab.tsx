@@ -34,7 +34,9 @@ import {
   ExternalLink,
   ArrowUpDown,
   Filter,
-  Check
+  Check,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getShopeeOrders, saveShopeeOrders, getAllProductsFromLocalDb } from '../../services/localDb';
@@ -53,12 +55,16 @@ export type CustomSortOption =
   | 'waktu_pembayaran_desc'
   | 'no_pesanan_asc';
 
+export type TipePesananFilter = 'ALL' | 'Reguler' | 'Instant' | 'Same Day' | 'Hemat' | 'Cargo';
+export type BatasWaktuFilter = 'ALL' | 'TERLAMBAT' | 'KURANG_24_JAM' | 'LEBIH_24_JAM';
+
 export interface ShopeeItem {
   namaProduk: string;
   namaVariasi: string;
   sku: string;
   qty: number;
   lokasi?: string;
+  isMasterProduct?: boolean; // Flag to indicate if product is mapped to master catalog
   scannedQty?: number;
 }
 
@@ -66,7 +72,9 @@ export interface ShopeeOrder {
   noPesanan: string;
   statusPesanan: string;
   noResi: string;
-  opsiPengiriman: string;
+  opsiPengiriman: string; // Normalized Courier Name, e.g. "JNE Reguler", "SPX Standard"
+  opsiPengirimanRaw?: string; // Original raw string from Excel
+  tipePengiriman: 'Reguler' | 'Instant' | 'Same Day' | 'Hemat' | 'Cargo' | 'Lainnya';
   waktuPesananDibuat: string;
   waktuPembayaran?: string;
   batasWaktuPengiriman: string;
@@ -97,13 +105,96 @@ interface ShopeeTabProps {
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+/**
+ * Normalisasi Cerdas Opsi Pengiriman Shopee
+ * Menggabungkan berbagai variasi penulisan seperti:
+ * - "Reguler (Cashless)-JNE Reguler" & "JNE Reguler" -> "JNE Reguler"
+ * - "Reguler (Cashless) - SPX Standard" & "SPX Standard" -> "SPX Standard"
+ * - "Instant - GrabExpress Instant" & "GrabExpress Instant" -> "GrabExpress Instant"
+ * - "Same Day - GoSend Same Day" & "GoSend Same Day" -> "GoSend Same Day"
+ */
+export function normalizeCourier(raw: string): {
+  courierName: string;
+  tipe: 'Reguler' | 'Instant' | 'Same Day' | 'Hemat' | 'Cargo' | 'Lainnya';
+} {
+  const s = (raw || '').trim();
+  const lower = s.toLowerCase();
+
+  // 1. Tipe Pesanan
+  let tipe: 'Reguler' | 'Instant' | 'Same Day' | 'Hemat' | 'Cargo' | 'Lainnya' = 'Reguler';
+  if (lower.includes('instant')) tipe = 'Instant';
+  else if (lower.includes('same day') || lower.includes('sameday')) tipe = 'Same Day';
+  else if (lower.includes('hemat') || lower.includes('economy')) tipe = 'Hemat';
+  else if (lower.includes('cargo') || lower.includes('kargo')) tipe = 'Cargo';
+  else if (lower.includes('reguler') || lower.includes('standard') || lower.includes('standar')) tipe = 'Reguler';
+
+  // 2. Normalisasi Nama Jasa Kirim
+  let courierName = s;
+
+  if (lower.includes('jne reguler') || lower.includes('jne cashless') || lower.includes('jne reg')) {
+    courierName = 'JNE Reguler';
+  } else if (lower.includes('jne yes')) {
+    courierName = 'JNE YES';
+  } else if (lower.includes('spx standard') || lower.includes('spx standar') || lower.includes('shopee xpress standard')) {
+    courierName = 'SPX Standard';
+  } else if (lower.includes('spx hemat') || lower.includes('shopee xpress hemat')) {
+    courierName = 'SPX Hemat';
+  } else if (lower.includes('spx instant') || lower.includes('shopee xpress instant')) {
+    courierName = 'SPX Instant';
+  } else if (lower.includes('spx sameday') || lower.includes('spx same day')) {
+    courierName = 'SPX Sameday';
+  } else if (lower.includes('gosend instant') || lower.includes('go-send instant')) {
+    courierName = 'GoSend Instant';
+  } else if (lower.includes('gosend same day') || lower.includes('go-send same day') || lower.includes('gosend sameday')) {
+    courierName = 'GoSend Same Day';
+  } else if (lower.includes('grabexpress instant') || lower.includes('grab instant')) {
+    courierName = 'GrabExpress Instant';
+  } else if (lower.includes('grabexpress sameday') || lower.includes('grab same day')) {
+    courierName = 'GrabExpress Sameday';
+  } else if (lower.includes('sicepat reg') || lower.includes('sicepat reguler') || lower.includes('sicepat gokil')) {
+    courierName = 'SiCepat REG';
+  } else if (lower.includes('j&t express') || lower.includes('jnt express')) {
+    courierName = 'J&T Express';
+  } else if (lower.includes('j&t cargo') || lower.includes('jnt cargo')) {
+    courierName = 'J&T Cargo';
+  } else {
+    // Strip common prefixes
+    courierName = s.replace(/^(Reguler\s*\(Cashless\)\s*[-:]?\s*|Hemat\s*[-:]?\s*|Instant\s*[-:]?\s*|Same\s*Day\s*[-:]?\s*)/i, '').trim() || s;
+  }
+
+  return { courierName, tipe };
+}
+
+/**
+ * Pembersih Judul Produk Marketplace jika belum ada di master produk
+ * Menghilangkan kata kunci SEO panjang e.g. "Chocochips - Unai Set / Setelan Wanita..." -> "Unai Set"
+ */
+function cleanMarketplaceTitle(title: string): string {
+  if (!title) return '';
+  let cleaned = title.trim();
+  // Remove "Chocochips - " prefix
+  cleaned = cleaned.replace(/^chocochips\s*[-–—:]\s*/i, '');
+  // Take part before first slash or dash if it's long SEO keywords
+  const parts = cleaned.split(/[\/|]/);
+  if (parts.length > 1 && parts[0].trim().length > 3) {
+    return parts[0].trim();
+  }
+  return cleaned;
+}
+
 export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
   const [orders, setOrders] = useState<ShopeeOrder[]>([]);
   const [activeTab, setActiveTab] = useState<ShopeeSystemStatus>('sedang_proses');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // 3-Level Filters (Sesuai Seller Center Shopee)
+  const [filterTipePesanan, setFilterTipePesanan] = useState<TipePesananFilter>('ALL');
+  const [filterBatasWaktu, setFilterBatasWaktu] = useState<BatasWaktuFilter>('ALL');
   const [selectedOpsiPengiriman, setSelectedOpsiPengiriman] = useState<string>('ALL');
+
   const [customSort, setCustomSort] = useState<CustomSortOption>('opsi_pengiriman_no_pesanan');
   const [loading, setLoading] = useState(false);
+  const [isSyncingMaster, setIsSyncingMaster] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
 
   // Packing Modal State
@@ -133,7 +224,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
     setLoading(true);
     try {
       const data = await getShopeeOrders();
-      // Normalize existing old statuses if any
+      // Normalize existing orders
       const normalized: ShopeeOrder[] = (data || []).map((o: any) => {
         let status_sistem: ShopeeSystemStatus = o.status_sistem || 'sedang_proses';
         if (status_sistem === ('uploaded' as any) || status_sistem === ('diproses' as any)) {
@@ -141,8 +232,14 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         } else if (status_sistem === ('on_progress' as any)) {
           status_sistem = 'proses_picking';
         }
+
+        const normCourier = normalizeCourier(o.opsiPengiriman || o.opsiPengirimanRaw || '');
+
         return {
           ...o,
+          opsiPengiriman: normCourier.courierName,
+          opsiPengirimanRaw: o.opsiPengirimanRaw || o.opsiPengiriman,
+          tipePengiriman: o.tipePengiriman || normCourier.tipe,
           status_sistem,
           tanggal_proses: o.tanggal_proses || o.tanggal_upload || new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }),
         };
@@ -153,6 +250,74 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
       onShowToast('Gagal memuat data pesanan Shopee', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Sinkronkan Ulang Semua Data Shopee ke Master Database Produk Lokal
+  const handleSyncMasterProducts = async () => {
+    setIsSyncingMaster(true);
+    try {
+      const masterProducts = await getAllProductsFromLocalDb();
+      const productMap = new Map<string, { nama: string; lokasi: string }>();
+
+      for (const p of masterProducts) {
+        if (p.k) {
+          const rawKey = String(p.k).trim().toUpperCase();
+          const cleanKey = rawKey.replace(/[\s\-_]/g, '');
+          const info = {
+            nama: p.p || p.n || (p as any).nama_produk || (p as any).nama || rawKey,
+            lokasi: p.lokasi || (p as any).lokasi_rak || '-',
+          };
+          productMap.set(rawKey, info);
+          productMap.set(cleanKey, info);
+        }
+      }
+
+      let updatedCount = 0;
+      let missingMasterCount = 0;
+
+      const updatedOrders = orders.map((order) => {
+        let orderChanged = false;
+        const nextItems = order.items.map((it) => {
+          const rawSku = String(it.sku || '').trim().toUpperCase();
+          const cleanSku = rawSku.replace(/[\s\-_]/g, '');
+          const masterMatch = productMap.get(rawSku) || productMap.get(cleanSku);
+
+          if (masterMatch) {
+            orderChanged = true;
+            updatedCount++;
+            return {
+              ...it,
+              namaProduk: masterMatch.nama,
+              lokasi: masterMatch.lokasi || it.lokasi || '-',
+              isMasterProduct: true,
+            };
+          } else {
+            missingMasterCount++;
+            return {
+              ...it,
+              isMasterProduct: false,
+            };
+          }
+        });
+
+        return orderChanged ? { ...order, items: nextItems } : order;
+      });
+
+      await saveShopeeOrders(updatedOrders);
+      setOrders(updatedOrders);
+
+      if (updatedCount > 0) {
+        onShowToast(`Sinkronisasi sukses! ${updatedCount} SKU berhasil dicocokkan ke master produk.`, 'success');
+        playSuccessBeep();
+      } else {
+        onShowToast(`Sinkronisasi selesai. Terdapat ${missingMasterCount} item yang belum terdaftar di Master Database.`, 'info');
+      }
+    } catch (err) {
+      console.error(err);
+      onShowToast('Gagal melakukan sinkronisasi master produk', 'error');
+    } finally {
+      setIsSyncingMaster(false);
     }
   };
 
@@ -188,7 +353,25 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
     });
   };
 
-  // Unique Opsi Pengiriman list for active tab
+  // Helper Batas Waktu Calculator
+  const getBatasWaktuStatus = (batasWaktuStr: string): 'TERLAMBAT' | 'KURANG_24_JAM' | 'LEBIH_24_JAM' | 'UNKNOWN' => {
+    if (!batasWaktuStr) return 'UNKNOWN';
+    try {
+      const deadline = new Date(batasWaktuStr.replace(' ', 'T'));
+      if (isNaN(deadline.getTime())) return 'UNKNOWN';
+      const now = new Date();
+      const diffMs = deadline.getTime() - now.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+
+      if (diffHours < 0) return 'TERLAMBAT';
+      if (diffHours <= 24) return 'KURANG_24_JAM';
+      return 'LEBIH_24_JAM';
+    } catch {
+      return 'UNKNOWN';
+    }
+  };
+
+  // Unique Normalized Opsi Pengiriman list for active tab
   const uniqueOpsiPengiriman = useMemo(() => {
     const tabOrders = orders.filter((o) => o.status_sistem === activeTab);
     const set = new Set<string>();
@@ -202,12 +385,25 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
   const displayOrders = useMemo(() => {
     let list = orders.filter((o) => o.status_sistem === activeTab);
 
-    // Filter by Opsi Pengiriman
+    // 1. Filter Tipe Pesanan
+    if (filterTipePesanan !== 'ALL') {
+      list = list.filter((o) => o.tipePengiriman === filterTipePesanan);
+    }
+
+    // 2. Filter Batas Pengiriman
+    if (filterBatasWaktu !== 'ALL') {
+      list = list.filter((o) => {
+        const st = getBatasWaktuStatus(o.batasWaktuPengiriman);
+        return st === filterBatasWaktu;
+      });
+    }
+
+    // 3. Filter Jasa Kirim / Opsi Pengiriman
     if (selectedOpsiPengiriman !== 'ALL') {
       list = list.filter((o) => (o.opsiPengiriman || '').trim() === selectedOpsiPengiriman);
     }
 
-    // Filter by search term
+    // 4. Filter by search term
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       list = list.filter(
@@ -215,6 +411,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
           (o.noPesanan || '').toLowerCase().includes(q) ||
           (o.noResi || '').toLowerCase().includes(q) ||
           (o.namaPenerima || '').toLowerCase().includes(q) ||
+          (o.opsiPengiriman || '').toLowerCase().includes(q) ||
           (o.cctv_timestamp_tag || '').toLowerCase().includes(q) ||
           o.items.some(
             (it) =>
@@ -227,7 +424,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
 
     // Custom Sort
     return sortOrderList(list, customSort);
-  }, [orders, activeTab, selectedOpsiPengiriman, searchTerm, customSort]);
+  }, [orders, activeTab, filterTipePesanan, filterBatasWaktu, selectedOpsiPengiriman, searchTerm, customSort]);
 
   // Handle Excel Upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -288,11 +485,14 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         const productMap = new Map<string, { nama: string; lokasi: string }>();
         for (const p of masterProducts) {
           if (p.k) {
-            const cleanKey = String(p.k).trim().toUpperCase();
-            productMap.set(cleanKey, {
-              nama: p.p || p.n || cleanKey,
-              lokasi: p.lokasi || '-',
-            });
+            const rawKey = String(p.k).trim().toUpperCase();
+            const cleanKey = rawKey.replace(/[\s\-_]/g, '');
+            const info = {
+              nama: p.p || p.n || (p as any).nama_produk || (p as any).nama || rawKey,
+              lokasi: p.lokasi || (p as any).lokasi_rak || '-',
+            };
+            productMap.set(rawKey, info);
+            productMap.set(cleanKey, info);
           }
         }
 
@@ -310,6 +510,8 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
 
         const orderMap = new Map<string, ShopeeOrder>();
         let duplicateCount = 0;
+        let matchedMasterCount = 0;
+        let unmatchedMasterCount = 0;
 
         for (const row of rows) {
           if (!row[idxNoPesanan]) continue;
@@ -322,10 +524,26 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             continue;
           }
 
-          const rawSku = String(row[idxSku] || '').trim();
-          const masterMatch = productMap.get(rawSku.toUpperCase());
-          const finalNamaProduk = masterMatch?.nama || String(row[idxNamaProduk] || '').trim();
-          const finalLokasi = masterMatch?.lokasi || '-';
+          const rawSku = String(row[idxSku] || '').trim().toUpperCase();
+          const cleanSku = rawSku.replace(/[\s\-_]/g, '');
+          const masterMatch = productMap.get(rawSku) || productMap.get(cleanSku);
+
+          let finalNamaProduk = '';
+          let finalLokasi = '-';
+          let isMasterProduct = false;
+
+          if (masterMatch) {
+            finalNamaProduk = masterMatch.nama;
+            finalLokasi = masterMatch.lokasi || '-';
+            isMasterProduct = true;
+            matchedMasterCount++;
+          } else {
+            // Clean marketplace long title
+            const rawMarketTitle = String(row[idxNamaProduk] || '').trim();
+            finalNamaProduk = cleanMarketplaceTitle(rawMarketTitle) || rawMarketTitle || rawSku;
+            isMasterProduct = false;
+            unmatchedMasterCount++;
+          }
 
           const item: ShopeeItem = {
             namaProduk: finalNamaProduk,
@@ -333,7 +551,11 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             sku: rawSku,
             qty: parseInt(row[idxQty] || '1', 10) || 1,
             lokasi: finalLokasi,
+            isMasterProduct,
           };
+
+          const rawCourier = String(row[idxOpsiPengiriman] || '').trim();
+          const normCourier = normalizeCourier(rawCourier);
 
           if (orderMap.has(noPesanan)) {
             const existingOrder = orderMap.get(noPesanan)!;
@@ -346,7 +568,9 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
               noPesanan,
               statusPesanan: String(row[idxStatus] || '').trim(),
               noResi: String(row[idxResi] || '').trim(),
-              opsiPengiriman: String(row[idxOpsiPengiriman] || '').trim(),
+              opsiPengiriman: normCourier.courierName, // NORMALISASI NAMA KURIR
+              opsiPengirimanRaw: rawCourier,
+              tipePengiriman: normCourier.tipe,
               waktuPesananDibuat,
               waktuPembayaran: waktuPembayaran || waktuPesananDibuat,
               batasWaktuPengiriman: idxBatasWaktu !== -1 ? String(row[idxBatasWaktu] || '').trim() : '',
@@ -375,6 +599,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
 
         if (duplicateCount > 0) {
           onShowToast(`${duplicateCount} baris diabaikan karena nomor pesanan sudah pernah diimport`, 'info');
+        }
+
+        if (unmatchedMasterCount > 0) {
+          onShowToast(`${unmatchedMasterCount} item belum ada di Master Katalog (menggunakan nama ringkas)`, 'warning');
         }
 
         if (newOrdersList.length === 0 && duplicateCount === 0) {
@@ -589,11 +817,24 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
   };
 
   // Tab Badge Counters
+  const tabOrdersOnly = orders.filter((o) => o.status_sistem === activeTab);
   const countSedangProses = orders.filter((o) => o.status_sistem === 'sedang_proses').length;
   const countPicking = orders.filter((o) => o.status_sistem === 'proses_picking').length;
   const countPacking = orders.filter((o) => o.status_sistem === 'proses_packing').length;
   const countReady = orders.filter((o) => o.status_sistem === 'paket_ready').length;
   const countTerkirim = orders.filter((o) => o.status_sistem === 'paket_terkirim').length;
+
+  // Filter 1: Tipe Pesanan Counters
+  const countTipeReguler = tabOrdersOnly.filter((o) => o.tipePengiriman === 'Reguler').length;
+  const countTipeInstant = tabOrdersOnly.filter((o) => o.tipePengiriman === 'Instant').length;
+  const countTipeSameDay = tabOrdersOnly.filter((o) => o.tipePengiriman === 'Same Day').length;
+  const countTipeHemat = tabOrdersOnly.filter((o) => o.tipePengiriman === 'Hemat').length;
+  const countTipeCargo = tabOrdersOnly.filter((o) => o.tipePengiriman === 'Cargo').length;
+
+  // Filter 2: Batas Waktu Counters
+  const countBatasTerlambat = tabOrdersOnly.filter((o) => getBatasWaktuStatus(o.batasWaktuPengiriman) === 'TERLAMBAT').length;
+  const countBatasKurang24 = tabOrdersOnly.filter((o) => getBatasWaktuStatus(o.batasWaktuPengiriman) === 'KURANG_24_JAM').length;
+  const countBatasLebih24 = tabOrdersOnly.filter((o) => getBatasWaktuStatus(o.batasWaktuPengiriman) === 'LEBIH_24_JAM').length;
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900/50">
@@ -612,7 +853,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             background: #ffffff !important;
             width: 100% !important;
             color: #000000 !important;
-            font-size: 10px !important;
+            font-size: 9.5px !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -785,13 +1026,26 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
 
                 <button
                   type="button"
+                  onClick={handleSyncMasterProducts}
+                  disabled={isSyncingMaster || orders.length === 0}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  title="Cocokkan ulang seluruh nama produk & lokasi rak dengan Master Katalog Database"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-500 ${isSyncingMaster ? 'animate-spin' : ''}`} />
+                  <span>Sinkron Master</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handlePrintPickingList}
                   disabled={displayOrders.length === 0}
                   className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
                   title="Cetak Surat Jalan Picking List format A4 Portrait sesuai urutan custom sort"
                 >
                   <Printer className="w-4 h-4 text-orange-400" />
-                  <span>Cetak SJ Picking (A4)</span>
+                  <span>
+                    Cetak SJ Picking {selectedOpsiPengiriman !== 'ALL' ? `(${selectedOpsiPengiriman})` : '(Semua)'}
+                  </span>
                 </button>
 
                 <button
@@ -956,9 +1210,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         )}
 
         {/* ========================================================================= */}
-        {/* FILTER & CUSTOM SORT BAR */}
+        {/* 3-LEVEL SELLER CENTER FILTERS & CUSTOM SORT (LEGA & TIDAK KETUTUP SCROLLBAR) */}
         {/* ========================================================================= */}
-        <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="bg-white dark:bg-[#131d31] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+          {/* Top Search & Custom Sort Row */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative w-full md:w-80">
@@ -999,40 +1254,103 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             </div>
           </div>
 
-          {/* Opsi Pengiriman Filter Pills */}
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-            <span className="font-extrabold text-slate-400 text-[11px] uppercase mr-1 flex items-center gap-1 shrink-0">
-              <Filter className="w-3 h-3 text-orange-500" />
-              Opsi Pengiriman:
+          {/* LEVEL 1: TIPE PESANAN FILTER */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 w-28 shrink-0">
+              Tipe Pesanan
             </span>
-            <button
-              type="button"
-              onClick={() => setSelectedOpsiPengiriman('ALL')}
-              className={`px-3 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
-                selectedOpsiPengiriman === 'ALL'
-                  ? 'bg-orange-500 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              Semua ({orders.filter((o) => o.status_sistem === activeTab).length})
-            </button>
-            {uniqueOpsiPengiriman.map((opsi) => {
-              const count = orders.filter((o) => o.status_sistem === activeTab && (o.opsiPengiriman || '').trim() === opsi).length;
-              return (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'ALL', label: 'Semua', count: tabOrdersOnly.length },
+                { id: 'Reguler', label: 'Pesanan Reguler', count: countTipeReguler },
+                { id: 'Instant', label: 'Instant', count: countTipeInstant },
+                { id: 'Same Day', label: 'Same Day', count: countTipeSameDay },
+                { id: 'Hemat', label: 'Hemat', count: countTipeHemat },
+                { id: 'Cargo', label: 'Cargo', count: countTipeCargo },
+              ].map((t) => (
                 <button
-                  key={opsi}
+                  key={t.id}
                   type="button"
-                  onClick={() => setSelectedOpsiPengiriman(opsi)}
-                  className={`px-3 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
-                    selectedOpsiPengiriman === opsi
-                      ? 'bg-orange-500 text-white shadow-xs'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  onClick={() => setFilterTipePesanan(t.id as TipePesananFilter)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    filterTipePesanan === t.id
+                      ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40'
+                      : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
                   }`}
                 >
-                  {opsi} ({count})
+                  <span>{t.label}</span>
+                  <span className="opacity-75">({t.count})</span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+
+          {/* LEVEL 2: BATAS PENGIRIMAN FILTER */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 w-28 shrink-0">
+              Batas Pengiriman
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'ALL', label: 'Semua', count: tabOrdersOnly.length },
+                { id: 'TERLAMBAT', label: 'Terlambat', count: countBatasTerlambat, alert: countBatasTerlambat > 0 },
+                { id: 'KURANG_24_JAM', label: 'Kurang dari 24 jam', count: countBatasKurang24 },
+                { id: 'LEBIH_24_JAM', label: 'Lebih dari 24 jam', count: countBatasLebih24 },
+              ].map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setFilterBatasWaktu(b.id as BatasWaktuFilter)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    filterBatasWaktu === b.id
+                      ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40'
+                      : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
+                  } ${b.alert ? 'text-rose-600 border-rose-300' : ''}`}
+                >
+                  <span>{b.label}</span>
+                  <span className="opacity-75">({b.count})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* LEVEL 3: JASA KIRIM (OPSI PENGIRIMAN NORMALISASI) */}
+          <div className="flex flex-wrap items-start gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 w-28 shrink-0 pt-1">
+              Jasa Kirim
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5 flex-1">
+              <button
+                type="button"
+                onClick={() => setSelectedOpsiPengiriman('ALL')}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  selectedOpsiPengiriman === 'ALL'
+                    ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40'
+                    : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
+                }`}
+              >
+                Semua Jasa Kirim ({tabOrdersOnly.length})
+              </button>
+
+              {uniqueOpsiPengiriman.map((courier) => {
+                const count = tabOrdersOnly.filter((o) => (o.opsiPengiriman || '').trim() === courier).length;
+                return (
+                  <button
+                    key={courier}
+                    type="button"
+                    onClick={() => setSelectedOpsiPengiriman(courier)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      selectedOpsiPengiriman === courier
+                        ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 font-black'
+                        : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
+                    }`}
+                  >
+                    <span>{courier}</span>
+                    <span className="opacity-75">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -1040,7 +1358,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         {/* ORDERS DATA TABLE */}
         {/* ========================================================================= */}
         <div className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
+          <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70 dark:bg-slate-800/40">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1055,8 +1373,16 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                 <span>Pilih Semua ({displayOrders.length} Pesanan)</span>
               </button>
             </div>
-            <div className="text-xs font-extrabold text-slate-500">
-              Total Qty: <b className="text-orange-600 dark:text-orange-400">{displayOrders.reduce((sum, o) => sum + o.items.reduce((s, it) => s + it.qty, 0), 0)} pcs</b>
+
+            <div className="flex items-center gap-3 text-xs font-extrabold text-slate-500">
+              {selectedOpsiPengiriman !== 'ALL' && (
+                <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 rounded font-black">
+                  Filter: {selectedOpsiPengiriman}
+                </span>
+              )}
+              <span>
+                Total Qty: <b className="text-orange-600 dark:text-orange-400">{displayOrders.reduce((sum, o) => sum + o.items.reduce((s, it) => s + it.qty, 0), 0)} pcs</b>
+              </span>
             </div>
           </div>
 
@@ -1126,10 +1452,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                         )}
                       </td>
 
-                      {/* Opsi Pengiriman */}
+                      {/* Opsi Pengiriman Normalisasi */}
                       <td className="p-3 align-middle">
-                        <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-extrabold text-[11px] border border-slate-200 dark:border-slate-700 block text-center truncate">
-                          {order.opsiPengiriman || 'Standard'}
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-extrabold text-[11px] border border-slate-200 dark:border-slate-700 block text-center truncate shadow-2xs">
+                          {order.opsiPengiriman}
                         </span>
                       </td>
 
@@ -1181,11 +1507,19 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                               className="bg-slate-50 dark:bg-slate-800/70 p-1.5 rounded-lg border border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-2 text-[11px]"
                             >
                               <div className="min-w-0 flex-1">
-                                <div className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                  {it.namaProduk}
+                                <div className="font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
+                                  <span>{it.namaProduk}</span>
+                                  {it.isMasterProduct === false && (
+                                    <span
+                                      className="px-1 py-0.2 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 rounded text-[9px] font-extrabold border border-amber-300 dark:border-amber-800 shrink-0"
+                                      title="SKU belum terdaftar di Master Database Produk"
+                                    >
+                                      ⚠️ Belum di Master
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5">
-                                  <span>SKU: {it.sku}</span>
+                                  <span>SKU: <b className="text-slate-800 dark:text-slate-200">{it.sku}</b></span>
                                   {it.namaVariasi && it.namaVariasi !== 'Default' && (
                                     <span className="text-orange-600 dark:text-orange-400 font-semibold">[{it.namaVariasi}]</span>
                                   )}
@@ -1321,11 +1655,11 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                           <ShoppingBag className="w-6 h-6" />
                         </div>
                         <h4 className="font-extrabold text-slate-800 dark:text-white text-sm">
-                          Tidak ada pesanan di tab {activeTab.replace('_', ' ').toUpperCase()}
+                          Tidak ada pesanan yang sesuai filter
                         </h4>
                         <p className="text-xs text-slate-400">
                           {activeTab === 'sedang_proses'
-                            ? 'Silakan klik tombol "Import Excel Shopee" untuk mengunggah pesanan baru.'
+                            ? 'Silakan klik tombol "Import Excel Shopee" untuk mengunggah pesanan baru atau sesuaikan filter di atas.'
                             : 'Pesanan akan berpindah ke tab ini sesuai alur proses pengerjaan di gudang.'}
                         </p>
                         {activeTab === 'sedang_proses' && (
@@ -1548,7 +1882,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                 <b>Tgl Cetak:</b> {new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
               </div>
               <div>
-                <b>Filter Opsi:</b> {selectedOpsiPengiriman === 'ALL' ? 'Semua Pengiriman' : selectedOpsiPengiriman}
+                <b>Filter Jasa Kirim:</b> {selectedOpsiPengiriman === 'ALL' ? 'Semua Jasa Kirim' : selectedOpsiPengiriman}
               </div>
               <div>
                 <b>Urutan:</b> {customSort === 'opsi_pengiriman_no_pesanan' ? 'Opsi Pengiriman + No. Pesanan' : 'Waktu Pembayaran'}
