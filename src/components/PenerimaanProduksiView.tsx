@@ -348,7 +348,6 @@ export function convertPenerimaanItemsToProductBlocks(items: PenerimaanProduksiI
       blocksMap.set(blockKey, {
         id: 'block_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
         kode_produksi: it.kode_produksi || '',
-        nama_produk: it.nama_produk || '',
         foto_url: it.foto_url || '',
         catatan: it.keterangan || (it as any).catatan || '',
         warnas: [],
@@ -358,9 +357,6 @@ export function convertPenerimaanItemsToProductBlocks(items: PenerimaanProduksiI
     const block = blocksMap.get(blockKey)!;
     if (!block.foto_url && it.foto_url) {
       block.foto_url = it.foto_url;
-    }
-    if (!block.nama_produk && it.nama_produk) {
-      block.nama_produk = it.nama_produk;
     }
 
     const warnaName = (it.warna || '').trim().toUpperCase() || '-';
@@ -590,7 +586,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Load Data
-  const loadData = async (forceRefresh?: boolean) => {
+  const loadData = async (forceRefresh?: boolean | unknown) => {
     setIsLoading(true);
     try {
       // Auto-cleanup any mismatched global notes (e.g. BIS Florence accidentally copied to other codes)

@@ -277,6 +277,7 @@ export function buildBlocksFromRawItems(
       kategori: activeTab === 'Kargo' ? 'Kargo' : 'Lokal CMT',
       photoUrl: formatImageUrlForSheets(firstItem.foto_url),
       catatan: firstItem.keterangan || '',
+      distinctSjs: [],
       colorGroups,
       dateSlots: finalDateSlots,
       returDateSlots: [],
@@ -603,19 +604,25 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
     }
 
     blocks.push({
-      no: no++,
-      productCode: code,
+      id: code,
+      rowNumber: no++,
+      code,
       productName,
       upVendor,
+      kategori: isCMT ? 'Lokal CMT' : 'Kargo',
       photoUrl,
+      catatan: '',
+      distinctSjs: [],
       dateSlots,
       returDateSlots: [],
-      colorGroups,
+      colorGroups: colorGroups as any,
       totalDatang: blockTotalDatang,
       totalRetur: 0,
       totalNet: blockTotalDatang,
-      stockOpname: 0,
-      selisih: 0,
+      kg: 0,
+      ongkirPerKg: 0,
+      totalOngkir: 0,
+      ongkirPerPcs: 0,
     });
   }
 
@@ -815,6 +822,7 @@ export async function pushSuratJalanToGoogleSheet(
         kategori: sj.kategori || 'Lokal CMT',
         photoUrl: formatImageUrlForSheets(first.foto_url),
         catatan: sj.keterangan || (sj.is_recount ? 'Hasil Hitung Ulang Fisik' : ''),
+        distinctSjs: [],
         colorGroups: colorGroups,
         dateSlots: [sj.tanggal, '', '', '', '', '', '', '', '', ''],
         totalDatang: prodDatang,

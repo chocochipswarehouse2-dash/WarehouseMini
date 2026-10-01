@@ -34,6 +34,7 @@ import {
   savePenerimaanRecountLog,
   fetchPenerimaanRecountLogs,
   deletePenerimaanRecountLog,
+  saveRecountAuditRecord,
 } from '../../services/supabase';
 import { PenerimaanRecountLogItem } from '../../types';
 import {

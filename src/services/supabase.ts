@@ -7205,7 +7205,7 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
         return (typeof d.id === 'number' && d.id > 1000000000) || (!remoteIds.has(sid) && sid.startsWith('local_'));
       });
 
-      const merged = [...enrichedRemoteData, ...offlinePending].sort((a, b) => {
+      const merged = [...remoteData, ...offlinePending].sort((a, b) => {
         // 1. Sort by tanggal_penerimaan desc
         const dateA = new Date(a.tanggal_penerimaan || 0).getTime();
         const dateB = new Date(b.tanggal_penerimaan || 0).getTime();

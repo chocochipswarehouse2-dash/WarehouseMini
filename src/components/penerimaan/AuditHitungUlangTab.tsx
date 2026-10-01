@@ -155,10 +155,61 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         const cloudAuditMap = await fetchRecountAuditMapFromCloud();
         const localAuditMap = getRecountAuditMap();
         
-        // Auto-upload jika ada hasil hitung ulang di browser ini yang belum terunggah ke Cloud
-        const missingInCloud = Object.keys(localAuditMap).filter((k) => !cloudAuditMap[k]);
+        // 1. Ekstrak seluruh hasil audit yang ada di penerimaanItems (cache lokal PC yang sudah dihitung)
+        const extractedFromItems: Record<string, any> = {};
+        penerimaanItems.forEach((it) => {
+          const norm = (it.kode_produksi || '').trim().toUpperCase();
+          if (norm && (it.recount_qty !== undefined && it.recount_qty !== null)) {
+            if (!extractedFromItems[norm]) {
+              extractedFromItems[norm] = {
+                kode_produksi: norm,
+                tanggal_audit: it.recount_updated_at ? String(it.recount_updated_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
+                total_asli: 0,
+                total_fisik: 0,
+                total_selisih: 0,
+                status: it.recount_status || 'MATCH',
+                round: it.recount_round || 1,
+                auditor: it.recount_auditor || 'Auditor',
+                catatan: it.recount_notes || '',
+                updated_at: it.recount_updated_at || new Date().toISOString(),
+                variants: [],
+              };
+            }
+            const rec = extractedFromItems[norm];
+            const qtyAsli = Number(it.qty) || 0;
+            const qtyFisik = Number(it.recount_qty);
+            const selisih = qtyFisik - qtyAsli;
+            rec.total_asli += qtyAsli;
+            rec.total_fisik += qtyFisik;
+            rec.total_selisih += selisih;
+            rec.variants.push({
+              warna: it.warna || '-',
+              size: it.size || 'ALL SIZE',
+              qty_asli: qtyAsli,
+              qty_fisik: qtyFisik,
+              selisih,
+              status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
+              note: it.recount_notes || '',
+            });
+          }
+        });
+        Object.values(extractedFromItems).forEach((rec: any) => {
+          if (rec.total_selisih === 0) rec.status = 'MATCH';
+          else if (rec.total_selisih < 0) rec.status = 'KURANG';
+          else rec.status = 'LEBIH';
+        });
+
+        // 2. Gabungkan cloud + local + extracted
+        const mergedAuditMap = {
+          ...cloudAuditMap,
+          ...localAuditMap,
+          ...extractedFromItems,
+        };
+
+        // 3. Jika ada item lokal/ekstrak yang belum ada di cloudAuditMap, segera upload ke Cloud!
+        const missingInCloud = Object.keys(mergedAuditMap).filter((k) => !cloudAuditMap[k]);
         if (missingInCloud.length > 0) {
-          const mergedAuditMap = { ...cloudAuditMap, ...localAuditMap };
+          console.log('[RECOUNT SYNC] Mengunggah hasil hitung lokal ke database Cloud:', missingInCloud);
           await saveWmsSettings({ recount_audit_map: mergedAuditMap });
           try {
             await supabaseFetch('wms_system_docs', 'POST', [{
@@ -167,7 +218,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               updated_by: 'Auto-Sync Local Audits',
               updated_at: new Date().toISOString(),
             }], 'resolution=merge-duplicates');
-          } catch {}
+          } catch (e) {
+            console.warn('Gagal upload audit results ke wms_system_docs:', e);
+          }
         }
 
         const cloudQueue = await fetchPenerimaanRecountQueueFromSupabase();
@@ -279,7 +332,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const handleAddMultipleToQueue = async (items: { kode_produksi: string; catatan_petunjuk?: string }[]) => {
     const updated = { ...queueMap };
     const nowIso = new Date().toISOString();
-    const userName = session?.nama || session?.username || session?.email || 'User';
+    const userName = session?.name || session?.username || session?.email || 'User';
 
     items.forEach((item) => {
       const norm = item.kode_produksi.trim().toUpperCase();
@@ -382,7 +435,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   // Workspace Form State for Active Code
   const [auditDate, setAuditDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [auditorName, setAuditorName] = useState<string>(() => {
-    return session?.nama || session?.username || session?.email || 'Auditor Fisik';
+    return session?.name || session?.username || session?.email || 'Auditor Fisik';
   });
   const [generalNotes, setGeneralNotes] = useState<string>('');
   // Map key: `${warna}_${size}` -> { recountQty: number | null, note: string }
@@ -426,7 +479,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           nama_produk: it.nama_produk || '',
           kategori: it.kategori || 'Lokal CMT',
           vendor_up: (it as any).up_vendor || (it as any).vendor || '',
-          photo_url: it.photo_url || '',
+          photo_url: it.foto_url || '',
           distinct_colors: new Set(),
           distinct_sizes: new Set(),
           distinct_dates: new Set(),
@@ -436,7 +489,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       const grp = map.get(code)!;
       grp.items.push(it);
       if (!grp.nama_produk && it.nama_produk) grp.nama_produk = it.nama_produk;
-      if (!grp.photo_url && it.photo_url) grp.photo_url = it.photo_url;
+      if (!grp.photo_url && it.foto_url) grp.photo_url = it.foto_url;
       if (it.warna) grp.distinct_colors.add(it.warna.trim());
       if (it.size) grp.distinct_sizes.add(it.size.trim());
       if (it.tanggal_penerimaan) grp.distinct_dates.add(it.tanggal_penerimaan);
@@ -723,11 +776,13 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     });
 
     const totalSelisih = totalFisik - totalAsli;
+    const status: 'MATCH' | 'KURANG' | 'LEBIH' = totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH';
 
     return {
       totalAsli,
       totalFisik,
       totalSelisih,
+      status,
       filledCount,
       totalVariants: activeVariants.length,
     };
@@ -823,6 +878,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             nama_produk: activeGroup.nama_produk,
             warna: v.warna,
             size: v.size,
+            tanggal_penerimaan: activeGroup.items[0]?.tanggal_penerimaan || auditDate,
             qty_sebelumnya: v.qty_asli,
             qty_fisik: fisik,
             selisih: fisik - v.qty_asli,

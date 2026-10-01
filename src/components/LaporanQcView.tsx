@@ -1139,7 +1139,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   // Reset halaman saat filter berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, targetFilter, sumberFilter, dateRange, categoryFilter, inspectionTypeFilter]);
+  }, [searchQuery, filterStatus, filterSumber]);
 
   const filteredReports = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
