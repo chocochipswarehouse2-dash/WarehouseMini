@@ -25,6 +25,13 @@ import {
   Lock,
   Unlock,
   Palmtree,
+  Plus,
+  Trash2,
+  MapPin,
+  LocateFixed,
+  Settings2,
+  ExternalLink,
+  Compass,
 } from 'lucide-react';
 import {
   UserSession,
@@ -38,6 +45,8 @@ import {
 } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { getUserPersonName, getUserNik } from '../../utils/userResolver';
+import { fetchWmsSettings } from '../../services/settings';
+import { LocationMapPickerModal } from './LocationMapPickerModal';
 import {
   fetchPresensiToday,
   fetchPresensiRange,
@@ -55,6 +64,17 @@ import {
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
+import {
+  getPresensiLocationConfig,
+  savePresensiLocationConfig,
+  calculateHaversineDistance,
+  getBrowserGeolocation,
+  formatDistanceMeters,
+  evaluateUserLocationMatch,
+  PresensiLocationConfig,
+  PresensiLocationItem,
+  DEFAULT_PRESENSI_LOCATIONS,
+} from '../../utils/geoUtils';
 
 interface PresensiViewProps {
   session: UserSession | null;
@@ -65,6 +85,33 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
   const [todayIso, setTodayIso] = useState<string>('');
+
+  // Geofence & GPS States
+  const [locationConfig, setLocationConfig] = useState<PresensiLocationConfig>(() => getPresensiLocationConfig());
+
+  // Sinkronisasi titik lokasi dari Supabase Cloud (berdampak ke semua user & perangkat)
+  useEffect(() => {
+    fetchWmsSettings().then((s) => {
+      if (s?.presensi_locations && s.presensi_locations.locations) {
+        setLocationConfig(s.presensi_locations);
+      }
+    }).catch(() => {});
+
+    const handleLocChange = (e: any) => {
+      if (e.detail && e.detail.locations) {
+        setLocationConfig(e.detail);
+      }
+    };
+    window.addEventListener("wms_presensi_location_changed", handleLocChange);
+    return () => window.removeEventListener("wms_presensi_location_changed", handleLocChange);
+  }, []);
+  const [showLocationSettingsModal, setShowLocationSettingsModal] = useState<boolean>(false);
+  const [editingLocConfig, setEditingLocConfig] = useState<PresensiLocationConfig>(() => getPresensiLocationConfig());
+  const [gpsLoading, setGpsLoading] = useState<boolean>(false);
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [capturingAdminGps, setCapturingAdminGps] = useState<boolean>(false);
+  const [mapPickerTargetIndex, setMapPickerTargetIndex] = useState<number | null>(null);
 
   const [activeTab, setActiveTab] = useState<'harian' | 'kpi' | 'tukar_shift' | 'log'>('harian');
   const [logRecords, setLogRecords] = useState<PresensiRecord[]>([]);
@@ -276,6 +323,142 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     todayRoster?.shift?.toLowerCase().includes('sakit')
   );
 
+  const userIsAdmin = Boolean(
+    isSuperadmin(session) ||
+    session?.role === 'Super Admin' ||
+    session?.role === 'Manager' ||
+    hasPermission(session, 'menu_hr_karyawan')
+  );
+
+  // Deteksi lokasi user
+  const handleDetectUserLocation = useCallback(async (silent = false) => {
+    if (!locationConfig.enabled) return null;
+    setGpsLoading(true);
+    setGpsError(null);
+    try {
+      const pos = await getBrowserGeolocation();
+      const coords = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      };
+      setCurrentCoords(coords);
+      return coords;
+    } catch (err: any) {
+      const msg = err?.message || 'Gagal mendeteksi lokasi GPS';
+      setGpsError(msg);
+      if (!silent) {
+        onShowToast(msg, 'warning');
+      }
+      return null;
+    } finally {
+      setGpsLoading(false);
+    }
+  }, [locationConfig.enabled, onShowToast]);
+
+  useEffect(() => {
+    handleDetectUserLocation(true);
+  }, [handleDetectUserLocation]);
+
+  // Evaluasi Multi-Lokasi Presensi
+  const locationMatch = useMemo(() => {
+    if (!currentCoords) return null;
+    return evaluateUserLocationMatch(
+      currentCoords.lat,
+      currentCoords.lng,
+      userNik,
+      locationConfig
+    );
+  }, [currentCoords, userNik, locationConfig]);
+
+  const isWithinGeofence = Boolean(
+    !locationConfig.enabled || (locationMatch && locationMatch.isWithin)
+  );
+
+  const distanceToOffice = locationMatch ? locationMatch.closestDistance : null;
+
+  // Handler simpan setting geofence multi-lokasi admin
+  const handleSaveLocationSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Validasi minimal 1 lokasi
+    if (!editingLocConfig.locations || editingLocConfig.locations.length === 0) {
+      onShowToast('Minimal harus ada 1 titik lokasi kerja!', 'warning');
+      return;
+    }
+
+    // Validasi lokasi khusus karyawan tertentu
+    const unassignedSpecific = editingLocConfig.locations.find(
+      (l) => l.accessMode === 'specific' && (!l.allowedNikList || l.allowedNikList.length === 0)
+    );
+    if (unassignedSpecific) {
+      onShowToast(
+        `Perhatian: Lokasi "${unassignedSpecific.name}" disetel "Karyawan Tertentu Saja", namun belum ada karyawan yang dicentang. Silakan centang minimal 1 karyawan atau pilih "Semua Karyawan".`,
+        'warning'
+      );
+      return;
+    }
+
+    savePresensiLocationConfig(editingLocConfig);
+    setLocationConfig({ ...editingLocConfig });
+    setShowLocationSettingsModal(false);
+    playSuccessBeep();
+    onShowToast(`Pengaturan ${editingLocConfig.locations.length} titik lokasi presensi tersimpan ke Cloud Supabase & berdampak ke seluruh karyawan!`, 'success');
+  };
+
+  // Handler ambil GPS admin untuk titik lokasi tertentu
+  const handleCaptureAdminLocationForIndex = async (index: number) => {
+    setCapturingAdminGps(true);
+    try {
+      const pos = await getBrowserGeolocation();
+      setEditingLocConfig((prev) => {
+        const locs = [...prev.locations];
+        if (locs[index]) {
+          locs[index] = {
+            ...locs[index],
+            latitude: Number(pos.coords.latitude.toFixed(6)),
+            longitude: Number(pos.coords.longitude.toFixed(6)),
+          };
+        }
+        return { ...prev, locations: locs };
+      });
+      playSuccessBeep();
+      onShowToast(`Koordinat GPS saat ini berhasil diambil untuk lokasi ini! (Akurasi: ±${Math.round(pos.coords.accuracy)}m)`, 'info');
+    } catch (err: any) {
+      playErrorBeep();
+      onShowToast(`Gagal membaca koordinat: ${err?.message || 'Error'}`, 'error');
+    } finally {
+      setCapturingAdminGps(false);
+    }
+  };
+
+  // Handler tambah lokasi baru
+  const handleAddNewLocationItem = () => {
+    const newLoc: PresensiLocationItem = {
+      id: `loc_${Date.now()}`,
+      name: `Lokasi Kerja ${(editingLocConfig.locations?.length || 0) + 1}`,
+      latitude: currentCoords?.lat || -6.175392,
+      longitude: currentCoords?.lng || 106.827153,
+      radiusMeters: 25,
+      allowedNikList: ['*'],
+    };
+    setEditingLocConfig((prev) => ({
+      ...prev,
+      locations: [...(prev.locations || []), newLoc],
+    }));
+  };
+
+  // Handler hapus lokasi
+  const handleRemoveLocationItem = (index: number) => {
+    if ((editingLocConfig.locations?.length || 0) <= 1) {
+      onShowToast('Minimal harus ada 1 titik lokasi kerja.', 'warning');
+      return;
+    }
+    setEditingLocConfig((prev) => ({
+      ...prev,
+      locations: prev.locations.filter((_, idx) => idx !== index),
+    }));
+  };
+
   // Determine standard shift end time
   const shiftStandarPulang = useMemo(() => {
     if (todayRoster?.jam_pulang) return todayRoster.jam_pulang.slice(0, 5);
@@ -318,6 +501,32 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       const shiftName = currentRoster?.shift || 'Shift 1';
       const staffFullName = session?.name || getUserPersonName(userNik, userNik);
 
+      if (locationConfig.enabled) {
+        if (!currentCoords) {
+          playErrorBeep();
+          onShowToast('Mohon izinkan & tunggu deteksi lokasi GPS sebelum absen.', 'warning');
+          handleDetectUserLocation(false);
+          setSubmitting(false);
+          return;
+        }
+        if (!isWithinGeofence) {
+          playErrorBeep();
+          const targetName = locationMatch?.closestLocation?.name || "titik lokasi kerja";
+          const maxDist = locationMatch?.closestLocation?.radiusMeters || 25;
+          onShowToast(
+            `Presensi Ditolak! Anda berada ${formatDistanceMeters(locationMatch?.closestDistance || 0)} di luar jangkauan ${targetName} (Toleransi: ${maxDist}m).`,
+            'error'
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      const matchedLocName = locationMatch?.matchedLocation?.name || "Kantor/Gudang";
+      const geoNote = locationConfig.enabled && locationMatch?.matchedLocation
+        ? ` [${matchedLocName}: ${formatDistanceMeters(locationMatch.closestDistance)}]`
+        : '';
+
       const payload: Partial<PresensiRecord> = {
         nik: userNik,
         nama: staffFullName,
@@ -325,7 +534,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         shift: shiftName,
         status: 'Hadir',
         jam_masuk: nowTime,
-        catatan: `Presensi Masuk via WMS (${nowTime})`,
+        catatan: `Presensi Masuk via WMS (${nowTime})${geoNote}`,
       };
 
       const result = await submitPresensiRecord(payload);
@@ -357,11 +566,37 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         noteAppend += ` [Izin Pulang Awal Disetujui: ${todayApprovedEarlyCheckout.approved_by || 'HR'}]`;
       }
 
+      if (locationConfig.enabled) {
+        if (!currentCoords) {
+          playErrorBeep();
+          onShowToast('Mohon tunggu sinyal GPS sebelum absen pulang.', 'warning');
+          handleDetectUserLocation(false);
+          setSubmitting(false);
+          return;
+        }
+        if (!isWithinGeofence) {
+          playErrorBeep();
+          const targetName = locationMatch?.closestLocation?.name || "titik lokasi kerja";
+          const maxDist = locationMatch?.closestLocation?.radiusMeters || 25;
+          onShowToast(
+            `Presensi Pulang Ditolak! Anda berada ${formatDistanceMeters(locationMatch?.closestDistance || 0)} di luar jangkauan ${targetName} (Toleransi: ${maxDist}m).`,
+            'error'
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      const matchedLocName = locationMatch?.matchedLocation?.name || "Kantor/Gudang";
+      const geoNote = locationConfig.enabled && locationMatch?.matchedLocation
+        ? ` [Pulang ${matchedLocName}: ${formatDistanceMeters(locationMatch.closestDistance)}]`
+        : '';
+
       const payload: Partial<PresensiRecord> = {
         ...todayPresensi,
         nama: staffFullName,
         jam_pulang: nowTime,
-        catatan: (todayPresensi.catatan || '') + noteAppend,
+        catatan: (todayPresensi.catatan || '') + noteAppend + geoNote,
       };
 
       const result = await submitPresensiRecord(payload);
@@ -450,7 +685,6 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     }
   };
 
-  const userIsAdmin = isSuperadmin(session);
   const canViewPresensi = userIsAdmin || hasPermission(session, 'menu_hr_presensi');
 
   if (!canViewPresensi) {
@@ -474,7 +708,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar items-center justify-between gap-2">
+        <div className="flex items-center">
         <button
           onClick={() => setActiveTab('harian')}
           className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'harian' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
@@ -511,6 +746,25 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
           <FileText className="w-4 h-4" />
           <span>Log Presensi</span>
         </button>
+        </div>
+
+        {userIsAdmin && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditingLocConfig(JSON.parse(JSON.stringify(locationConfig)));
+              if (karyawanList.length === 0) {
+                fetchKaryawanDirectory().then((kList) => setKaryawanList(kList)).catch(() => {});
+              }
+              setShowLocationSettingsModal(true);
+            }}
+            className="my-1.5 mr-2 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-amber-500 to-primary-500 text-white shadow-md shadow-primary-500/20 flex items-center gap-1.5 cursor-pointer transition hover:opacity-90 shrink-0"
+            title="Kelola Titik Koordinat & Radius Lokasi Presensi (Bisa Multi-Lokasi)"
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            <span>⚙️ Atur Titik Lokasi ({locationConfig.locations?.length || 1})</span>
+          </button>
+        )}
       </div>
 
       {/* ================= TAB 1: PRESENSI HARIAN ================= */}
@@ -695,6 +949,98 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 )}
               </div>
 
+                {/* GEOFENCE RADAR & STATUS JANGKAUAN */}
+                <div
+                  className={`mb-4 p-3.5 rounded-2xl border transition-all ${
+                    !locationConfig.enabled
+                      ? "bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
+                      : isWithinGeofence
+                      ? "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
+                      : "bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          !locationConfig.enabled
+                            ? "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                            : isWithinGeofence
+                            ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 animate-pulse"
+                            : "bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                        }`}
+                      >
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs flex items-center gap-1.5">
+                          {!locationConfig.enabled ? (
+                            <span>Validasi Radius Lokasi Dinonaktifkan</span>
+                          ) : isWithinGeofence ? (
+                            <span className="text-emerald-700 dark:text-emerald-300">
+                              ✅ Terverifikasi di Area: <b>{locationMatch?.matchedLocation?.name || "Lokasi Kerja"}</b>
+                            </span>
+                          ) : (
+                            <span className="text-rose-700 dark:text-rose-300">
+                              ❌ Di Luar Radius Lokasi Kerja
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] opacity-80 mt-0.5 space-y-0.5">
+                          {!locationConfig.enabled ? (
+                            <p>Presensi dapat dilakukan bebas dari lokasi mana pun.</p>
+                          ) : currentCoords && locationMatch ? (
+                            <>
+                              <p>
+                                Jarak terdekat: <b>{formatDistanceMeters(locationMatch.closestDistance)}</b> dari{" "}
+                                <b>{locationMatch.closestLocation?.name}</b> (Toleransi:{" "}
+                                {locationMatch.closestLocation?.radiusMeters}m)
+                                {currentCoords.accuracy ? ` • Akurasi GPS ±${Math.round(currentCoords.accuracy)}m` : ""}
+                              </p>
+                              {locationConfig.locations?.length > 1 && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                  <span>Semua Titik:</span>
+                                  {locationMatch.allDistances.map((d) => (
+                                    <span
+                                      key={d.location.id}
+                                      className={`px-1.5 py-0.5 rounded-md font-mono ${
+                                        d.isWithin
+                                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 font-bold"
+                                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                      }`}
+                                    >
+                                      {d.location.name}: {formatDistanceMeters(d.distance)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          ) : gpsError ? (
+                            <span className="text-rose-600 dark:text-rose-400">{gpsError}</span>
+                          ) : (
+                            <p>Mendeteksi sinyal GPS presisi...</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      {locationConfig.enabled && (
+                        <button
+                          type="button"
+                          onClick={() => handleDetectUserLocation(false)}
+                          disabled={gpsLoading}
+                          className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition shadow-xs"
+                          title="Perbarui koordinat lokasi GPS saat ini"
+                        >
+                          <LocateFixed className={`w-3.5 h-3.5 ${gpsLoading ? "animate-spin text-primary-500" : ""}`} />
+                          <span>{gpsLoading ? "Mendeteksi..." : "Cek Lokasi GPS"}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
               {/* Action Buttons */}
               <div className="space-y-3 pt-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -703,11 +1049,29 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     <button
                       type="button"
                       onClick={handleAbsenMasuk}
-                      disabled={submitting || loading || isShiftLibur || isShiftCutiOrIzin}
+                      disabled={
+                        submitting ||
+                        loading ||
+                        isShiftLibur ||
+                        isShiftCutiOrIzin ||
+                        Boolean(locationConfig.enabled && (!currentCoords || !isWithinGeofence))
+                      }
                       className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <LogIn className="w-5 h-5" />
-                      <span>{submitting ? 'Memproses...' : isShiftCutiOrIzin ? `Sedang ${todayRoster?.shift || 'Cuti / Izin'}` : isShiftLibur ? 'Hari Ini Libur (Off)' : 'Presensi Masuk Sekarang'}</span>
+                      <span>
+                        {submitting
+                          ? "Memproses..."
+                          : isShiftCutiOrIzin
+                          ? `Sedang ${todayRoster?.shift || "Cuti / Izin"}`
+                          : isShiftLibur
+                          ? "Hari Ini Libur (Off)"
+                          : locationConfig.enabled && !currentCoords
+                          ? "Mendeteksi Lokasi GPS..."
+                          : locationConfig.enabled && !isWithinGeofence
+                          ? `Di Luar Radius (${formatDistanceMeters(distanceToOffice || 0)})`
+                          : "Presensi Masuk Sekarang"}
+                      </span>
                     </button>
                   ) : (
                     <div className="py-3.5 px-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center justify-center gap-2">
@@ -727,11 +1091,16 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                         }
                         setShowConfirmPulangModal(true);
                       }}
-                      disabled={!canCheckoutNow || submitting || loading}
+                      disabled={
+                        !canCheckoutNow ||
+                        submitting ||
+                        loading ||
+                        Boolean(locationConfig.enabled && (!currentCoords || !isWithinGeofence))
+                      }
                       className={`w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:cursor-not-allowed ${
-                        canCheckoutNow
-                          ? 'bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/20'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700'
+                        canCheckoutNow && !(locationConfig.enabled && (!currentCoords || !isWithinGeofence))
+                          ? "bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/20"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
                       }`}
                     >
                       {canCheckoutNow ? (
@@ -1476,6 +1845,465 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 disabled:opacity-50"
                 >
                   {submittingTukarShift ? 'Mengirim...' : 'Kirim Pengajuan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL INTERACTIVE GOOGLE MAPS PICKER ================= */}
+      {mapPickerTargetIndex !== null && editingLocConfig.locations[mapPickerTargetIndex] && (
+        <LocationMapPickerModal
+          isOpen={true}
+          initialLat={editingLocConfig.locations[mapPickerTargetIndex].latitude}
+          initialLng={editingLocConfig.locations[mapPickerTargetIndex].longitude}
+          initialRadius={editingLocConfig.locations[mapPickerTargetIndex].radiusMeters}
+          locationName={editingLocConfig.locations[mapPickerTargetIndex].name}
+          onSave={(lat, lng) => {
+            setEditingLocConfig((prev) => {
+              const copy = [...prev.locations];
+              if (copy[mapPickerTargetIndex]) {
+                copy[mapPickerTargetIndex] = {
+                  ...copy[mapPickerTargetIndex],
+                  latitude: lat,
+                  longitude: lng,
+                };
+              }
+              return { ...prev, locations: copy };
+            });
+            playSuccessBeep();
+            onShowToast(`Koordinat ${editingLocConfig.locations[mapPickerTargetIndex].name} berhasil diperbarui dari peta! (${lat}, ${lng})`, 'success');
+          }}
+          onClose={() => setMapPickerTargetIndex(null)}
+        />
+      )}
+
+      {/* ================= MODAL ATUR MULTI-TITIK LOKASI GEOFENCING (ADMIN) ================= */}
+      {showLocationSettingsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-[#131d31] rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    Pengaturan Titik Lokasi Presensi (Geofencing)
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Bisa atur lebih dari 1 lokasi kerja (Gudang, Toko, Kantor Pusat) & tentukan hak akses staf
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationSettingsModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveLocationSettings} className="space-y-4 pt-4 overflow-y-auto flex-1 pr-1">
+              {/* Master Toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                <div>
+                  <div className="text-xs font-black text-slate-800 dark:text-white">
+                    Aktifkan Validasi Lokasi GPS (Geofencing)
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Jika aktif, karyawan di luar radius titik lokasi yang ditentukan tidak dapat melakukan presensi
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingLocConfig.enabled}
+                    onChange={(e) =>
+                      setEditingLocConfig((prev) => ({ ...prev, enabled: e.target.checked }))
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+                </label>
+              </div>
+
+              {/* DAFTAR KARTU LOKASI */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Daftar Titik Lokasi Kerja ({editingLocConfig.locations?.length || 0})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddNewLocationItem}
+                    className="px-2.5 py-1 rounded-xl bg-primary-50 hover:bg-primary-100 text-primary-700 dark:bg-primary-950/40 dark:text-primary-300 border border-primary-200 dark:border-primary-800 text-xs font-extrabold flex items-center gap-1 cursor-pointer transition shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Tambah Lokasi Baru</span>
+                  </button>
+                </div>
+
+                {(editingLocConfig.locations || []).map((loc, idx) => {
+                  const isSpecific = loc.accessMode === "specific";
+                  const currentSelectedNiks = Array.isArray(loc.allowedNikList)
+                    ? loc.allowedNikList.filter((n) => n !== "*")
+                    : [];
+
+                  return (
+                    <div
+                      key={loc.id || idx}
+                      className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 space-y-3 relative"
+                    >
+                      {/* Baris Atas: Nama Lokasi & Tombol Hapus */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1">
+                          <span className="w-6 h-6 rounded-lg bg-primary-500/10 text-primary-600 dark:text-primary-400 font-black text-xs flex items-center justify-center shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            required
+                            value={loc.name}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingLocConfig((prev) => {
+                                const copy = [...prev.locations];
+                                copy[idx] = { ...copy[idx], name: val };
+                                return { ...prev, locations: copy };
+                              });
+                            }}
+                            placeholder="Contoh: Gudang Utama / Kantor Pusat"
+                            className="font-black text-xs text-slate-900 dark:text-white bg-transparent border-b border-dashed border-slate-300 dark:border-slate-700 px-1 py-0.5 focus:outline-none focus:border-primary-500 w-full max-w-xs"
+                          />
+                        </div>
+
+                        {(editingLocConfig.locations?.length || 0) > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLocationItem(idx)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                            title="Hapus titik lokasi ini"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Koordinat Latitude & Longitude */}
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                            Latitude
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            required
+                            value={loc.latitude}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setEditingLocConfig((prev) => {
+                                const copy = [...prev.locations];
+                                copy[idx] = { ...copy[idx], latitude: val };
+                                return { ...prev, locations: copy };
+                              });
+                            }}
+                            placeholder="-6.175392"
+                            className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                            Longitude
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            required
+                            value={loc.longitude}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setEditingLocConfig((prev) => {
+                                const copy = [...prev.locations];
+                                copy[idx] = { ...copy[idx], longitude: val };
+                                return { ...prev, locations: copy };
+                              });
+                            }}
+                            placeholder="106.827153"
+                            className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Tombol Ambil Koordinat & Maps */}
+                      <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleCaptureAdminLocationForIndex(idx)}
+                          disabled={capturingAdminGps}
+                          className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-xl text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                        >
+                          <LocateFixed className={`w-3.5 h-3.5 ${capturingAdminGps ? "animate-spin" : ""}`} />
+                          <span>{capturingAdminGps ? "Mengambil GPS..." : "📍 Ambil Titik Saya Saat Ini"}</span>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setMapPickerTargetIndex(idx)}
+                            className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-black border border-amber-500/30 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            title="Buka peta Google Maps interaktif dan klik/geser pin untuk memilih titik ini"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                            <span>🗺️ Pilih dari Peta</span>
+                          </button>
+
+                          <a
+                            href={`https://www.google.com/maps?q=${loc.latitude},${loc.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-bold text-primary-600 hover:underline flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Lihat Maps</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Radius Toleransi (Meter) */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                            Toleransi Radius: <b>{loc.radiusMeters} meter</b>
+                          </label>
+                          <div className="flex items-center gap-1">
+                            {[10, 15, 25, 50].map((rVal) => (
+                              <button
+                                key={rVal}
+                                type="button"
+                                onClick={() => {
+                                  setEditingLocConfig((prev) => {
+                                    const copy = [...prev.locations];
+                                    copy[idx] = { ...copy[idx], radiusMeters: rVal };
+                                    return { ...prev, locations: copy };
+                                  });
+                                }}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                  loc.radiusMeters === rVal
+                                    ? "bg-primary-500 text-white"
+                                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                                }`}
+                              >
+                                {rVal}m
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Hak Akses Karyawan (Semua vs Karyawan Tertentu) */}
+                      <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                            Hak Akses Presensi di Titik Ini
+                          </label>
+                          {isSpecific && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                              {currentSelectedNiks.length} Karyawan Dipilih
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Dua Tombol Tab Pilihan Hak Akses */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingLocConfig((prev) => {
+                                const copy = [...prev.locations];
+                                copy[idx] = {
+                                  ...copy[idx],
+                                  accessMode: "all",
+                                  allowedNikList: ["*"],
+                                };
+                                return { ...prev, locations: copy };
+                              });
+                            }}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer border ${
+                              !isSpecific
+                                ? "bg-primary-500 text-white border-primary-500 shadow-sm shadow-primary-500/25"
+                                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Semua Karyawan (Umum)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingLocConfig((prev) => {
+                                const copy = [...prev.locations];
+                                copy[idx] = {
+                                  ...copy[idx],
+                                  accessMode: "specific",
+                                  allowedNikList: currentSelectedNiks,
+                                };
+                                return { ...prev, locations: copy };
+                              });
+                            }}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer border ${
+                              isSpecific
+                                ? "bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/25"
+                                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>Karyawan Tertentu Saja</span>
+                          </button>
+                        </div>
+
+                        {/* Panel Checklist Karyawan Tertentu */}
+                        {isSpecific && (
+                          <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800/50 space-y-2 animate-in fade-in duration-150">
+                            {/* Header Panel */}
+                            <div className="flex items-center justify-between text-[11px] pb-1 border-b border-slate-100 dark:border-slate-800">
+                              <span className="font-extrabold text-slate-700 dark:text-slate-300">
+                                Centang staf yang boleh absen di {loc.name}:
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingLocConfig((prev) => {
+                                      const copy = [...prev.locations];
+                                      copy[idx] = {
+                                        ...copy[idx],
+                                        accessMode: "specific",
+                                        allowedNikList: karyawanList.map((k) => k.nik),
+                                      };
+                                      return { ...prev, locations: copy };
+                                    });
+                                  }}
+                                  className="text-primary-600 dark:text-primary-400 hover:underline font-bold text-[11px] cursor-pointer"
+                                >
+                                  Pilih Semua
+                                </button>
+                                <span className="text-slate-300 dark:text-slate-700">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingLocConfig((prev) => {
+                                      const copy = [...prev.locations];
+                                      copy[idx] = {
+                                        ...copy[idx],
+                                        accessMode: "specific",
+                                        allowedNikList: [],
+                                      };
+                                      return { ...prev, locations: copy };
+                                    });
+                                  }}
+                                  className="text-rose-500 hover:underline font-bold text-[11px] cursor-pointer"
+                                >
+                                  Kosongkan
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Daftar Karyawan dengan Checklist */}
+                            {karyawanList.length === 0 ? (
+                              <div className="py-4 text-center text-xs text-slate-400">
+                                Sedang memuat data karyawan atau belum ada staf terdaftar di Master Karyawan.
+                              </div>
+                            ) : (
+                              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                                {karyawanList.map((k) => {
+                                  const isChecked = currentSelectedNiks.includes(k.nik);
+                                  return (
+                                    <label
+                                      key={k.nik}
+                                      className={`flex items-center justify-between text-xs py-1.5 px-2.5 rounded-xl cursor-pointer transition border ${
+                                        isChecked
+                                          ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60"
+                                          : "bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-700/60 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setEditingLocConfig((prev) => {
+                                              const copy = [...prev.locations];
+                                              const cur = (copy[idx].allowedNikList || []).filter((n) => n !== "*");
+                                              const updated = checked
+                                                ? [...cur, k.nik]
+                                                : cur.filter((n) => n !== k.nik);
+                                              copy[idx] = {
+                                                ...copy[idx],
+                                                accessMode: "specific",
+                                                allowedNikList: updated,
+                                              };
+                                              return { ...prev, locations: copy };
+                                            });
+                                          }}
+                                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 cursor-pointer"
+                                        />
+                                        <div>
+                                          <div className="font-black text-slate-800 dark:text-slate-100">
+                                            {k.nama}
+                                          </div>
+                                          <div className="text-[10px] text-slate-400 font-mono">
+                                            NIK: {k.nik}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                        {k.divisi || "Warehouse"}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {currentSelectedNiks.length === 0 && (
+                              <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 p-2 rounded-xl border border-amber-200 dark:border-amber-800/40 font-medium">
+                                ⚠️ Belum ada karyawan yang dicentang. Silakan centang minimal 1 karyawan agar dapat absen di titik ini.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Edukasi & Rekomendasi */}
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                💡 <b>Multi-Lokasi Presensi:</b> Karyawan yang diberi akses ke 2 titik lokasi (misal: <i>Gudang Utama</i> dan <i>Kantor Pusat</i>) dapat absen di lokasi mana pun saat mereka tiba di tempat kerja tersebut. Sistem secara otomatis mendeteksi lokasi terdekat dan mencatat nama titik lokasi tersebut pada riwayat absensi.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowLocationSettingsModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-bold text-xs shadow-md shadow-primary-500/20 transition cursor-pointer"
+                >
+                  Simpan Semua Titik Lokasi
                 </button>
               </div>
             </form>

@@ -868,6 +868,7 @@ export interface WmsSettings {
   roles?: Record<string, any>;
   agenda_categories?: Record<string, any>;
   katalog_manual_data?: string;
+  presensi_locations?: any;
   updated_at?: string;
 }
 

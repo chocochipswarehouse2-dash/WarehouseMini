@@ -49,6 +49,11 @@ function initCacheFromLocalStorage(): WmsSettings {
     const fonnteAuto = localStorage.getItem('wms_fonnte_auto_send') !== 'false';
     const waWebhookGasUrl = localStorage.getItem('wms_wa_webhook_gas_url') || '';
     const katalogManualData = localStorage.getItem('wms_katalog_manual_data') || '';
+    const presensiLocationsStored = localStorage.getItem('wms_presensi_location_config');
+    let parsedPresensiLocations = null;
+    if (presensiLocationsStored) {
+      try { parsedPresensiLocations = JSON.parse(presensiLocationsStored); } catch {}
+    }
     const rolesConfig = localStorage.getItem('wms_roles_config');
     let parsedRoles = null;
     if (rolesConfig) {
@@ -68,6 +73,7 @@ function initCacheFromLocalStorage(): WmsSettings {
       fonnte_auto_send: fonnteAuto,
       wa_webhook_gas_url: waWebhookGasUrl,
       katalog_manual_data: katalogManualData,
+      presensi_locations: parsedPresensiLocations,
       roles: parsedRoles,
     };
   } catch {
@@ -169,6 +175,7 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     gdrive_gas_url: safeGdriveGas,
     gdrive_folder_url: data.gdrive_folder_url || jsonConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
     roles: data.roles || jsonConfig.roles || null,
+    presensi_locations: data.presensi_locations !== undefined ? data.presensi_locations : (jsonConfig.presensi_locations || cachedSettings?.presensi_locations || null),
     katalog_manual_data: data.katalog_manual_data !== undefined ? data.katalog_manual_data : (jsonConfig.katalog_manual_data || cachedSettings?.katalog_manual_data || ''),
   };
 
@@ -208,6 +215,12 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     }
     if (merged.katalog_manual_data !== undefined) {
       localStorage.setItem('wms_katalog_manual_data', merged.katalog_manual_data);
+    }
+    if (merged.presensi_locations) {
+      localStorage.setItem('wms_presensi_location_config', JSON.stringify(merged.presensi_locations));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wms_presensi_location_changed', { detail: merged.presensi_locations }));
+      }
     }
   } catch {}
 
@@ -263,6 +276,7 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           gdrive_gas_url: row1.gdrive_gas_url || gasConfig.gdrive_gas_url || DEFAULT_GDRIVE_GAS_URL,
           gdrive_folder_url: row1.gdrive_folder_url || gasConfig.gdrive_folder_url || DEFAULT_GDRIVE_FOLDER_URL,
           roles: gasConfig.roles || null,
+          presensi_locations: gasConfig.presensi_locations || null,
           agenda_categories: gasConfig.agenda_categories || null,
           katalog_manual_data: row1.katalog_manual_data || gasConfig.katalog_manual_data || localStorage.getItem('wms_katalog_manual_data') || '',
           updated_at: row1.updated_at || new Date().toISOString(),
@@ -306,6 +320,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
       roles: updated.roles || null,
       agenda_categories: updated.agenda_categories || null,
       katalog_manual_data: updated.katalog_manual_data || '',
+      presensi_locations: updated.presensi_locations || null,
     };
 
     // A. Simpan row id: 1 (Fonnte & kolom spesifik jika sudah ada di database)

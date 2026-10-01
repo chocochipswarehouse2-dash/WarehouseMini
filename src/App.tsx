@@ -603,6 +603,13 @@ export default function App() {
     return localStorage.getItem('wms_sidebar_collapsed') === 'true';
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleQuota = () => setGmpQuotaExceeded(true);
+    window.addEventListener("gmp-quota-exceeded", handleQuota);
+    return () => window.removeEventListener("gmp-quota-exceeded", handleQuota);
+  }, []);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
 
   // Custom confirm dialog (replaces window.confirm which is blocked in TWA/PWA Builder)
@@ -1528,6 +1535,24 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-row bg-[#f4f6f8] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors selection:bg-primary-500 selection:text-white">
+      {/* Google Maps Quota Warning Banner */}
+      {gmpQuotaExceeded && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm w-full">
+          <span>
+            Google Maps Platform quota reached. If you are the app owner, visit{" "}
+            <a
+              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-semibold text-amber-950 hover:text-amber-800"
+            >
+              maps developer site
+            </a>{" "}
+            for instructions to update your account.
+          </span>
+        </div>
+      )}
+
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
