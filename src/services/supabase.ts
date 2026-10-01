@@ -5575,9 +5575,16 @@ export async function updateCutiRecord(
 }
 
 /**
- * Hapus data pengajuan cuti
+ * Hapus permanen data pengajuan cuti
  */
 export async function deleteCutiRecord(id: string): Promise<void> {
+  try {
+    await supabaseFetch('perijinan_cuti', 'DELETE', undefined, `id=eq.${encodeURIComponent(id)}`);
+    return;
+  } catch (restErr) {
+    console.warn('REST deleteCutiRecord fallback to SDK:', restErr);
+  }
+
   const sb = getSupabaseClient();
   const { error } = await sb
     .from('perijinan_cuti')
@@ -5587,6 +5594,37 @@ export async function deleteCutiRecord(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+/**
+ * Batalkan cuti yang sudah disetujui (Cancel Cuti)
+ * Mengubah status menjadi "Dibatalkan" dan mengembalikan jadwal kerja di roster_shift
+ */
+export async function cancelCutiRecord(
+  cuti: PerijinanCutiRecord,
+  cancelledBy: string,
+  alasanBatal?: string
+): Promise<void> {
+  const updatePayload = {
+    status: 'Dibatalkan',
+    approved_by: cancelledBy,
+    approved_at: new Date().toISOString(),
+    catatan: alasanBatal ? `[DIBATALKAN] ${alasanBatal}` : `[DIBATALKAN] Dibatalkan oleh ${cancelledBy}`,
+  };
+
+  try {
+    await supabaseFetch('perijinan_cuti', 'PATCH', updatePayload, `id=eq.${encodeURIComponent(cuti.id)}`);
+  } catch (e) {
+    const sb = getSupabaseClient();
+    const { error } = await sb
+      .from('perijinan_cuti')
+      .update(updatePayload)
+      .eq('id', cuti.id);
+    if (error) throw new Error(error.message);
+  }
+
+  // Pulihkan jadwal kerja di roster shift
+  await removeRosterShiftForCuti(cuti);
 }
 
 // ============================================================================
@@ -6702,8 +6740,11 @@ export async function removeRosterShiftForCuti(cuti: PerijinanCutiRecord): Promi
       if (existing && existing.length > 0) {
         const s = (existing[0].shift || "").toLowerCase();
         if (s.includes("cuti") || s.includes("izin") || s.includes("ijin") || s.includes("sakit")) {
-          // Reset kembali ke shift normal atau hapus dari roster khusus
-          await sb.from("roster_shift").delete().eq("id", existing[0].id);
+          try {
+            await supabaseFetch("roster_shift", "DELETE", undefined, `id=eq.${existing[0].id}`);
+          } catch {
+            await sb.from("roster_shift").delete().eq("id", existing[0].id);
+          }
         }
       }
     } catch (eDel) {

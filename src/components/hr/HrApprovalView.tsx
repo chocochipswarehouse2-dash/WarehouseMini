@@ -38,6 +38,7 @@ import {
   deleteCutiRecord,
   upsertRosterShiftForCuti,
   removeRosterShiftForCuti,
+  cancelCutiRecord,
   fetchTukarShiftList,
   updateTukarShiftStatus,
   deleteTukarShiftRecord,
@@ -56,6 +57,15 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
   const [loading, setLoading] = useState<boolean>(true);
   const [activeSection, setActiveSection] = useState<'lembur' | 'cuti' | 'tukar_shift' | 'izin_pulang' | 'riwayat'>('lembur');
   const [searchHistory, setSearchHistory] = useState<string>('');
+  // Modal konfirmasi tindakan cuti / lembur tanpa window.confirm (anti-block)
+  const [confirmActionModal, setConfirmActionModal] = useState<{
+    type: 'delete_cuti' | 'cancel_cuti' | 'reset_cuti' | 'delete_lembur';
+    item: any;
+    title: string;
+    desc: string;
+    danger?: boolean;
+  } | null>(null);
+  const [cancelReasonText, setCancelReasonText] = useState<string>('');
   const [filterMonth, setFilterMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
 
   const [lemburList, setLemburList] = useState<LemburRecord[]>([]);
@@ -147,38 +157,54 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     }
   };
 
-  // Reset / Batalkan Approval Cuti (Kembalikan ke status Diajukan)
-  const handleResetCuti = async (item: PerijinanCutiRecord) => {
-    if (!confirm(`Batalkan approval cuti untuk ${item.nama}? Status akan dikembalikan ke 'Diajukan'.`)) return;
+  // Eksekusi aksi yang dikonfirmasi di modal (Cancel, Delete, Reset)
+  const handleExecuteConfirmedAction = async () => {
+    if (!confirmActionModal) return;
+    const { type, item } = confirmActionModal;
     setProcessingId(item.id);
     try {
-      await updateCutiStatus(item.id, 'Diajukan', '');
-      setCutiList((prev) =>
-        prev.map((c) => (c.id === item.id ? { ...c, status: 'Diajukan', approved_by: undefined, approved_at: undefined } : c))
-      );
-      playSuccessBeep();
-      onShowToast(`Persetujuan cuti ${item.nama} telah dibatalkan & di-reset ke status Diajukan.`, 'info');
-    } catch (err: any) {
-      playErrorBeep();
-      onShowToast('Gagal membatalkan approval cuti: ' + (err?.message || 'Error'), 'error');
-    } finally {
-      setProcessingId(null);
-    }
-  };
+      const approver = session?.name || session?.username || "Admin";
 
-  // Hapus Cuti Permanen
-  const handleDeleteCuti = async (item: PerijinanCutiRecord) => {
-    if (!confirm(`Hapus permanen permohonan cuti ${item.nama} (${item.tgl_mulai} s/d ${item.tgl_selesai})? Tindakan ini tidak dapat dibatalkan.`)) return;
-    setProcessingId(item.id);
-    try {
-      await deleteCutiRecord(item.id);
-      await removeRosterShiftForCuti(item);
-      setCutiList((prev) => prev.filter((c) => c.id !== item.id));
-      playSuccessBeep();
-      onShowToast(`Permohonan cuti ${item.nama} berhasil dihapus permanen.`, 'info');
+      if (type === "cancel_cuti") {
+        await cancelCutiRecord(item, approver, cancelReasonText);
+        setCutiList((prev) =>
+          prev.map((c) =>
+            c.id === item.id
+              ? {
+                  ...c,
+                  status: "Dibatalkan",
+                  approved_by: approver,
+                  catatan: cancelReasonText ? `[DIBATALKAN] ${cancelReasonText}` : `[DIBATALKAN] Dibatalkan oleh ${approver}`,
+                }
+              : c
+          )
+        );
+        playSuccessBeep();
+        onShowToast(`Cuti ${item.nama} berhasil dibatalkan & jadwal kerja dipulihkan!`, 'info');
+      } else if (type === "delete_cuti") {
+        await deleteCutiRecord(item.id);
+        await removeRosterShiftForCuti(item);
+        setCutiList((prev) => prev.filter((c) => c.id !== item.id));
+        playSuccessBeep();
+        onShowToast(`Data cuti ${item.nama} berhasil dihapus permanen.`, 'success');
+      } else if (type === "reset_cuti") {
+        await updateCutiStatus(item.id, 'Diajukan', '');
+        await removeRosterShiftForCuti(item);
+        setCutiList((prev) =>
+          prev.map((c) => (c.id === item.id ? { ...c, status: 'Diajukan', approved_by: undefined, approved_at: undefined } : c))
+        );
+        playSuccessBeep();
+        onShowToast(`Persetujuan cuti ${item.nama} telah di-reset ke status Diajukan.`, 'info');
+      } else if (type === "delete_lembur") {
+        await deleteLemburRecord(item.id);
+        setLemburList((prev) => prev.filter((l) => l.id !== item.id));
+        playSuccessBeep();
+        onShowToast(`Data lembur ${item.nama} berhasil dihapus permanen.`, 'success');
+      }
+      setConfirmActionModal(null);
     } catch (err: any) {
       playErrorBeep();
-      onShowToast('Gagal menghapus cuti: ' + (err?.message || 'Error'), 'error');
+      onShowToast(`Gagal memproses aksi: ${err?.message || 'Error'}`, 'error');
     } finally {
       setProcessingId(null);
     }

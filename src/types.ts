@@ -242,7 +242,7 @@ export interface LemburRecord {
   durasi_jam: number;
   rate_lembur: number;
   total_lembur: number;
-  status: 'Diajukan' | 'Disetujui' | 'Ditolak';
+  status: 'Diajukan' | 'Disetujui' | 'Ditolak' | 'Dibatalkan';
   approved_by?: string | null;
   approved_at?: string | null;
   catatan?: string | null;

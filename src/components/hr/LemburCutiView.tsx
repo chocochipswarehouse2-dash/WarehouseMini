@@ -30,6 +30,7 @@ import {
   submitCutiRecord,
   deleteLemburRecord,
   deleteCutiRecord,
+  cancelCutiRecord,
   updateCutiStatus,
   updateCutiRecord,
   upsertRosterShiftForCuti,
@@ -60,7 +61,16 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
 
   // Filter & Search states for Team Cuti
   const [teamSearchQuery, setTeamSearchQuery] = useState<string>("");
-  const [teamStatusFilter, setTeamStatusFilter] = useState<"all" | "Diajukan" | "Disetujui" | "Ditolak">("all");
+  const [teamStatusFilter, setTeamStatusFilter] = useState<"all" | "Diajukan" | "Disetujui" | "Ditolak" | "Dibatalkan">("all");
+  // Confirmation Modal tanpa blocking window.confirm()
+  const [confirmCutiModal, setConfirmCutiModal] = useState<{
+    type: "delete" | "cancel" | "reset";
+    item: PerijinanCutiRecord;
+    title: string;
+    desc: string;
+    danger?: boolean;
+  } | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState<string>("");
   const [teamDivisiFilter, setTeamDivisiFilter] = useState<string>("all");
   const [teamSortBy, setTeamSortBy] = useState<"pending_first" | "date_desc" | "date_asc" | "name_asc">("pending_first");
   const [processingCutiId, setProcessingCutiId] = useState<string | null>(null);
@@ -276,45 +286,83 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
     }
   };
 
-  const handleResetCuti = async (item: PerijinanCutiRecord) => {
-    if (!confirm(`Kembalikan status cuti ${item.nama} menjadi "Diajukan"?`)) return;
+  // Eksekusi aksi cuti terkonfirmasi via modal
+  const handleExecuteConfirmedCutiAction = async () => {
+    if (!confirmCutiModal) return;
+    const { type, item } = confirmCutiModal;
     setProcessingCutiId(item.id);
     try {
-      await updateCutiStatus(item.id, "Diajukan", "");
-      await removeRosterShiftForCuti(item);
-      setCutiList((prev) =>
-        prev.map((c) => (c.id === item.id ? { ...c, status: "Diajukan", approved_by: undefined } : c))
-      );
-      playSuccessBeep();
-      onShowToast(`Status cuti ${item.nama} di-reset ke "Diajukan".`, "info");
+      const approver = session?.name || session?.username || "Admin";
+
+      if (type === "cancel") {
+        await cancelCutiRecord(item, approver, cancelReasonInput);
+        setCutiList((prev) =>
+          prev.map((c) =>
+            c.id === item.id
+              ? {
+                  ...c,
+                  status: "Dibatalkan",
+                  approved_by: approver,
+                  catatan: cancelReasonInput ? `[DIBATALKAN] ${cancelReasonInput}` : `[DIBATALKAN] Dibatalkan oleh ${approver}`,
+                }
+              : c
+          )
+        );
+        playSuccessBeep();
+        onShowToast(`Cuti ${item.nama} berhasil dibatalkan & jadwal kerja dipulihkan!`, "info");
+      } else if (type === "delete") {
+        await deleteCutiRecord(item.id);
+        await removeRosterShiftForCuti(item);
+        setCutiList((prev) => prev.filter((c) => c.id !== item.id));
+        playSuccessBeep();
+        onShowToast(`Data cuti ${item.nama} berhasil dihapus permanen.`, "success");
+      } else if (type === "reset") {
+        await updateCutiStatus(item.id, "Diajukan", "");
+        await removeRosterShiftForCuti(item);
+        setCutiList((prev) =>
+          prev.map((c) => (c.id === item.id ? { ...c, status: "Diajukan", approved_by: undefined } : c))
+        );
+        playSuccessBeep();
+        onShowToast(`Status cuti ${item.nama} berhasil di-reset ke "Diajukan".`, "info");
+      }
+      setConfirmCutiModal(null);
     } catch (err: any) {
       playErrorBeep();
-      onShowToast(`Gagal me-reset cuti: ${err?.message || "Error"}`, "error");
+      onShowToast(`Gagal memproses cuti: ${err?.message || "Error"}`, "error");
     } finally {
       setProcessingCutiId(null);
     }
   };
 
-  const handleDeleteCuti = async (item: PerijinanCutiRecord) => {
-    if (
-      !confirm(
-        `Hapus permanen permohonan cuti ${item.nama} (${item.tgl_mulai} s/d ${item.tgl_selesai})? Tindakan tidak dapat dibatalkan.`
-      )
-    )
-      return;
-    setProcessingCutiId(item.id);
-    try {
-      await deleteCutiRecord(item.id);
-      await removeRosterShiftForCuti(item);
-      setCutiList((prev) => prev.filter((c) => c.id !== item.id));
-      playSuccessBeep();
-      onShowToast(`Data cuti ${item.nama} berhasil dihapus permanen.`, "success");
-    } catch (err: any) {
-      playErrorBeep();
-      onShowToast(`Gagal menghapus cuti: ${err?.message || "Error"}`, "error");
-    } finally {
-      setProcessingCutiId(null);
-    }
+  const handleResetCuti = (item: PerijinanCutiRecord) => {
+    setConfirmCutiModal({
+      type: "reset",
+      item,
+      title: "Reset Status Cuti",
+      desc: `Kembalikan status cuti ${item.nama} menjadi "Diajukan" untuk ditinjau ulang?`,
+      danger: false,
+    });
+  };
+
+  const handleDeleteCuti = (item: PerijinanCutiRecord) => {
+    setConfirmCutiModal({
+      type: "delete",
+      item,
+      title: "Hapus Permanen Data Cuti",
+      desc: `Hapus permanen data permohonan cuti ${item.nama} (${item.tgl_mulai} s/d ${item.tgl_selesai}) dari database? Data yang telah dihapus tidak dapat dipulihkan.`,
+      danger: true,
+    });
+  };
+
+  const handleCancelCuti = (item: PerijinanCutiRecord) => {
+    setCancelReasonInput("");
+    setConfirmCutiModal({
+      type: "cancel",
+      item,
+      title: "Batalkan Cuti (Cancel Cuti)",
+      desc: `Batalkan permohonan cuti ${item.nama} (${item.tgl_mulai} s/d ${item.tgl_selesai})? Jadwal kerja di roster shift akan otomatis dipulihkan ke normal sehingga karyawan dapat masuk kerja & presensi seperti biasa.`,
+      danger: false,
+    });
   };
 
   const handleSaveEditCuti = async (e: React.FormEvent) => {
@@ -859,6 +907,17 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
               >
                 Ditolak ({cutiList.filter((c) => c.status === "Ditolak").length})
               </button>
+              <button
+                type="button"
+                onClick={() => setTeamStatusFilter("Dibatalkan")}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  teamStatusFilter === "Dibatalkan"
+                    ? "bg-slate-700 text-white shadow-xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                }`}
+              >
+                Dibatalkan ({cutiList.filter((c) => c.status === "Dibatalkan").length})
+              </button>
             </div>
           </div>
 
@@ -953,6 +1012,8 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                               : c.status === "Ditolak"
                               ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                              : c.status === "Dibatalkan"
+                              ? "bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20"
                               : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
                           }`}
                         >
@@ -1032,16 +1093,30 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                               </button>
                             </>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleResetCuti(c)}
-                              disabled={isProcessing}
-                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
-                              title="Kembalikan status cuti ke Diajukan"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Reset ke Diajukan</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {c.status === "Disetujui" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelCuti(c)}
+                                  disabled={isProcessing}
+                                  className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-black flex items-center gap-1 transition cursor-pointer shadow-xs disabled:opacity-50"
+                                  title="Batalkan cuti dan pulihkan jadwal kerja karyawan"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Batalkan Cuti</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleResetCuti(c)}
+                                disabled={isProcessing}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                                title="Kembalikan status cuti ke Diajukan"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reset ke Diajukan</span>
+                              </button>
+                            </div>
                           )}
                         </div>
 
@@ -1197,6 +1272,70 @@ export const LemburCutiView: React.FC<LemburCutiViewProps> = ({ session, onShowT
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ================= MODAL KONFIRMASI AKSI CUTI (CANCEL / HAPUS / RESET) ================= */}
+      {confirmCutiModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                confirmCutiModal.danger ? 'bg-rose-500/10 text-rose-600' : 'bg-amber-500/10 text-amber-600'
+              }`}>
+                {confirmCutiModal.danger ? <AlertCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  {confirmCutiModal.title}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono">
+                  {confirmCutiModal.item?.nama} ({confirmCutiModal.item?.tgl_mulai} s/d {confirmCutiModal.item?.tgl_selesai})
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+              {confirmCutiModal.desc}
+            </p>
+
+            {confirmCutiModal.type === 'cancel' && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Alasan Pembatalan (Opsional):
+                </label>
+                <input
+                  type="text"
+                  value={cancelReasonInput}
+                  onChange={(e) => setCancelReasonInput(e.target.value)}
+                  placeholder="Contoh: Batal bepergian / diminta masuk kerja oleh atasan"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmCutiModal(null)}
+                disabled={Boolean(processingCutiId)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteConfirmedCutiAction}
+                disabled={Boolean(processingCutiId)}
+                className={`px-4 py-2 rounded-xl text-white text-xs font-black shadow-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 ${
+                  confirmCutiModal.danger
+                    ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                    : 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                }`}
+              >
+                {processingCutiId ? 'Memproses...' : confirmCutiModal.danger ? 'Ya, Hapus Permanen' : confirmCutiModal.type === 'cancel' ? 'Ya, Batalkan Cuti' : 'Ya, Lanjutkan'}
+              </button>
+            </div>
           </div>
         </div>
       )}
