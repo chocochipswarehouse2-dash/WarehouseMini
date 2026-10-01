@@ -160,12 +160,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const userIsSuperadmin = isSuperadmin(session);
   const canManageUsers = userIsSuperadmin || isSuperadmin(session);
   const canManageSettings = userIsSuperadmin || isSuperadmin(session);
+  const canAccessModal = userIsSuperadmin || canManageUsers || canManageSettings;
 
   // Default tab based on permissions
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
     if (userIsSuperadmin || canManageSettings) return 'database';
     if (canManageUsers) return 'users';
-    return 'theme';
+    return 'device';
   });
 
   // Supabase Config State
@@ -910,6 +911,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  if (!canAccessModal) {
+    return (
+      <div
+        id="settingsModalOverlay"
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      >
+        <div
+          id="settingsModalContent"
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 text-center space-y-4"
+        >
+          <div className="w-12 h-12 bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 rounded-xl flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Akses Pengaturan Dibatasi</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Menu Pengaturan Sistem hanya dapat diakses oleh Superadmin & Administrator. Untuk mengganti Tema dan Tampilan, silakan gunakan tombol <b>Pilih Tema</b> (ikon kuas) di Navbar atau Sidebar.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 px-4 bg-primary-500 hover:bg-primary-600 text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
