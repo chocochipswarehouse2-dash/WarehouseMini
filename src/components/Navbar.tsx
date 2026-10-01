@@ -246,12 +246,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
         </button>
 
-        {/* Settings Button - Hanya untuk Superadmin atau user dengan izin Konfigurasi Sistem / Manajemen User */}
-        {canAccessSettings(session) && (
+        {/* Settings Button - Akses Pengaturan & Tema untuk Semua User */}
+        {session && (
           <button
             id="btnSettings"
             onClick={onOpenSettings}
-            title="Pengaturan Sistem"
+            title={isSuperadmin(session) ? 'Pengaturan Sistem & Tema' : 'Pengaturan Tema & Preferensi'}
             className="p-2 text-slate-600 dark:text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
           >
             <Settings className="w-4 h-4" />

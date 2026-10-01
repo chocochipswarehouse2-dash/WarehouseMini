@@ -290,8 +290,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
 };
 
 export const canAccessSettings = (session: UserSession | null): boolean => {
-  if (!session) return false;
-  return isSuperadmin(session);
+  return !!session;
 };
 
 export const getDefaultPageForSession = (session: UserSession | null): ActivePage => {

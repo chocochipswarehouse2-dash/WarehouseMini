@@ -54,7 +54,8 @@ import {
   CheckCheck, Share2, Loader2, UploadCloud,
   ShieldAlert,
   Pencil,
-  Store
+  Store,
+  Palette
 } from 'lucide-react';
 import { fetchOutlets, saveOutlet, deleteOutlet } from '../services/gasManualShipment';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
@@ -112,9 +113,20 @@ interface SettingsModalProps {
   isRealtimeConnected: boolean;
   onOpenUpdateDatabase?: () => void;
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  // Theme Preferences (Akses Bebas Semua Pengguna)
+  themeColor?: string;
+  setThemeColor?: (color: string) => void;
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
+  themeFont?: string;
+  setThemeFont?: (font: string) => void;
+  themeFontSize?: string;
+  setThemeFontSize?: (size: string) => void;
+  themeIconStyle?: string;
+  setThemeIconStyle?: (style: string) => void;
 }
 
-type SettingsTab = 'database' | 'supabase' | 'users' | 'roles' | 'device' | 'deploy_apk' | 'whatsapp' | 'outlets';
+type SettingsTab = 'theme' | 'device' | 'database' | 'supabase' | 'users' | 'roles' | 'deploy_apk' | 'whatsapp' | 'outlets';
 
 interface LocalRole {
   name: string;
@@ -134,17 +146,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isRealtimeConnected,
   onOpenUpdateDatabase,
   onNotify,
+  themeColor = 'rose',
+  setThemeColor = () => {},
+  darkMode = false,
+  onToggleDarkMode = () => {},
+  themeFont = 'sans',
+  setThemeFont = () => {},
+  themeFontSize = 'normal',
+  setThemeFontSize = () => {},
+  themeIconStyle = 'regular',
+  setThemeIconStyle = () => {},
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
   const canManageUsers = userIsSuperadmin || isSuperadmin(session);
   const canManageSettings = userIsSuperadmin || isSuperadmin(session);
-  const canAccessModal = userIsSuperadmin || canManageUsers || canManageSettings;
 
   // Default tab based on permissions
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
     if (userIsSuperadmin || canManageSettings) return 'database';
     if (canManageUsers) return 'users';
-    return 'device';
+    return 'theme';
   });
 
   // Supabase Config State
@@ -890,37 +911,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  if (!canAccessModal) {
-    return (
-      <div
-        id="settingsModalOverlay"
-        onClick={onClose}
-        className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      >
-        <div
-          id="settingsModalContent"
-          onClick={(e) => e.stopPropagation()}
-          className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 text-center space-y-4"
-        >
-          <div className="w-12 h-12 bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 rounded-xl flex items-center justify-center mx-auto">
-            <ShieldAlert className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Akses Pengaturan Dibatasi</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Akun Anda tidak memiliki hak akses untuk membuka pengaturan sistem. Hanya Superadmin atau akun dengan izin Konfigurasi Sistem/Manajemen Pengguna yang diizinkan.
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full py-2.5 px-4 bg-primary-500 hover:bg-primary-600 text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
-          >
-            Tutup
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
     <div
@@ -946,16 +936,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Pengaturan Sistem & Hak Akses WMS
+                  Pengaturan & Preferensi WMS
                 </h2>
-                {userIsSuperadmin && (
+                {userIsSuperadmin ? (
                   <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-[10px] font-black tracking-wider uppercase border border-purple-300 dark:border-purple-800">
                     SUPERADMIN
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-[10px] font-bold border border-slate-200 dark:border-slate-700">
+                    {session?.role || 'PENGGUNA'}
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Cloud DB, Integrasi Google Apps Script, Manajemen Pengguna & Perangkat
+                Tema Tampilan, Mode Gelap, Preferensi Audio, Cloud Database & Pengguna
               </p>
             </div>
           </div>
@@ -970,6 +964,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Tab Navigation */}
         <div className="shrink-0 flex border-b border-slate-200 dark:border-slate-800 px-4 gap-1 bg-slate-100/50 dark:bg-[#0b1324] overflow-x-auto">
+          {/* Tab 1: Tema & Tampilan - SEMUA USER BOLEH AKSES */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('theme')}
+            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'theme'
+                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Palette className="w-4 h-4 text-primary-500" />
+            <span>Tema & Tampilan</span>
+            <span className="text-[9px] px-1.5 py-0.2 bg-primary-100 dark:bg-primary-950/70 text-primary-700 dark:text-primary-300 rounded font-bold">
+              SEMUA USER
+            </span>
+          </button>
+
+          {/* Tab 2: Preferensi Perangkat & Suara - SEMUA USER */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('device')}
+            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'device'
+                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            <span>Preferensi Perangkat</span>
+          </button>
+
           {canManageSettings && (
             <button
               type="button"
@@ -987,8 +1012,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
             </button>
           )}
-
-          
 
           {canManageUsers && (
             <>
@@ -1018,19 +1041,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </>
           )}
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('device')}
-            className={`px-4 py-3 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'device'
-                ? 'border-primary-500 text-primary-500 bg-white dark:bg-[#131d31]'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            <span>Preferensi Perangkat</span>
-          </button>
 
           {canManageSettings && (
             <button
@@ -1080,6 +1090,190 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Tab Content Body */}
         <div className="p-5 overflow-y-auto flex-1 space-y-6">
+          {/* ========================================================================= */}
+          {/* TAB: TEMA & TAMPILAN (AKSES SEMUA USER) */}
+          {/* ========================================================================= */}
+          {activeTab === 'theme' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="bg-primary-50/50 dark:bg-primary-950/20 border border-primary-200/50 dark:border-primary-900/30 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary-500" />
+                    Kustomisasi Tema & Tampilan Pribadi
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Pengaturan tampilan ini berlaku khusus untuk perangkat & sesi Anda. Semua pengguna bebas memilih tema favorit.
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-xl bg-primary-500 text-white text-[11px] font-black uppercase">
+                  {themeColor}
+                </span>
+              </div>
+
+              {/* 1. Mode Warna (Terang vs Gelap) */}
+              <div className="space-y-2">
+                <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                  1. Mode Tampilan
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => darkMode && onToggleDarkMode()}
+                    className={`flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      !darkMode
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm ring-2 ring-primary-500/20'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                    }`}
+                  >
+                    <Sun className={`w-4 h-4 ${!darkMode ? 'text-primary-500' : ''}`} />
+                    <span>Mode Terang (Light)</span>
+                    {!darkMode && <Check className="w-4 h-4 text-primary-500 ml-1" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => !darkMode && onToggleDarkMode()}
+                    className={`flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      darkMode
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm ring-2 ring-primary-500/20'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                    }`}
+                  >
+                    <Moon className={`w-4 h-4 ${darkMode ? 'text-primary-500' : ''}`} />
+                    <span>Mode Gelap (Dark)</span>
+                    {darkMode && <Check className="w-4 h-4 text-primary-500 ml-1" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Warna Aksen Tema */}
+              <div className="space-y-2">
+                <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                  2. Pilihan Warna Aksen Utama
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                  {[
+                    { id: 'rose', name: 'Rose / Pink', bg: 'bg-rose-500' },
+                    { id: 'pink', name: 'Pastel Pink', bg: 'bg-pink-400' },
+                    { id: 'fuchsia', name: 'Fuchsia', bg: 'bg-fuchsia-400' },
+                    { id: 'purple', name: 'Purple', bg: 'bg-purple-500' },
+                    { id: 'indigo', name: 'Midnight Indigo', bg: 'bg-indigo-500' },
+                    { id: 'blue', name: 'Ocean Blue', bg: 'bg-blue-500' },
+                    { id: 'sky', name: 'Pastel Sky', bg: 'bg-sky-400' },
+                    { id: 'cyan', name: 'Pastel Cyan', bg: 'bg-cyan-400' },
+                    { id: 'teal', name: 'Teal Forest', bg: 'bg-teal-500' },
+                    { id: 'emerald', name: 'Emerald', bg: 'bg-emerald-500' },
+                    { id: 'lime', name: 'Pastel Lime', bg: 'bg-lime-400' },
+                    { id: 'orange', name: 'Orange', bg: 'bg-orange-500' },
+                    { id: 'amber', name: 'Amber Sunset', bg: 'bg-amber-500' },
+                    { id: 'grey', name: 'Grey (Monokrom)', bg: 'bg-slate-500' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setThemeColor(t.id);
+                        onNotify(`Tema beralih ke: ${t.name}`, 'info');
+                      }}
+                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-left ${
+                        themeColor === t.id
+                          ? 'border-primary-500 bg-primary-50/70 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 shadow-sm ring-2 ring-primary-500/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 rounded-full ${t.bg} shrink-0 shadow-xs flex items-center justify-center`}>
+                        {themeColor === t.id && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                      </span>
+                      <span className="truncate">{t.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Gaya Tipografi (Font Family) */}
+              <div className="space-y-2">
+                <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                  3. Gaya Huruf (Font Family)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { id: 'sans', name: 'Default (Plus Jakarta)' },
+                    { id: 'rounded', name: 'Rounded (Quicksand)' },
+                    { id: 'inter', name: 'Inter (Modern)' },
+                    { id: 'serif', name: 'Serif (Playfair)' },
+                    { id: 'mono', name: 'Monospace (Tech)' },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setThemeFont(f.id)}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                        themeFont === f.id
+                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4. Ukuran Huruf & Gaya Ikon */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                    4. Ukuran Huruf UI
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'small', label: 'Kecil' },
+                      { id: 'normal', label: 'Normal' },
+                      { id: 'large', label: 'Besar' },
+                    ].map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setThemeFontSize(s.id)}
+                        className={`py-2 px-1 text-xs font-bold rounded-xl border transition-all cursor-pointer text-center ${
+                          themeFontSize === s.id
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                    5. Gaya Ketebalan Ikon
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'light', label: 'Tipis' },
+                      { id: 'regular', label: 'Regular' },
+                      { id: 'bold', label: 'Tebal' },
+                    ].map((ic) => (
+                      <button
+                        key={ic.id}
+                        type="button"
+                        onClick={() => setThemeIconStyle(ic.id)}
+                        className={`py-2 px-1 text-xs font-bold rounded-xl border transition-all cursor-pointer text-center ${
+                          themeIconStyle === ic.id
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {ic.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {/* ========================================================================= */}
           {/* TAB: USER MANAGEMENT (RBAC) */}
           {/* ========================================================================= */}

@@ -1953,6 +1953,16 @@ export default function App() {
         isRealtimeConnected={isRealtimeConnected}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
         onNotify={showToast}
+        themeColor={themeColor}
+        setThemeColor={setThemeColor}
+        darkMode={darkMode}
+        onToggleDarkMode={toggleDarkMode}
+        themeFont={themeFont}
+        setThemeFont={setThemeFont}
+        themeFontSize={themeFontSize}
+        setThemeFontSize={setThemeFontSize}
+        themeIconStyle={themeIconStyle}
+        setThemeIconStyle={setThemeIconStyle}
       />
 
       {/* Update Database Modal (Superadmin Only: 2 CSV Import to Supabase) */}
