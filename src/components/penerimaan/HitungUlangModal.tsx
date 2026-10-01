@@ -719,8 +719,34 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
         const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
           activeTab: productInfo?.kategori === 'Kargo' ? 'Kargo' : 'CMT',
           kode_produksi: selectedCode,
+          tanggal_hitung: auditDate,
           items: deltaItems,
         });
+
+        // Persist ke Cloud settings
+        try {
+          await saveRecountAuditRecord({
+            kode_produksi: selectedCode,
+            tanggal_audit: auditDate,
+            total_asli: summary.totalPrev,
+            total_fisik: summary.totalRecount,
+            total_selisih: summary.totalSelisih,
+            status: summary.totalSelisih === 0 ? 'MATCH' : summary.totalSelisih < 0 ? 'KURANG' : 'LEBIH',
+            round: (updatedItems[0]?.recount_round || 1),
+            auditor: auditorName || 'Auditor',
+            catatan: generalNotes,
+            updated_at: new Date().toISOString(),
+            variants: deltaItems.map((d) => ({
+              warna: d.warna,
+              size: d.size,
+              qty_asli: d.qty_asli,
+              qty_fisik: d.qty_fisik,
+              selisih: d.selisih,
+              status: d.status,
+              note: d.catatan,
+            })),
+          });
+        } catch (eR) {}
 
         if (deltaRes.success) {
           onShowToast(`Auto-push Master Sheet berhasil: Data hitung ulang Kode ${selectedCode} telah diperbarui di Google Sheets!`, 'success');

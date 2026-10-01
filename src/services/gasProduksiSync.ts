@@ -902,6 +902,7 @@ export interface MasterRecountDeltaPayload {
   spreadsheetId?: string;
   activeTab?: 'CMT' | 'Kargo' | string;
   kode_produksi: string;
+  tanggal_hitung?: string;
   items: MasterRecountDeltaItem[];
 }
 
@@ -920,6 +921,7 @@ export async function pushMasterRecountDeltaToGoogleSheet(
     spreadsheetId: targetSpreadsheetId,
     activeTab: payload.activeTab || 'CMT',
     kode_produksi: payload.kode_produksi,
+    tanggal_hitung: payload.tanggal_hitung || (payload.items[0]?.updated_at ? payload.items[0].updated_at.split('T')[0] : new Date().toISOString().split('T')[0]),
     items: payload.items,
   };
 

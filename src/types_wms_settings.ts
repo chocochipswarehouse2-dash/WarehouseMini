@@ -9,5 +9,6 @@ export interface WmsSettings {
   gdrive_gas_url?: string;
   gdrive_folder_url?: string;
   katalog_manual_data?: string;
+  recount_audit_map?: Record<string, any>;
   updated_at?: string;
 }

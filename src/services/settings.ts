@@ -177,6 +177,7 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     roles: data.roles || jsonConfig.roles || null,
     presensi_locations: data.presensi_locations !== undefined ? data.presensi_locations : (jsonConfig.presensi_locations || cachedSettings?.presensi_locations || null),
     katalog_manual_data: data.katalog_manual_data !== undefined ? data.katalog_manual_data : (jsonConfig.katalog_manual_data || cachedSettings?.katalog_manual_data || ''),
+    recount_audit_map: data.recount_audit_map !== undefined ? data.recount_audit_map : (jsonConfig.recount_audit_map || cachedSettings?.recount_audit_map || null),
   };
 
   cachedSettings = merged;
@@ -215,6 +216,9 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
     }
     if (merged.katalog_manual_data !== undefined) {
       localStorage.setItem('wms_katalog_manual_data', merged.katalog_manual_data);
+    }
+    if (merged.recount_audit_map) {
+      localStorage.setItem('wms_recount_audit_map', JSON.stringify(merged.recount_audit_map));
     }
     if (merged.presensi_locations) {
       localStorage.setItem('wms_presensi_location_config', JSON.stringify(merged.presensi_locations));
@@ -321,6 +325,7 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
       agenda_categories: updated.agenda_categories || null,
       katalog_manual_data: updated.katalog_manual_data || '',
       presensi_locations: updated.presensi_locations || null,
+      recount_audit_map: updated.recount_audit_map || null,
     };
 
     // A. Simpan row id: 1 (Fonnte & kolom spesifik jika sudah ada di database)
@@ -376,4 +381,53 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
     console.error('Failed to save WMS settings to Supabase:', error);
     return false;
   }
+}
+
+/**
+ * Ambil map data hasil hitung ulang (audit re-count) per kode produksi
+ */
+export function getRecountAuditMap(): Record<string, any> {
+  if (cachedSettings?.recount_audit_map && Object.keys(cachedSettings.recount_audit_map).length > 0) {
+    return cachedSettings.recount_audit_map;
+  }
+  try {
+    const raw = localStorage.getItem('wms_recount_audit_map');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+/**
+ * Simpan hasil audit hitung ulang kode produksi ke Cloud Supabase & LocalStorage
+ */
+export async function saveRecountAuditRecord(record: {
+  kode_produksi: string;
+  tanggal_audit?: string;
+  total_asli: number;
+  total_fisik: number;
+  total_selisih: number;
+  status: string;
+  round: number;
+  auditor?: string;
+  catatan?: string;
+  updated_at?: string;
+  variants: Array<{
+    warna: string;
+    size: string;
+    qty_asli: number;
+    qty_fisik: number;
+    selisih: number;
+    status: string;
+    note?: string;
+  }>;
+}): Promise<boolean> {
+  const currentMap = getRecountAuditMap();
+  const updatedMap = {
+    ...currentMap,
+    [record.kode_produksi]: {
+      ...record,
+      updated_at: record.updated_at || new Date().toISOString(),
+    },
+  };
+  return await saveWmsSettings({ recount_audit_map: updatedMap });
 }

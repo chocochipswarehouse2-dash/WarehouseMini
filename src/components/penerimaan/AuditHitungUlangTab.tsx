@@ -747,6 +747,39 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         console.warn('Gagal catat log audit:', logErr);
       }
 
+      // Simpan ke Cloud Settings agar persisten & langsung terbaca di seluruh user / HP
+      try {
+        await saveRecountAuditRecord({
+          kode_produksi: activeGroup.kode_produksi,
+          tanggal_audit: auditDate,
+          total_asli: workspaceSummary.totalAsli,
+          total_fisik: workspaceSummary.totalFisik,
+          total_selisih: workspaceSummary.totalSelisih,
+          status: workspaceSummary.status,
+          round: nextRound,
+          auditor: auditorName || 'Auditor Fisik',
+          catatan: generalNotes,
+          updated_at: nowIso,
+          variants: activeVariants.map((v) => {
+            const key = `${v.warna}_${v.size}`;
+            const sv = variantInputs[key];
+            const fisik = sv && sv.recountQty !== null ? sv.recountQty : v.qty_asli;
+            const selisih = fisik - v.qty_asli;
+            return {
+              warna: v.warna,
+              size: v.size,
+              qty_asli: v.qty_asli,
+              qty_fisik: fisik,
+              selisih,
+              status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
+              note: sv?.note || '',
+            };
+          }),
+        });
+      } catch (errRec) {
+        console.warn('Gagal simpan recount record ke Cloud settings:', errRec);
+      }
+
       // 4. AUTO-PUSH TARGETED DELTA KE MASTER SHEET DI GOOGLE SPREADSHEET (ANTI-TIMEOUT)
       setIsSyncingSheet(true);
       try {
@@ -779,6 +812,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
           activeTab: activeGroup.kategori === 'Kargo' ? 'Kargo' : 'CMT',
           kode_produksi: activeGroup.kode_produksi,
+          tanggal_hitung: auditDate,
           items: deltaItems,
         });
 
@@ -805,6 +839,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
       // 5. Muat ulang data induk dan kembali ke daftar antrian
       await onRefreshData();
+      setFilterStatus('all');
       setActiveMode('queue');
     } catch (err: any) {
       console.error('Error saving audit:', err);

@@ -869,6 +869,7 @@ export interface WmsSettings {
   agenda_categories?: Record<string, any>;
   katalog_manual_data?: string;
   presensi_locations?: any;
+  recount_audit_map?: Record<string, any>;
   updated_at?: string;
 }
 
