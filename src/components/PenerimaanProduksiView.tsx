@@ -337,12 +337,62 @@ export function groupItemsByProductCode(items: PenerimaanProduksiItem[]): Produc
   return Array.from(map.values());
 }
 
+export function convertPenerimaanItemsToProductBlocks(items: PenerimaanProduksiItem[]): FormProductBlock[] {
+  const blocksMap = new Map<string, FormProductBlock>();
+
+  items.forEach((it, idx) => {
+    const rawCode = (it.kode_produksi || '').trim().toUpperCase();
+    const blockKey = rawCode || ('BLOCK_' + idx);
+
+    if (!blocksMap.has(blockKey)) {
+      blocksMap.set(blockKey, {
+        id: 'block_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
+        kode_produksi: it.kode_produksi || '',
+        nama_produk: it.nama_produk || '',
+        foto_url: it.foto_url || '',
+        catatan: it.keterangan || (it as any).catatan || '',
+        warnas: [],
+      });
+    }
+
+    const block = blocksMap.get(blockKey)!;
+    if (!block.foto_url && it.foto_url) {
+      block.foto_url = it.foto_url;
+    }
+    if (!block.nama_produk && it.nama_produk) {
+      block.nama_produk = it.nama_produk;
+    }
+
+    const warnaName = (it.warna || '').trim().toUpperCase() || '-';
+    let warnaObj = block.warnas.find((w) => w.warna.trim().toUpperCase() === warnaName);
+    if (!warnaObj) {
+      warnaObj = {
+        id: 'warna_' + Date.now() + '_' + block.warnas.length + '_' + Math.random().toString(36).substring(2, 6),
+        warna: warnaName,
+        sizes: [],
+      };
+      block.warnas.push(warnaObj);
+    }
+
+    const sizeName = (it.size || 'ALL SIZE').trim().toUpperCase();
+    warnaObj.sizes.push({
+      id: 'size_' + Date.now() + '_' + warnaObj.sizes.length + '_' + Math.random().toString(36).substring(2, 6),
+      size: sizeName,
+      qty: Number(it.qty) || 0,
+    });
+  });
+
+  const result = Array.from(blocksMap.values());
+  return result.length > 0 ? result : [createNewProductBlock()];
+}
+
 export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   session,
   productCatalog = [],
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<TabMode>('riwayat');
+  const [editingOriginalSJ, setEditingOriginalSJ] = useState<string | null>(null);
   const [selectedQcTargetCode, setSelectedQcTargetCode] = useState<string | undefined>(undefined);
   const [selectedAuditTargetCode, setSelectedAuditTargetCode] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -540,7 +590,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Load Data
-  const loadData = async () => {
+  const loadData = async (forceRefresh?: boolean) => {
     setIsLoading(true);
     try {
       // Auto-cleanup any mismatched global notes (e.g. BIS Florence accidentally copied to other codes)
@@ -550,6 +600,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
         kategori: filterKategori !== 'Semua' ? filterKategori : undefined,
         startDate: filterStartDate || undefined,
         endDate: filterEndDate || undefined,
+        forceRefresh: forceRefresh === true,
       });
       setDataList(res);
     } catch (err: any) {
@@ -1195,12 +1246,26 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
       };
 
       const operatorName = session?.name || session?.username || 'Operator Gudang';
-      const savedItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
+      let savedItems: PenerimaanProduksiItem[] = [];
 
-      onShowToast(
-        `Sukses menyimpan kedatangan ${cleanedBlocks.length} kode produksi (${formSummary.totalPcs} pcs)!`,
-        'success'
-      );
+      if (editingOriginalSJ) {
+        savedItems = await updateBatchPenerimaanProduksiInSupabase(
+          editingOriginalSJ,
+          payload,
+          operatorName
+        );
+        onShowToast(
+          `Sukses memperbarui Surat Jalan ${formNoSuratJalan.trim().toUpperCase()} (${formSummary.totalPcs} pcs)!`,
+          'success'
+        );
+        setEditingOriginalSJ(null);
+      } else {
+        savedItems = await simpanBatchPenerimaanProduksiToSupabase(payload, operatorName);
+        onShowToast(
+          `Sukses menyimpan kedatangan ${cleanedBlocks.length} kode produksi (${formSummary.totalPcs} pcs)!`,
+          'success'
+        );
+      }
 
       // Otomatis push riwayat produksi bergambar ke Google Sheet (1 Tanggal = 1 Tab Sheet)
       if (savedItems && savedItems.length > 0) {
@@ -1319,7 +1384,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     }
   };
 
-  // Open Edit Batch Modal
+  // Open Edit Batch: Mengisi form input penerimaan asli agar format persis dan bebas bug
   const handleOpenEditBatch = (noSuratJalan: string) => {
     const cleanSJ = (noSuratJalan || '').trim().toUpperCase();
     const rows = dataList.filter((d) => (d.no_surat_jalan || '').trim().toUpperCase() === cleanSJ);
@@ -1330,14 +1395,22 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
     }
 
     const first = rows[0];
-    setEditingBatch({
-      orig_no_surat_jalan: cleanSJ,
-      no_surat_jalan: cleanSJ,
-      kategori: first.kategori || 'Lokal CMT',
-      tanggal: first.tanggal_penerimaan || new Date().toISOString().split('T')[0],
-      keterangan: first.keterangan || '',
-      items: rows.map((r, idx) => ({ ...r, tempId: r.id || `temp_${Date.now()}_${idx}` })),
-    });
+    setFormKategori(first.kategori === 'Kargo' ? 'Kargo' : 'Lokal CMT');
+    setFormTanggal(first.tanggal_penerimaan || new Date().toISOString().split('T')[0]);
+    setFormNoSuratJalan(cleanSJ);
+    setFormKeteranganGlobal(first.keterangan || '');
+    setProductBlocks(convertPenerimaanItemsToProductBlocks(rows));
+    setEditingOriginalSJ(cleanSJ);
+    setActiveTab('input');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    onShowToast(`Membuka form edit untuk Surat Jalan ${cleanSJ}`, 'info');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingOriginalSJ(null);
+    handleResetForm();
+    setActiveTab('riwayat');
+    onShowToast('Edit Surat Jalan dibatalkan', 'info');
   };
 
   // Save Batch Edit
@@ -1731,6 +1804,44 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
           ======================================================== */}
       {activeTab === 'input' && (
         <form onSubmit={handleSubmitPenerimaan} className="space-y-2 sm:space-y-3">
+          {/* BANNER MODE EDIT SURAT JALAN */}
+          {editingOriginalSJ && (
+            <div className="p-3.5 sm:p-4 bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shrink-0 shadow-xs">
+                  ✏️
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-amber-900 dark:text-amber-100 uppercase tracking-wide flex items-center gap-2">
+                    <span>Mode Edit Surat Jalan:</span>
+                    <span className="font-mono px-2 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-950 dark:text-amber-100 rounded-md">{editingOriginalSJ}</span>
+                  </h3>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                    Format formulir persis seperti input kedatangan. Anda bebas mengubah warna, menambah/menghapus varian size, mengunggah foto produk, atau menghapus blok produk.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="flex-1 sm:flex-initial px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Batal Edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmDeleteBatch(editingOriginalSJ)}
+                  className="px-3.5 py-2 bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Hapus seluruh surat jalan ini dari database"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus SJ</span>
+                </button>
+              </div>
+            </div>
+          )}
           {/* Card 1: Informasi Header Surat Jalan */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-6 shadow-xs">
             <div className="flex items-center gap-2 mb-3.5 sm:mb-5 pb-2.5 sm:pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -2183,22 +2294,31 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <button
                 type="button"
-                onClick={handleResetForm}
+                onClick={editingOriginalSJ ? handleCancelEdit : handleResetForm}
                 disabled={isSaving}
-                className="flex-1 sm:flex-initial px-2 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                className="flex-1 sm:flex-initial px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
               >
-                Reset Form
+                {editingOriginalSJ ? 'Batal Edit' : 'Reset Form'}
               </button>
 
               <button
                 type="submit"
                 disabled={isSaving}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50"
+                className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black text-white shadow-lg transition disabled:opacity-50 cursor-pointer ${
+                  editingOriginalSJ
+                    ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30'
+                }`}
               >
                 {isSaving ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Menyimpan Seluruh Data...</span>
+                    <span>Menyimpan Perubahan...</span>
+                  </>
+                ) : editingOriginalSJ ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Perbarui Surat Jalan ({editingOriginalSJ})</span>
                   </>
                 ) : (
                   <>

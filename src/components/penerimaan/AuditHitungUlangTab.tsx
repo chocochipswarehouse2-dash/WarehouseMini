@@ -44,7 +44,12 @@ import {
   fetchPenerimaanRecountLogs,
   fetchPenerimaanRecountQueueFromSupabase,
   savePenerimaanRecountQueueToSupabase,
+  getRecountAuditMap,
+  saveRecountAuditRecord,
+  fetchRecountAuditMapFromCloud,
+  supabaseFetch,
 } from '../../services/supabase';
+import { saveWmsSettings } from '../../services/settings';
 import {
   pushMasterRecountDeltaToGoogleSheet,
   MasterRecountDeltaItem,
@@ -146,7 +151,24 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       try {
         setIsSyncingCloudQueue(true);
         // Tarik data hitung ulang terbaru dari Cloud agar semua user/perangkat tersinkron
-        await fetchRecountAuditMapFromCloud();
+        const cloudAuditMap = await fetchRecountAuditMapFromCloud();
+        const localAuditMap = getRecountAuditMap();
+        
+        // Auto-upload jika ada hasil hitung ulang di browser ini yang belum terunggah ke Cloud
+        const missingInCloud = Object.keys(localAuditMap).filter((k) => !cloudAuditMap[k]);
+        if (missingInCloud.length > 0) {
+          const mergedAuditMap = { ...cloudAuditMap, ...localAuditMap };
+          await saveWmsSettings({ recount_audit_map: mergedAuditMap });
+          try {
+            await supabaseFetch('wms_system_docs', 'POST', [{
+              section_id: 'recount_audit_results',
+              content: JSON.stringify(mergedAuditMap),
+              updated_by: 'Auto-Sync Local Audits',
+              updated_at: new Date().toISOString(),
+            }], 'resolution=merge-duplicates');
+          } catch {}
+        }
+
         const cloudQueue = await fetchPenerimaanRecountQueueFromSupabase();
         if (isMounted) {
           const localQueue = loadStoredQueueMap();
@@ -1124,34 +1146,33 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <span>+ Panggil Kode (Multiple)</span>
                 </button>
 
-                {/* Cloud Sync Manual Push */}
-                <button
-                  type="button"
-                  onClick={handleForceSyncQueueToCloud}
-                  disabled={isSyncingCloudQueue}
-                  className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-                  title="Upload antrian & petunjuk lokal ke database Cloud agar langsung terbaca di semua user"
-                >
-                  <CloudUpload className={`w-4 h-4 ${isSyncingCloudQueue ? 'animate-bounce text-indigo-500' : ''}`} />
-                  <span className="hidden sm:inline">
-                    {isSyncingCloudQueue ? 'Sinkron Cloud...' : 'Sinkron Cloud'}
-                  </span>
-                </button>
-
-                {/* Refresh */}
+                {/* Cloud Sync Button (Tarik Hasil Hitung Ulang & Antrian Terbaru) */}
                 <button
                   type="button"
                   onClick={async () => {
                     try {
+                      setIsSyncingCloudQueue(true);
+                      // 1. Ambil data hasil hitung ulang terbaru dari Cloud
+                      await fetchRecountAuditMapFromCloud();
+                      // 2. Ambil antrian terbaru dari Cloud
                       const q = await fetchPenerimaanRecountQueueFromSupabase();
                       if (q && typeof q === 'object') setQueueMap(q);
-                    } catch {}
-                    await onRefreshData();
+                      // 3. Paksa refresh data penerimaan dari Supabase Cloud (bypass cache)
+                      await (onRefreshData as any)(true);
+                      onShowToast('✅ Sinkronisasi Cloud Berhasil! Data hasil hitung ulang ditarik dari Cloud.', 'success');
+                    } catch (err) {
+                      console.error('Gagal sinkron:', err);
+                      onShowToast('Gagal sinkronisasi data Cloud', 'error');
+                    } finally {
+                      setIsSyncingCloudQueue(false);
+                    }
                   }}
-                  className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition border border-slate-200 dark:border-slate-700"
-                  title="Muat Ulang Data &amp; Antrian Cloud"
+                  disabled={isSyncingCloudQueue}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  title="Tarik hasil hitung ulang & antrian terbaru dari Cloud Supabase agar semua perangkat langsung tersinkronkan"
                 >
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloudQueue ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingCloudQueue ? 'Menyinkronkan...' : 'Sinkronkan Cloud'}</span>
                 </button>
               </div>
             </div>
