@@ -403,17 +403,54 @@ export function getRecountAuditMap(): Record<string, any> {
  * Memastikan semua user & perangkat lain melihat kode mana saja yang sudah dihitung
  */
 export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, any>> {
+  const localAuditMap: Record<string, any> = { ...getRecountAuditMap() };
+
+  // Ekstrak juga dari riwayat log hitung ulang lokal di browser ini
+  try {
+    const rawLogs = localStorage.getItem('wms_penerimaan_recount_logs');
+    if (rawLogs) {
+      const logs = JSON.parse(rawLogs);
+      if (Array.isArray(logs)) {
+        logs.forEach((log: any) => {
+          const code = (log.kode_produksi || '').trim().toUpperCase();
+          if (code && !localAuditMap[code]) {
+            const totalSelisih = Number(log.total_selisih) || 0;
+            localAuditMap[code] = {
+              kode_produksi: code,
+              tanggal_audit: log.tanggal_audit,
+              total_asli: Number(log.total_sebelumnya) || 0,
+              total_fisik: Number(log.total_fisik) || 0,
+              total_selisih: totalSelisih,
+              status: totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH',
+              round: 1,
+              auditor: log.auditor || 'Auditor Fisik',
+              catatan: log.general_notes || '',
+              updated_at: log.created_at || new Date().toISOString(),
+              variants: (log.details || []).map((d: any) => ({
+                warna: d.warna,
+                size: d.size,
+                qty_asli: Number(d.qty_sebelumnya) || 0,
+                qty_fisik: Number(d.qty_fisik) || 0,
+                selisih: Number(d.selisih) || 0,
+                status: Number(d.selisih) === 0 ? 'MATCH' : Number(d.selisih) < 0 ? 'KURANG' : 'LEBIH',
+                note: d.catatan || '',
+              })),
+            };
+          }
+        });
+      }
+    }
+  } catch (eLogs) {}
+
+  let cloudMap: Record<string, any> = {};
+
   // 1. Coba ambil dari wms_system_docs key 'recount_audit_results'
   try {
     const doc = await supabaseFetch<any[]>('wms_system_docs', 'GET', undefined, 'section_id=eq.recount_audit_results');
     if (doc && doc[0] && doc[0].content) {
       const parsed = JSON.parse(doc[0].content);
       if (typeof parsed === 'object' && parsed !== null) {
-        if (cachedSettings) cachedSettings.recount_audit_map = parsed;
-        try {
-          localStorage.setItem('wms_recount_audit_map', JSON.stringify(parsed));
-        } catch {}
-        return parsed;
+        cloudMap = parsed;
       }
     }
   } catch (eDoc) {}
@@ -422,11 +459,34 @@ export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, an
   try {
     const s = await fetchWmsSettings(true);
     if (s && s.recount_audit_map && Object.keys(s.recount_audit_map).length > 0) {
-      return s.recount_audit_map;
+      cloudMap = { ...s.recount_audit_map, ...cloudMap };
     }
   } catch (eSet) {}
 
-  return getRecountAuditMap();
+  // MERGE cloud and local (menjaga data yang sudah dihitung di browser lokal)
+  const mergedMap: Record<string, any> = { ...cloudMap, ...localAuditMap };
+
+  // Jika ada data lokal yang belum ada di Cloud, otomatis kirim ke Cloud
+  const missingInCloud = Object.keys(mergedMap).filter((k) => !cloudMap[k]);
+  if (missingInCloud.length > 0) {
+    try {
+      await supabaseFetch('wms_system_docs', 'POST', [{
+        section_id: 'recount_audit_results',
+        content: JSON.stringify(mergedMap),
+        updated_by: 'Auto-Sync Merge',
+        updated_at: new Date().toISOString(),
+      }], 'resolution=merge-duplicates');
+    } catch {}
+    saveWmsSettings({ recount_audit_map: mergedMap }).catch(() => {});
+  }
+
+  // Update local memory & cache
+  try {
+    localStorage.setItem('wms_recount_audit_map', JSON.stringify(mergedMap));
+    if (cachedSettings) cachedSettings.recount_audit_map = mergedMap;
+  } catch {}
+
+  return mergedMap;
 }
 
 /**
