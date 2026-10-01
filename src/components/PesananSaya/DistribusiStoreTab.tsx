@@ -1678,6 +1678,73 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                     </div>
                   </div>
 
+                  {/* UNEXPECTED ITEMS: BARANG LEBIH DI LUAR SURAT JALAN (DITARUH DI ATAS AGAR LANGSUNG TERLIHAT TANPA PERLU SCROLL) */}
+                  {(detailFilter === 'ALL' || detailFilter === 'SELISIH') && Object.keys(activeDraft.unexpected || {}).length > 0 && (
+                    <div className="border-b border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                          <span>Lebihan Barang / Anomali Yang Tidak Ada di Surat Jalan ({Object.keys(activeDraft.unexpected).length} SKU)</span>
+                        </div>
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 rounded-lg">
+                          Perlu Perhatian
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                        Saat disubmit, barang lebihan ini otomatis dicatat ke Database dengan No SJ yang sama ({activeDraft.no_sj}) dan status pending.
+                      </p>
+
+                      <div className="space-y-1.5">
+                        {Object.entries(activeDraft.unexpected).map(([sku, val]) => (
+                          <div key={sku} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/80 rounded-xl px-3 py-2 shadow-2xs">
+                            <div className="min-w-0 flex-1 mr-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-black text-amber-900 dark:text-amber-300">{sku}</span>
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 rounded border border-amber-300 dark:border-amber-800">
+                                  Di Luar SJ
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 dark:text-slate-300 truncate mt-0.5 font-medium">
+                                {val.nama || 'Produk Master'}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualUnexpectedQty(sku, val.qty - 1)}
+                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                  <Minus className="w-2.5 h-2.5" />
+                                </button>
+                                <span className="font-bold text-xs text-amber-700 dark:text-amber-300 w-8 text-center">
+                                  +{val.qty}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualUnexpectedQty(sku, val.qty + 1)}
+                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveUnexpected(sku)}
+                                className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors"
+                                title="Hapus dari daftar lebihan"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
@@ -1782,69 +1849,6 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       </tbody>
                     </table>
                   </div>
-
-                  {/* UNEXPECTED ITEMS: BARANG LEBIH DI LUAR SURAT JALAN */}
-                  {/* Sistem bantu menuliskan lebihan barang dengan pencatatan No SJ yang sama (No SJ + Source + Destination) */}
-                  {(detailFilter === 'ALL' || detailFilter === 'SELISIH') && Object.keys(activeDraft.unexpected || {}).length > 0 && (
-                    <div className="border-t border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 px-4 py-3 space-y-2">
-                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-amber-700 dark:text-amber-300 uppercase tracking-wider">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                        Lebihan Barang Yang Tidak Ada di Surat Jalan ({Object.keys(activeDraft.unexpected).length} SKU)
-                      </div>
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                        Saat disubmit, barang lebihan ini otomatis dicatat ke Database dengan No SJ yang sama ({activeDraft.no_sj}) dan status pending.
-                      </p>
-
-                      <div className="space-y-1.5">
-                        {Object.entries(activeDraft.unexpected).map(([sku, val]) => (
-                          <div key={sku} className="flex items-center justify-between bg-white dark:bg-[#131d31] border border-amber-200 dark:border-amber-800/80 rounded-xl px-3 py-2">
-                            <div className="min-w-0 flex-1 mr-2">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300">{sku}</span>
-                                <span className="text-[9px] font-bold px-1.5 py-0.2 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 rounded">
-                                  Di Luar SJ
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                {val.nama || 'Produk Master'}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleManualUnexpectedQty(sku, val.qty - 1)}
-                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-rose-100 dark:hover:bg-rose-900 flex items-center justify-center transition-colors cursor-pointer"
-                                >
-                                  <Minus className="w-2.5 h-2.5" />
-                                </button>
-                                <span className="font-bold text-xs text-amber-700 dark:text-amber-300 w-8 text-center">
-                                  +{val.qty}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleManualUnexpectedQty(sku, val.qty + 1)}
-                                  className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 flex items-center justify-center transition-colors cursor-pointer"
-                                >
-                                  <Plus className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveUnexpected(sku)}
-                                className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors"
-                                title="Hapus dari daftar lebihan"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* CATATAN TAMBAHAN (OPSIONAL) */}
