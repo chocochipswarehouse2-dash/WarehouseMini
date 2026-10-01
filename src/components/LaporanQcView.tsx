@@ -265,7 +265,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   const [compressingVariantId, setCompressingVariantId] = useState<string | null>(null);
   const [isCompressingEditPhoto, setIsCompressingEditPhoto] = useState<boolean>(false);
 
-  // Auto-Save Draft Debounced to prevent losing form data during camera app switch
+  // Auto-Save Draft Debounced (Dioptimasi tanpa blocking synchronous base64 storage)
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
@@ -273,12 +273,20 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
           (v) => v.sku.trim() || v.nama_produk.trim() || v.photos.length > 0 || v.detail_kerusakan.trim()
         );
         if (hasContent) {
+          // Buang data base64 foto berukuran besar agar localStorage tidak macet/freeze
+          const lightVariants = variants.map((v) => ({
+            ...v,
+            photos: (v.photos || []).map((p) => ({
+              ...p,
+              dataUrl: (p.dataUrl && p.dataUrl.length > 80000) ? "" : p.dataUrl,
+            })),
+          }));
           const draft = {
             batchSumber,
             batchTanggal,
             batchGdriveLink,
             batchCatatan,
-            variants,
+            variants: lightVariants,
             savedAt: Date.now(),
           };
           localStorage.setItem('wms_qc_form_draft', JSON.stringify(draft));
@@ -288,7 +296,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
       } catch (e) {
         // Safe fallback jika storage penuh
       }
-    }, 600);
+    }, 1000);
     return () => clearTimeout(timer);
   }, [batchSumber, batchTanggal, batchGdriveLink, batchCatatan, variants]);
 
@@ -325,6 +333,9 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
+  // High-performance Pagination State (Anti-lag di HP dengan RAM terbatas)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(15);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'OKE' | 'REJECT' | 'KNR' | 'CUCI' | 'PERMAK' | 'DEFECT'>('ALL');
   const [filterSumber, setFilterSumber] = useState<string>('ALL');
 
@@ -1125,6 +1136,11 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
   // -------------------------------------------------------------
   // FILTER & METRICS CALCULATIONS
   // -------------------------------------------------------------
+  // Reset halaman saat filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, targetFilter, sumberFilter, dateRange, categoryFilter, inspectionTypeFilter]);
+
   const filteredReports = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
@@ -1188,6 +1204,13 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
 
     return { totalQty, totalOke, totalReject, variantCount: variants.length };
   }, [variants]);
+
+  const totalPages = Math.ceil(filteredReports.length / (pageSize === -1 ? 999999 : pageSize)) || 1;
+  const paginatedReports = useMemo(() => {
+    if (pageSize === -1) return filteredReports;
+    const start = (currentPage - 1) * pageSize;
+    return filteredReports.slice(start, start + pageSize);
+  }, [filteredReports, currentPage, pageSize]);
 
   // Export CSV
   const handleExportCsv = () => {
@@ -2488,7 +2511,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-2">
-                {filteredReports.map((r, rIdx) => {
+                {paginatedReports.map((r, rIdx) => {
                   const isReject = r.status === 'REJECT';
                   const isKode = r.tipe_identifikasi === 'kode_produksi' || !!r.kode_produksi;
 
@@ -2711,6 +2734,8 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                   src={photoUrl}
                                   alt={`Bukti QC ${pIdx + 1}`}
                                   referrerPolicy="no-referrer"
+                                  loading="lazy"
+                                  decoding="async"
                                   onClick={() => setLightboxImages(r.foto_urls)}
                                   className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-80 transition-opacity"
                                 />
@@ -2809,7 +2834,7 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  filteredReports.map((r, rIdx) => {
+                  paginatedReports.map((r, rIdx) => {
                     const isReject = r.status === 'REJECT';
                     const isKode = r.tipe_identifikasi === 'kode_produksi' || !!r.kode_produksi;
 
@@ -2954,6 +2979,8 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                                   src={r.foto_urls[0]}
                                   alt="Foto"
                                   referrerPolicy="no-referrer"
+                                  loading="lazy"
+                                  decoding="async"
                                   className="w-full h-full object-cover group-hover:scale-110 transition-transform"
                                 />
                                 {r.foto_urls.length > 1 && (
@@ -3153,6 +3180,65 @@ export const LaporanQcView: React.FC<LaporanQcViewProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* PAGINATION TOOLBAR (High-Performance & Mobile-Friendly) */}
+        {filteredReports.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 mt-4 text-xs">
+            <div className="text-slate-500 dark:text-slate-400 font-medium">
+              Menampilkan <b>{pageSize === -1 ? 1 : (currentPage - 1) * pageSize + 1}</b> - <b>{pageSize === -1 ? filteredReports.length : Math.min(currentPage * pageSize, filteredReports.length)}</b> dari <b>{filteredReports.length}</b> laporan QC
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                disabled={currentPage === 1 || pageSize === -1}
+                onClick={() => setCurrentPage(1)}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-slate-100"
+              >
+                « Pertama
+              </button>
+              <button
+                type="button"
+                disabled={currentPage === 1 || pageSize === -1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-slate-100"
+              >
+                ‹ Sebelumnya
+              </button>
+              <span className="px-3 py-1.5 font-black text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                Hal {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages || pageSize === -1}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-slate-100"
+              >
+                Berikutnya ›
+              </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages || pageSize === -1}
+                onClick={() => setCurrentPage(totalPages)}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-slate-100"
+              >
+                Terakhir »
+              </button>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="ml-2 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold cursor-pointer"
+              >
+                <option value={15}>15 / hal</option>
+                <option value={30}>30 / hal</option>
+                <option value={50}>50 / hal</option>
+                <option value={-1}>Tampilkan Semua</option>
+              </select>
+            </div>
           </div>
         )}
       </div>

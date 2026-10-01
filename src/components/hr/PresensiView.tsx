@@ -91,7 +91,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
   // Sinkronisasi titik lokasi dari Supabase Cloud (berdampak ke semua user & perangkat)
   useEffect(() => {
-    fetchWmsSettings().then((s) => {
+    fetchWmsSettings(true).then((s) => {
       if (s?.presensi_locations && s.presensi_locations.locations) {
         setLocationConfig(s.presensi_locations);
       }
@@ -367,7 +367,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       currentCoords.lat,
       currentCoords.lng,
       userNik,
-      locationConfig
+      locationConfig,
+      currentCoords.accuracy
     );
   }, [currentCoords, userNik, locationConfig]);
 
@@ -403,6 +404,107 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     setShowLocationSettingsModal(false);
     playSuccessBeep();
     onShowToast(`Pengaturan ${editingLocConfig.locations.length} titik lokasi presensi tersimpan ke Cloud Supabase & berdampak ke seluruh karyawan!`, 'success');
+  };
+
+  // Handler Kalibrasi Cepat 1-Klik: Set Lokasi Saya Saat Ini Sebagai Titik Kerja Terdekat & Langsung Simpan
+  const handleQuickCalibrateLocation = async () => {
+    let coordsToUse = currentCoords;
+    if (!coordsToUse) {
+      setCapturingAdminGps(true);
+      try {
+        const pos = await getBrowserGeolocation();
+        coordsToUse = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+        setCurrentCoords(coordsToUse);
+      } catch (err: any) {
+        onShowToast(`Gagal membaca sinyal GPS: ${err?.message || "Izin lokasi ditolak"}`, "error");
+        setCapturingAdminGps(false);
+        return;
+      }
+      setCapturingAdminGps(false);
+    }
+
+    if (!coordsToUse) return;
+
+    const targetLoc = locationMatch?.closestLocation || locationConfig.locations[0];
+    if (!targetLoc) return;
+
+    const newLat = Number(coordsToUse.lat.toFixed(6));
+    const newLng = Number(coordsToUse.lng.toFixed(6));
+
+    const updatedLocations = (locationConfig.locations || []).map((l) =>
+      l.id === targetLoc.id
+        ? {
+            ...l,
+            latitude: newLat,
+            longitude: newLng,
+            radiusMeters: Math.max(l.radiusMeters || 25, 50), // Atur minimal 50m agar leluasa di area warehouse
+          }
+        : l
+    );
+
+    const updatedConfig: PresensiLocationConfig = {
+      ...locationConfig,
+      enabled: true,
+      locations: updatedLocations,
+      latitude: updatedLocations[0]?.latitude,
+      longitude: updatedLocations[0]?.longitude,
+      radiusMeters: updatedLocations[0]?.radiusMeters || 50,
+      updatedAt: new Date().toISOString(),
+      updatedBy: session?.name || session?.username || "Admin",
+    };
+
+    savePresensiLocationConfig(updatedConfig);
+    setLocationConfig(updatedConfig);
+    playSuccessBeep();
+    onShowToast(
+      `Titik "${targetLoc.name}" berhasil dikalibrasi ke posisi GPS Anda saat ini (${newLat}, ${newLng}) & tersimpan ke Cloud! Radius: 50m. Status: Di Dalam Radius!`,
+      "success"
+    );
+  };
+
+  // Handler Ambil & Simpan Langsung (1-Klik di Modal)
+  const handleCaptureAndSaveDirectly = async (index: number) => {
+    setCapturingAdminGps(true);
+    try {
+      const pos = await getBrowserGeolocation();
+      const newLat = Number(pos.coords.latitude.toFixed(6));
+      const newLng = Number(pos.coords.longitude.toFixed(6));
+
+      const locs = [...(editingLocConfig.locations || [])];
+      if (locs[index]) {
+        locs[index] = {
+          ...locs[index],
+          latitude: newLat,
+          longitude: newLng,
+        };
+      }
+
+      const updatedConfig: PresensiLocationConfig = {
+        ...editingLocConfig,
+        locations: locs,
+        updatedAt: new Date().toISOString(),
+        updatedBy: session?.name || session?.username || "Admin",
+      };
+
+      savePresensiLocationConfig(updatedConfig);
+      setLocationConfig(updatedConfig);
+      setEditingLocConfig(updatedConfig);
+      setShowLocationSettingsModal(false);
+      playSuccessBeep();
+      onShowToast(
+        `Titik "${locs[index]?.name || "Lokasi"}" berhasil diset ke GPS Anda (${newLat}, ${newLng}) & langsung tersimpan ke Cloud Supabase!`,
+        "success"
+      );
+    } catch (err: any) {
+      playErrorBeep();
+      onShowToast(`Gagal membaca koordinat: ${err?.message || "Error"}`, "error");
+    } finally {
+      setCapturingAdminGps(false);
+    }
   };
 
   // Handler ambil GPS admin untuk titik lokasi tertentu
@@ -1024,7 +1126,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 ml-auto">
+                                        <div className="flex items-center gap-1.5 ml-auto">
                       {locationConfig.enabled && (
                         <button
                           type="button"
@@ -1039,6 +1141,25 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                       )}
                     </div>
                   </div>
+
+                  {/* Tombol Kalibrasi Instan Langsung untuk Superadmin / Manager saat di lokasi */}
+                  {!isWithinGeofence && userIsAdmin && (
+                    <div className="mt-3 pt-3 border-t border-rose-200/60 dark:border-rose-800/60 flex flex-col sm:flex-row items-center justify-between gap-2.5 bg-rose-100/60 dark:bg-rose-950/40 p-3 rounded-2xl">
+                      <div className="text-xs text-rose-800 dark:text-rose-200 font-semibold leading-relaxed">
+                        📍 <b>Anda Superadmin di lokasi kerja saat ini?</b> Jadikan titik GPS HP Anda langsung sebagai koordinat resmi <b>{locationMatch?.closestLocation?.name || "Gudang Utama"}</b>:
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleQuickCalibrateLocation}
+                        disabled={capturingAdminGps}
+                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md shadow-amber-600/25 flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0 active:scale-95 disabled:opacity-50"
+                        title="Set titik koordinat lokasi terdekat ke posisi GPS Anda saat ini dan langsung simpan ke Supabase Cloud"
+                      >
+                        <LocateFixed className={`w-3.5 h-3.5 ${capturingAdminGps ? "animate-spin" : ""}`} />
+                        <span>{capturingAdminGps ? "Mengkalibrasi..." : "⚡ Kalibrasi Titik Ini ke Posisi Saya (Simpan Otomatis)"}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
               {/* Action Buttons */}
@@ -2042,15 +2163,28 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
                       {/* Tombol Ambil Koordinat & Maps */}
                       <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleCaptureAdminLocationForIndex(idx)}
-                          disabled={capturingAdminGps}
-                          className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-xl text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                        >
-                          <LocateFixed className={`w-3.5 h-3.5 ${capturingAdminGps ? "animate-spin" : ""}`} />
-                          <span>{capturingAdminGps ? "Mengambil GPS..." : "📍 Ambil Titik Saya Saat Ini"}</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleCaptureAndSaveDirectly(idx)}
+                            disabled={capturingAdminGps}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="Ambil titik GPS Anda saat ini dan LANGSUNG SIMPAN ke Cloud tanpa perlu scroll ke bawah"
+                          >
+                            <Save className={`w-3.5 h-3.5 ${capturingAdminGps ? "animate-spin" : ""}`} />
+                            <span>{capturingAdminGps ? "Menyimpan..." : "💾 Ambil & Simpan Langsung"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCaptureAdminLocationForIndex(idx)}
+                            disabled={capturingAdminGps}
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="Ambil titik GPS ke form untuk diedit terlebih dahulu"
+                          >
+                            <LocateFixed className="w-3.5 h-3.5" />
+                            <span>Ambil ke Form</span>
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-2">
                           <button
@@ -2082,7 +2216,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                             Toleransi Radius: <b>{loc.radiusMeters} meter</b>
                           </label>
                           <div className="flex items-center gap-1">
-                            {[10, 15, 25, 50].map((rVal) => (
+                            {[15, 25, 50, 75, 100, 150, 200].map((rVal) => (
                               <button
                                 key={rVal}
                                 type="button"

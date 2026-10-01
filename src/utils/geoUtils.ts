@@ -163,7 +163,8 @@ export function evaluateUserLocationMatch(
   userLat: number,
   userLng: number,
   userNik: string,
-  config: PresensiLocationConfig
+  config: PresensiLocationConfig,
+  accuracy?: number
 ): {
   isWithin: boolean;
   matchedLocation: PresensiLocationItem | null;
@@ -208,7 +209,10 @@ export function evaluateUserLocationMatch(
       loc.allowedNikList.includes('*') ||
       loc.allowedNikList.includes(userNik);
 
-    const isWithin = isAllowed && dist <= loc.radiusMeters;
+    // Buffer akurasi GPS jika berada di dalam ruangan / warehouse
+    const accuracyBuffer = accuracy && accuracy > 0 ? Math.min(accuracy * 0.5, 20) : 0;
+    const effectiveRadius = (loc.radiusMeters || 25) + accuracyBuffer;
+    const isWithin = isAllowed && dist <= effectiveRadius;
 
     results.push({
       location: loc,
