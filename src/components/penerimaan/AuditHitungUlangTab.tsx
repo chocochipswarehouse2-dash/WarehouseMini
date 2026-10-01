@@ -142,6 +142,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
   // Queue Map: { [kode_produksi]: { catatan_petunjuk?: string, added_at?: string } }
   const [queueMap, setQueueMap] = useState<Record<string, QueueItemMetadata>>(() => loadStoredQueueMap());
+  const [recountAuditMap, setRecountAuditMap] = useState<Record<string, any>>(() => getRecountAuditMap());
   const [isSyncingCloudQueue, setIsSyncingCloudQueue] = useState<boolean>(false);
 
   // Load and sync queue from Supabase on mount
@@ -200,6 +201,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           }
 
           setQueueMap(merged);
+          if (cloudAuditMap && typeof cloudAuditMap === 'object') {
+            setRecountAuditMap(cloudAuditMap);
+          }
         }
       } catch (err) {
         console.warn('Gagal fetch antrian hitung ulang dari cloud:', err);
@@ -219,15 +223,37 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
     window.addEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
 
-    const handleAuditUpdateEvent = () => {
+    const handleAuditUpdateEvent = (e: any) => {
       if (isMounted) {
+        if (e?.detail?.auditMap) {
+          setRecountAuditMap(e.detail.auditMap);
+        } else {
+          setRecountAuditMap(getRecountAuditMap());
+        }
         onRefreshData();
       }
     };
     window.addEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
 
+    // Auto-poll cloud every 10 seconds for real-time multi-device sync
+    const pollInterval = setInterval(() => {
+      if (isMounted) {
+        fetchRecountAuditMapFromCloud().then((m) => {
+          if (m && typeof m === 'object' && isMounted) {
+            setRecountAuditMap(m);
+          }
+        });
+        fetchPenerimaanRecountQueueFromSupabase().then((q) => {
+          if (q && typeof q === 'object' && isMounted) {
+            setQueueMap(q);
+          }
+        });
+      }
+    }, 10000);
+
     return () => {
       isMounted = false;
+      clearInterval(pollInterval);
       window.removeEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
       window.removeEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
     };
@@ -431,6 +457,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
       const varMap = new Map<string, { asli: number; fisik: number | null; selisih: number | null }>();
 
+      const auditRec = recountAuditMap[code];
+
       grp.items.forEach((it) => {
         const vKey = `${it.warna || ''}_${it.size || ''}`;
         const qtyAsli = Number(it.qty) || 0;
@@ -451,7 +479,33 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         }
       });
 
-      if (isCounted) {
+      // Jika ada data hitung ulang dari Cloud Database / Local Cache, prioritaskan hasil audit tersebut!
+      if (auditRec) {
+        isCounted = true;
+        totalFisik = typeof auditRec.total_fisik === 'number' ? auditRec.total_fisik : Number(auditRec.total_fisik) || 0;
+        totalSelisih = typeof auditRec.total_selisih === 'number' ? auditRec.total_selisih : (totalFisik - totalAsli);
+        if (totalSelisih !== 0) hasDiff = true;
+        if (auditRec.auditor) lastAuditor = auditRec.auditor;
+        if (auditRec.tanggal_audit || auditRec.updated_at) lastAuditDate = auditRec.tanggal_audit || auditRec.updated_at;
+        if (auditRec.round) lastRound = auditRec.round;
+        if (auditRec.catatan) lastNotes = auditRec.catatan;
+
+        if (Array.isArray(auditRec.variants)) {
+          auditRec.variants.forEach((v: any) => {
+            const vKey = `${v.warna || ''}_${v.size || ''}`;
+            if (varMap.has(vKey)) {
+              varMap.get(vKey)!.fisik = Number(v.qty_fisik) || 0;
+              varMap.get(vKey)!.selisih = Number(v.selisih) || 0;
+            } else {
+              varMap.set(vKey, {
+                asli: Number(v.qty_asli) || 0,
+                fisik: Number(v.qty_fisik) || 0,
+                selisih: Number(v.selisih) || 0,
+              });
+            }
+          });
+        }
+      } else if (isCounted) {
         let sumFisik = 0;
         varMap.forEach((val) => {
           const effectiveFisik = val.fisik !== null ? val.fisik : val.asli;
@@ -464,9 +518,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
       let statusAudit: 'BELUM' | 'MATCH' | 'KURANG' | 'LEBIH' = 'BELUM';
       if (isCounted) {
-        if (totalSelisih === 0) statusAudit = 'MATCH';
-        else if ((totalSelisih || 0) < 0) statusAudit = 'KURANG';
-        else statusAudit = 'LEBIH';
+        if (auditRec?.status) {
+          const st = String(auditRec.status).toUpperCase();
+          if (st === 'MATCH' || st === 'KLOP' || st === 'SESUAI') statusAudit = 'MATCH';
+          else if (st === 'KURANG') statusAudit = 'KURANG';
+          else if (st === 'LEBIH') statusAudit = 'LEBIH';
+          else statusAudit = (totalSelisih === 0 ? 'MATCH' : (totalSelisih || 0) < 0 ? 'KURANG' : 'LEBIH');
+        } else if (totalSelisih === 0) {
+          statusAudit = 'MATCH';
+        } else if ((totalSelisih || 0) < 0) {
+          statusAudit = 'KURANG';
+        } else {
+          statusAudit = 'LEBIH';
+        }
       }
 
       const qMeta = queueMap[code];
@@ -507,7 +571,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       if (a.is_counted && !b.is_counted) return 1;
       return a.kode_produksi.localeCompare(b.kode_produksi);
     });
-  }, [penerimaanItems, queueMap]);
+  }, [penerimaanItems, queueMap, recountAuditMap]);
 
   // SELECTIVE QUEUE: Only include codes that are in `queueMap` OR already have recount data
   const codeGroups = useMemo<CodeAuditGroup[]>(() => {
@@ -782,7 +846,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
       // Simpan ke Cloud Settings agar persisten & langsung terbaca di seluruh user / HP
       try {
-        await saveRecountAuditRecord({
+        const newRecord = {
           kode_produksi: activeGroup.kode_produksi,
           tanggal_audit: auditDate,
           total_asli: workspaceSummary.totalAsli,
@@ -808,7 +872,12 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               note: sv?.note || '',
             };
           }),
-        });
+        };
+        await saveRecountAuditRecord(newRecord);
+        setRecountAuditMap((prev) => ({
+          ...prev,
+          [activeGroup.kode_produksi]: newRecord,
+        }));
       } catch (errRec) {
         console.warn('Gagal simpan recount record ke Cloud settings:', errRec);
       }
@@ -1153,7 +1222,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     try {
                       setIsSyncingCloudQueue(true);
                       // 1. Ambil data hasil hitung ulang terbaru dari Cloud
-                      await fetchRecountAuditMapFromCloud();
+                      const cloudAuditMap = await fetchRecountAuditMapFromCloud();
+                      if (cloudAuditMap && typeof cloudAuditMap === 'object') {
+                        setRecountAuditMap(cloudAuditMap);
+                      }
                       // 2. Ambil antrian terbaru dari Cloud
                       const q = await fetchPenerimaanRecountQueueFromSupabase();
                       if (q && typeof q === 'object') setQueueMap(q);
