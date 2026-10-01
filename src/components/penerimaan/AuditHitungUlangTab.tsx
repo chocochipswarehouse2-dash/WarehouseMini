@@ -145,6 +145,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     const syncQueueFromCloud = async () => {
       try {
         setIsSyncingCloudQueue(true);
+        // Tarik data hitung ulang terbaru dari Cloud agar semua user/perangkat tersinkron
+        await fetchRecountAuditMapFromCloud();
         const cloudQueue = await fetchPenerimaanRecountQueueFromSupabase();
         if (isMounted) {
           const localQueue = loadStoredQueueMap();
@@ -194,9 +196,18 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     };
 
     window.addEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
+
+    const handleAuditUpdateEvent = () => {
+      if (isMounted) {
+        onRefreshData();
+      }
+    };
+    window.addEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
+
     return () => {
       isMounted = false;
       window.removeEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
+      window.removeEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
     };
   }, [penerimaanItems]);
 
@@ -1321,11 +1332,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                       {/* Qty Comparison Box */}
                       <div className="grid grid-cols-3 gap-1 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200 dark:border-slate-750 text-center font-mono">
                         <div>
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Asli Kedatangan</span>
+                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Hitung Awal</span>
                           <span className="text-xs font-black text-slate-800 dark:text-slate-100">{item.total_asli} pcs</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Fisik Hitung</span>
+                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Hitung Ulang</span>
                           <span className="text-xs font-black text-blue-600 dark:text-blue-400">
                             {item.total_fisik !== null ? `${item.total_fisik} pcs` : '-'}
                           </span>
@@ -1498,7 +1509,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                     {activeGroup.nama_produk || 'Produk Tanpa Nama'}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Total Kedatangan Surat Jalan: <strong className="text-slate-800 dark:text-slate-200">{activeGroup.total_asli} pcs</strong>
+                    Total Hitung Awal: <strong className="text-slate-800 dark:text-slate-200">{activeGroup.total_asli} pcs</strong>
                     {activeGroup.vendor_up ? ` • UP: ${activeGroup.vendor_up}` : ''}
                   </p>
                 </div>
@@ -1913,7 +1924,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                               {g.nama_produk || 'Produk Tanpa Nama'}
                             </p>
                             <span className="text-[10px] text-slate-400">
-                              Total Kedatangan: <strong>{g.total_asli} pcs</strong>
+                              Total Hitung Awal: <strong>{g.total_asli} pcs</strong>
                               {g.vendor_up ? ` • UP: ${g.vendor_up}` : ''}
                             </span>
                           </div>

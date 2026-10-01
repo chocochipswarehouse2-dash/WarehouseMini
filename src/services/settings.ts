@@ -283,6 +283,7 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           presensi_locations: gasConfig.presensi_locations || null,
           agenda_categories: gasConfig.agenda_categories || null,
           katalog_manual_data: row1.katalog_manual_data || gasConfig.katalog_manual_data || localStorage.getItem('wms_katalog_manual_data') || '',
+          recount_audit_map: gasConfig.recount_audit_map || null,
           updated_at: row1.updated_at || new Date().toISOString(),
         };
 
@@ -398,7 +399,39 @@ export function getRecountAuditMap(): Record<string, any> {
 }
 
 /**
+ * Ambil data hitung ulang terbaru dari Cloud (wms_system_docs & wms_settings)
+ * Memastikan semua user & perangkat lain melihat kode mana saja yang sudah dihitung
+ */
+export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, any>> {
+  // 1. Coba ambil dari wms_system_docs key 'recount_audit_results'
+  try {
+    const doc = await supabaseFetch<any[]>('wms_system_docs', 'GET', undefined, 'section_id=eq.recount_audit_results');
+    if (doc && doc[0] && doc[0].content) {
+      const parsed = JSON.parse(doc[0].content);
+      if (typeof parsed === 'object' && parsed !== null) {
+        if (cachedSettings) cachedSettings.recount_audit_map = parsed;
+        try {
+          localStorage.setItem('wms_recount_audit_map', JSON.stringify(parsed));
+        } catch {}
+        return parsed;
+      }
+    }
+  } catch (eDoc) {}
+
+  // 2. Coba ambil dari wms_settings row 2
+  try {
+    const s = await fetchWmsSettings(true);
+    if (s && s.recount_audit_map && Object.keys(s.recount_audit_map).length > 0) {
+      return s.recount_audit_map;
+    }
+  } catch (eSet) {}
+
+  return getRecountAuditMap();
+}
+
+/**
  * Simpan hasil audit hitung ulang kode produksi ke Cloud Supabase & LocalStorage
+ * Menyimpan ganda ke wms_system_docs dan wms_settings agar langsung tersinkron ke semua perangkat lain
  */
 export async function saveRecountAuditRecord(record: {
   kode_produksi: string;
@@ -429,5 +462,32 @@ export async function saveRecountAuditRecord(record: {
       updated_at: record.updated_at || new Date().toISOString(),
     },
   };
-  return await saveWmsSettings({ recount_audit_map: updatedMap });
+
+  // Sync cache lokal
+  try {
+    localStorage.setItem('wms_recount_audit_map', JSON.stringify(updatedMap));
+    if (cachedSettings) cachedSettings.recount_audit_map = updatedMap;
+  } catch {}
+
+  // Sync ke Cloud A: wms_system_docs key 'recount_audit_results'
+  try {
+    await supabaseFetch('wms_system_docs', 'POST', [{
+      section_id: 'recount_audit_results',
+      content: JSON.stringify(updatedMap),
+      updated_by: record.auditor || 'WMS Auditor',
+      updated_at: new Date().toISOString(),
+    }], 'resolution=merge-duplicates');
+  } catch (errDoc) {
+    console.warn('Gagal sync recount ke wms_system_docs:', errDoc);
+  }
+
+  // Sync ke Cloud B: wms_settings
+  await saveWmsSettings({ recount_audit_map: updatedMap });
+
+  // Broadcast window event
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_recount_audit_updated', { detail: { auditMap: updatedMap } }));
+  }
+
+  return true;
 }

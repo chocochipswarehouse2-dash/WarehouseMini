@@ -8741,4 +8741,4 @@ export async function savePenerimaanRecountQueueToSupabase(
 }
 
 
-export { getRecountAuditMap, saveRecountAuditRecord } from './settings';
+export { getRecountAuditMap, saveRecountAuditRecord, fetchRecountAuditMapFromCloud } from './settings';

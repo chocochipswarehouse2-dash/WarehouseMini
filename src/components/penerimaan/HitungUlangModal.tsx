@@ -822,8 +822,8 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
                 <th>SURAT JALAN</th>
                 <th className="td-left" style={{ width: '130px' }}>WARNA</th>
                 <th style={{ width: '45px' }}>SIZE</th>
-                <th style={{ width: '90px', backgroundColor: '#e0f2fe', color: '#0369a1' }}>TERDATA</th>
-                <th style={{ width: '100px', backgroundColor: '#ffe4e6', color: '#be123c' }}>FISIK AKTUAL</th>
+                <th style={{ width: '90px', backgroundColor: '#e0f2fe', color: '#0369a1' }}>HITUNG AWAL</th>
+                <th style={{ width: '100px', backgroundColor: '#ffe4e6', color: '#be123c' }}>HITUNG ULANG</th>
                 <th style={{ width: '70px' }}>SELISIH</th>
                 <th style={{ width: '75px' }}>STATUS</th>
                 <th className="td-left">CATATAN PEMERIKSAAN</th>
