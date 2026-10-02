@@ -381,6 +381,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       console.error('Error fetching invoice for edit:', err);
       if (onNotify) onNotify('Gagal memuat detail invoice.', 'error');
     } finally {
+      setIsEditLoading(false);
       setIsActionLoading(false);
       hideGlobalLoading();
     }

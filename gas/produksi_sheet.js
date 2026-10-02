@@ -566,7 +566,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
     var numDateCols = Math.max(10, dateSlots.length);
     var numReturCols = isCMT ? (isSpecificDate ? Math.max(0, returSlots.length) : Math.max(5, returSlots.length)) : 0;
-    var totalCols = 7 + numDateCols + (numReturCols > 0 ? numReturCols : 0) + 1;
+    var totalCols = 7 + numDateCols + (numReturCols > 0 ? numReturCols : 0) + 1 + (!isSpecificDate ? 4 : 0);
 
     // Header Baris 1
     var row1Vals = ['NO', 'CODE', 'PRODUCT NAME', 'UP', 'PHOTO', 'COLOR', 'SIZE'];
@@ -579,6 +579,12 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       }
     }
     row1Vals.push('TOTAL DATANG (NET)');
+    if (!isSpecificDate) {
+      row1Vals.push('FISIK HASIL HITUNG');
+      row1Vals.push('SELISIH');
+      row1Vals.push('STATUS AUDIT');
+      row1Vals.push('LOG HITUNG ULANG');
+    }
 
     // Header Baris 2
     var row2Vals = ['', '', '', '', '', '', ''];
@@ -593,6 +599,12 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       }
     }
     row2Vals.push(''); // TOTAL DATANG (NET)
+    if (!isSpecificDate) {
+      row2Vals.push('');
+      row2Vals.push('');
+      row2Vals.push('');
+      row2Vals.push('');
+    }
 
     sheet.getRange(headerRow1Index, 1, 1, row1Vals.length).setValues([row1Vals]);
     sheet.getRange(headerRow2Index, 1, 1, row2Vals.length).setValues([row2Vals]);
@@ -615,6 +627,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       nextColPointer += numReturCols;
     }
     sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // TOTAL DATANG (NET)
+    nextColPointer++;
+
+    if (!isSpecificDate) {
+      sheet.getRange(headerRow1Index, nextColPointer, 2, 1).merge(); // FISIK
+      sheet.getRange(headerRow1Index, nextColPointer + 1, 2, 1).merge(); // SELISIH
+      sheet.getRange(headerRow1Index, nextColPointer + 2, 2, 1).merge(); // STATUS
+      sheet.getRange(headerRow1Index, nextColPointer + 3, 2, 1).merge(); // LOG
+    }
 
     var headerRange = sheet.getRange(headerRow1Index, 1, 2, totalCols);
     headerRange.setBackground('#FCE8E6');
@@ -677,6 +697,17 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
         var rowNet = (isSpecificDate && rowDatang > 0) ? rowDatang : (Number(sz.totalSizeQty) || (rowDatang - rowRetur));
         dataRowVals.push(rowNet);
+
+        if (!isSpecificDate) {
+          var rQty = (sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== '') ? Number(sz.recountQty) : '';
+          var rSelisih = rQty !== '' ? (rQty - rowNet) : '';
+          var rStatus = rQty !== '' ? (rSelisih === 0 ? 'MATCH' : (rSelisih < 0 ? 'KURANG' : 'LEBIH')) : '';
+          var rLog = sz.recountNotes || sz.recountAuditor || '';
+          dataRowVals.push(rQty);
+          dataRowVals.push(rSelisih);
+          dataRowVals.push(rStatus);
+          dataRowVals.push(rLog);
+        }
 
         sheet.getRange(currentRow, 1, 1, dataRowVals.length).setValues([dataRowVals]);
         sheet.getRange(currentRow, 1, 1, 7).setNumberFormat('@');

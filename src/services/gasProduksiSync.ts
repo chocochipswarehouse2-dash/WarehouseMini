@@ -236,6 +236,11 @@ export function buildBlocksFromRawItems(
       const sizeItems = orderedSizes.map((szName) => {
         const qtyByDate: Record<string, number> = {};
         let totalSizeQty = 0;
+        let recountQty: number | null = null;
+        let recountNotes = '';
+        let recountAuditor = '';
+        let recountStatus = '';
+        let recountRound: number | null = null;
 
         cItems
           .filter((it) => (it.size || 'ALL SIZE').trim().toUpperCase() === szName)
@@ -249,12 +254,25 @@ export function buildBlocksFromRawItems(
               qtyByDate[tgl] = (qtyByDate[tgl] || 0) + q;
               totalSizeQty += q;
             }
+
+            if (it.recount_qty !== undefined && it.recount_qty !== null) {
+              recountQty = Number(it.recount_qty);
+              recountNotes = it.recount_notes || recountNotes;
+              recountAuditor = it.recount_auditor || recountAuditor;
+              recountStatus = it.recount_status || recountStatus;
+              if (it.recount_round) recountRound = Number(it.recount_round);
+            }
           });
 
         return {
           size: szName,
           qtyByDate,
           totalSizeQty,
+          recountQty,
+          recountNotes,
+          recountAuditor,
+          recountStatus,
+          recountRound,
         };
       });
 
