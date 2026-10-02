@@ -447,8 +447,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Common quick tools section
   const renderQuickTools = (collapsed: boolean) => {
-    if (!userIsAdmin) return null;
-    
     return (
     <div className="space-y-1 px-2 pt-3 border-t border-slate-200/80 dark:border-slate-800/80">
       <div
@@ -526,36 +524,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </button>
 
-      {/* Unduh Dokumen PDF Matriks Hak Akses */}
-      <a
-        href="/DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
-        download="DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Unduh Dokumen PDF Matriks 4 Hierarki Hak Akses WMS"
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-          collapsed ? 'justify-center px-2' : ''
-        }`}
-      >
-        <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shrink-0">
-          <FileText className="w-4 h-4" />
-        </div>
-        {!collapsed && <span className="truncate">Unduh PDF Hak Akses</span>}
-      </a>
+      {/* Unduh Dokumen PDF Matriks Hak Akses (Admin Only) */}
+      {userIsAdmin && (
+        <a
+          href="/DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
+          download="DOKUMEN_HIERARKI_HAK_AKSES_WMS.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Unduh Dokumen PDF Matriks 4 Hierarki Hak Akses WMS"
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+            collapsed ? 'justify-center px-2' : ''
+          }`}
+        >
+          <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shrink-0">
+            <FileText className="w-4 h-4" />
+          </div>
+          {!collapsed && <span className="truncate">Unduh PDF Hak Akses</span>}
+        </a>
+      )}
 
-      {/* Settings Modal - Hanya untuk Superadmin atau user dengan izin Konfigurasi Sistem / Manajemen User */}
-      {userCanAccessSettings && (
+      {/* Settings Modal - Khusus Admin / Superadmin */}
+      {userIsAdmin && (
         <button
           type="button"
           onClick={() => {
             onOpenSettings();
             onCloseMobile();
           }}
-          title={
-            userIsAdmin
-              ? 'Pengaturan Sistem, Database & User Role'
-              : 'Pengaturan Sistem & Hak Akses'
-          }
+          title="Pengaturan Sistem, Database & User Role (Admin Only)"
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
             collapsed ? 'justify-center px-2' : ''
           }`}
@@ -566,11 +562,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!collapsed && (
             <div className="flex-1 text-left truncate flex items-center justify-between">
               <span className="truncate">Pengaturan Sistem</span>
-              {userIsAdmin && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 rounded font-black">
-                  ADMIN
-                </span>
-              )}
+              <span className="text-[9px] px-1.5 py-0.2 bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 rounded font-black">
+                ADMIN
+              </span>
             </div>
           )}
         </button>
@@ -685,23 +679,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </button>
 
-      {/* Dark Mode Switcher */}
+      {/* Tema & Tampilan (Untuk Semua Pengguna) */}
       <button
         type="button"
-        onClick={onOpenThemePicker}
-        title="Pilih Tema"
+        onClick={() => {
+          onOpenThemePicker();
+          onCloseMobile();
+        }}
+        title="Kustomisasi Tema, Warna Aksen, Font & Mode Gelap"
         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
           collapsed ? 'justify-center px-2' : ''
         }`}
       >
-        <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-          <Palette className="w-4 h-4 text-slate-500" />
+        <div className="p-1.5 rounded-lg bg-primary-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 shrink-0">
+          <Palette className="w-4 h-4 text-primary-500" />
         </div>
         {!collapsed && (
           <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span>Pilih Tema</span>
-            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-              'TEMA'
+            <span className="font-extrabold text-slate-800 dark:text-slate-200">Tema & Tampilan</span>
+            <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-primary-100 dark:bg-primary-950/80 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800">
+              TEMA
             </span>
           </div>
         )}

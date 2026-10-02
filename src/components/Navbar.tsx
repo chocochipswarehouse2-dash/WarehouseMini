@@ -241,17 +241,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-[#0f172a] dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
         >
           <>
-              <Palette className="w-4 h-4 text-slate-500" />
-              <span className="hidden md:inline font-bold text-slate-500">Tema</span>
+              <Palette className="w-4 h-4 text-primary-500" />
+              <span className="hidden md:inline font-bold text-slate-700 dark:text-slate-200">Tema</span>
             </>
         </button>
 
-        {/* Settings Button - Hanya untuk Superadmin / Admin */}
-        {canAccessSettings(session) && (
+        {/* Settings Button: Superadmin melihat Pengaturan Sistem, User Lain melihat Pengaturan Tema */}
+        {session && (
           <button
             id="btnSettings"
             onClick={onOpenSettings}
-            title="Pengaturan Sistem & Database (Admin Only)"
+            title={canAccessSettings(session) ? "Pengaturan Sistem & Database (Admin)" : "Pengaturan Tema & Preferensi Akun"}
             className="p-2 text-slate-600 dark:text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer hidden xs:flex"
           >
             <Settings className="w-4 h-4" />

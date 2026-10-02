@@ -521,8 +521,8 @@ export default function App() {
 
   // Handler pembukaan pengaturan sistem dengan verifikasi izin
   const handleOpenSettings = useCallback(() => {
-    if (!canAccessSettings(session)) {
-      showToast('Akses ditolak: Akun Anda tidak memiliki izin untuk membuka Pengaturan Sistem.', 'error');
+    if (!session) {
+      showToast('Akses ditolak: Silakan login terlebih dahulu.', 'error');
       return;
     }
     setIsSettingsOpen(true);

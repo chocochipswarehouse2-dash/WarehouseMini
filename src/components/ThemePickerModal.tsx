@@ -87,26 +87,32 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => !darkMode && onToggleDarkMode()}
+                type="button"
+                onClick={() => {
+                  if (darkMode) onToggleDarkMode();
+                }}
                 className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                   !darkMode
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs'
                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
                 <Sun className={`w-4 h-4 ${!darkMode ? 'text-primary-500' : ''}`} />
-                Terang
+                <span>Terang</span>
               </button>
               <button
-                onClick={() => darkMode && onToggleDarkMode()}
+                type="button"
+                onClick={() => {
+                  if (!darkMode) onToggleDarkMode();
+                }}
                 className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                   darkMode
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs'
                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
                 <Moon className={`w-4 h-4 ${darkMode ? 'text-primary-500' : ''}`} />
-                Gelap
+                <span>Gelap</span>
               </button>
             </div>
           </div>
