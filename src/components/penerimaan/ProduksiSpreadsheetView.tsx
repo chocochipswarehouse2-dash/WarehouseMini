@@ -924,8 +924,20 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
           undefined,
           `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`
         );
-        // Insert new formatted items without internal ID conflicts
-        const rowsToInsert = newItems.map(({ id, ...rest }) => rest);
+        // Clean payload strictly to valid table columns (no invalid columns like nama_produk)
+        const rowsToInsert = newItems.map((it) => ({
+          tanggal_penerimaan: it.tanggal_penerimaan || defaultDate,
+          kategori: it.kategori || fallbackCategory,
+          no_surat_jalan: (it.no_surat_jalan || primarySj).trim().toUpperCase(),
+          kode_produksi: (it.kode_produksi || targetBlock.code).trim().toUpperCase(),
+          warna: (it.warna || '').trim().toUpperCase(),
+          size: (it.size || 'Default').trim(),
+          qty: Math.max(0, Number(it.qty) || 0),
+          foto_url: it.foto_url || targetBlock.photoUrl || '',
+          keterangan: (it.keterangan || targetBlock.upVendor || targetBlock.catatan || '').trim(),
+          operator: it.operator || 'Spreadsheet Editor',
+          created_at: it.created_at || nowStr,
+        }));
         await supabaseFetch('penerimaan_produksi', 'POST', rowsToInsert);
       } catch (errSupabase) {
         console.warn('Gagal sync block save ke Supabase:', errSupabase);

@@ -1057,6 +1057,92 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }
   };
 
+  // Re-push audit delta for a code to Google Sheets directly
+  const handleDirectRePushToSheet = async (group: CodeAuditGroup, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!group) return;
+
+    try {
+      setIsSyncingSheet(true);
+      const auditRec = recountAuditMap[group.kode_produksi];
+      const nowIso = new Date().toISOString();
+      const allDates = Array.from(new Set(group.items.map((it) => it.tanggal_penerimaan).filter(Boolean)));
+      const arrivalDatesInfo = formatDatesSummary(allDates as string[]);
+
+      // Map delta items
+      let deltaItems: MasterRecountDeltaItem[] = [];
+
+      if (auditRec && Array.isArray(auditRec.variants) && auditRec.variants.length > 0) {
+        deltaItems = auditRec.variants.map((v: any) => ({
+          kode_produksi: group.kode_produksi,
+          warna: v.warna || '-',
+          size: v.size || '-',
+          qty_asli: Number(v.qty_asli) || 0,
+          qty_fisik: Number(v.qty_fisik !== undefined ? v.qty_fisik : v.qty_asli) || 0,
+          selisih: Number(v.selisih) || 0,
+          status: v.status || (v.selisih === 0 ? 'MATCH' : v.selisih < 0 ? 'KURANG' : 'LEBIH'),
+          round: auditRec.round || 1,
+          auditor: auditRec.auditor || 'Auditor Fisik',
+          catatan: v.note || auditRec.catatan || '',
+          tanggal_kedatangan_info: arrivalDatesInfo,
+          updated_at: nowIso,
+        }));
+      } else {
+        const varMap = new Map<string, { warna: string; size: string; qtyAsli: number; qtyFisik: number; note?: string }>();
+        group.items.forEach((it) => {
+          const key = `${it.warna || '-'}_${it.size || '-'}`;
+          if (!varMap.has(key)) {
+            varMap.set(key, { warna: it.warna || '-', size: it.size || '-', qtyAsli: 0, qtyFisik: 0, note: it.recount_notes });
+          }
+          const rec = varMap.get(key)!;
+          const qAsli = Number(it.qty) || 0;
+          const qFisik = it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : qAsli;
+          rec.qtyAsli += qAsli;
+          rec.qtyFisik += qFisik;
+        });
+
+        deltaItems = Array.from(varMap.values()).map((v) => {
+          const selisih = v.qtyFisik - v.qtyAsli;
+          return {
+            kode_produksi: group.kode_produksi,
+            warna: v.warna,
+            size: v.size,
+            qty_asli: v.qtyAsli,
+            qty_fisik: v.qtyFisik,
+            selisih,
+            status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
+            round: group.last_round || 1,
+            auditor: group.last_auditor || 'Auditor Fisik',
+            catatan: v.note || group.last_notes || '',
+            tanggal_kedatangan_info: arrivalDatesInfo,
+            updated_at: nowIso,
+          };
+        });
+      }
+
+      const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
+        activeTab: group.kategori === 'Kargo' ? 'Kargo' : 'CMT',
+        kode_produksi: group.kode_produksi,
+        tanggal_hitung: group.last_audit_date ? group.last_audit_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        items: deltaItems,
+      });
+
+      if (deltaRes.success) {
+        onShowToast(
+          `✅ Berhasil Re-Push ke Google Sheet: Data hitung ulang Kode ${group.kode_produksi} telah disinkronkan ke Master Sheet!`,
+          'success'
+        );
+      } else {
+        onShowToast(`Gagal kirim ke Google Sheet: ${deltaRes.message || 'Error'}`, 'error');
+      }
+    } catch (err: any) {
+      console.error('Error direct repush to sheet:', err);
+      onShowToast(`Gagal re-push ke Google Sheet: ${err.message || err}`, 'error');
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
   // Prompt to edit card instruction note
   const handlePromptEditCardNote = (code: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -1601,11 +1687,21 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                         <span>{item.is_counted ? 'Re-Audit Fisik' : 'Hitung Sekarang'}</span>
                       </button>
 
+                      {/* Direct Re-Push Sheet Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDirectRePushToSheet(item, e)}
+                        className="p-1.5 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold transition cursor-pointer border border-indigo-200 dark:border-indigo-800"
+                        title="Re-Push / Kirim Ulang Hasil Audit ke Google Sheet"
+                      >
+                        <CloudUpload className="w-3.5 h-3.5" />
+                      </button>
+
                       <button
                         type="button"
                         onClick={(e) => handleOpenHistoryModal(item.kode_produksi, e)}
                         className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer"
-                        title="Lihat Log Riwayat Putaran"
+                        title="Lihat Log Riwayat Putaran & Rincian Varian"
                       >
                         <History className="w-3.5 h-3.5" />
                       </button>
@@ -1643,6 +1739,17 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               </button>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSyncingSheet}
+                  onClick={(e) => handleDirectRePushToSheet(activeGroup, e)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                  title="Kirim ulang data hitung fisik kode ini ke Master Sheet Google Spreadsheet"
+                >
+                  <CloudUpload className={`w-3.5 h-3.5 ${isSyncingSheet ? 'animate-bounce' : ''}`} />
+                  <span>{isSyncingSheet ? 'Mengirim...' : 'Re-Push Sheet'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handlePrintPhysicalForm}
@@ -2189,7 +2296,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           ======================================================== */}
       {isHistoryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[88vh]">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600">
@@ -2199,19 +2306,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <h3 className="text-sm font-black text-slate-900 dark:text-white">
                     Riwayat Audit Fisik: {historyTargetCode}
                   </h3>
-                  <p className="text-[11px] text-slate-500">Log putaran hasil hitung ulang fisik gudang</p>
+                  <p className="text-[11px] text-slate-500">Log putaran &amp; rincian hasil hitung ulang fisik gudang per varian</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsHistoryModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600"
+                className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-3 flex-1">
+            <div className="p-4 overflow-y-auto space-y-4 flex-1">
               {isLoadingHistory ? (
                 <div className="p-8 text-center text-slate-400 space-y-2">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-rose-500" />
@@ -2222,52 +2329,171 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <p className="text-xs">Belum ada riwayat audit fisik yang tercatat untuk kode ini.</p>
                 </div>
               ) : (
-                historyLogs.map((log, idx) => (
-                  <div
-                    key={log.id || idx}
-                    className="p-3.5 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Tanggal: {log.tanggal_audit} &bull; Oleh: <strong className="text-rose-600">{log.auditor}</strong>
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {log.created_at ? new Date(log.created_at).toLocaleString('id-ID') : ''}
-                      </span>
-                    </div>
+                historyLogs.map((log, idx) => {
+                  // Resolve complete details list with robust multi-layer fallback
+                  let detailsList = Array.isArray(log.details) && log.details.length > 0 ? log.details : [];
 
-                    <div className="grid grid-cols-3 gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl text-center font-mono text-xs">
-                      <div>
-                        <span className="text-[9px] text-slate-400 block uppercase">Sebelumnya</span>
-                        <span className="font-bold">{log.total_sebelumnya}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-400 block uppercase">Fisik</span>
-                        <span className="font-black text-blue-600">{log.total_fisik}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-400 block uppercase">Selisih</span>
-                        <span
-                          className={`font-black ${
-                            log.total_selisih === 0
-                              ? 'text-emerald-600'
-                              : log.total_selisih < 0
-                              ? 'text-rose-600'
-                              : 'text-blue-600'
-                          }`}
-                        >
-                          {log.total_selisih > 0 ? `+${log.total_selisih}` : log.total_selisih}
+                  if (detailsList.length === 0 && recountAuditMap[historyTargetCode]?.variants) {
+                    detailsList = recountAuditMap[historyTargetCode].variants.map((v: any) => ({
+                      warna: v.warna || '-',
+                      size: v.size || '-',
+                      qty_sebelumnya: Number(v.qty_asli) || 0,
+                      qty_fisik: Number(v.qty_fisik !== undefined ? v.qty_fisik : v.qty_asli) || 0,
+                      selisih: Number(v.selisih) || 0,
+                      catatan: v.note || v.catatan || '',
+                    }));
+                  }
+
+                  if (detailsList.length === 0) {
+                    const codeItems = penerimaanItems.filter(
+                      (it) => (it.kode_produksi || '').trim().toUpperCase() === historyTargetCode.trim().toUpperCase()
+                    );
+                    if (codeItems.length > 0) {
+                      const gMap = new Map<string, { warna: string; size: string; qty_sebelumnya: number; qty_fisik: number; selisih: number; catatan?: string }>();
+                      codeItems.forEach((it) => {
+                        const key = `${it.warna || '-'}_${it.size || '-'}`;
+                        const prevQ = Number(it.qty) || 0;
+                        const countQ = it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : prevQ;
+                        if (!gMap.has(key)) {
+                          gMap.set(key, {
+                            warna: it.warna || '-',
+                            size: it.size || '-',
+                            qty_sebelumnya: 0,
+                            qty_fisik: 0,
+                            selisih: 0,
+                            catatan: it.recount_notes,
+                          });
+                        }
+                        const rec = gMap.get(key)!;
+                        rec.qty_sebelumnya += prevQ;
+                        rec.qty_fisik += countQ;
+                        rec.selisih = rec.qty_fisik - rec.qty_sebelumnya;
+                      });
+                      detailsList = Array.from(gMap.values());
+                    }
+                  }
+
+                  // Sort details by Color then Size order
+                  const sortedDetails = [...detailsList].sort((a, b) => {
+                    const colCmp = (a.warna || '').localeCompare(b.warna || '');
+                    if (colCmp !== 0) return colCmp;
+                    return getSizeWeight(a.size) - getSizeWeight(b.size);
+                  });
+
+                  return (
+                    <div
+                      key={log.id || idx}
+                      className="p-4 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3"
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 font-mono text-[11px] font-black text-slate-800 dark:text-slate-200">
+                            Sesi #{historyLogs.length - idx}
+                          </span>
+                          <span className="text-xs font-bold text-slate-900 dark:text-white">
+                            Tgl Audit: <strong>{log.tanggal_audit}</strong> &bull; Oleh: <strong className="text-rose-600">{log.auditor}</strong>
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {log.created_at ? new Date(log.created_at).toLocaleString('id-ID') : ''}
                         </span>
                       </div>
-                    </div>
 
-                    {log.general_notes ? (
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
-                        Catatan: "{log.general_notes}"
-                      </p>
-                    ) : null}
-                  </div>
-                ))
+                      {/* Top Metrics Cards */}
+                      <div className="grid grid-cols-3 gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl text-center font-mono text-xs border border-slate-200 dark:border-slate-800">
+                        <div>
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Dokumen Surat Jalan</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">{log.total_sebelumnya} pcs</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Hasil Fisik Auditor</span>
+                          <span className="font-black text-blue-600 dark:text-blue-400 text-sm">{log.total_fisik} pcs</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold">Total Selisih</span>
+                          <span
+                            className={`font-black text-sm ${
+                              log.total_selisih === 0
+                                ? 'text-emerald-600'
+                                : log.total_selisih < 0
+                                ? 'text-rose-600'
+                                : 'text-blue-600'
+                            }`}
+                          >
+                            {log.total_selisih > 0 ? `+${log.total_selisih}` : log.total_selisih} pcs
+                          </span>
+                        </div>
+                      </div>
+
+                      {log.general_notes ? (
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-amber-50/50 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-200/50 dark:border-amber-800/30">
+                          Catatan Sesi: &quot;{log.general_notes}&quot;
+                        </p>
+                      ) : null}
+
+                      {/* Complete Variant Breakdown Table */}
+                      {sortedDetails.length > 0 ? (
+                        <div className="border border-slate-200 dark:border-slate-750 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-2xs">
+                          <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 flex items-center justify-between border-b border-slate-200 dark:border-slate-700">
+                            <span>📋 Rincian Hitungan Fisik per Varian (Warna &amp; Size):</span>
+                            <span>{sortedDetails.length} Varian</span>
+                          </div>
+                          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                            <table className="w-full text-xs text-left border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 dark:bg-slate-800/60 text-[10px] font-bold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700">
+                                  <th className="py-2 px-2.5 text-center w-8">No</th>
+                                  <th className="py-2 px-2.5">Warna</th>
+                                  <th className="py-2 px-2.5 text-center w-14">Size</th>
+                                  <th className="py-2 px-2.5 text-center w-20 text-slate-700 dark:text-slate-300">Dokumen</th>
+                                  <th className="py-2 px-2.5 text-center w-20 font-black text-blue-600 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">Fisik</th>
+                                  <th className="py-2 px-2.5 text-center w-16">Selisih</th>
+                                  <th className="py-2 px-2.5 text-center w-20">Status</th>
+                                  <th className="py-2 px-2.5 min-w-[100px]">Catatan</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-[11px]">
+                                {sortedDetails.map((d, dIdx) => {
+                                  const isMatch = d.selisih === 0;
+                                  return (
+                                    <tr key={dIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                      <td className="py-1.5 px-2.5 text-center text-slate-400 font-sans text-[10px]">{dIdx + 1}</td>
+                                      <td className="py-1.5 px-2.5 font-sans font-bold text-slate-800 dark:text-slate-200">{d.warna}</td>
+                                      <td className="py-1.5 px-2.5 text-center font-bold">{d.size}</td>
+                                      <td className="py-1.5 px-2.5 text-center text-slate-600 dark:text-slate-400">{d.qty_sebelumnya}</td>
+                                      <td className="py-1.5 px-2.5 text-center font-black text-blue-600 dark:text-blue-400 bg-blue-50/20 dark:bg-blue-950/10">
+                                        {d.qty_fisik}
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-center font-black">
+                                        <span className={isMatch ? 'text-emerald-600' : d.selisih < 0 ? 'text-rose-600' : 'text-blue-600'}>
+                                          {d.selisih > 0 ? `+${d.selisih}` : d.selisih}
+                                        </span>
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-center">
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-black ${
+                                          isMatch 
+                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                                            : d.selisih < 0 
+                                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' 
+                                            : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                        }`}>
+                                          {isMatch ? 'Klop' : d.selisih < 0 ? 'Kurang' : 'Lebih'}
+                                        </span>
+                                      </td>
+                                      <td className="py-1.5 px-2.5 font-sans text-slate-500 text-[10px]">
+                                        {d.catatan || '-'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

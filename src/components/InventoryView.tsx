@@ -928,6 +928,10 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       if (!item || isDummyProduct(item)) return;
       const sku = String(item.k || item.sku || '').trim().toUpperCase();
       if (!sku || isCorruptedSku(sku) || sku.startsWith('#') || sku.includes('#') || sku === 'KOLI' || sku === 'BOX') return;
+      // Master Produk murni DealPOS: Abaikan placeholder tanpa nama produk resmi
+      const rawName = String(item.p || (item as any).nama_produk || '').trim();
+      if (!rawName) return;
+
       seenSkus.add(sku);
       result.push(normalizeRow(item, sku, skuStockMap[sku]));
     });

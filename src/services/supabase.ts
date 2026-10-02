@@ -3223,26 +3223,9 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
         if (!sku) continue;
 
         let item = productsMap.get(sku);
-        if (!item) {
-          // If a product has physical stock but is missing in master_produk, create a placeholder
-          const detectedSize = extractSizeFromSku(sku);
-          item = {
-            k: sku,
-            sku: sku,
-            p: '',
-            nama_produk: '',
-            category: 'Uncategorized',
-            s: detectedSize !== '-' ? detectedSize : '',
-            size: detectedSize !== '-' ? detectedSize : '',
-            lokasi: '',
-            price: 0,
-            f: {},
-            l: [],
-            dealpos_channels: {},
-            q: 0
-          };
-          productsMap.set(sku, item);
-        }
+        // If product is NOT in master_produk (DealPOS CSV), do not inject placeholder into master catalog.
+        // Uncataloged physical stocks are detected and resolved via Anomaly Hub.
+        if (!item) continue;
 
         if (item && r.lokasi) {
           const locClean = String(r.lokasi).trim();

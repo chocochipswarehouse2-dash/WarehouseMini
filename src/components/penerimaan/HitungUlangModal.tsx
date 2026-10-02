@@ -114,18 +114,6 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
     }
   }, [isOpen]);
 
-  // Sync initial props on open
-  useEffect(() => {
-    if (isOpen) {
-      const code = initialKodeProduksi || distinctCodes[0] || '';
-      setSelectedCode(code);
-      setSelectedCodesMulti(code ? [code] : []);
-      setIsMultiCodeMode(false);
-      setSelectedTanggal(initialTanggal || 'all');
-      setRecountValues({});
-    }
-  }, [isOpen, initialKodeProduksi, initialTanggal, distinctCodes]);
-
   // Available arrival dates for selected code
   // Filtered distinct codes based on dropsearch query
   const searchedDistinctCodes = useMemo(() => {
@@ -217,6 +205,63 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
     });
   }, [dataList, activeSelectedCodes, selectedTanggal, isMultiCodeMode, STANDARD_SIZE_ORDER]);
 
+  // Helper to extract initial recount values from previously audited items
+  const buildInitialRecountValues = (items: PenerimaanProduksiItem[]) => {
+    const vals: Record<string, { recountQty: number | null; note: string }> = {};
+    items.forEach((it, idx) => {
+      const rowKey = `${it.id || idx}-${it.kode_produksi}-${it.warna}-${it.size}-${it.tanggal_penerimaan}`;
+      if (it.recount_qty !== undefined && it.recount_qty !== null) {
+        vals[rowKey] = {
+          recountQty: Number(it.recount_qty),
+          note: it.recount_notes || '',
+        };
+      }
+    });
+    return vals;
+  };
+
+  // Sync initial props on open & auto-preload recount values
+  useEffect(() => {
+    if (isOpen) {
+      const code = initialKodeProduksi || distinctCodes[0] || '';
+      setSelectedCode(code);
+      setSelectedCodesMulti(code ? [code] : []);
+      setIsMultiCodeMode(false);
+      setSelectedTanggal(initialTanggal || 'all');
+      
+      const initialItems = dataList.filter(
+        (it) => (it.kode_produksi || '').trim().toUpperCase() === code.toUpperCase()
+      );
+      setRecountValues(buildInitialRecountValues(initialItems));
+
+      const foundAuditor = initialItems.find((i) => i.recount_auditor)?.recount_auditor;
+      if (foundAuditor) {
+        setAuditorName(foundAuditor);
+      }
+    }
+  }, [isOpen, initialKodeProduksi, initialTanggal, distinctCodes, dataList]);
+
+  // Dynamically load recount values when selected code or filteredRawItems change
+  useEffect(() => {
+    if (filteredRawItems.length > 0) {
+      const prevVals = buildInitialRecountValues(filteredRawItems);
+      if (Object.keys(prevVals).length > 0) {
+        setRecountValues((current) => {
+          // If current is empty or code changed, fill with previous audit data
+          if (Object.keys(current).length === 0) {
+            return prevVals;
+          }
+          return { ...prevVals, ...current };
+        });
+
+        const foundAuditor = filteredRawItems.find((i) => i.recount_auditor)?.recount_auditor;
+        if (foundAuditor) {
+          setAuditorName((prev) => prev || foundAuditor);
+        }
+      }
+    }
+  }, [filteredRawItems]);
+
   // Product metadata
   const productInfo = useMemo(() => {
     if (filteredRawItems.length === 0) return null;
@@ -233,6 +278,29 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
       photoUrl: photo,
     };
   }, [filteredRawItems, selectedCode, activeSelectedCodes, isMultiCodeMode]);
+
+  // Check if any items for current selection have previous audit data
+  const previousAuditMeta = useMemo(() => {
+    const auditedItem = filteredRawItems.find(
+      (i) => i.recount_qty !== undefined && i.recount_qty !== null
+    );
+    if (!auditedItem) return null;
+    let prevTotalFisik = 0;
+    let prevTotalAsli = 0;
+    filteredRawItems.forEach((i) => {
+      prevTotalAsli += Number(i.qty) || 0;
+      prevTotalFisik += Number(i.recount_qty !== undefined && i.recount_qty !== null ? i.recount_qty : i.qty) || 0;
+    });
+    return {
+      round: auditedItem.recount_round || 1,
+      auditor: auditedItem.recount_auditor || 'Auditor',
+      updatedAt: auditedItem.recount_updated_at ? String(auditedItem.recount_updated_at).slice(0, 10) : '',
+      notes: auditedItem.recount_notes,
+      totalFisik: prevTotalFisik,
+      totalAsli: prevTotalAsli,
+      selisih: prevTotalFisik - prevTotalAsli,
+    };
+  }, [filteredRawItems]);
 
   // Grouped rows for audit
   const auditRows: HitungUlangRowItem[] = useMemo(() => {
@@ -1266,6 +1334,33 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Re-Audit History Notice Banner */}
+          {previousAuditMeta && (
+            <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl text-xs gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-base">🔄</span>
+                <div>
+                  <div className="font-extrabold text-amber-900 dark:text-amber-200">
+                    Riwayat Audit Sebelumnya Ditemukan (Ronde {previousAuditMeta.round} • Checker: {previousAuditMeta.auditor} {previousAuditMeta.updatedAt ? `• ${previousAuditMeta.updatedAt}` : ''})
+                  </div>
+                  <div className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                    Hasil Fisik: <strong>{previousAuditMeta.totalFisik} pcs</strong> dari Dokumen {previousAuditMeta.totalAsli} pcs (Selisih: {previousAuditMeta.selisih > 0 ? `+${previousAuditMeta.selisih}` : previousAuditMeta.selisih} pcs). Data rincian ini otomatis dimuat ke kolom di bawah.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecountValues(buildInitialRecountValues(filteredRawItems));
+                  onShowToast('Data hitungan sebelumnya dimuat ulang ke form.', 'info');
+                }}
+                className="px-2.5 py-1 bg-amber-200 dark:bg-amber-800 hover:bg-amber-300 text-amber-900 dark:text-amber-100 rounded-lg text-xs font-bold shrink-0 transition"
+              >
+                Muat Ulang Re-Audit
+              </button>
+            </div>
+          )}
         </div>
 
         {/* RE-COUNT TABLE BODY */}
@@ -1642,13 +1737,25 @@ export const HitungUlangModal: React.FC<HitungUlangModalProps> = ({
               <span>{isExportingExcel ? 'Mengunduh...' : 'Export Excel'}</span>
             </button>
 
+            {/* Re-Push ke Google Sheet */}
+            <button
+              type="button"
+              disabled={isRePushingSheet || auditRows.length === 0}
+              onClick={handleRePushRecountToSheet}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+              title="Kirim ulang seluruh baris fisik hasil hitung ulang ke Tab Surat Jalan Google Spreadsheet"
+            >
+              <CloudUpload className={`w-3.5 h-3.5 ${isRePushingSheet ? 'animate-bounce' : ''}`} />
+              <span>{isRePushingSheet ? 'Mengirim Sheet...' : 'Re-Push Sheet'}</span>
+            </button>
+
             {/* Apply to System */}
             <button
               type="button"
               disabled={isApplying || summary.totalCountedRows === 0}
               onClick={handleApplyToSystem}
               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-sm cursor-pointer"
-              title="Terapkan hasil hitung ulang fisik ke sistem penerimaan"
+              title="Terapkan hasil hitung ulang fisik ke sistem penerimaan & Master Sheet"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{isApplying ? 'Menerapkan...' : 'Terapkan Hasil Hitung'}</span>
