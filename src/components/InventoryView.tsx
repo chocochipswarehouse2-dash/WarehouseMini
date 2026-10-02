@@ -3151,6 +3151,49 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
                   const totalPcs = list.reduce((sum, it) => sum + it.totalPerbaikan, 0);
 
+                  const getTabFilteredLocStr = (it: typeof list[0], tab: typeof kpiPerbaikanTab) => {
+                    if (!it.parsedLocs || it.parsedLocs.length === 0) {
+                      return it.locStr || '-';
+                    }
+
+                    const isPermak = (loc: string) => {
+                      const u = loc.toUpperCase().trim();
+                      return u.startsWith('PMK') || u.includes('PERMAK');
+                    };
+
+                    const isCuci = (loc: string) => {
+                      const u = loc.toUpperCase().trim();
+                      return u.startsWith('CC') || u.includes('CUCI');
+                    };
+
+                    const isDefect = (loc: string) => {
+                      const u = loc.toUpperCase().trim();
+                      return u.startsWith('DF') || u.includes('DEFECT') || u.includes('CACAT');
+                    };
+
+                    let matched = it.parsedLocs;
+                    if (tab === 'DEFECT') {
+                      matched = it.parsedLocs.filter((l) => isDefect(l.cleanLocName));
+                    } else if (tab === 'PERMAK') {
+                      matched = it.parsedLocs.filter((l) => isPermak(l.cleanLocName));
+                    } else if (tab === 'CUCI') {
+                      matched = it.parsedLocs.filter((l) => isCuci(l.cleanLocName));
+                    } else if (tab === 'ALL') {
+                      const allRepairs = it.parsedLocs.filter(
+                        (l) => isPermak(l.cleanLocName) || isCuci(l.cleanLocName) || isDefect(l.cleanLocName)
+                      );
+                      if (allRepairs.length > 0) {
+                        matched = allRepairs;
+                      }
+                    }
+
+                    if (matched.length === 0) {
+                      return it.locStr || '-';
+                    }
+
+                    return matched.map((l) => l.displayStr).join(', ');
+                  };
+
                   return (
                     <div className="space-y-3">
                       <div className="flex gap-1.5 overflow-x-auto p-1 bg-slate-100 dark:bg-[#0F0F12] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold no-scrollbar">
@@ -3256,7 +3299,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                               it.produk,
                               it.size,
                               it.sku,
-                              it.locStr || '-',
+                              getTabFilteredLocStr(it, kpiPerbaikanTab),
                               it.permakQty,
                               it.cuciQty,
                               it.defectQty,
@@ -3293,52 +3336,55 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                               </tr>
                             ) : (
                               <>
-                                {list.slice(0, modalDisplayLimit).map((it, idx) => (
-                                  <tr
-                                    key={`${it.sku}_${idx}`}
-                                    className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
-                                  >
-                                    <td className="p-2.5">
-                                      <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
-                                        {it.produk}
-                                      </div>
-                                      <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
-                                        <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
-                                        {it.locStr && it.locStr !== '-' && (
-                                          <>
-                                            <span>&bull;</span>
-                                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{it.locStr}</span>
-                                          </>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="p-2.5 text-center">
-                                      <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
-                                        {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
-                                      </span>
-                                    </td>
-                                    <td className="p-2.5 text-center">
-                                      <span className={`font-mono text-xs font-bold ${it.permakQty > 0 ? 'text-blue-600 dark:text-blue-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
-                                        {it.permakQty || 0}
-                                      </span>
-                                    </td>
-                                    <td className="p-2.5 text-center">
-                                      <span className={`font-mono text-xs font-bold ${it.cuciQty > 0 ? 'text-cyan-600 dark:text-cyan-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
-                                        {it.cuciQty || 0}
-                                      </span>
-                                    </td>
-                                    <td className="p-2.5 text-center">
-                                      <span className={`font-mono text-xs font-bold ${it.defectQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
-                                        {it.defectQty || 0}
-                                      </span>
-                                    </td>
-                                    <td className="p-2.5 text-center">
-                                      <span className="font-mono text-xs font-extrabold text-primary-600 dark:text-primary-400">
-                                        {it.totalPerbaikan}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
+                                {list.slice(0, modalDisplayLimit).map((it, idx) => {
+                                  const displayLoc = getTabFilteredLocStr(it, kpiPerbaikanTab);
+                                  return (
+                                    <tr
+                                      key={`${it.sku}_${idx}`}
+                                      className="hover:bg-slate-50 dark:hover:bg-[#121217] transition-colors group"
+                                    >
+                                      <td className="p-2.5">
+                                        <div className="font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-tight text-xs">
+                                          {it.produk}
+                                        </div>
+                                        <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-0.5">
+                                          <span className="font-semibold text-slate-600 dark:text-slate-300">{it.sku}</span>
+                                          {displayLoc && displayLoc !== '-' && (
+                                            <>
+                                              <span>&bull;</span>
+                                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{displayLoc}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-bold">
+                                          {it.size && it.size.toUpperCase() !== 'DEFAULT' ? it.size : 'ALL'}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className={`font-mono text-xs font-bold ${it.permakQty > 0 ? 'text-blue-600 dark:text-blue-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                          {it.permakQty || 0}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className={`font-mono text-xs font-bold ${it.cuciQty > 0 ? 'text-cyan-600 dark:text-cyan-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                          {it.cuciQty || 0}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className={`font-mono text-xs font-bold ${it.defectQty > 0 ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-300 dark:text-slate-600'}`}>
+                                          {it.defectQty || 0}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-center">
+                                        <span className="font-mono text-xs font-extrabold text-primary-600 dark:text-primary-400">
+                                          {it.totalPerbaikan}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </>
                             )}
                           </tbody>

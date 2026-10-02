@@ -103,6 +103,13 @@ interface EditableLogItem {
   keterangan: string;
 }
 
+export interface ConsolidatedLogItem extends LogProdukItem {
+  merged_ids?: (string | number)[];
+  raw_count?: number;
+  total_qty?: number;
+  is_merged?: boolean;
+}
+
 export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   session,
   productCatalog = [],
@@ -164,6 +171,25 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const [editInvoiceItems, setEditInvoiceItems] = useState<EditableLogItem[]>([]);
   const [isEditLoading, setIsEditLoading] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Consolidation Mode: Group & sum identical Type + Invoice + SKU + Size + Location
+  const [isConsolidatedMode, setIsConsolidatedMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wms_mutasi_consolidate_mode');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true; // Default ON (Ringkas & Jumlahkan)
+  });
+
+  const handleToggleConsolidatedMode = () => {
+    setIsConsolidatedMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('wms_mutasi_consolidate_mode', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Confirmation Modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -342,6 +368,72 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       return true;
     });
   }, [logs, sourceFilter, typeFilter, areaFilter, deferredSearch]);
+
+  // Display logs: Consolidated (Grouped & Summed by Invoice + Type + SKU + Size + Lokasi) or Raw stream
+  const displayLogs = useMemo<ConsolidatedLogItem[]>(() => {
+    if (!isConsolidatedMode) {
+      return filteredLogs.map((l) => ({
+        ...l,
+        merged_ids: l.id ? [l.id] : [],
+        raw_count: 1,
+        total_qty: Number(l.qty) || 1,
+        is_merged: false,
+      }));
+    }
+
+    // Group by Invoice + Type + SKU + Size + Lokasi
+    const map = new Map<string, ConsolidatedLogItem>();
+
+    filteredLogs.forEach((item) => {
+      const invKey = (item.invoice || '').toUpperCase().trim();
+      const typeKey = (item.type || 'IN').toUpperCase().trim();
+      const skuKey = (item.sku || '').toUpperCase().trim();
+      const sizeKey = (item.size || '-').toUpperCase().trim();
+      const locKey = (item.lokasi || 'Warehouse').toUpperCase().trim();
+      const groupKey = `${invKey}__${typeKey}__${skuKey}__${sizeKey}__${locKey}`;
+
+      const itemQty = Number(item.qty) || 1;
+      const itemId = item.id || '';
+
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          ...item,
+          merged_ids: itemId ? [itemId] : [],
+          raw_count: 1,
+          total_qty: itemQty,
+          qty: itemQty,
+          is_merged: false,
+        });
+      } else {
+        const existing = map.get(groupKey)!;
+        existing.total_qty = (Number(existing.total_qty) || 0) + itemQty;
+        existing.qty = existing.total_qty;
+        existing.raw_count = (existing.raw_count || 1) + 1;
+        existing.is_merged = true;
+        if (itemId && existing.merged_ids && !existing.merged_ids.includes(itemId)) {
+          existing.merged_ids.push(itemId);
+        }
+        if (item.keterangan && !existing.keterangan?.includes(item.keterangan)) {
+          existing.keterangan = existing.keterangan ? `${existing.keterangan}; ${item.keterangan}` : item.keterangan;
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [filteredLogs, isConsolidatedMode]);
+
+  // Set of all underlying database IDs currently displayed
+  const allCurrentIds = useMemo(() => {
+    const set = new Set<string | number>();
+    displayLogs.forEach((l) => {
+      if (l.merged_ids && l.merged_ids.length > 0) {
+        l.merged_ids.forEach((id) => set.add(id));
+      } else if (l.id) {
+        set.add(l.id);
+      }
+    });
+    return set;
+  }, [displayLogs]);
 
   // Unique areas for dropdown
   const uniqueAreas = useMemo(() => {
@@ -716,21 +808,26 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     });
   };
 
-  // Toggle row selection
-  const toggleSelection = (id: string | number) => {
-    setSelectedIds(prev => {
+  // Toggle row selection (supports single ID or array of merged IDs)
+  const toggleSelection = (idOrIds: string | number | (string | number)[]) => {
+    setSelectedIds((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
+      const list = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+      const allSelected = list.length > 0 && list.every((id) => newSet.has(id));
+      if (allSelected) {
+        list.forEach((id) => newSet.delete(id));
+      } else {
+        list.forEach((id) => newSet.add(id));
+      }
       return newSet;
     });
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredLogs.length) {
+    if (selectedIds.size >= allCurrentIds.size && allCurrentIds.size > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredLogs.map(l => l.id!).filter(id => id != null)));
+      setSelectedIds(new Set(allCurrentIds));
     }
   };
 
@@ -924,6 +1021,25 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               {sourceCounts.web.toLocaleString('id-ID')}
             </span>
           </button>
+
+          {/* Consolidation / Grouped Duplicates Toggle */}
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block" />
+          <button
+            type="button"
+            onClick={handleToggleConsolidatedMode}
+            className={`px-3 py-1 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border ${
+              isConsolidatedMode
+                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 shadow-2xs'
+                : 'bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title={isConsolidatedMode ? 'Nonaktifkan penggabungan baris sama (tampilkan baris rinci per scan)' : 'Aktifkan penggabungan baris dengan Invoice, SKU, dan Lokasi yang sama'}
+          >
+            <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>{isConsolidatedMode ? '⚡ Ringkas Item Sama (Dijumlahkan)' : '📄 Semua Baris Rinci'}</span>
+            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 font-mono">
+              {displayLogs.length} baris
+            </span>
+          </button>
         </div>
 
         {/* Filter Toolbar */}
@@ -1056,21 +1172,23 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     <input 
                       type="checkbox" 
                       className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
-                      checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
+                      checked={allCurrentIds.size > 0 && selectedIds.size >= allCurrentIds.size}
                       onChange={toggleSelectAll}
                     />
-                    <span>Pilih Semua {selectedIds.size > 0 && `(${selectedIds.size}/${filteredLogs.length})`}</span>
+                    <span>Pilih Semua {selectedIds.size > 0 && `(${selectedIds.size}/${allCurrentIds.size})`}</span>
                   </label>
                   <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    Menampilkan {Math.min(displayLimit, filteredLogs.length)} dari {filteredLogs.length}
+                    Menampilkan {Math.min(displayLimit, displayLogs.length)} dari {displayLogs.length} {isConsolidatedMode ? `ringkas (${filteredLogs.length} scan)` : 'baris'}
                   </span>
                 </div>
 
                 {/* Mobile Cards Container */}
                 <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 bg-slate-50/40 dark:bg-black/20">
-                  {filteredLogs.slice(0, displayLimit).map((item) => {
+                  {displayLogs.slice(0, displayLimit).map((item) => {
                     const isTypeIn = item.type === 'IN' || item.type === 'ADJ_IN';
-                    const isSelected = selectedIds.has(item.id!);
+                    const isSelected = item.merged_ids && item.merged_ids.length > 0
+                      ? item.merged_ids.every((id) => selectedIds.has(id))
+                      : selectedIds.has(item.id!);
                     const formattedDate = item.created_at
                       ? new Date(item.created_at).toLocaleString('id-ID', {
                           day: '2-digit',
@@ -1097,7 +1215,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               type="checkbox" 
                               className="w-4 h-4 rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer shrink-0"
                               checked={isSelected}
-                              onChange={() => toggleSelection(item.id!)}
+                              onChange={() => toggleSelection(item.merged_ids && item.merged_ids.length > 0 ? item.merged_ids : item.id!)}
                             />
 
                             {/* Type Badge */}
@@ -1150,6 +1268,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                                 </span>
                               );
                             })()}
+                            {/* Merged Duplicates Badge */}
+                            {item.raw_count && item.raw_count > 1 && (
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                ✨ {item.raw_count}x scan
+                              </span>
+                            )}
                           </div>
 
                           {/* Action Buttons */}
@@ -1165,7 +1289,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
                             <button
                               type="button"
-                              onClick={() => handleDeleteSingleItem(item.id!, item.sku)}
+                              onClick={() => handleDeleteSingleItem(item.id!, item.sku, false, item.merged_ids)}
                               title="Hapus baris log ini"
                               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-primary-500/10 text-slate-400 hover:text-primary-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-primary-400 flex items-center justify-center transition-colors cursor-pointer"
                             >
@@ -1294,7 +1418,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                         <input 
                           type="checkbox" 
                           className="rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
-                          checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
+                          checked={allCurrentIds.size > 0 && selectedIds.size >= allCurrentIds.size}
                           onChange={toggleSelectAll}
                         />
                       </th>
@@ -1308,9 +1432,11 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {filteredLogs.slice(0, displayLimit).map((item) => {
+                    {displayLogs.slice(0, displayLimit).map((item) => {
                       const isTypeIn = item.type === 'IN' || item.type === 'ADJ_IN';
-                      const isSelected = selectedIds.has(item.id!);
+                      const isSelected = item.merged_ids && item.merged_ids.length > 0
+                        ? item.merged_ids.every((id) => selectedIds.has(id))
+                        : selectedIds.has(item.id!);
 
                       return (
                         <tr
@@ -1322,7 +1448,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               type="checkbox" 
                               className="rounded text-primary-500 focus:ring-primary-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 cursor-pointer"
                               checked={isSelected}
-                              onChange={() => toggleSelection(item.id!)}
+                              onChange={() => toggleSelection(item.merged_ids && item.merged_ids.length > 0 ? item.merged_ids : item.id!)}
                             />
                           </td>
                           {/* Type & Time */}
@@ -1385,28 +1511,36 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                                   </button>
                                 )}
                               </div>
-                              {(() => {
-                                const src = getLogSource(item);
-                                if (src === 'WA') {
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {(() => {
+                                  const src = getLogSource(item);
+                                  if (src === 'WA') {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80">
+                                        <Smartphone className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> WA
+                                      </span>
+                                    );
+                                  }
+                                  if (src === 'WEB') {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800/80">
+                                        <Monitor className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" /> Web App
+                                      </span>
+                                    );
+                                  }
                                   return (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80">
-                                      <Smartphone className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> WA
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                      <Globe className="w-2.5 h-2.5 text-slate-500" /> System
                                     </span>
                                   );
-                                }
-                                if (src === 'WEB') {
-                                  return (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800/80">
-                                      <Monitor className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" /> Web App
-                                    </span>
-                                  );
-                                }
-                                return (
-                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                    <Globe className="w-2.5 h-2.5 text-slate-500" /> System
+                                })()}
+
+                                {item.raw_count && item.raw_count > 1 && (
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                    ✨ {item.raw_count}x
                                   </span>
-                                );
-                              })()}
+                                )}
+                              </div>
                             </div>
                           </td>
 
@@ -1453,6 +1587,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                                   ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
                                   : 'bg-primary-100 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300'
                               }`}
+                              title={item.raw_count && item.raw_count > 1 ? `Akumulasi dari ${item.raw_count} baris scan` : undefined}
                             >
                               {item.qty}
                             </span>
@@ -1486,8 +1621,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                               {/* Delete Single Item */}
                               <button
                                 type="button"
-                                onClick={() => handleDeleteSingleItem(item.id!, item.sku)}
-                                title="Hapus baris ini saja"
+                                onClick={() => handleDeleteSingleItem(item.id!, item.sku, false, item.merged_ids)}
+                                title={item.raw_count && item.raw_count > 1 ? `Hapus ${item.raw_count} baris mutasi tergabung ini` : 'Hapus baris ini saja'}
                                 className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-500/10 rounded-lg transition-colors cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1503,14 +1638,14 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             )}
 
             {/* Pagination / Show More */}
-            {filteredLogs.length > displayLimit && (
+            {displayLogs.length > displayLimit && (
               <div className="p-4 border-t border-slate-100 dark:border-slate-800 text-center">
                 <button
                   type="button"
                   onClick={() => setDisplayLimit((prev) => prev + 150)}
                   className="px-2 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-colors cursor-pointer"
                 >
-                  Tampilkan Lebih Banyak ({filteredLogs.length - displayLimit} baris lagi)
+                  Tampilkan Lebih Banyak ({displayLogs.length - displayLimit} baris lagi)
                 </button>
               </div>
             )}
@@ -1625,6 +1760,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                             <option value="OUT">OUT (Barang Keluar)</option>
                             <option value="ADJ_IN">ADJ_IN (Penyesuaian Masuk)</option>
                             <option value="ADJ_OUT">ADJ_OUT (Penyesuaian Keluar)</option>
+                            <option value="SO">SO (Stock Opname)</option>
                           </select>
                         </div>
 
