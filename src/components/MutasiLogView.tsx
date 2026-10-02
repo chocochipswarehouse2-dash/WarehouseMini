@@ -128,6 +128,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
   const [sourceFilter, setSourceFilter] = useState<ScanSourceFilter>('ALL');
   const [displayLimit, setDisplayLimit] = useState(30);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   // View Mode: 'CARD' (Mobile / Smartphone optimized) | 'TABLE' (Spreadsheet multi-column)
   const [viewMode, setViewMode] = useState<'TABLE' | 'CARD'>(() => {
@@ -189,6 +190,24 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       } catch {}
       return next;
     });
+  };
+
+  // Active filter counter (excluding default settings)
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (sourceFilter !== 'ALL') count++;
+    if (typeFilter !== 'ALL') count++;
+    if (areaFilter !== 'ALL') count++;
+    if (isConsolidatedMode) count++;
+    return count;
+  }, [sourceFilter, typeFilter, areaFilter, isConsolidatedMode]);
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setSourceFilter('ALL');
+    setTypeFilter('ALL');
+    setAreaFilter('ALL');
+    if (onNotify) onNotify('Filter telah direset ke bawaan.', 'info');
   };
 
   // Confirmation Modal
@@ -874,252 +893,145 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
   return (
     <div id="mutasiLogViewContainer" className="space-y-2 max-w-7xl mx-auto pb-12">
-      {/* Toolbar Controls */}
-      <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-2">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-xs">
-              {logs.length.toLocaleString('id-ID')} Baris Data
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-            {/* View Mode Switcher (Kartu vs Tabel) */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80 shrink-0 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => handleToggleViewMode('CARD')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === 'CARD'
-                    ? 'bg-white dark:bg-slate-900 text-primary-500 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-                title="Tampilan Kartu (Responsif Layar HP)"
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>Kartu</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleToggleViewMode('TABLE')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === 'TABLE'
-                    ? 'bg-white dark:bg-slate-900 text-primary-500 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-                title="Tampilan Tabel Spreadsheet"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Tabel</span>
-              </button>
-            </div>
-
-            <button
-              id="btnRefreshMutasiLogs"
-              type="button"
-              disabled={isLoading}
-              onClick={forceReloadLogs}
-              className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
-              title="Muat ulang seluruh data"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">Refresh</span>
-            </button>
-
-            {canExportData && (
-              <button
-                id="btnExportMutasiCsv"
-                type="button"
-                onClick={handleExportCSV}
-                className="px-3.5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Ekspor</span>
-              </button>
-            )}
-            
-            {userIsAdmin && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsBulkMenuOpen(!isBulkMenuOpen)}
-                  className="px-3.5 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Bulk Delete</span>
-                </button>
-                {isBulkMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 py-1 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={handleDeleteFiltered}
-                      className="w-full text-left px-2 py-2.5 text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
-                    >
-                      Hapus Hasil Filter ({filteredLogs.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDateFilterModal({ isOpen: true, start: '', end: '' });
-                        setIsBulkMenuOpen(false);
-                      }}
-                      className="w-full text-left px-2 py-2.5 text-xs font-bold text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
-                    >
-                      Hapus Rentang Tanggal...
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Source Filter Quick Pills (Semua, Scan WA, Scan Web App) */}
-        <div className="flex items-center gap-2 flex-wrap pt-2">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <Filter className="w-3 h-3 text-slate-400" />
-            Sumber Scan:
-          </span>
-          <button
-            type="button"
-            onClick={() => setSourceFilter('ALL')}
-            className={`px-3 py-1 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border ${
-              sourceFilter === 'ALL'
-                ? 'bg-primary-50 dark:bg-primary-950/50 text-primary-600 dark:text-primary-400 border-primary-300 dark:border-primary-700 shadow-2xs'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Semua Sumber</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-              {sourceCounts.all.toLocaleString('id-ID')}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSourceFilter('WA')}
-            className={`px-3 py-1 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border ${
-              sourceFilter === 'WA'
-                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-2xs'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Scan via WhatsApp</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
-              {sourceCounts.wa.toLocaleString('id-ID')}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSourceFilter('WEB')}
-            className={`px-3 py-1 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border ${
-              sourceFilter === 'WEB'
-                ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-700 shadow-2xs'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-sky-50/50 dark:hover:bg-sky-950/30'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-            <span>Scan via Web App</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-800 dark:text-sky-200">
-              {sourceCounts.web.toLocaleString('id-ID')}
-            </span>
-          </button>
-
-          {/* Consolidation / Grouped Duplicates Toggle */}
-          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block" />
-          <button
-            type="button"
-            onClick={handleToggleConsolidatedMode}
-            className={`px-3 py-1 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border ${
-              isConsolidatedMode
-                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700 shadow-2xs'
-                : 'bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-            title={isConsolidatedMode ? 'Nonaktifkan penggabungan baris sama (tampilkan baris rinci per scan)' : 'Aktifkan penggabungan baris dengan Invoice, SKU, dan Lokasi yang sama'}
-          >
-            <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-            <span>{isConsolidatedMode ? '⚡ Ringkas Item Sama (Dijumlahkan)' : '📄 Semua Baris Rinci'}</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 font-mono">
-              {displayLogs.length} baris
-            </span>
-          </button>
-        </div>
-
-        {/* Filter Toolbar */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
-          {/* Search Bar */}
-          <div className="lg:col-span-3 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      {/* Compact Top Bar - Maximizes Workspace */}
+      <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Search Bar - Flex 1 */}
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               id="inputSearchMutasiLog"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari Invoice, SKU, Lokasi..."
-              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full pl-9 pr-7 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Hapus pencarian"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Source Filter Select */}
-          <div className="lg:col-span-3">
-            <select
-              id="selectSourceFilterMutasi"
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as ScanSourceFilter)}
-              className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold cursor-pointer"
+          {/* Filter & Opsi Popup Trigger Button */}
+          <button
+            id="btnOpenMutasiFilterModal"
+            type="button"
+            onClick={() => setIsFilterModalOpen(true)}
+            className={`px-2.5 sm:px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+              activeFilterCount > 0
+                ? 'bg-primary-50 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 border-primary-300 dark:border-primary-700 shadow-2xs'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-transparent'
+            }`}
+            title="Buka Menu Filter & Opsi Tampilan"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span className="hidden xs:inline">Filter & Opsi</span>
+            <span className="xs:hidden">Filter</span>
+            {activeFilterCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* View Mode Switcher (Kartu vs Tabel) */}
+          <div className="hidden xs:flex items-center bg-slate-100 dark:bg-slate-800/90 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700/80 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleToggleViewMode('CARD')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'CARD'
+                  ? 'bg-white dark:bg-slate-900 text-primary-500 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+              }`}
+              title="Tampilan Kartu (Responsif HP)"
             >
-              <option value="ALL">🌐 Semua Sumber ({sourceCounts.all})</option>
-              <option value="WA">📱 Scan via WhatsApp ({sourceCounts.wa})</option>
-              <option value="WEB">💻 Scan via Web App ({sourceCounts.web})</option>
-            </select>
+              <Smartphone className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleViewMode('TABLE')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'TABLE'
+                  ? 'bg-white dark:bg-slate-900 text-primary-500 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+              }`}
+              title="Tampilan Tabel Spreadsheet"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          {/* Type Filter */}
-          <div className="lg:col-span-3">
-            <select
-              id="selectTypeFilterMutasi"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as any)}
-              className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold cursor-pointer"
-            >
-              <option value="ALL">Semua Jenis Mutasi</option>
-              <option value="IN">Hanya Masuk (IN)</option>
-              <option value="OUT">Hanya Keluar (OUT)</option>
-              <option value="ADJ_IN">Penyesuaian Masuk (ADJ_IN)</option>
-              <option value="ADJ_OUT">Penyesuaian Keluar (ADJ_OUT)</option>
-              <option value="SO">Stock Opname (SO)</option>
-            </select>
-          </div>
+          {/* Refresh Button */}
+          <button
+            id="btnRefreshMutasiLogs"
+            type="button"
+            disabled={isLoading}
+            onClick={forceReloadLogs}
+            className="p-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+            title="Muat ulang seluruh data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
 
-          {/* Area Filter */}
-          <div className="lg:col-span-3">
-            <select
-              id="selectAreaFilterMutasi"
-              value={areaFilter}
-              onChange={(e) => setAreaFilter(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold cursor-pointer"
+          {/* Ekspor CSV */}
+          {canExportData && (
+            <button
+              id="btnExportMutasiCsv"
+              type="button"
+              onClick={handleExportCSV}
+              className="p-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
+              title="Ekspor CSV"
             >
-              <option value="ALL">Semua Area Gudang</option>
-              {uniqueAreas.map((area) => (
-                <option key={area} value={area}>
-                  Area: {area}
-                </option>
-              ))}
-            </select>
-          </div>
+              <Download className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
+
+        {/* Active Filter Strip (Shown only when active filters exist) */}
+        {(activeFilterCount > 0 || isConsolidatedMode) && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
+            <span className="text-slate-400 font-semibold text-[10px]">Filter Aktif:</span>
+            {isConsolidatedMode && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800/60">
+                ⚡ Ringkas ({displayLogs.length})
+                <button type="button" onClick={handleToggleConsolidatedMode} className="hover:text-red-500 cursor-pointer">×</button>
+              </span>
+            )}
+            {sourceFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-800/60">
+                {sourceFilter === 'WA' ? 'WhatsApp' : 'Web App'}
+                <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:text-red-500 cursor-pointer">×</button>
+              </span>
+            )}
+            {typeFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800/60">
+                Tipe: {typeFilter}
+                <button type="button" onClick={() => setTypeFilter('ALL')} className="hover:text-red-500 cursor-pointer">×</button>
+              </span>
+            )}
+            {areaFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800/60">
+                Area: {areaFilter}
+                <button type="button" onClick={() => setAreaFilter('ALL')} className="hover:text-red-500 cursor-pointer">×</button>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="text-red-600 dark:text-red-400 hover:underline font-bold ml-auto text-[11px] cursor-pointer"
+            >
+              Reset Semua
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Content: Table / List of Logs */}
@@ -2051,6 +1963,265 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               >
                 {isActionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>{confirmModal.confirmLabel}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FILTER & OPSI POPUP MODAL (Page Drawer) */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4 animate-fade-in">
+          <div className="bg-white dark:bg-[#09090b] rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 animate-slide-up">
+            {/* Drag Handle on Mobile */}
+            <div className="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-2.5 sm:hidden" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-primary-500/10 text-primary-600 dark:text-primary-400 flex items-center justify-center">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    Filter & Opsi Tampilan
+                    {activeFilterCount > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-primary-500/10 text-primary-600 dark:text-primary-400 border border-primary-500/20">
+                        {activeFilterCount} Aktif
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Total {logs.length.toLocaleString('id-ID')} data dimuat
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* 1. Mode Ringkasan Item Sama (Consolidated Mode) */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>Ringkas Item Sama (Dijumlahkan)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Gabungkan transaksi dengan Invoice, SKU, dan Lokasi sama ({displayLogs.length} baris).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleConsolidatedMode}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isConsolidatedMode ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      isConsolidatedMode ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* 2. Mode Tampilan (Kartu vs Tabel) */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Mode Tampilan Data
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleViewMode('CARD')}
+                    className={`p-2.5 rounded-xl border font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      viewMode === 'CARD'
+                        ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-600 dark:text-primary-400 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>Kartu (Mobile)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleViewMode('TABLE')}
+                    className={`p-2.5 rounded-xl border font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      viewMode === 'TABLE'
+                        ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-600 dark:text-primary-400 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Tabel Spreadsheet</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 3. Sumber Scan */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Sumber Scan
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSourceFilter('ALL')}
+                    className={`py-2 px-1 text-center rounded-xl border font-bold text-[11px] cursor-pointer transition-all ${
+                      sourceFilter === 'ALL'
+                        ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-600 dark:text-primary-400'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div>Semua</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{sourceCounts.all.toLocaleString('id-ID')}</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSourceFilter('WA')}
+                    className={`py-2 px-1 text-center rounded-xl border font-bold text-[11px] cursor-pointer transition-all ${
+                      sourceFilter === 'WA'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-700 dark:text-emerald-300'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-50/50'
+                    }`}
+                  >
+                    <div>WhatsApp</div>
+                    <div className="text-[10px] text-emerald-600 mt-0.5">{sourceCounts.wa.toLocaleString('id-ID')}</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSourceFilter('WEB')}
+                    className={`py-2 px-1 text-center rounded-xl border font-bold text-[11px] cursor-pointer transition-all ${
+                      sourceFilter === 'WEB'
+                        ? 'bg-sky-50 dark:bg-sky-950/60 border-sky-500 text-sky-700 dark:text-sky-300'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-sky-50/50'
+                    }`}
+                  >
+                    <div>Web App</div>
+                    <div className="text-[10px] text-sky-600 mt-0.5">{sourceCounts.web.toLocaleString('id-ID')}</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Jenis Mutasi */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Jenis Mutasi
+                </label>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+                >
+                  <option value="ALL">Semua Jenis Mutasi</option>
+                  <option value="IN">Hanya Masuk (IN)</option>
+                  <option value="OUT">Hanya Keluar (OUT)</option>
+                  <option value="ADJ_IN">Penyesuaian Masuk (ADJ_IN)</option>
+                  <option value="ADJ_OUT">Penyesuaian Keluar (ADJ_OUT)</option>
+                  <option value="SO">Stock Opname (SO)</option>
+                </select>
+              </div>
+
+              {/* 5. Area Gudang */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Area Gudang
+                </label>
+                <select
+                  value={areaFilter}
+                  onChange={(e) => setAreaFilter(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
+                >
+                  <option value="ALL">Semua Area Gudang</option>
+                  {uniqueAreas.map((area) => (
+                    <option key={area} value={area}>
+                      Area: {area}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 6. Batas Baris Ditampilkan */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Batas Baris Tampil
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[30, 50, 100, 250, 1000].map((lim) => (
+                    <button
+                      key={lim}
+                      type="button"
+                      onClick={() => setDisplayLimit(lim)}
+                      className={`px-3 py-1.5 rounded-lg border font-bold text-[11px] cursor-pointer transition-all ${
+                        displayLimit === lim
+                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent shadow-2xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {lim} Baris
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 7. Administrator Actions */}
+              {userIsAdmin && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                  <label className="block text-[11px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider">
+                    Aksi Administrator (Bulk Delete)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsFilterModalOpen(false);
+                        handleDeleteFiltered();
+                      }}
+                      className="p-2 rounded-xl bg-primary-50 hover:bg-primary-100 dark:bg-primary-950/40 dark:hover:bg-primary-900/50 border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-300 font-bold text-center cursor-pointer transition-all"
+                    >
+                      Hapus Hasil Filter ({filteredLogs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsFilterModalOpen(false);
+                        setDateFilterModal({ isOpen: true, start: '', end: '' });
+                      }}
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-center cursor-pointer transition-all"
+                    >
+                      Rentang Tanggal...
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60">
+              <button
+                type="button"
+                disabled={activeFilterCount === 0}
+                onClick={handleResetAllFilters}
+                className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+              >
+                Reset Filter
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="px-5 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-500 text-white rounded-xl transition-all shadow-md shadow-primary-600/20 active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Terapkan ({filteredLogs.length} Data)</span>
               </button>
             </div>
           </div>
