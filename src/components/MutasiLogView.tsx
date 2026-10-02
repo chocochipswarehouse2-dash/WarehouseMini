@@ -92,6 +92,7 @@ export const getLogSource = (item: LogProdukItem): 'WA' | 'WEB' | 'OTHER' => {
 
 interface EditableLogItem {
   id: string | number;
+  merged_ids?: (string | number)[];
   type: string;
   sku: string;
   nama_produk: string;
@@ -364,19 +365,45 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         invoiceItems = await fetchLogsByInvoice(invoice);
       }
 
-      setEditInvoiceItems(
-        invoiceItems.map((item) => ({
-          id: item.id || '',
-          type: item.type || 'IN',
-          sku: item.sku || '',
-          nama_produk: item.nama_produk || '',
-          size: item.size || '-',
-          lokasi: item.lokasi || 'Warehouse',
-          area: item.area || getAreaFromLokasi(item.lokasi || 'Warehouse'),
-          qty: Number(item.qty) || 1,
-          keterangan: item.keterangan || '',
-        }))
-      );
+      // Group and sum items with identical type, SKU, size, and location within this invoice
+      const groupMap = new Map<string, EditableLogItem>();
+
+      invoiceItems.forEach((item) => {
+        const typeKey = (item.type || 'IN').toUpperCase().trim();
+        const skuKey = (item.sku || '').toUpperCase().trim();
+        const sizeKey = (item.size || '-').toUpperCase().trim();
+        const locKey = (item.lokasi || 'Warehouse').toUpperCase().trim();
+        const groupKey = `${typeKey}__${skuKey}__${sizeKey}__${locKey}`;
+
+        const q = Number(item.qty) || 1;
+        const itemId = item.id || '';
+
+        if (!groupMap.has(groupKey)) {
+          groupMap.set(groupKey, {
+            id: itemId,
+            merged_ids: itemId ? [itemId] : [],
+            type: item.type || 'IN',
+            sku: item.sku || '',
+            nama_produk: item.nama_produk || '',
+            size: item.size || '-',
+            lokasi: item.lokasi || 'Warehouse',
+            area: item.area || getAreaFromLokasi(item.lokasi || 'Warehouse'),
+            qty: q,
+            keterangan: item.keterangan || '',
+          });
+        } else {
+          const existing = groupMap.get(groupKey)!;
+          existing.qty = (Number(existing.qty) || 0) + q;
+          if (itemId && existing.merged_ids && !existing.merged_ids.includes(itemId)) {
+            existing.merged_ids.push(itemId);
+          }
+          if (item.keterangan && !existing.keterangan.includes(item.keterangan)) {
+            existing.keterangan = existing.keterangan ? `${existing.keterangan}; ${item.keterangan}` : item.keterangan;
+          }
+        }
+      });
+
+      setEditInvoiceItems(Array.from(groupMap.values()));
     } catch (err: any) {
       console.error('Error fetching invoice for edit:', err);
       if (onNotify) onNotify('Gagal memuat detail invoice.', 'error');
@@ -428,11 +455,40 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         ...item,
         qty: Math.max(1, Number(item.qty) || 1),
       }));
+
+      // 1. Update primary consolidated items in batch
       const res = await updateLogProdukInvoiceBatch(cleanedItems as any);
+
+      // 2. Delete redundant merged row IDs from Supabase if duplicates were combined
+      const redundantIds: (string | number)[] = [];
+      editInvoiceItems.forEach((item) => {
+        if (item.merged_ids && item.merged_ids.length > 1) {
+          const extras = item.merged_ids.filter((mId) => String(mId) !== String(item.id));
+          redundantIds.push(...extras);
+        }
+      });
+
+      if (redundantIds.length > 0) {
+        try {
+          await deleteLogProdukBatch(redundantIds);
+        } catch (delErr) {
+          console.warn('Error deleting redundant merged rows:', delErr);
+        }
+      }
+
       if (res.success) {
-        if (onNotify) onNotify(`Invoice ${editingInvoice} berhasil diperbarui (${res.count} item)!`, 'success');
+        if (onNotify) {
+          onNotify(
+            `Invoice ${editingInvoice} berhasil diperbarui (${res.count} produk unik disimpan)!`,
+            'success'
+          );
+        }
         setEditingInvoice(null);
-        
+        if (onRefreshCatalog) {
+          await onRefreshCatalog();
+        }
+        const freshLogs = await fetchRecentLogs(displayLimit);
+        setLogs(freshLogs);
       } else {
         if (onNotify) onNotify(`Gagal menyimpan perubahan: ${res.error}`, 'error');
       }
@@ -446,10 +502,16 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   };
 
   // Delete single item from modal or table
-  const handleDeleteSingleItem = (id: string | number, skuName?: string, fromModal = false) => {
+  const handleDeleteSingleItem = (
+    id: string | number,
+    skuName?: string,
+    fromModal = false,
+    mergedIds?: (string | number)[]
+  ) => {
+    const idsToDelete = mergedIds && mergedIds.length > 0 ? mergedIds : [id];
     setConfirmModal({
       title: 'Hapus Item Mutasi Log',
-      message: `Hapus baris mutasi ${skuName ? `"${skuName}"` : ''} secara permanen dari database Supabase? Tindakan ini akan mempengaruhi perhitungan sisa stok.`,
+      message: `Hapus baris mutasi ${skuName ? `"${skuName}"` : ''}${idsToDelete.length > 1 ? ` (${idsToDelete.length} baris mutasi tergabung)` : ''} secara permanen dari database Supabase? Tindakan ini akan mempengaruhi perhitungan sisa stok.`,
       confirmLabel: 'Hapus Item',
       isDanger: true,
       onConfirm: async () => {
@@ -461,16 +523,23 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         const prevEditItems = [...editInvoiceItems];
 
         // Optimistic UI updates
-        setLogs((prev) => prev.filter((it) => it.id !== id));
+        const idsSet = new Set(idsToDelete.map(String));
+        setLogs((prev) => prev.filter((it) => !idsSet.has(String(it.id))));
         if (fromModal) {
-          setEditInvoiceItems((prev) => prev.filter((it) => it.id !== id));
+          setEditInvoiceItems((prev) => prev.filter((it) => !idsSet.has(String(it.id))));
         }
 
         try {
-          const res = await deleteLogProdukItem(id);
+          let res: { success: boolean; error?: string };
+          if (idsToDelete.length > 1) {
+            const batchRes = await deleteLogProdukBatch(idsToDelete);
+            res = { success: batchRes.success, error: batchRes.error };
+          } else {
+            res = await deleteLogProdukItem(id);
+          }
+
           if (res.success) {
             if (onNotify) onNotify('Item mutasi log berhasil dihapus.', 'info');
-            
           } else {
             if (onNotify) onNotify(`Gagal menghapus item: ${res.error}`, 'error');
             setLogs(prevLogs);
@@ -1475,7 +1544,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Memuat seluruh {editInvoiceItems.length} produk dalam nomor invoice yang sama. Edit kategori, SKU, dan lokasi rak.
+                    Menampilkan {editInvoiceItems.length} produk unik dalam nomor invoice yang sama (item &amp; lokasi yang sama otomatis dijumlahkan).
                   </p>
                 </div>
               </div>
@@ -1520,13 +1589,20 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                       className="p-3.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-black text-slate-400">
-                          Item #{idx + 1}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-black text-slate-400">
+                            Item #{idx + 1}
+                          </span>
+                          {item.merged_ids && item.merged_ids.length > 1 && (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold">
+                              ✨ Digabung dari {item.merged_ids.length} baris mutasi
+                            </span>
+                          )}
+                        </div>
 
                         <button
                           type="button"
-                          onClick={() => handleDeleteSingleItem(item.id, item.sku, true)}
+                          onClick={() => handleDeleteSingleItem(item.id, item.sku, true, item.merged_ids)}
                           className="text-xs text-primary-500 hover:text-primary-600 font-bold flex items-center gap-1 cursor-pointer hover:underline"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1639,7 +1715,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             {/* Modal Footer */}
             <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="text-xs text-slate-500">
-                Total item dalam invoice: <strong className="text-slate-900 dark:text-slate-100">{editInvoiceItems.length}</strong>
+                Total item: <strong className="text-slate-900 dark:text-slate-100">{editInvoiceItems.length} produk unik</strong> &bull; Total Qty: <strong className="text-primary-600 font-bold">{editInvoiceItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0)} pcs</strong>
               </div>
 
               <div className="flex items-center gap-2">
