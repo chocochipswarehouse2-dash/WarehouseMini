@@ -17,6 +17,7 @@ import {
   Lock,
   X,
   Layers,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { StockOpnameQueueItem, ProductItem, UserSession } from '../types';
 import {
@@ -26,9 +27,11 @@ import {
   deleteStockOpnameQueueItems,
   resyncStockOpnameQueueItems,
   syncPendingStockOpnameFromLogProduk,
+  recalculatePendingStockOpnameQueue,
   getAreaFromLokasi,
   getSupabaseClient,
 } from '../services/supabase';
+import { ImportSoCsvModal } from './ImportSoCsvModal';
 import { hasPermission, isSuperadmin } from '../services/permissions';
 import { partialSearchMatch, cleanProductName, resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
@@ -61,6 +64,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
   const [diffFilter, setDiffFilter] = useState<'ALL' | 'DIFF' | 'PLUS' | 'MINUS' | 'ZERO'>('ALL');
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([]);
   const [displayLimit, setDisplayLimit] = useState(30);
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
 
   const catalogMap = useMemo(() => {
     const map = new Map<string, ProductItem>();
@@ -480,6 +484,41 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     }
   };
 
+  // Kalkulasi ulang antrean SO PENDING dengan standar rekonsiliasi rak (0-scan rule)
+  const handleRecalculatePendingSo = () => {
+    setConfirmModal({
+      title: 'Kalkulasi Ulang Antrean SO (Standar Rekonsiliasi Rak)',
+      message:
+        'Kalkulasi ulang seluruh sesi SO berstatus PENDING dengan aturan Rekonsiliasi Rak Lengkap?\n\nSemua SKU yang ada di database pada lokasi tersebut namun TIDAK di-scan operator otomatis dihitung sebagai Scan Fisik = 0 (ADJ_OUT saat diapprove).',
+      confirmLabel: 'Kalkulasi Ulang',
+      isDanger: false,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsActionLoading(true);
+        showGlobalLoading('Mengalkulasi ulang antrean SO sesuai standar rak...');
+        try {
+          const res = await recalculatePendingStockOpnameQueue();
+          if (res.success) {
+            if (onNotify) {
+              onNotify(
+                `Kalkulasi ulang selesai! ${res.deletedCount} antrean lama diperbarui, ${res.insertedCount} item baru direkonsiliasi.`,
+                'success'
+              );
+            }
+            await loadSoData();
+          } else {
+            if (onNotify) onNotify(`Gagal kalkulasi ulang: ${res.error}`, 'error');
+          }
+        } catch (e: any) {
+          if (onNotify) onNotify(e.message || 'Gagal kalkulasi ulang', 'error');
+        } finally {
+          setIsActionLoading(false);
+          hideGlobalLoading();
+        }
+      },
+    });
+  };
+
   // Export CSV
   const handleExportCSV = () => {
     if (!filteredQueue.length) {
@@ -590,6 +629,18 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
             </button>
 
             <button
+              id="btnRecalculateSoPending"
+              type="button"
+              disabled={isLoading || isActionLoading}
+              onClick={handleRecalculatePendingSo}
+              className="px-3.5 py-2 text-xs font-bold bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+              title="Kalkulasi ulang antrean PENDING dengan standar rekonsiliasi rak lengkap (0-scan rule)"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Kalkulasi Ulang SO</span>
+            </button>
+
+            <button
               id="btnResyncSoStock"
               type="button"
               disabled={isLoading || isActionLoading}
@@ -599,6 +650,17 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading ? 'animate-spin' : ''}`} />
               <span>Sinkron Stok Sistem</span>
+            </button>
+
+            <button
+              id="btnImportSoCsv"
+              type="button"
+              onClick={() => setIsCsvModalOpen(true)}
+              className="px-3.5 py-2 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
+              title="Impor hasil scan fisik Stock Opname dari file CSV / Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Impor CSV SO</span>
             </button>
 
             {canExportData && (
@@ -1068,6 +1130,16 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
           </div>
         </div>
       )}
+
+      {/* Modal Impor CSV / Excel SO */}
+      <ImportSoCsvModal
+        isOpen={isCsvModalOpen}
+        onClose={() => setIsCsvModalOpen(false)}
+        productCatalog={productCatalog}
+        operatorName={currentOperator}
+        onNotify={onNotify}
+        onSuccess={loadSoData}
+      />
     </div>
   );
 });

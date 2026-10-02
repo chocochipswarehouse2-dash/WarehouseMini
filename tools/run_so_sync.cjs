@@ -64,6 +64,15 @@ async function runSync() {
   const invoices = Array.from(new Set(Array.from(aggregatedMap.values()).map(v => v.invoice)));
   console.log(`Checking ${invoices.length} invoices:`, invoices);
 
+  // Group locations per invoice
+  const invLocationsMap = new Map();
+  for (const entry of aggregatedMap.values()) {
+    if (!invLocationsMap.has(entry.invoice)) {
+      invLocationsMap.set(entry.invoice, new Set());
+    }
+    invLocationsMap.get(entry.invoice).add(entry.lokasi);
+  }
+
   // Check existing in stock_opname_queue
   const existingKeys = new Set();
   for (let i = 0; i < invoices.length; i += 20) {
@@ -81,35 +90,85 @@ async function runSync() {
     }
   }
 
-  const unqueued = Array.from(aggregatedMap.entries())
-    .filter(([k]) => !existingKeys.has(k))
-    .map(([, entry]) => entry);
+  // Fetch all database stock for all locations involved
+  const allLocations = Array.from(new Set(
+    Array.from(invLocationsMap.values()).flatMap(set => Array.from(set))
+  ));
 
-  console.log(`Unqueued distinct entries: ${unqueued.length}`);
-  if (!unqueued.length) {
-    console.log('All items already queued!');
-    return;
+  const locationStockMap = new Map(); // lokasiUpper -> Map(skuUpper -> sisa_stok)
+  for (const loc of allLocations) {
+    locationStockMap.set(loc.toUpperCase(), new Map());
   }
 
-  // Batch fetch live stock from stok_real_fisik
-  const skus = Array.from(new Set(unqueued.map(e => e.sku)));
-  const stockMap = new Map();
-  for (let i = 0; i < skus.length; i += 100) {
-    const chunk = skus.slice(i, i + 100);
+  for (let i = 0; i < allLocations.length; i += 20) {
+    const chunk = allLocations.slice(i, i + 20);
     const { data: stockRows } = await client
       .from('stok_real_fisik')
-      .select('sku, lokasi, sisa_stok')
-      .in('sku', chunk);
+      .select('sku, nama_produk, size, lokasi, area, sisa_stok')
+      .in('lokasi', chunk);
 
     if (stockRows) {
       stockRows.forEach(s => {
-        const k = `${(s.sku || '').trim().toUpperCase()}__${(s.lokasi || '').trim().toUpperCase()}`;
-        stockMap.set(k, Number(s.sisa_stok) || 0);
+        const lKey = (s.lokasi || '').trim().toUpperCase();
+        const skuKey = (s.sku || '').trim().toUpperCase();
+        if (!locationStockMap.has(lKey)) locationStockMap.set(lKey, new Map());
+        locationStockMap.get(lKey).set(skuKey, s);
       });
     }
   }
 
-  // Batch fetch master_produk
+  // Full Location Reconciliation: Union of scanned SKUs and DB SKUs
+  const unqueued = [];
+  for (const inv of invoices) {
+    const locations = invLocationsMap.get(inv) || new Set();
+    for (const lokasi of locations) {
+      const sysMap = locationStockMap.get(lokasi.toUpperCase()) || new Map();
+
+      // Scanned items for this (inv, lokasi)
+      const scannedForLoc = new Map();
+      for (const entry of aggregatedMap.values()) {
+        if (entry.invoice === inv && entry.lokasi.toUpperCase() === lokasi.toUpperCase()) {
+          scannedForLoc.set(entry.sku.toUpperCase(), entry);
+        }
+      }
+
+      const allSkus = new Set([...scannedForLoc.keys(), ...sysMap.keys()]);
+      for (const sku of allSkus) {
+        const dedupKey = `${inv.trim()}__${sku.trim().toUpperCase()}__${lokasi.trim().toUpperCase()}`;
+        if (existingKeys.has(dedupKey)) continue;
+
+        const scanEntry = scannedForLoc.get(sku);
+        const sysEntry = sysMap.get(sku);
+
+        const qty_fisik = scanEntry ? scanEntry.qty_fisik : 0;
+        const qty_sistem = sysEntry ? Number(sysEntry.sisa_stok) || 0 : 0;
+        const selisih = qty_fisik - qty_sistem;
+        if (selisih === 0) continue; // equilibrium
+
+        unqueued.push({
+          invoice: inv,
+          sku: sku,
+          lokasi: lokasi,
+          area: (sysEntry && sysEntry.area) || (scanEntry && scanEntry.area) || getAreaFromLokasi(lokasi),
+          nama_produk: (sysEntry && sysEntry.nama_produk) || (scanEntry && scanEntry.nama_produk) || sku,
+          size: (sysEntry && sysEntry.size) || (scanEntry && scanEntry.size) || '-',
+          qty_sistem,
+          qty_fisik,
+          operator: (scanEntry && scanEntry.operator) || 'Operator WA',
+          tanggal: (scanEntry && scanEntry.tanggal) || new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  console.log(`Unqueued distinct reconciled entries: ${unqueued.length}`);
+  if (!unqueued.length) {
+    console.log('All items already reconciled and queued!');
+    return;
+  }
+
+  // Batch fetch master_produk for authorative metadata
+  const skus = Array.from(new Set(unqueued.map(e => e.sku)));
   const masterMap = new Map();
   for (let i = 0; i < skus.length; i += 100) {
     const chunk = skus.slice(i, i + 100);
@@ -125,22 +184,24 @@ async function runSync() {
     }
   }
 
-  // Assemble queue items (only discrepant items selisih !== 0)
+  // Assemble queue items
   const queueToInsert = [];
-  let matchingCount = 0;
   for (const entry of unqueued) {
-    const stockKey = `${entry.sku}__${entry.lokasi.toUpperCase()}`;
-    const qty_sistem = stockMap.get(stockKey) || 0;
-    const selisih = entry.qty_fisik - qty_sistem;
-
-    if (selisih === 0) {
-      matchingCount++;
-      continue;
-    }
+    const selisih = entry.qty_fisik - entry.qty_sistem;
+    if (selisih === 0) continue;
 
     const master = masterMap.get(entry.sku);
     const nama = master ? master.nama_produk : entry.nama_produk;
     const sz = master ? (master.size || '-') : entry.size;
+
+    let alasan = `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`;
+    if (entry.qty_fisik === 0 && entry.qty_sistem !== 0) {
+      alasan = `Tidak Ditemukan Saat SO (Scan: 0, Sis: ${entry.qty_sistem})`;
+    } else if (entry.qty_sistem === 0 && entry.qty_fisik !== 0) {
+      alasan = `Barang Baru di Rak (Scan: ${entry.qty_fisik})`;
+    } else if (entry.qty_sistem < 0) {
+      alasan = `Koreksi Stok Minus (${selisih > 0 ? `+${selisih}` : selisih})`;
+    }
 
     queueToInsert.push({
       sesi_id: entry.invoice,
@@ -149,13 +210,13 @@ async function runSync() {
       nama_produk: nama,
       size: sz,
       lokasi: entry.lokasi,
-      area: entry.area || getAreaFromLokasi(entry.lokasi),
-      qty_sistem,
+      area: entry.area,
+      qty_sistem: entry.qty_sistem,
       qty_fisik: entry.qty_fisik,
       selisih,
       status: 'PENDING',
       jenis: 'Opname WA',
-      alasan: `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
+      alasan,
       operator: entry.operator,
       invoice: entry.invoice
     });

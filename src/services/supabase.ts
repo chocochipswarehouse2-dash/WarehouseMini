@@ -1472,11 +1472,16 @@ let syncPendingSoPromise: Promise<{ success: boolean; processedInvoices: number;
  * Offloads all calculation logic from GAS to Supabase / WMS.
  * Aggregates physical scans per (invoice, sku, lokasi), prevents gateway retry duplicates,
  * batch-fetches live system stock from stok_real_fisik, and enqueues discrepant items (selisih !== 0).
+ *
+ * FULL LOCATION RECONCILIATION:
+ * For every location in the SO session, all items currently in stok_real_fisik are reconciled.
+ * Any SKU recorded at that location that is NOT scanned during the SO session is deemed Scan Fisik = 0 (ADJ_OUT).
  */
 export async function syncPendingStockOpnameFromLogProduk(
-  lookbackDays = 7
+  lookbackDays = 7,
+  options?: { forceInvoices?: string[] }
 ): Promise<{ success: boolean; processedInvoices: number; newQueueItemsCount: number; error?: string }> {
-  if (syncPendingSoPromise) {
+  if (syncPendingSoPromise && !options?.forceInvoices) {
     return syncPendingSoPromise;
   }
 
@@ -1485,18 +1490,24 @@ export async function syncPendingStockOpnameFromLogProduk(
       const sinceDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
 
       // 1. Fetch recent SO scan logs
+      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc&limit=5000`;
+      if (options?.forceInvoices && options.forceInvoices.length > 0) {
+        const inClause = options.forceInvoices.map((inv) => `"${inv}"`).join(',');
+        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc&limit=5000`;
+      }
+
       const soLogs = await supabaseFetch<LogProdukItem[]>(
         'log_produk',
         'GET',
         null,
-        `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc&limit=2000`
+        soLogsQuery
       );
 
       if (!soLogs || !soLogs.length) {
         return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
       }
 
-      // 2. Identify and drop duplicate retry invoices (same operator, similar count, within 120s)
+      // 2. Identify and group invoices
       const invoiceMeta = new Map<string, { operator: string; timestamp: number; count: number; items: LogProdukItem[] }>();
       for (const log of soLogs) {
         if (!log.invoice || !log.sku) continue;
@@ -1514,12 +1525,17 @@ export async function syncPendingStockOpnameFromLogProduk(
         meta.items.push(log);
       }
 
-      // Deduplicate invoice retries:
+      // Deduplicate invoice retries (unless explicitly targeted in forceInvoices):
       const validInvoices: string[] = [];
       const sortedInvoices = Array.from(invoiceMeta.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp);
       const seenBatches: { operator: string; count: number; time: number }[] = [];
 
       for (const [inv, meta] of sortedInvoices) {
+        if (options?.forceInvoices && options.forceInvoices.includes(inv)) {
+          validInvoices.push(inv);
+          continue;
+        }
+
         const isRetry = seenBatches.some(
           (b) =>
             b.operator === meta.operator &&
@@ -1536,8 +1552,9 @@ export async function syncPendingStockOpnameFromLogProduk(
         return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
       }
 
-      // 3. Aggregate physical counts by (invoice, sku, lokasi)
-      const aggregatedMap = new Map<string, {
+      // 3. Collect distinct locations scanned per invoice and aggregate physical counts
+      const invoiceLocationsMap = new Map<string, Set<string>>();
+      const scannedPhysicalMap = new Map<string, {
         invoice: string;
         sku: string;
         lokasi: string;
@@ -1552,13 +1569,20 @@ export async function syncPendingStockOpnameFromLogProduk(
       for (const inv of validInvoices) {
         const meta = invoiceMeta.get(inv);
         if (!meta) continue;
+        if (!invoiceLocationsMap.has(inv)) {
+          invoiceLocationsMap.set(inv, new Set());
+        }
+
         for (const log of meta.items) {
           const sku = (log.sku || '').trim().toUpperCase();
           const lokasi = (log.lokasi || 'Warehouse').trim();
+          if (!sku) continue;
+
+          invoiceLocationsMap.get(inv)!.add(lokasi);
           const key = `${inv}__${sku}__${lokasi.toUpperCase()}`;
 
-          if (!aggregatedMap.has(key)) {
-            aggregatedMap.set(key, {
+          if (!scannedPhysicalMap.has(key)) {
+            scannedPhysicalMap.set(key, {
               invoice: inv,
               sku,
               lokasi,
@@ -1570,11 +1594,44 @@ export async function syncPendingStockOpnameFromLogProduk(
               tanggal: log.created_at || new Date().toISOString(),
             });
           }
-          aggregatedMap.get(key)!.qty_fisik += Number(log.qty) || 0;
+          scannedPhysicalMap.get(key)!.qty_fisik += Number(log.qty) || 0;
         }
       }
 
-      // 4. Query existing items in stock_opname_queue to avoid re-inserting
+      // 4. Batch fetch system stock from stok_real_fisik for ALL locations involved
+      const allDistinctLocations = Array.from(new Set(
+        Array.from(invoiceLocationsMap.values()).flatMap((s) => Array.from(s))
+      ));
+
+      // locationStockMap: Map<lokasiUpper, Map<skuUpper, StockRealtimeItem>>
+      const locationStockMap = new Map<string, Map<string, StockRealtimeItem>>();
+      for (const loc of allDistinctLocations) {
+        locationStockMap.set(loc.toUpperCase(), new Map());
+      }
+
+      const locChunkSize = 20;
+      for (let i = 0; i < allDistinctLocations.length; i += locChunkSize) {
+        const chunk = allDistinctLocations.slice(i, i + locChunkSize);
+        const inClause = chunk.map((l) => `"${l}"`).join(',');
+        const stockRows = await supabaseFetch<StockRealtimeItem[]>(
+          'stok_real_fisik',
+          'GET',
+          null,
+          `lokasi=in.(${encodeURIComponent(inClause)})&select=sku,nama_produk,size,lokasi,area,sisa_stok`
+        );
+        if (stockRows && Array.isArray(stockRows)) {
+          for (const s of stockRows) {
+            const locKey = (s.lokasi || '').trim().toUpperCase();
+            const skuKey = (s.sku || '').trim().toUpperCase();
+            if (!locationStockMap.has(locKey)) {
+              locationStockMap.set(locKey, new Map());
+            }
+            locationStockMap.get(locKey)!.set(skuKey, s);
+          }
+        }
+      }
+
+      // 5. Query existing items in stock_opname_queue to avoid re-inserting
       const existingKeys = new Set<string>();
       const invChunkSize = 25;
       for (let i = 0; i < validInvoices.length; i += invChunkSize) {
@@ -1594,38 +1651,91 @@ export async function syncPendingStockOpnameFromLogProduk(
         }
       }
 
-      // 5. Filter for entries that have not been queued yet
-      const unqueuedEntries = Array.from(aggregatedMap.entries())
-        .filter(([k]) => !existingKeys.has(k))
-        .map(([, entry]) => entry);
+      // 6. Perform Full Location Reconciliation for each (invoice, location)
+      // Any SKU present in database at that location but NOT scanned during this SO session is marked with qty_fisik = 0 (0-scan rule)!
+      const unqueuedEntries: {
+        invoice: string;
+        sku: string;
+        lokasi: string;
+        area: string;
+        nama_produk: string;
+        size: string;
+        qty_sistem: number;
+        qty_fisik: number;
+        operator: string;
+        tanggal: string;
+      }[] = [];
+
+      for (const inv of validInvoices) {
+        const meta = invoiceMeta.get(inv);
+        if (!meta) continue;
+        const locations = invoiceLocationsMap.get(inv) || new Set();
+
+        for (const lokasi of locations) {
+          const sysMap = locationStockMap.get(lokasi.toUpperCase()) || new Map<string, StockRealtimeItem>();
+
+          // Get all scanned SKUs for this (inv, lokasi)
+          const scannedForLoc = new Map<string, {
+            invoice: string;
+            sku: string;
+            lokasi: string;
+            area: string;
+            nama_produk: string;
+            size: string;
+            qty_fisik: number;
+            operator: string;
+            tanggal: string;
+          }>();
+
+          for (const [k, v] of scannedPhysicalMap.entries()) {
+            if (v.invoice === inv && v.lokasi.toUpperCase() === lokasi.toUpperCase()) {
+              scannedForLoc.set(v.sku, v);
+            }
+          }
+
+          // Complete Union of SKUs: Scanned SKUs + Database SKUs in this location
+          const allSkusForLoc = new Set([
+            ...Array.from(scannedForLoc.keys()),
+            ...Array.from(sysMap.keys()),
+          ]);
+
+          for (const sku of allSkusForLoc) {
+            const dedupKey = `${inv.trim()}__${sku.trim().toUpperCase()}__${lokasi.trim().toUpperCase()}`;
+            if (existingKeys.has(dedupKey)) continue;
+
+            const scannedItem = scannedForLoc.get(sku);
+            const sysRow = sysMap.get(sku);
+
+            const qty_fisik = scannedItem ? scannedItem.qty_fisik : 0;
+            const qty_sistem = sysRow ? (Number(sysRow.sisa_stok) || 0) : 0;
+
+            const selisih = qty_fisik - qty_sistem;
+            if (selisih === 0) continue; // In sync, equilibrium reached!
+
+            unqueuedEntries.push({
+              invoice: inv,
+              sku,
+              lokasi,
+              area: sysRow?.area || scannedItem?.area || getAreaFromLokasi(lokasi),
+              nama_produk: sysRow?.nama_produk || scannedItem?.nama_produk || sku,
+              size: sysRow?.size || scannedItem?.size || '-',
+              qty_sistem,
+              qty_fisik,
+              operator: scannedItem?.operator || meta.operator || 'Operator WA',
+              tanggal: scannedItem?.tanggal || meta.items[0]?.created_at || new Date().toISOString(),
+            });
+          }
+        }
+      }
 
       if (!unqueuedEntries.length) {
         return { success: true, processedInvoices: validInvoices.length, newQueueItemsCount: 0 };
       }
 
-      // 6. Batch fetch live system stock from stok_real_fisik
+      // 7. Batch fetch authoritative product name & size from master_produk for authoritative names
       const distinctSkus = Array.from(new Set(unqueuedEntries.map((e) => e.sku)));
-      const stockMap = new Map<string, number>();
-      const skuChunkSize = 50;
-      for (let i = 0; i < distinctSkus.length; i += skuChunkSize) {
-        const chunk = distinctSkus.slice(i, i + skuChunkSize);
-        const inClause = chunk.map((s) => `"${s}"`).join(',');
-        const stockRows = await supabaseFetch<any[]>(
-          'stok_real_fisik',
-          'GET',
-          null,
-          `sku=in.(${encodeURIComponent(inClause)})&select=sku,lokasi,sisa_stok`
-        );
-        if (stockRows && Array.isArray(stockRows)) {
-          for (const s of stockRows) {
-            const k = `${(s.sku || '').trim().toUpperCase()}__${(s.lokasi || '').trim().toUpperCase()}`;
-            stockMap.set(k, Number(s.sisa_stok) || 0);
-          }
-        }
-      }
-
-      // 7. Batch fetch master_produk for authoritative product name & size
       const masterMap = new Map<string, { nama_produk: string; size: string }>();
+      const skuChunkSize = 50;
       for (let i = 0; i < distinctSkus.length; i += skuChunkSize) {
         const chunk = distinctSkus.slice(i, i + skuChunkSize);
         const inClause = chunk.map((s) => `"${s}"`).join(',');
@@ -1645,22 +1755,35 @@ export async function syncPendingStockOpnameFromLogProduk(
         }
       }
 
-      // 8. Calculate selisih and assemble queue entries (Strictly unique per invoice + sku + lokasi)
+      // 8. Assemble final queue items with clear reasons according to blueprint
       const queueMap = new Map<string, any>();
       for (const entry of unqueuedEntries) {
-        const stockKey = `${entry.sku}__${entry.lokasi.toUpperCase()}`;
-        const qty_sistem = stockMap.has(stockKey) ? stockMap.get(stockKey)! : 0;
-        const selisih = entry.qty_fisik - qty_sistem;
-
-        // Skip matching items (selisih === 0)
+        const selisih = entry.qty_fisik - entry.qty_sistem;
         if (selisih === 0) continue;
 
         const master = masterMap.get(entry.sku);
         const namaProduk = master?.nama_produk || entry.nama_produk || entry.sku;
         const size = master?.size || entry.size || '-';
-        const dedupKey = `${(entry.invoice || '').trim()}__${entry.sku.toUpperCase()}__${entry.lokasi.toUpperCase()}`;
+        const dedupKey = `${entry.invoice.trim()}__${entry.sku.toUpperCase()}__${entry.lokasi.toUpperCase()}`;
 
         if (!queueMap.has(dedupKey) && !existingKeys.has(dedupKey)) {
+          let alasan = `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`;
+          if (entry.qty_fisik === 0 && entry.qty_sistem !== 0) {
+            alasan = `Tidak Ditemukan Saat SO (Scan: 0, Sis: ${entry.qty_sistem})`;
+          } else if (entry.qty_sistem === 0 && entry.qty_fisik !== 0) {
+            alasan = `Barang Baru di Rak (Scan: ${entry.qty_fisik})`;
+          } else if (entry.qty_sistem < 0) {
+            alasan = `Koreksi Stok Minus (${selisih > 0 ? `+${selisih}` : selisih})`;
+          }
+
+          const jenis = entry.invoice.startsWith('IMP-')
+            ? 'Opname Impor'
+            : entry.invoice.startsWith('CSV-')
+            ? 'Opname CSV'
+            : entry.invoice.startsWith('WEB-')
+            ? 'Opname Web'
+            : 'Opname WA';
+
           queueMap.set(dedupKey, {
             id: generateUUID(),
             sesi_id: entry.invoice,
@@ -1670,12 +1793,12 @@ export async function syncPendingStockOpnameFromLogProduk(
             size,
             lokasi: entry.lokasi,
             area: entry.area || getAreaFromLokasi(entry.lokasi),
-            qty_sistem,
+            qty_sistem: entry.qty_sistem,
             qty_fisik: entry.qty_fisik,
             selisih,
             status: 'PENDING',
-            jenis: 'Opname WA',
-            alasan: `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`,
+            jenis,
+            alasan,
             operator: entry.operator,
             invoice: entry.invoice,
           });
@@ -1707,6 +1830,196 @@ export async function syncPendingStockOpnameFromLogProduk(
   })();
 
   return syncPendingSoPromise;
+}
+
+/**
+ * Recalculates all pending Stock Opname sessions with Full Location Reconciliation standard.
+ * Safely removes existing PENDING items from stock_opname_queue and re-reconciles against
+ * raw physical scans in log_produk and current database stock in stok_real_fisik.
+ */
+export async function recalculatePendingStockOpnameQueue(
+  specificInvoices?: string[]
+): Promise<{ success: boolean; deletedCount: number; insertedCount: number; error?: string }> {
+  try {
+    let queryFilter = 'status=eq.PENDING&select=id,invoice,sesi_id&limit=5000';
+    if (specificInvoices && specificInvoices.length > 0) {
+      const inClause = specificInvoices.map((inv) => `"${inv}"`).join(',');
+      queryFilter += `&invoice=in.(${encodeURIComponent(inClause)})`;
+    }
+
+    const pendingRows = await supabaseFetch<{ id: string; invoice?: string; sesi_id?: string }[]>(
+      'stock_opname_queue',
+      'GET',
+      null,
+      queryFilter
+    );
+
+    let targetInvoices: string[] = [];
+    if (pendingRows && pendingRows.length > 0) {
+      targetInvoices = Array.from(
+        new Set(pendingRows.map((r) => (r.invoice || r.sesi_id || '').trim()).filter(Boolean))
+      );
+
+      // Delete existing pending rows for these invoices
+      const chunkInv = 25;
+      for (let i = 0; i < targetInvoices.length; i += chunkInv) {
+        const chunk = targetInvoices.slice(i, i + chunkInv);
+        const inClause = chunk.map((inv) => `"${inv}"`).join(',');
+        await supabaseFetch(
+          'stock_opname_queue',
+          'DELETE',
+          null,
+          `status=eq.PENDING&invoice=in.(${encodeURIComponent(inClause)})`
+        );
+      }
+    }
+
+    // Run full reconciliation
+    const syncRes = await syncPendingStockOpnameFromLogProduk(
+      7,
+      targetInvoices.length > 0 ? { forceInvoices: targetInvoices } : undefined
+    );
+
+    return {
+      success: true,
+      deletedCount: pendingRows ? pendingRows.length : 0,
+      insertedCount: syncRes.newQueueItemsCount,
+    };
+  } catch (err: any) {
+    console.error('Error recalculating pending SO queue:', err);
+    return { success: false, deletedCount: 0, insertedCount: 0, error: err.message };
+  }
+}
+
+/**
+ * Processes a CSV/Excel file import specifically for Stock Opname (SO).
+ * Logs raw physical counts to log_produk (type: 'SO'), and performs Full Location Reconciliation:
+ * Any SKU recorded in stok_real_fisik at the specified locations that is missing from the CSV
+ * is assigned Scan Fisik = 0 and queued as ADJ_OUT upon approval.
+ */
+export async function processStockOpnameCsvImport(
+  items: { sku: string; qty: number; lokasi: string; keterangan?: string }[],
+  operatorName: string
+): Promise<{ success: boolean; invoice: string; queueCount: number; error?: string }> {
+  try {
+    if (!items || items.length === 0) {
+      return { success: false, invoice: '', queueCount: 0, error: 'File tidak memuat data yang valid.' };
+    }
+
+    const waktuPesan = new Date();
+    const invoice = `CSV-SO-${waktuPesan.getTime()}`;
+
+    // 1. Group physical counts by (lokasi, sku)
+    const soFisik: Record<string, Record<string, number>> = {};
+    const logsToInsert: Parameters<typeof insertLogProduk>[0] = [];
+
+    for (const item of items) {
+      const sku = (item.sku || '').trim().toUpperCase();
+      const lokasi = (item.lokasi || 'Warehouse').trim();
+      const qty = Number(item.qty) || 0;
+      if (!sku) continue;
+
+      if (!soFisik[lokasi]) soFisik[lokasi] = {};
+      soFisik[lokasi][sku] = (soFisik[lokasi][sku] || 0) + qty;
+
+      logsToInsert.push({
+        type: 'SO',
+        invoice,
+        sku,
+        nama_produk: sku,
+        size: '',
+        area: getAreaFromLokasi(lokasi),
+        lokasi,
+        qty,
+        operator: operatorName,
+        keterangan: item.keterangan || 'Impor SO CSV',
+        created_at: waktuPesan.toISOString(),
+      });
+    }
+
+    // 2. Insert to log_produk for audit trail
+    if (logsToInsert.length > 0) {
+      await insertLogProduk(logsToInsert);
+    }
+
+    // 3. Full Location Reconciliation against database
+    const lokasis = Object.keys(soFisik);
+    const queueToInsert: Parameters<typeof insertStockOpnameQueue>[0] = [];
+
+    for (const lokasi of lokasis) {
+      const physicalCounts = soFisik[lokasi];
+
+      // Fetch all system stock for this location directly from database
+      const sysRows = await supabaseFetch<StockRealtimeItem[]>(
+        'stok_real_fisik',
+        'GET',
+        null,
+        `lokasi=eq.${encodeURIComponent(lokasi)}&select=sku,nama_produk,size,lokasi,area,sisa_stok`
+      );
+
+      const sysMap = new Map<string, StockRealtimeItem>();
+      if (Array.isArray(sysRows)) {
+        for (const s of sysRows) {
+          sysMap.set((s.sku || '').trim().toUpperCase(), s);
+        }
+      }
+
+      // Union of all SKUs in this location (Scanned in CSV + Recorded in DB)
+      const allSkus = new Set([
+        ...Object.keys(physicalCounts),
+        ...Array.from(sysMap.keys()),
+      ]);
+
+      for (const sku of allSkus) {
+        const qty_fisik = physicalCounts[sku] || 0;
+        const sysRow = sysMap.get(sku);
+        const qty_sistem = sysRow ? (Number(sysRow.sisa_stok) || 0) : 0;
+        const selisih = qty_fisik - qty_sistem;
+
+        if (selisih === 0) continue; // In sync, no adjustment needed
+
+        let reason = `Selisih Opname CSV (${selisih > 0 ? `+${selisih}` : selisih})`;
+        if (qty_fisik === 0 && qty_sistem !== 0) {
+          reason = `Tidak Ditemukan Saat SO CSV (Scan: 0, Sis: ${qty_sistem})`;
+        } else if (qty_sistem === 0 && qty_fisik !== 0) {
+          reason = `Barang Baru di Rak CSV (Scan: ${qty_fisik})`;
+        } else if (qty_sistem < 0) {
+          reason = `Koreksi Stok Minus (${selisih > 0 ? `+${selisih}` : selisih})`;
+        }
+
+        queueToInsert.push({
+          sesi_id: invoice,
+          tanggal: waktuPesan.toISOString(),
+          sku,
+          nama_produk: sysRow?.nama_produk || sku,
+          size: sysRow?.size || '-',
+          lokasi,
+          area: sysRow?.area || getAreaFromLokasi(lokasi),
+          qty_sistem,
+          qty_fisik,
+          selisih,
+          status: 'PENDING',
+          jenis: 'Opname CSV',
+          alasan: reason,
+          operator: operatorName,
+          invoice,
+        });
+      }
+    }
+
+    if (queueToInsert.length > 0) {
+      await insertStockOpnameQueue(queueToInsert);
+    }
+
+    return {
+      success: true,
+      invoice,
+      queueCount: queueToInsert.length,
+    };
+  } catch (err: any) {
+    console.error('Error processing SO CSV import:', err);
+    return { success: false, invoice: '', queueCount: 0, error: err.message };
+  }
 }
 
 /**
