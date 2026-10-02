@@ -117,6 +117,7 @@ interface SettingsModalProps {
   themeColor?: string;
   setThemeColor?: (color: string) => void;
   darkMode?: boolean;
+  setDarkMode?: (dark: boolean) => void;
   onToggleDarkMode?: () => void;
   themeFont?: string;
   setThemeFont?: (font: string) => void;
@@ -149,6 +150,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   themeColor = 'rose',
   setThemeColor = () => {},
   darkMode = false,
+  setDarkMode,
   onToggleDarkMode = () => {},
   themeFont = 'sans',
   setThemeFont = () => {},
@@ -1128,7 +1130,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (darkMode) onToggleDarkMode();
+                      if (setDarkMode) setDarkMode(false);
+                      else if (darkMode && onToggleDarkMode) onToggleDarkMode();
                     }}
                     className={`flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       !darkMode
@@ -1143,7 +1146,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (!darkMode) onToggleDarkMode();
+                      if (setDarkMode) setDarkMode(true);
+                      else if (!darkMode && onToggleDarkMode) onToggleDarkMode();
                     }}
                     className={`flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       darkMode

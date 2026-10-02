@@ -636,12 +636,17 @@ export default function App() {
 
   // Apply dark mode class to html element
   useEffect(() => {
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (darkMode) {
       document.documentElement.classList.add('dark');
       document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.style.colorScheme = 'dark';
+      if (metaThemeColor) metaThemeColor.setAttribute('content', '#0f172a');
     } else {
       document.documentElement.classList.remove('dark');
       document.documentElement.setAttribute('data-theme', 'light');
+      document.documentElement.style.colorScheme = 'light';
+      if (metaThemeColor) metaThemeColor.setAttribute('content', '#ffffff');
     }
     localStorage.setItem('wms_dark_mode', String(darkMode));
     document.documentElement.setAttribute('data-theme-color', themeColor);
@@ -1913,6 +1918,7 @@ export default function App() {
         isOpen={isThemePickerOpen}
         onClose={() => setIsThemePickerOpen(false)}
         darkMode={darkMode}
+        setDarkMode={setDarkMode}
         onToggleDarkMode={toggleDarkMode}
         themeColor={themeColor}
         setThemeColor={setThemeColor}
@@ -1956,6 +1962,7 @@ export default function App() {
         themeColor={themeColor}
         setThemeColor={setThemeColor}
         darkMode={darkMode}
+        setDarkMode={setDarkMode}
         onToggleDarkMode={toggleDarkMode}
         themeFont={themeFont}
         setThemeFont={setThemeFont}

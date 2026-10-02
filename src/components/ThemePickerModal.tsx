@@ -5,7 +5,8 @@ interface ThemePickerModalProps {
   isOpen: boolean;
   onClose: () => void;
   darkMode: boolean;
-  onToggleDarkMode: () => void;
+  setDarkMode?: (dark: boolean) => void;
+  onToggleDarkMode?: () => void;
   themeColor: string;
   setThemeColor: (color: string) => void;
   themeFont?: string;
@@ -20,7 +21,8 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
   isOpen,
   onClose,
   darkMode,
-  onToggleDarkMode,
+  setDarkMode,
+  onToggleDarkMode = () => {},
   themeColor,
   setThemeColor,
   themeFont = 'sans',
@@ -89,30 +91,32 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (darkMode) onToggleDarkMode();
+                  if (setDarkMode) setDarkMode(false);
+                  else if (darkMode && onToggleDarkMode) onToggleDarkMode();
                 }}
                 className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                   !darkMode
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs font-black'
                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
                 <Sun className={`w-4 h-4 ${!darkMode ? 'text-primary-500' : ''}`} />
-                <span>Terang</span>
+                <span>Terang (Light)</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  if (!darkMode) onToggleDarkMode();
+                  if (setDarkMode) setDarkMode(true);
+                  else if (!darkMode && onToggleDarkMode) onToggleDarkMode();
                 }}
                 className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                   darkMode
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500/20 shadow-xs font-black'
                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
                 <Moon className={`w-4 h-4 ${darkMode ? 'text-primary-500' : ''}`} />
-                <span>Gelap</span>
+                <span>Gelap (Dark)</span>
               </button>
             </div>
           </div>

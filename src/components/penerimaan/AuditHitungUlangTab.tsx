@@ -738,24 +738,50 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     });
   }, [activeGroup]);
 
-  // Initialize variantInputs when activeGroup changes
+  const lastLoadedCodeRef = useRef<string | null>(null);
+
+  // Initialize variantInputs when switching selectedCode, preserving user inputs during background polling
   useEffect(() => {
-    if (!activeGroup) return;
+    if (!selectedCode || !activeGroup) {
+      lastLoadedCodeRef.current = null;
+      return;
+    }
 
-    const initialMap: Record<string, { recountQty: number | null; note: string }> = {};
+    if (lastLoadedCodeRef.current !== selectedCode) {
+      lastLoadedCodeRef.current = selectedCode;
 
-    activeVariants.forEach((v) => {
-      const key = `${v.warna}_${v.size}`;
-      initialMap[key] = {
-        recountQty: v.existing_fisik !== null ? v.existing_fisik : null,
-        note: v.existing_note || '',
-      };
-    });
+      const initialMap: Record<string, { recountQty: number | null; note: string }> = {};
 
-    setVariantInputs(initialMap);
-    setGeneralNotes(activeGroup.last_notes || '');
-    if (activeGroup.last_auditor) setAuditorName(activeGroup.last_auditor);
-  }, [activeGroup, activeVariants]);
+      activeVariants.forEach((v) => {
+        const key = `${v.warna}_${v.size}`;
+        initialMap[key] = {
+          recountQty: v.existing_fisik !== null ? v.existing_fisik : null,
+          note: v.existing_note || '',
+        };
+      });
+
+      setVariantInputs(initialMap);
+      setGeneralNotes(activeGroup.last_notes || '');
+      if (activeGroup.last_auditor) setAuditorName(activeGroup.last_auditor);
+    } else {
+      // Same code workspace: merge any new variants without overwriting user-typed input values
+      setVariantInputs((prev) => {
+        let hasNew = false;
+        const next = { ...prev };
+        activeVariants.forEach((v) => {
+          const key = `${v.warna}_${v.size}`;
+          if (next[key] === undefined) {
+            next[key] = {
+              recountQty: v.existing_fisik !== null ? v.existing_fisik : null,
+              note: v.existing_note || '',
+            };
+            hasNew = true;
+          }
+        });
+        return hasNew ? next : prev;
+      });
+    }
+  }, [selectedCode, activeGroup, activeVariants]);
 
   // Live calculations for current workspace
   const workspaceSummary = useMemo(() => {
