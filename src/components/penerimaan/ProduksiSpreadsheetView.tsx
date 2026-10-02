@@ -778,7 +778,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     onShowToast('Perubahan dibatalkan.', 'info');
   };
 
-  // Save Block Changes
+  // Save Block Changes (Safe & Non-Destructive)
   const handleSaveBlockChanges = async (blockId: string) => {
     const targetBlock = blocks.find((b) => b.id === blockId);
     if (!targetBlock) return;
@@ -793,32 +793,97 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       localStorage.setItem(STORAGE_KEY_METRICS, JSON.stringify(updatedMetrics));
     } catch {}
 
-    // Flatten block items to local master
-    const nowStr = new Date().toISOString();
     const isCMT = activeTab === 'CMT';
+    const fallbackCategory = targetBlock.kategori || (isCMT ? 'Lokal CMT' : 'Kargo');
+
+    // Retrieve all original items for this code to preserve Surat Jalan, ID, and audit recount data
+    const originalItems = dataList.filter(
+      (it) => normalizeProductCode(it.kode_produksi) === normalizeProductCode(targetBlock.code)
+    );
+
+    const primarySj =
+      targetBlock.distinctSjs && targetBlock.distinctSjs.length > 0
+        ? targetBlock.distinctSjs[0].no_surat_jalan
+        : originalItems[0]?.no_surat_jalan || `SJ-${targetBlock.code}`;
+
+    const defaultDate =
+      targetBlock.dateSlots.find((d) => d && d.trim().length > 0) ||
+      originalItems[0]?.tanggal_penerimaan ||
+      new Date().toISOString().split('T')[0];
+
+    const nowStr = new Date().toISOString();
     const newItems: PenerimaanProduksiItem[] = [];
 
     targetBlock.colorGroups.forEach((cg) => {
       cg.sizes.forEach((sz) => {
         // Datang
-        Object.entries(sz.qtyByDate || {}).forEach(([dateStr, qty]) => {
-          if (dateStr && Number(qty) > 0) {
-            newItems.push({
-              tanggal_penerimaan: dateStr,
-              kategori: targetBlock.kategori || (isCMT ? 'Lokal CMT' : 'Kargo'),
-              no_surat_jalan: `SJ-${targetBlock.code}`,
-              kode_produksi: targetBlock.code,
-              nama_produk: targetBlock.productName || '',
-              warna: cg.color,
-              size: sz.size,
-              qty: Number(qty),
-              foto_url: targetBlock.photoUrl || '',
-              keterangan: targetBlock.upVendor || '',
-              operator: 'Spreadsheet Editor',
-              created_at: nowStr,
-            });
-          }
-        });
+        const dateEntries = Object.entries(sz.qtyByDate || {});
+        if (dateEntries.length === 0 && sz.totalSizeQty > 0) {
+          // If total qty exists but dates were lost, attach to defaultDate
+          const matchedOrig = originalItems.find(
+            (o) => (o.warna || '').trim().toUpperCase() === cg.color && (o.size || '').trim().toUpperCase() === sz.size
+          );
+          newItems.push({
+            id: matchedOrig?.id,
+            tanggal_penerimaan: matchedOrig?.tanggal_penerimaan || defaultDate,
+            kategori: matchedOrig?.kategori || fallbackCategory,
+            no_surat_jalan: matchedOrig?.no_surat_jalan || primarySj,
+            kode_produksi: targetBlock.code,
+            nama_produk: targetBlock.productName || matchedOrig?.nama_produk || '',
+            warna: cg.color,
+            size: sz.size,
+            qty: sz.totalSizeQty,
+            foto_url: targetBlock.photoUrl || matchedOrig?.foto_url || '',
+            keterangan: targetBlock.upVendor || targetBlock.catatan || matchedOrig?.keterangan || '',
+            operator: 'Spreadsheet Editor',
+            created_at: matchedOrig?.created_at || nowStr,
+            recount_qty: sz.recountFisik ?? matchedOrig?.recount_qty,
+            recount_selisih: sz.recountSelisih ?? matchedOrig?.recount_selisih,
+            recount_round: sz.recountRound ?? matchedOrig?.recount_round,
+            recount_notes: sz.recountNotes || matchedOrig?.recount_notes,
+            recount_auditor: sz.recountAuditor || matchedOrig?.recount_auditor,
+            recount_updated_at: sz.recountUpdatedAt || matchedOrig?.recount_updated_at,
+          });
+        } else {
+          dateEntries.forEach(([dateStr, qty]) => {
+            const finalDate = dateStr && dateStr.trim().length > 0 ? dateStr.trim() : defaultDate;
+            const numQty = Number(qty) || 0;
+            if (numQty > 0) {
+              const matchedOrig = originalItems.find(
+                (o) =>
+                  (o.warna || '').trim().toUpperCase() === cg.color &&
+                  (o.size || '').trim().toUpperCase() === sz.size &&
+                  (o.tanggal_penerimaan || '') === finalDate
+              ) || originalItems.find(
+                (o) =>
+                  (o.warna || '').trim().toUpperCase() === cg.color &&
+                  (o.size || '').trim().toUpperCase() === sz.size
+              );
+
+              newItems.push({
+                id: matchedOrig?.id,
+                tanggal_penerimaan: finalDate,
+                kategori: matchedOrig?.kategori || fallbackCategory,
+                no_surat_jalan: matchedOrig?.no_surat_jalan || primarySj,
+                kode_produksi: targetBlock.code,
+                nama_produk: targetBlock.productName || matchedOrig?.nama_produk || '',
+                warna: cg.color,
+                size: sz.size,
+                qty: numQty,
+                foto_url: targetBlock.photoUrl || matchedOrig?.foto_url || '',
+                keterangan: targetBlock.upVendor || targetBlock.catatan || matchedOrig?.keterangan || '',
+                operator: 'Spreadsheet Editor',
+                created_at: matchedOrig?.created_at || nowStr,
+                recount_qty: sz.recountFisik ?? matchedOrig?.recount_qty,
+                recount_selisih: sz.recountSelisih ?? matchedOrig?.recount_selisih,
+                recount_round: sz.recountRound ?? matchedOrig?.recount_round,
+                recount_notes: sz.recountNotes || matchedOrig?.recount_notes,
+                recount_auditor: sz.recountAuditor || matchedOrig?.recount_auditor,
+                recount_updated_at: sz.recountUpdatedAt || matchedOrig?.recount_updated_at,
+              });
+            }
+          });
+        }
 
         // Retur (CMT): simpan baik sebagai qty_retur maupun di keterangan agar persisten 100% di Supabase & Local
         if (isCMT) {
@@ -848,54 +913,42 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       });
     });
 
-    // Check if only photo/catatan changed (quantities & sizes unchanged)
-    const originalItems = dataList.filter(
-      (it) => (it.kode_produksi || '').trim().toUpperCase() === targetBlock.code
-    );
-    const origTotalQty = originalItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
-    const newTotalQty = newItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
-
-    const isOnlyMetaChange = originalItems.length > 0 && origTotalQty === newTotalQty && newItems.length === originalItems.length;
-
-    if (isOnlyMetaChange) {
-      // Fast path: Only patch foto_url & catatan without deleting or re-inserting rows
+    // If newItems has valid rows, persist safely
+    if (newItems.length > 0) {
+      // 1. Update Supabase
       try {
-        if (targetBlock.photoUrl) {
-          await updatePenerimaanPhotoInSupabase(targetBlock.code, targetBlock.photoUrl);
-        }
-        if (targetBlock.catatan !== undefined) {
-          await supabaseFetch(
-            'penerimaan_produksi',
-            'PATCH',
-            { keterangan: targetBlock.catatan || '' },
-            `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`
-          );
-        }
-      } catch (errFast) {
-        console.warn('Fast patch error:', errFast);
-      }
-    } else {
-      // Full update path: replace rows cleanly
-      try {
-        // 1. Delete previous rows for this code in Supabase
-        await supabaseFetch('penerimaan_produksi', 'DELETE', undefined, `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`);
-        // 2. Direct insert new rows in Supabase
-        if (newItems.length > 0) {
-          await supabaseFetch('penerimaan_produksi', 'POST', newItems);
-        }
+        // Delete previous rows for this code in Supabase
+        await supabaseFetch(
+          'penerimaan_produksi',
+          'DELETE',
+          undefined,
+          `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`
+        );
+        // Insert new formatted items without internal ID conflicts
+        const rowsToInsert = newItems.map(({ id, ...rest }) => rest);
+        await supabaseFetch('penerimaan_produksi', 'POST', rowsToInsert);
       } catch (errSupabase) {
         console.warn('Gagal sync block save ke Supabase:', errSupabase);
       }
+
+      // 2. Update LocalStorage cache (atomic update)
+      try {
+        const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+        let list: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
+        list = list.filter(
+          (it) => normalizeProductCode(it.kode_produksi) !== normalizeProductCode(targetBlock.code)
+        );
+        list = [...newItems, ...list];
+        localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
+      } catch {}
     }
 
-    // Update LocalStorage cache (single, clean write with deduplication)
-    try {
-      const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-      let list: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
-      list = list.filter((it) => (it.kode_produksi || '').trim().toUpperCase() !== targetBlock.code);
-      list = [...newItems, ...list];
-      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
-    } catch {}
+    // Patch photo if updated
+    if (targetBlock.photoUrl) {
+      try {
+        await updatePenerimaanPhotoInSupabase(targetBlock.code, targetBlock.photoUrl);
+      } catch {}
+    }
 
     if (onRefreshData) {
       try {
