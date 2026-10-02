@@ -1392,12 +1392,14 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                 <tr className="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px] font-extrabold border-b border-slate-200 dark:border-slate-800">
                   <th className="p-3 text-center w-10">#</th>
                   <th className="p-3 w-12 text-center">No</th>
-                  <th className="p-3 min-w-[150px]">No. Pesanan & Resi</th>
-                  <th className="p-3 min-w-[130px]">Opsi Pengiriman</th>
-                  <th className="p-3 min-w-[140px]">Tgl Proses (Auto Import)</th>
-                  <th className="p-3 min-w-[140px]">Waktu Pembayaran / Buat</th>
-                  <th className="p-3 min-w-[150px]">Penerima & Alamat</th>
-                  <th className="p-3 min-w-[280px]">Item Pesanan & Lokasi Rak</th>
+                  <th className="p-3 min-w-[140px]">No. Pesanan & Resi</th>
+                  <th className="p-3 min-w-[120px]">Opsi Pengiriman</th>
+                  <th className="p-3 min-w-[120px]">Tgl Proses</th>
+                  <th className="p-3 min-w-[130px]">Waktu & Tanggal</th>
+                  <th className="p-3 min-w-[130px]">Penerima</th>
+                  <th className="p-3 min-w-[160px]">Alamat Tujuan</th>
+                  <th className="p-3 min-w-[240px]">Item Pesanan</th>
+                  <th className="p-3 min-w-[140px]">Lokasi Rak</th>
                   <th className="p-3 text-center w-16">Total Qty</th>
                   {activeTab === 'proses_packing' && <th className="p-3 text-center min-w-[120px]">Validasi Scan</th>}
                   {(activeTab === 'paket_ready' || activeTab === 'paket_terkirim') && (
@@ -1459,7 +1461,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                         </span>
                       </td>
 
-                      {/* TANGGAL PROSES (AUTO IMPORT) - Tidak tercetak di SJ */}
+                      {/* TANGGAL PROSES (AUTO IMPORT) */}
                       <td className="p-3 align-middle">
                         <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-bold">
                           <Calendar className="w-3.5 h-3.5 text-orange-500 shrink-0" />
@@ -1468,11 +1470,11 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                         <span className="text-[9px] text-slate-400 block mt-0.5">Auto Import</span>
                       </td>
 
-                      {/* Waktu Pembayaran / Waktu Buat */}
+                      {/* WAKTU & TANGGAL (Waktu Pembayaran / Buat) */}
                       <td className="p-3 align-middle text-[11px] text-slate-600 dark:text-slate-300">
-                        <div>
-                          <span className="text-slate-400 font-bold">Bayar: </span>
-                          <span className="font-mono font-bold">{order.waktuPembayaran || order.waktuPesananDibuat || '-'}</span>
+                        <div className="flex items-center gap-1 font-mono font-bold text-slate-800 dark:text-slate-200">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{order.waktuPembayaran || order.waktuPesananDibuat || '-'}</span>
                         </div>
                         {order.batasWaktuPengiriman && (
                           <div className="text-rose-500 font-bold text-[10px] mt-0.5">
@@ -1481,11 +1483,11 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                         )}
                       </td>
 
-                      {/* Penerima & Alamat */}
+                      {/* Penerima */}
                       <td className="p-3 align-middle">
                         <div className="font-extrabold text-slate-900 dark:text-white flex items-center gap-1">
                           <User className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span className="truncate">{order.namaPenerima}</span>
+                          <span className="truncate">{order.namaPenerima || '-'}</span>
                         </div>
                         {order.noTelepon && (
                           <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1 mt-0.5">
@@ -1493,48 +1495,48 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                             <span>{order.noTelepon}</span>
                           </div>
                         )}
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={order.alamatPengiriman}>
-                          {order.kotaKabupaten ? `${order.kotaKabupaten}, ${order.provinsi}` : order.alamatPengiriman}
-                        </div>
                       </td>
 
-                      {/* Items & Lokasi Rak */}
+                      {/* Alamat Tujuan */}
+                      <td className="p-3 align-middle max-w-[220px]">
+                        <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 leading-snug">
+                          {order.kotaKabupaten ? `${order.kotaKabupaten}${order.provinsi ? `, ${order.provinsi}` : ''}` : '-'}
+                        </div>
+                        {order.alamatPengiriman && (
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5 leading-tight" title={order.alamatPengiriman}>
+                            {order.alamatPengiriman}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Items Pesanan */}
                       <td className="p-3 align-middle">
                         <div className="space-y-1.5 max-h-36 overflow-y-auto">
                           {order.items.map((it, itemIdx) => (
                             <div
                               key={itemIdx}
-                              className="bg-slate-50 dark:bg-slate-800/70 p-1.5 rounded-lg border border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-2 text-[11px]"
+                              className="bg-slate-50 dark:bg-slate-800/70 p-2 rounded-lg border border-slate-100 dark:border-slate-700/60 text-[11px]"
                             >
-                              <div className="min-w-0 flex-1">
-                                <div className="font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
-                                  <span>{it.namaProduk}</span>
-                                  {it.isMasterProduct === false && (
-                                    <span
-                                      className="px-1 py-0.2 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 rounded text-[9px] font-extrabold border border-amber-300 dark:border-amber-800 shrink-0"
-                                      title="SKU belum terdaftar di Master Database Produk"
-                                    >
-                                      ⚠️ Belum di Master
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5">
-                                  <span>SKU: <b className="text-slate-800 dark:text-slate-200">{it.sku}</b></span>
-                                  {it.namaVariasi && it.namaVariasi !== 'Default' && (
-                                    <span className="text-orange-600 dark:text-orange-400 font-semibold">[{it.namaVariasi}]</span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                {/* LOKASI RAK UNTUK PICKING */}
-                                <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded font-black text-[10px] border border-blue-200 dark:border-blue-800 flex items-center gap-0.5">
-                                  <MapPin className="w-2.5 h-2.5" />
-                                  <span>{it.lokasi || '-'}</span>
-                                </span>
-                                <span className="font-black text-slate-900 dark:text-white px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[11px]">
+                              <div className="font-bold text-slate-800 dark:text-slate-200 truncate flex items-center justify-between gap-1.5">
+                                <span className="truncate" title={it.namaProduk}>{it.namaProduk}</span>
+                                <span className="font-black text-slate-900 dark:text-white px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[10px] shrink-0">
                                   x{it.qty}
                                 </span>
                               </div>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5">
+                                <span>SKU: <b className="text-slate-800 dark:text-slate-200">{it.sku}</b></span>
+                                {it.namaVariasi && it.namaVariasi !== 'Default' && (
+                                  <span className="text-orange-600 dark:text-orange-400 font-semibold truncate">[{it.namaVariasi}]</span>
+                                )}
+                              </div>
+                              {it.isMasterProduct === false && (
+                                <span
+                                  className="inline-block mt-0.5 px-1 py-0.2 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 rounded text-[9px] font-extrabold border border-amber-300 dark:border-amber-800"
+                                  title="SKU belum terdaftar di Master Database Produk"
+                                >
+                                  ⚠️ Belum di Master
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1543,6 +1545,20 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                             <b>Catatan:</b> {order.catatanPembeli}
                           </div>
                         )}
+                      </td>
+
+                      {/* Lokasi Rak (Dedicated Column) */}
+                      <td className="p-3 align-middle">
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                          {order.items.map((it, itemIdx) => (
+                            <div key={itemIdx} className="p-1.5 flex items-center min-h-[44px]">
+                              <span className="px-2 py-1 bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 rounded-lg font-black font-mono text-[10px] border border-blue-200 dark:border-blue-800 flex items-center gap-1 shadow-2xs whitespace-normal break-words max-w-[180px]">
+                                <MapPin className="w-3 h-3 text-blue-500 shrink-0" />
+                                <span>{it.lokasi || '-'}</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </td>
 
                       {/* Total Qty */}

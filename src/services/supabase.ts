@@ -7986,7 +7986,7 @@ export async function fetchLogsBySearch(keyword: string, limit = 1000): Promise<
       'log_produk',
       'GET',
       null,
-      `select=*&or=(sku.ilike.${term},nama_produk.ilike.${term},invoice.ilike.${term})&order=created_at.desc&limit=${limit}`
+      `select=*&or=(sku.ilike.${term},nama_produk.ilike.${term},invoice.ilike.${term},lokasi.ilike.${term},operator.ilike.${term},keterangan.ilike.${term},area.ilike.${term},type.ilike.${term})&order=created_at.desc&limit=${limit}`
     );
     return data || [];
   } catch (err) {

@@ -219,7 +219,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchRecentLogs();
+      const data = await fetchRecentLogs(5000);
       const filtered = (data || []).filter(
         (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
@@ -244,7 +244,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchRecentLogs();
+      const data = await fetchRecentLogs(5000);
       const filtered = (data || []).filter(
         (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
@@ -268,11 +268,17 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     if (!searchQuery.trim()) return;
     setIsServerSearching(true);
     try {
-      const data = await fetchLogsBySearch(searchQuery.trim(), 1000);
+      const data = await fetchLogsBySearch(searchQuery.trim(), 2000);
       const filteredData = (data || []).filter(
         (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );
       if (filteredData && filteredData.length > 0) {
+        // Reset type, area, and source filters if active to ensure search results are immediately visible
+        if (typeFilter !== 'ALL' || areaFilter !== 'ALL' || sourceFilter !== 'ALL') {
+          setTypeFilter('ALL');
+          setAreaFilter('ALL');
+          setSourceFilter('ALL');
+        }
         // Merge with existing logs and deduplicate
         const merged = [...logs, ...filteredData];
         const unique = Array.from(
@@ -281,9 +287,9 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         // Sort descending by created_at
         unique.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setLogs(unique);
-        if (onNotify) onNotify(`Ditemukan ${filteredData.length} hasil dari server.`, 'success');
+        if (onNotify) onNotify(`Ditemukan ${filteredData.length} hasil pencarian dari database.`, 'success');
       } else {
-        if (onNotify) onNotify('Tidak ditemukan hasil tambahan di database.', 'info');
+        if (onNotify) onNotify('Tidak ditemukan hasil tambahan di database untuk kata kunci ini.', 'info');
       }
     } catch (err) {
       console.error(err);
@@ -1138,30 +1144,48 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
             </button>
           </div>
                 ) : filteredLogs.length === 0 ? (
-          <div className="py-16 text-center space-y-2">
+          <div className="py-16 text-center space-y-3 px-4">
             <Package className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
             <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
               Tidak Ada Mutasi Log Ditemukan
             </div>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              {searchQuery || typeFilter !== 'ALL' || areaFilter !== 'ALL'
-                ? 'Tidak ada data yang sesuai dengan filter pencarian Anda di lokal.'
+            <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+              {searchQuery || typeFilter !== 'ALL' || areaFilter !== 'ALL' || sourceFilter !== 'ALL'
+                ? 'Tidak ada data yang sesuai dengan kombinasi filter dan kata kunci saat ini.'
                 : 'Belum ada riwayat mutasi produk di database.'}
             </p>
-            {searchQuery && (
-              <button
-                onClick={handleServerSearch}
-                disabled={isServerSearching}
-                className="mt-2 px-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
-              >
-                {isServerSearching ? (
-                  <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4" />
-                )}
-                {isServerSearching ? 'Mencari di Server...' : 'Cari di Seluruh Database'}
-              </button>
-            )}
+
+            <div className="flex items-center justify-center gap-2 flex-wrap pt-2">
+              {searchQuery && (
+                <button
+                  onClick={handleServerSearch}
+                  disabled={isServerSearching}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95"
+                >
+                  {isServerSearching ? (
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5" />
+                  )}
+                  {isServerSearching ? 'Mencari di Seluruh Database...' : `Cari "${searchQuery}" di Seluruh Database`}
+                </button>
+              )}
+
+              {(searchQuery || typeFilter !== 'ALL' || areaFilter !== 'ALL' || sourceFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setTypeFilter('ALL');
+                    setAreaFilter('ALL');
+                    setSourceFilter('ALL');
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  🔄 Reset Semua Filter
+                </button>
+              )}
+            </div>
           </div> ) : (
           <div>
             {viewMode === 'CARD' ? (
