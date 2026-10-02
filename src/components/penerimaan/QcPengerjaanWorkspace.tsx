@@ -83,14 +83,14 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
   // Kalkulasi realtime
   const totals = calculateJobTotals(job.sizes);
   const activeSize = job.sizes[selectedSizeIndex] || job.sizes[0];
+  const totalRejectCount = totals.total_qty_noda + totals.total_qty_permak + totals.total_qty_defect;
 
-  // Helper update size tally
-  const updateActiveSizeTally = (updates: Partial<QcSizeTally>) => {
-    if (!activeSize) return;
+  // Helper update size tally by index (Direct Table Editing)
+  const updateSizeTallyByIndex = (index: number, updates: Partial<QcSizeTally>) => {
+    if (index < 0 || index >= job.sizes.length) return;
     const newSizes = [...job.sizes];
-    const current = newSizes[selectedSizeIndex];
-    newSizes[selectedSizeIndex] = {
-      ...current,
+    newSizes[index] = {
+      ...newSizes[index],
       ...updates,
     };
     const newTotals = calculateJobTotals(newSizes);
@@ -104,6 +104,11 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
     saveSingleQcJob(updatedJob);
   };
 
+  // Helper update size tally for active size tab
+  const updateActiveSizeTally = (updates: Partial<QcSizeTally>) => {
+    updateSizeTallyByIndex(selectedSizeIndex, updates);
+  };
+
   // Quick Counter Adder
   const handleAddCount = (
     field: 'qty_oke' | 'qty_noda' | 'qty_permak' | 'qty_defect',
@@ -115,16 +120,64 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
     updateActiveSizeTally({ [field]: newVal });
   };
 
-  // Set Semua Sisa Jadi OKE
+  // Set Semua Sisa Jadi OKE (Active Row)
   const handleSetRemainingToOke = () => {
-    if (!activeSize) return;
+    handleSetRowRemainingToOke(selectedSizeIndex);
+  };
+
+  // Set Row Sisa Jadi OKE
+  const handleSetRowRemainingToOke = (index: number) => {
+    const s = job.sizes[index];
+    if (!s) return;
     const currentReject =
-      (activeSize.qty_noda || 0) +
-      (activeSize.qty_permak || 0) +
-      (activeSize.qty_defect || 0);
-    const remaining = Math.max(0, activeSize.qty_awal - currentReject);
-    updateActiveSizeTally({ qty_oke: remaining });
-    onShowToast(`Size ${activeSize.size}: Qty OKE diset ke ${remaining} pcs`, 'info');
+      (s.qty_noda || 0) +
+      (s.qty_permak || 0) +
+      (s.qty_defect || 0);
+    const remaining = Math.max(0, s.qty_awal - currentReject);
+    updateSizeTallyByIndex(index, { qty_oke: remaining });
+    onShowToast(`${s.size}: Qty OKE diset ke ${remaining} pcs`, 'info');
+  };
+
+  // Set SEMUA Varian Jadi Lolos (Grade A 100%)
+  const handleSetAllToOke = () => {
+    const newSizes = job.sizes.map((s) => ({
+      ...s,
+      qty_oke: s.qty_awal,
+      qty_noda: 0,
+      qty_permak: 0,
+      qty_defect: 0,
+    }));
+    const newTotals = calculateJobTotals(newSizes);
+    const updatedJob: QcPengerjaanJob = {
+      ...job,
+      sizes: newSizes,
+      ...newTotals,
+      status: job.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+    };
+    setJob(updatedJob);
+    saveSingleQcJob(updatedJob);
+    onShowToast(`Seluruh ${job.sizes.length} varian diset Lolos (Grade A) 100%`, 'success');
+  };
+
+  // Reset SEMUA input ke 0
+  const handleResetAllToZero = () => {
+    const newSizes = job.sizes.map((s) => ({
+      ...s,
+      qty_oke: 0,
+      qty_noda: 0,
+      qty_permak: 0,
+      qty_defect: 0,
+    }));
+    const newTotals = calculateJobTotals(newSizes);
+    const updatedJob: QcPengerjaanJob = {
+      ...job,
+      sizes: newSizes,
+      ...newTotals,
+      status: job.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+    };
+    setJob(updatedJob);
+    saveSingleQcJob(updatedJob);
+    onShowToast('Semua input pemeriksaan telah di-reset ke 0', 'info');
   };
 
   // Add PIC
@@ -160,29 +213,34 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
     saveSingleQcJob(updatedJob);
   };
 
-  // Upload Foto Evidence
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  // Upload Foto Evidence with specific reject category
+  const handleCategorizedPhotoUpload = async (
+    files: FileList | null,
+    categoryType: 'NODA' | 'PERMAK' | 'DEFECT' | 'LAINNYA',
+    customLabel?: string
+  ) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingPhoto(true);
     try {
+      const defaultLabel =
+        categoryType === 'NODA'
+          ? 'Noda Minyak / Kotor'
+          : categoryType === 'PERMAK'
+          ? 'Jahitan / Permak'
+          : categoryType === 'DEFECT'
+          ? 'Defect / BS Bahan'
+          : 'Foto Tambahan';
+
       const newEvidences: QcPhotoEvidence[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const compressed = await compressImage(file, 1000, 0.75);
         newEvidences.push({
-          id: `PHOTO-${Date.now()}-${i}`,
+          id: `PHOTO-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
           url: compressed.dataUrl,
-          label: activePhotoLabel,
-          size: activeSize?.size,
-          tipe: activePhotoLabel.includes('Noda')
-            ? 'NODA'
-            : activePhotoLabel.includes('Jahit') || activePhotoLabel.includes('Permak')
-            ? 'PERMAK'
-            : activePhotoLabel.includes('Cacat') || activePhotoLabel.includes('Defect')
-            ? 'DEFECT'
-            : 'LAINNYA',
+          label: customLabel || defaultLabel,
+          tipe: categoryType,
           timestamp: new Date().toISOString(),
         });
       }
@@ -194,13 +252,29 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
       };
       setJob(updatedJob);
       saveSingleQcJob(updatedJob);
-      onShowToast(`Berhasil menambahkan ${newEvidences.length} foto bukti temuan`, 'success');
+      onShowToast(`Berhasil menambahkan ${newEvidences.length} foto (${customLabel || defaultLabel})`, 'success');
     } catch (err: any) {
       onShowToast('Gagal memproses foto: ' + err.message, 'error');
     } finally {
       setIsUploadingPhoto(false);
-      e.target.value = '';
     }
+  };
+
+  // Upload Foto Evidence (General)
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const categoryType: 'NODA' | 'PERMAK' | 'DEFECT' | 'LAINNYA' = activePhotoLabel.includes('Noda')
+      ? 'NODA'
+      : activePhotoLabel.includes('Jahit') || activePhotoLabel.includes('Permak') || activePhotoLabel.includes('Obras')
+      ? 'PERMAK'
+      : activePhotoLabel.includes('Cacat') || activePhotoLabel.includes('Defect') || activePhotoLabel.includes('Kain')
+      ? 'DEFECT'
+      : 'LAINNYA';
+
+    await handleCategorizedPhotoUpload(files, categoryType, activePhotoLabel);
+    e.target.value = '';
   };
 
   // Delete Foto Evidence
@@ -837,18 +911,41 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
         )}
       </div>
 
-      {/* 5. TABEL REKAPITULASI MATRIKS PER VARIAN & SKU */}
+      {/* 5. TABEL REKAPITULASI MATRIKS PER VARIAN & SKU (INPUT LANGSUNG DI TABEL) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-              Tabel Rangkuman Hasil Pemeriksaan per Varian & SKU
-            </h2>
+            <div>
+              <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                Tabel Input Hasil Pemeriksaan per Varian & SKU
+              </h2>
+              <p className="text-[11px] text-slate-500 font-medium">
+                Ketik langsung jumlah fisik hasil QC pada kolom tabel di bawah ini
+              </p>
+            </div>
           </div>
-          <span className="text-[11px] text-slate-500 font-semibold">
-            Total {job.sizes.length} Varian
-          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSetAllToOke}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+              title="Set semua varian menjadi 100% Lolos (Grade A)"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Set Semua Lolos (OKE)</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleResetAllToZero}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              title="Kosongkan seluruh input"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
@@ -862,10 +959,18 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                 <th className="px-3 py-2.5">Warna</th>
                 <th className="px-3 py-2.5 text-center">Size</th>
                 <th className="px-3 py-2.5 text-right">Qty Awal</th>
-                <th className="px-3 py-2.5 text-right text-emerald-700 dark:text-emerald-400">Lolos (OKE)</th>
-                <th className="px-3 py-2.5 text-right text-amber-700 dark:text-amber-400">Noda</th>
-                <th className="px-3 py-2.5 text-right text-orange-700 dark:text-orange-400">Permak</th>
-                <th className="px-3 py-2.5 text-right text-rose-700 dark:text-rose-400">Defect</th>
+                <th className="px-3 py-2.5 text-center text-emerald-700 dark:text-emerald-400 min-w-[130px]">
+                  Lolos (OKE)
+                </th>
+                <th className="px-3 py-2.5 text-center text-amber-700 dark:text-amber-400 min-w-[80px]">
+                  Noda
+                </th>
+                <th className="px-3 py-2.5 text-center text-orange-700 dark:text-orange-400 min-w-[80px]">
+                  Permak
+                </th>
+                <th className="px-3 py-2.5 text-center text-rose-700 dark:text-rose-400 min-w-[80px]">
+                  Defect (BS)
+                </th>
                 <th className="px-3 py-2.5 text-right">Diperiksa</th>
                 <th className="px-3 py-2.5 text-right">Selisih</th>
                 <th className="px-3 py-2.5 text-center">Status</th>
@@ -881,9 +986,9 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                   <tr
                     key={s.sku ? `${s.sku}_${s.size}_${idx}` : `${s.size}_${idx}`}
                     onClick={() => setSelectedSizeIndex(idx)}
-                    className={`cursor-pointer transition-colors ${
+                    className={`transition-colors ${
                       isSelected
-                        ? 'bg-indigo-50/60 dark:bg-indigo-950/30'
+                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20'
                         : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'
                     }`}
                   >
@@ -912,18 +1017,80 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                     <td className="px-3 py-2.5 text-right font-bold text-slate-800 dark:text-slate-200">
                       {s.qty_awal}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                      {s.qty_oke}
+
+                    {/* Input Langsung: Lolos (OKE) */}
+                    <td className="px-2 py-1.5 text-center bg-emerald-50/30 dark:bg-emerald-950/10">
+                      <div className="flex items-center justify-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          value={s.qty_oke === 0 ? '' : s.qty_oke}
+                          placeholder="0"
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            updateSizeTallyByIndex(idx, { qty_oke: val });
+                          }}
+                          className="w-16 sm:w-20 text-center font-mono font-black text-xs py-1 px-1 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetRowRemainingToOke(idx);
+                          }}
+                          className="px-1.5 py-1 text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/60 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded-md cursor-pointer transition-colors"
+                          title="Isi sisa kuota size ini menjadi OKE"
+                        >
+                          OKE
+                        </button>
+                      </div>
                     </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-amber-600 dark:text-amber-400">
-                      {s.qty_noda}
+
+                    {/* Input Langsung: Noda */}
+                    <td className="px-2 py-1.5 text-center bg-amber-50/30 dark:bg-amber-950/10">
+                      <input
+                        type="number"
+                        min="0"
+                        value={s.qty_noda === 0 ? '' : s.qty_noda}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          updateSizeTallyByIndex(idx, { qty_noda: val });
+                        }}
+                        className="w-14 sm:w-16 text-center font-mono font-bold text-xs py-1 px-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                      />
                     </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-orange-600 dark:text-orange-400">
-                      {s.qty_permak}
+
+                    {/* Input Langsung: Permak */}
+                    <td className="px-2 py-1.5 text-center bg-orange-50/30 dark:bg-orange-950/10">
+                      <input
+                        type="number"
+                        min="0"
+                        value={s.qty_permak === 0 ? '' : s.qty_permak}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          updateSizeTallyByIndex(idx, { qty_permak: val });
+                        }}
+                        className="w-14 sm:w-16 text-center font-mono font-bold text-xs py-1 px-1 rounded-lg border border-orange-300 dark:border-orange-700 bg-white dark:bg-slate-800 text-orange-700 dark:text-orange-300 focus:ring-2 focus:ring-orange-500 focus:outline-hidden"
+                      />
                     </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-rose-600 dark:text-rose-400">
-                      {s.qty_defect}
+
+                    {/* Input Langsung: Defect (BS) */}
+                    <td className="px-2 py-1.5 text-center bg-rose-50/30 dark:bg-rose-950/10">
+                      <input
+                        type="number"
+                        min="0"
+                        value={s.qty_defect === 0 ? '' : s.qty_defect}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          updateSizeTallyByIndex(idx, { qty_defect: val });
+                        }}
+                        className="w-14 sm:w-16 text-center font-mono font-bold text-xs py-1 px-1 rounded-lg border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
+                      />
                     </td>
+
                     <td className="px-3 py-2.5 text-right font-black text-slate-900 dark:text-white">
                       {totalPeriksa}
                     </td>
@@ -968,10 +1135,18 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
                   TOTAL ({job.sizes.length} Varian)
                 </td>
                 <td className="px-3 py-2.5 text-right">{totals.total_qty_awal}</td>
-                <td className="px-3 py-2.5 text-right text-emerald-600 dark:text-emerald-400">{totals.total_qty_oke}</td>
-                <td className="px-3 py-2.5 text-right text-amber-600 dark:text-amber-400">{totals.total_qty_noda}</td>
-                <td className="px-3 py-2.5 text-right text-orange-600 dark:text-orange-400">{totals.total_qty_permak}</td>
-                <td className="px-3 py-2.5 text-right text-rose-600 dark:text-rose-400">{totals.total_qty_defect}</td>
+                <td className="px-3 py-2.5 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                  {totals.total_qty_oke}
+                </td>
+                <td className="px-3 py-2.5 text-center font-bold text-amber-600 dark:text-amber-400">
+                  {totals.total_qty_noda}
+                </td>
+                <td className="px-3 py-2.5 text-center font-bold text-orange-600 dark:text-orange-400">
+                  {totals.total_qty_permak}
+                </td>
+                <td className="px-3 py-2.5 text-center font-bold text-rose-600 dark:text-rose-400">
+                  {totals.total_qty_defect}
+                </td>
                 <td className="px-3 py-2.5 text-right text-slate-900 dark:text-white">{totals.total_diperiksa}</td>
                 <td className="px-3 py-2.5 text-right">
                   {totals.total_selisih === 0 ? (
@@ -991,84 +1166,259 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* 6. DOKUMENTASI FOTO TEMUAN & CATATAN */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Upload Foto Bukti */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Camera className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                Dokumentasi Foto Temuan ({job.foto_evidence?.length || 0})
-              </h3>
+      {/* 6. DOKUMENTASI FOTO TEMUAN BERDASARKAN KATEGORI REJECT */}
+      <div className="space-y-4">
+        {/* Status Reassurance Banner */}
+        {totalRejectCount === 0 ? (
+          <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center text-emerald-600 dark:text-emerald-300 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs sm:text-sm font-extrabold text-emerald-900 dark:text-emerald-200">
+                  Semua Lolos (Grade A) — Tidak Ada Temuan Reject
+                </h4>
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                  Karena tidak ada reject (Noda, Permak, atau Defect), Anda <strong>tidak perlu melampirkan foto bukti</strong>.
+                </p>
+              </div>
             </div>
 
-            {/* Label Selector */}
-            <select
-              value={activePhotoLabel}
-              onChange={(e) => setActivePhotoLabel(e.target.value)}
-              className="text-xs px-2.5 py-1 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg font-medium"
-            >
-              {COMMON_DEFECT_LABELS.map((lbl) => (
-                <option key={lbl} value={lbl}>
-                  {lbl}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Upload Button */}
-          <div>
-            <label
-              className={`flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
-                isUploadingPhoto ? 'opacity-50 pointer-events-none' : ''
-              }`}
-            >
+            {/* Optional general photo upload */}
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs">
+              <Camera className="w-3.5 h-3.5" />
+              <span>+ Foto Umum / Packing (Opsional)</span>
               <input
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={handlePhotoUpload}
+                onChange={(e) => {
+                  handleCategorizedPhotoUpload(e.target.files, 'LAINNYA', 'Foto Umum / Packing');
+                  e.target.value = '';
+                }}
                 className="hidden"
               />
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                <Camera className="w-4 h-4 text-indigo-600" />
-                <span>{isUploadingPhoto ? 'Mengompres foto...' : 'Jepret Kamera / Upload Foto Temuan'}</span>
+            </label>
+          </div>
+        ) : (
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900 flex items-center justify-center text-amber-600 dark:text-amber-300 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
               </div>
-              <p className="text-[10px] text-slate-400 mt-0.5">Label: {activePhotoLabel}</p>
+              <div>
+                <h4 className="text-xs sm:text-sm font-extrabold text-amber-900 dark:text-amber-200">
+                  Ditemukan {totalRejectCount} pcs Reject pada Batch Ini
+                </h4>
+                <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                  Rincian: <strong>{totals.total_qty_noda} Noda</strong>, <strong>{totals.total_qty_permak} Permak</strong>, <strong>{totals.total_qty_defect} Defect</strong>. Silakan lampirkan beberapa foto bukti pada opsi kategori di bawah:
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3 Opsi Reject Photo Upload Boxes */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {/* 1. Foto Kategori NODA */}
+          <div className={`p-4 rounded-2xl border transition-all ${
+            totals.total_qty_noda > 0
+              ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800 ring-1 ring-amber-400/20'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-80'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🧼</span>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-300">
+                    Foto Noda (Cuci)
+                  </h4>
+                  <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold">
+                    Reject: {totals.total_qty_noda} pcs
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+                {(job.foto_evidence || []).filter((p) => p.tipe === 'NODA').length} foto
+              </span>
+            </div>
+
+            <label className="mt-2 flex flex-col items-center justify-center p-3 border-2 border-dashed border-amber-300 dark:border-amber-700 hover:bg-amber-100/50 dark:hover:bg-amber-950/40 rounded-xl transition-colors cursor-pointer text-center">
+              <Camera className="w-5 h-5 text-amber-600 dark:text-amber-400 mb-1" />
+              <span className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                + Jepret / Upload Foto Noda
+              </span>
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                Bisa upload beberapa foto sekaligus
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  handleCategorizedPhotoUpload(e.target.files, 'NODA', 'Noda Minyak / Kotor');
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
             </label>
           </div>
 
-          {/* Grid Foto Evidence */}
-          {job.foto_evidence && job.foto_evidence.length > 0 ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
-              {job.foto_evidence.map((photo) => (
-                <div
-                  key={photo.id}
-                  className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 aspect-square"
-                >
-                  <img
-                    src={photo.url}
-                    alt={photo.label}
-                    onClick={() => setLightboxUrl(photo.url)}
-                    className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5">
-                    <p className="text-[9px] font-bold text-white truncate">{photo.label}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeletePhoto(photo.id)}
-                    className="absolute top-1 right-1 p-1 bg-rose-600/90 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shadow-xs"
-                    title="Hapus foto ini"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+          {/* 2. Foto Kategori JAHITAN / PERMAK */}
+          <div className={`p-4 rounded-2xl border transition-all ${
+            totals.total_qty_permak > 0
+              ? 'bg-orange-50/50 dark:bg-orange-950/20 border-orange-300 dark:border-orange-800 ring-1 ring-orange-400/20'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-80'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Scissors className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-orange-900 dark:text-orange-300">
+                    Foto Jahitan (Permak)
+                  </h4>
+                  <span className="text-[10px] text-orange-700 dark:text-orange-400 font-bold">
+                    Reject: {totals.total_qty_permak} pcs
+                  </span>
                 </div>
-              ))}
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 border border-orange-200 dark:border-orange-800">
+                {(job.foto_evidence || []).filter((p) => p.tipe === 'PERMAK').length} foto
+              </span>
+            </div>
+
+            <label className="mt-2 flex flex-col items-center justify-center p-3 border-2 border-dashed border-orange-300 dark:border-orange-700 hover:bg-orange-100/50 dark:hover:bg-orange-950/40 rounded-xl transition-colors cursor-pointer text-center">
+              <Camera className="w-5 h-5 text-orange-600 dark:text-orange-400 mb-1" />
+              <span className="text-xs font-bold text-orange-900 dark:text-orange-200">
+                + Jepret / Upload Foto Jahitan
+              </span>
+              <span className="text-[10px] text-orange-600 dark:text-orange-400">
+                Bisa upload beberapa foto sekaligus
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  handleCategorizedPhotoUpload(e.target.files, 'PERMAK', 'Jahitan / Permak');
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* 3. Foto Kategori DEFECT / BS BAHAN */}
+          <div className={`p-4 rounded-2xl border transition-all ${
+            totals.total_qty_defect > 0
+              ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800 ring-1 ring-rose-400/20'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-80'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-900 dark:text-rose-300">
+                    Foto Defect / BS Bahan
+                  </h4>
+                  <span className="text-[10px] text-rose-700 dark:text-rose-400 font-bold">
+                    Reject: {totals.total_qty_defect} pcs
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800">
+                {(job.foto_evidence || []).filter((p) => p.tipe === 'DEFECT').length} foto
+              </span>
+            </div>
+
+            <label className="mt-2 flex flex-col items-center justify-center p-3 border-2 border-dashed border-rose-300 dark:border-rose-700 hover:bg-rose-100/50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer text-center">
+              <Camera className="w-5 h-5 text-rose-600 dark:text-rose-400 mb-1" />
+              <span className="text-xs font-bold text-rose-900 dark:text-rose-200">
+                + Jepret / Upload Foto Defect
+              </span>
+              <span className="text-[10px] text-rose-600 dark:text-rose-400">
+                Bisa upload beberapa foto sekaligus
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  handleCategorizedPhotoUpload(e.target.files, 'DEFECT', 'Defect / BS Bahan');
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Galeri Koleksi Foto Evidence Terlampir */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                Galeri Foto Bukti Temuan ({job.foto_evidence?.length || 0})
+              </h3>
+            </div>
+            {isUploadingPhoto && (
+              <span className="text-xs text-indigo-600 dark:text-indigo-400 font-bold animate-pulse">
+                Sedang mengompres & menyimpan foto...
+              </span>
+            )}
+          </div>
+
+          {job.foto_evidence && job.foto_evidence.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 pt-1">
+              {job.foto_evidence.map((photo) => {
+                const badgeColor =
+                  photo.tipe === 'NODA'
+                    ? 'bg-amber-600'
+                    : photo.tipe === 'PERMAK'
+                    ? 'bg-orange-600'
+                    : photo.tipe === 'DEFECT'
+                    ? 'bg-rose-600'
+                    : 'bg-slate-700';
+
+                return (
+                  <div
+                    key={photo.id}
+                    className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 aspect-square shadow-2xs"
+                  >
+                    <img
+                      src={photo.url}
+                      alt={photo.label}
+                      onClick={() => setLightboxUrl(photo.url)}
+                      className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-1.5">
+                      <span className={`inline-block text-[8px] font-black text-white px-1.5 py-0.2 rounded ${badgeColor} truncate max-w-full`}>
+                        {photo.tipe || 'FOTO'}
+                      </span>
+                      <p className="text-[9px] font-bold text-white truncate mt-0.5">{photo.label}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePhoto(photo.id)}
+                      className="absolute top-1 right-1 p-1.5 bg-rose-600/95 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shadow-xs hover:bg-rose-700"
+                      title="Hapus foto ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            <p className="text-xs text-slate-400 text-center py-2">Belum ada foto temuan yang dilampirkan.</p>
+            <div className="p-4 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+              <p className="text-xs text-slate-400 font-medium">
+                {totalRejectCount === 0
+                  ? '✅ Tidak ada temuan reject. Lampiran foto tidak diperlukan.'
+                  : 'Belum ada foto temuan yang dilampirkan. Klik tombol upload di atas untuk melampirkan foto.'}
+              </p>
+            </div>
           )}
         </div>
 
@@ -1082,7 +1432,7 @@ export const QcPengerjaanWorkspace: React.FC<QcPengerjaanWorkspaceProps> = ({
           </div>
 
           <textarea
-            rows={5}
+            rows={4}
             placeholder="Tuliskan catatan khusus untuk penjahit / supplier, misal: kerapian jahitan obras, kancing cadangan, noda minyak kain, instruksi perbaikan..."
             value={job.catatan_umum || ''}
             onChange={(e) => {

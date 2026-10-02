@@ -456,6 +456,14 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }
   }, [initialTargetCode]);
 
+  const normalizeProductCode = (code: string | undefined | null): string => {
+    if (!code) return '';
+    return String(code)
+      .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+      .trim()
+      .toUpperCase();
+  };
+
   // Aggregate ALL arrival items by `kode_produksi` (for picker search)
   const allCodeGroups = useMemo<CodeAuditGroup[]>(() => {
     const map = new Map<string, {
@@ -470,7 +478,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }>();
 
     penerimaanItems.forEach((it) => {
-      const code = (it.kode_produksi || '').trim().toUpperCase();
+      const code = normalizeProductCode(it.kode_produksi);
       if (!code) return;
 
       if (!map.has(code)) {

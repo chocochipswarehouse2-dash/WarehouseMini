@@ -179,6 +179,14 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
   const standardSizeOrder = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', 'ALL SIZE', 'FREE SIZE'];
 
+  const normalizeProductCode = (code: string | undefined | null): string => {
+    if (!code) return 'TANPA_KODE';
+    return String(code)
+      .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+      .trim()
+      .toUpperCase();
+  };
+
   // Initialize or re-sync Blocks from dataList when dataList or activeTab changes
   useEffect(() => {
     if (!dataList) return;
@@ -198,7 +206,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     // Group items by Kode Produksi
     const codeMap = new Map<string, PenerimaanProduksiItem[]>();
     tabFilteredItems.forEach((it) => {
-      const code = (it.kode_produksi || 'TANPA_KODE').trim().toUpperCase();
+      const code = normalizeProductCode(it.kode_produksi);
       if (!codeMap.has(code)) {
         codeMap.set(code, []);
       }
