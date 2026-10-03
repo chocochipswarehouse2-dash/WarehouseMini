@@ -519,6 +519,41 @@ export async function supabaseFetch<T = unknown>(
 }
 
 /**
+ * Fetch ALL rows of a GET query by paging with limit/offset.
+ * Supabase/PostgREST caps each response at 1000 rows (max-rows), so a single
+ * `limit=2000` request is silently truncated. Query MUST include a stable `order`.
+ */
+export async function supabaseFetchAllPages<T = unknown>(
+  table: string,
+  queryParams: string,
+  maxRows = 100000,
+  pageSize = 1000,
+  concurrency = 4
+): Promise<T[]> {
+  const out: T[] = [];
+  let offset = 0;
+  let done = false;
+  while (!done && offset < maxRows) {
+    const offsets: number[] = [];
+    for (let i = 0; i < concurrency && offset + i * pageSize < maxRows; i++) {
+      offsets.push(offset + i * pageSize);
+    }
+    const pages = await Promise.all(
+      offsets.map((o) =>
+        supabaseFetch<T[]>(table, 'GET', null, `${queryParams}&limit=${pageSize}&offset=${o}`)
+      )
+    );
+    for (const page of pages) {
+      if (!Array.isArray(page)) { done = true; break; }
+      out.push(...page);
+      if (page.length < pageSize) { done = true; break; }
+    }
+    offset += concurrency * pageSize;
+  }
+  return out;
+}
+
+/**
  * =========================================================================
  * SCHEMA SQL DEFINITIONS & GENERATOR FOR SUPABASE
  * Jika table belum ada di database Supabase user, sistem menyediakan DDL Script
@@ -1634,14 +1669,14 @@ export async function syncPendingStockOpnameFromLogProduk(
       // 5. Query existing items in stock_opname_queue to avoid re-inserting
       const existingKeys = new Set<string>();
       const invChunkSize = 50;
-      const sbClient = getSupabaseClient();
       for (let i = 0; i < validInvoices.length; i += invChunkSize) {
         const chunk = validInvoices.slice(i, i + invChunkSize);
         try {
-          const { data: existingRows } = await sbClient
-            .from('stock_opname_queue')
-            .select('invoice,sku,lokasi')
-            .in('invoice', chunk);
+          const inClause = chunk.map((inv) => `"${inv}"`).join(',');
+          const existingRows = await supabaseFetchAllPages<StockOpnameQueueItem>(
+            'stock_opname_queue',
+            `invoice=in.(${encodeURIComponent(inClause)})&select=invoice,sku,lokasi&order=id.asc`
+          );
           if (existingRows && Array.isArray(existingRows)) {
             for (const row of existingRows) {
               const k = `${(row.invoice || '').trim()}__${(row.sku || '').trim().toUpperCase()}__${(row.lokasi || '').trim().toUpperCase()}`;
@@ -2053,7 +2088,7 @@ function deduplicateQueueItems(items: StockOpnameQueueItem[]): StockOpnameQueueI
  */
 export async function fetchStockOpnameQueue(
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' = 'ALL',
-  limit = 2000
+  limit = 100000
 ): Promise<StockOpnameQueueItem[]> {
   // Sync raw SO scans from log_produk to ensure all pending opnames are calculated & queued
   try {
@@ -2064,11 +2099,10 @@ export async function fetchStockOpnameQueue(
 
   try {
     const statusQuery = status !== 'ALL' ? `status=eq.${encodeURIComponent(status)}&` : '';
-    const data = await supabaseFetch<StockOpnameQueueItem[]>(
+    const data = await supabaseFetchAllPages<StockOpnameQueueItem>(
       'stock_opname_queue',
-      'GET',
-      null,
-      `select=*&${statusQuery}order=tanggal.desc&limit=${limit}`
+      `select=*&${statusQuery}order=tanggal.desc,id.asc`,
+      limit
     );
     if (data && Array.isArray(data)) {
       const deduped = deduplicateQueueItems(data);
