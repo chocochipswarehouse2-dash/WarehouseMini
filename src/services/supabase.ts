@@ -1666,26 +1666,32 @@ export async function syncPendingStockOpnameFromLogProduk(
         }
       }
 
-      // 5. Query existing items in stock_opname_queue to avoid re-inserting
-      const existingKeys = new Set<string>();
+      // 5. Query existing INVOICES in stock_opname_queue to avoid re-calculating them ENTIRELY
+      const existingInvoices = new Set<string>();
       const invChunkSize = 50;
       for (let i = 0; i < validInvoices.length; i += invChunkSize) {
         const chunk = validInvoices.slice(i, i + invChunkSize);
         try {
           const inClause = chunk.map((inv) => `"${inv}"`).join(',');
-          const existingRows = await supabaseFetchAllPages<StockOpnameQueueItem>(
+          const existingRows = await supabaseFetchAllPages<{ invoice: string }>(
             'stock_opname_queue',
-            `invoice=in.(${encodeURIComponent(inClause)})&select=invoice,sku,lokasi&order=id.asc`
+            `invoice=in.(${encodeURIComponent(inClause)})&select=invoice`
           );
           if (existingRows && Array.isArray(existingRows)) {
             for (const row of existingRows) {
-              const k = `${(row.invoice || '').trim()}__${(row.sku || '').trim().toUpperCase()}__${(row.lokasi || '').trim().toUpperCase()}`;
-              existingKeys.add(k);
+              if (row.invoice) existingInvoices.add(row.invoice.trim());
             }
           }
         } catch (queryErr) {
-          console.warn('Error checking existing SO queue keys:', queryErr);
+          console.warn('Error checking existing SO queue invoices:', queryErr);
         }
+      }
+
+      // Filter to only truly unprocessed invoices
+      const unprocessedInvoices = validInvoices.filter(inv => !existingInvoices.has(inv));
+
+      if (!unprocessedInvoices.length) {
+        return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
       }
 
       // 6. Perform Full Location Reconciliation for each (invoice, location)
@@ -1699,11 +1705,13 @@ export async function syncPendingStockOpnameFromLogProduk(
         size: string;
         qty_sistem: number;
         qty_fisik: number;
+        selisih: number;
+        status: string;
         operator: string;
         tanggal: string;
       }[] = [];
 
-      for (const inv of validInvoices) {
+      for (const inv of unprocessedInvoices) {
         const meta = invoiceMeta.get(inv);
         if (!meta) continue;
         const locations = invoiceLocationsMap.get(inv) || new Set();
@@ -1737,9 +1745,6 @@ export async function syncPendingStockOpnameFromLogProduk(
           ]);
 
           for (const sku of allSkusForLoc) {
-            const dedupKey = `${inv.trim()}__${sku.trim().toUpperCase()}__${lokasi.trim().toUpperCase()}`;
-            if (existingKeys.has(dedupKey)) continue;
-
             const scannedItem = scannedForLoc.get(sku);
             const sysRow = sysMap.get(sku);
 
@@ -1747,7 +1752,7 @@ export async function syncPendingStockOpnameFromLogProduk(
             const qty_sistem = sysRow ? (Number(sysRow.sisa_stok) || 0) : 0;
 
             const selisih = qty_fisik - qty_sistem;
-            if (selisih === 0) continue; // In sync, equilibrium reached!
+            const status = selisih === 0 ? 'MATCHED' : 'PENDING';
 
             unqueuedEntries.push({
               invoice: inv,
@@ -1758,6 +1763,8 @@ export async function syncPendingStockOpnameFromLogProduk(
               size: sysRow?.size || scannedItem?.size || '-',
               qty_sistem,
               qty_fisik,
+              selisih,
+              status,
               operator: scannedItem?.operator || meta.operator || 'Operator WA',
               tanggal: scannedItem?.tanggal || meta.items[0]?.created_at || new Date().toISOString(),
             });
@@ -1766,7 +1773,7 @@ export async function syncPendingStockOpnameFromLogProduk(
       }
 
       if (!unqueuedEntries.length) {
-        return { success: true, processedInvoices: validInvoices.length, newQueueItemsCount: 0 };
+        return { success: true, processedInvoices: unprocessedInvoices.length, newQueueItemsCount: 0 };
       }
 
       // 7. Batch fetch authoritative product name & size from master_produk for authoritative names
@@ -1795,22 +1802,21 @@ export async function syncPendingStockOpnameFromLogProduk(
       // 8. Assemble final queue items with clear reasons according to blueprint
       const queueMap = new Map<string, any>();
       for (const entry of unqueuedEntries) {
-        const selisih = entry.qty_fisik - entry.qty_sistem;
-        if (selisih === 0) continue;
-
         const master = masterMap.get(entry.sku);
         const namaProduk = master?.nama_produk || entry.nama_produk || entry.sku;
         const size = master?.size || entry.size || '-';
         const dedupKey = `${entry.invoice.trim()}__${entry.sku.toUpperCase()}__${entry.lokasi.toUpperCase()}`;
 
-        if (!queueMap.has(dedupKey) && !existingKeys.has(dedupKey)) {
-          let alasan = `Selisih Opname (${selisih > 0 ? `+${selisih}` : selisih})`;
-          if (entry.qty_fisik === 0 && entry.qty_sistem !== 0) {
+        if (!queueMap.has(dedupKey)) {
+          let alasan = `Selisih Opname (${entry.selisih > 0 ? `+${entry.selisih}` : entry.selisih})`;
+          if (entry.status === 'MATCHED') {
+            alasan = 'Sistem & Fisik Sesuai';
+          } else if (entry.qty_fisik === 0 && entry.qty_sistem !== 0) {
             alasan = `Tidak Ditemukan Saat SO (Scan: 0, Sis: ${entry.qty_sistem})`;
           } else if (entry.qty_sistem === 0 && entry.qty_fisik !== 0) {
             alasan = `Barang Baru di Rak (Scan: ${entry.qty_fisik})`;
           } else if (entry.qty_sistem < 0) {
-            alasan = `Koreksi Stok Minus (${selisih > 0 ? `+${selisih}` : selisih})`;
+            alasan = `Koreksi Stok Minus (${entry.selisih > 0 ? `+${entry.selisih}` : entry.selisih})`;
           }
 
           const jenis = entry.invoice.startsWith('IMP-')
@@ -1833,7 +1839,7 @@ export async function syncPendingStockOpnameFromLogProduk(
             qty_sistem: entry.qty_sistem,
             qty_fisik: entry.qty_fisik,
             selisih,
-            status: 'PENDING',
+            status: entry.status,
             jenis,
             alasan,
             operator: entry.operator,
@@ -1896,7 +1902,7 @@ export async function recalculatePendingStockOpnameQueue(
         new Set(pendingRows.map((r) => (r.invoice || r.sesi_id || '').trim()).filter(Boolean))
       );
 
-      // Delete existing pending rows for these invoices
+      // Delete existing pending/matched rows for these invoices
       const chunkInv = 25;
       for (let i = 0; i < targetInvoices.length; i += chunkInv) {
         const chunk = targetInvoices.slice(i, i + chunkInv);
@@ -1905,7 +1911,7 @@ export async function recalculatePendingStockOpnameQueue(
           'stock_opname_queue',
           'DELETE',
           null,
-          `status=eq.PENDING&invoice=in.(${encodeURIComponent(inClause)})`
+          `status=in.(PENDING,MATCHED)&invoice=in.(${encodeURIComponent(inClause)})`
         );
       }
     }
@@ -2012,10 +2018,12 @@ export async function processStockOpnameCsvImport(
         const qty_sistem = sysRow ? (Number(sysRow.sisa_stok) || 0) : 0;
         const selisih = qty_fisik - qty_sistem;
 
-        if (selisih === 0) continue; // In sync, no adjustment needed
+        const status = selisih === 0 ? 'MATCHED' : 'PENDING';
 
         let reason = `Selisih Opname CSV (${selisih > 0 ? `+${selisih}` : selisih})`;
-        if (qty_fisik === 0 && qty_sistem !== 0) {
+        if (selisih === 0) {
+          reason = 'Sistem & Fisik Sesuai';
+        } else if (qty_fisik === 0 && qty_sistem !== 0) {
           reason = `Tidak Ditemukan Saat SO CSV (Scan: 0, Sis: ${qty_sistem})`;
         } else if (qty_sistem === 0 && qty_fisik !== 0) {
           reason = `Barang Baru di Rak CSV (Scan: ${qty_fisik})`;
@@ -2034,7 +2042,7 @@ export async function processStockOpnameCsvImport(
           qty_sistem,
           qty_fisik,
           selisih,
-          status: 'PENDING',
+          status,
           jenis: 'Opname CSV',
           alasan: reason,
           operator: operatorName,
