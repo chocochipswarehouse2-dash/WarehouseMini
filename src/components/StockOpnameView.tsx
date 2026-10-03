@@ -140,7 +140,7 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       }
 
       const data = await fetchStockOpnameQueue('ALL');
-      if (data && Array.isArray(data) && data.length > 0) {
+      if (data && Array.isArray(data)) {
         setSoQueue(dedupQueueList(data));
       }
       setSelectedSoIds([]);

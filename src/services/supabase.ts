@@ -1633,21 +1633,23 @@ export async function syncPendingStockOpnameFromLogProduk(
 
       // 5. Query existing items in stock_opname_queue to avoid re-inserting
       const existingKeys = new Set<string>();
-      const invChunkSize = 25;
+      const invChunkSize = 50;
+      const sbClient = getSupabaseClient();
       for (let i = 0; i < validInvoices.length; i += invChunkSize) {
         const chunk = validInvoices.slice(i, i + invChunkSize);
-        const inClause = chunk.map((inv) => `"${inv}"`).join(',');
-        const existingRows = await supabaseFetch<StockOpnameQueueItem[]>(
-          'stock_opname_queue',
-          'GET',
-          null,
-          `invoice=in.(${encodeURIComponent(inClause)})&select=invoice,sku,lokasi`
-        );
-        if (existingRows && Array.isArray(existingRows)) {
-          for (const row of existingRows) {
-            const k = `${(row.invoice || '').trim()}__${(row.sku || '').trim().toUpperCase()}__${(row.lokasi || '').trim().toUpperCase()}`;
-            existingKeys.add(k);
+        try {
+          const { data: existingRows } = await sbClient
+            .from('stock_opname_queue')
+            .select('invoice,sku,lokasi')
+            .in('invoice', chunk);
+          if (existingRows && Array.isArray(existingRows)) {
+            for (const row of existingRows) {
+              const k = `${(row.invoice || '').trim()}__${(row.sku || '').trim().toUpperCase()}__${(row.lokasi || '').trim().toUpperCase()}`;
+              existingKeys.add(k);
+            }
           }
+        } catch (queryErr) {
+          console.warn('Error checking existing SO queue keys:', queryErr);
         }
       }
 
@@ -5395,7 +5397,7 @@ export async function fetchRosterShiftList(
   endDate?: string
 ): Promise<RosterShiftRecord[]> {
   try {
-    let query = 'select=*&order=tanggal.asc&limit=1000';
+    let query = 'select=*&order=tanggal.asc&limit=10000';
     if (nik) {
       query += `&nik=eq.${encodeURIComponent(nik)}`;
     }
