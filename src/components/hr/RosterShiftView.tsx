@@ -78,14 +78,6 @@ const DEFAULT_SHIFTS: Record<string, ShiftPreset> = {
     badgeBg: 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800',
     badgeText: 'text-indigo-700 dark:text-indigo-300',
   },
-  'Shift 3': {
-    masuk: '12:00',
-    pulang: '21:00',
-    color: 'purple',
-    label: 'Shift 3 (12:00 - 21:00)',
-    badgeBg: 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800',
-    badgeText: 'text-purple-700 dark:text-purple-300',
-  },
   'Shift 3a': {
     masuk: '12:00',
     pulang: '21:00',
@@ -95,12 +87,12 @@ const DEFAULT_SHIFTS: Record<string, ShiftPreset> = {
     badgeText: 'text-purple-700 dark:text-purple-300',
   },
   'Shift 3b': {
-    masuk: '13:00',
-    pulang: '22:00',
-    color: 'purple',
-    label: 'Shift 3b (13:00 - 22:00)',
-    badgeBg: 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800',
-    badgeText: 'text-purple-700 dark:text-purple-300',
+    masuk: '11:00',
+    pulang: '20:00',
+    color: 'teal',
+    label: 'Shift 3b (11:00 - 20:00)',
+    badgeBg: 'bg-teal-50 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800',
+    badgeText: 'text-teal-700 dark:text-teal-300',
   },
   'Libur': {
     masuk: '',
@@ -375,9 +367,9 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     const lower = s.toLowerCase();
     if (lower === '1' || lower === 'shift 1' || lower === 'shift1') return 'Shift 1';
     if (lower === '2' || lower === 'shift 2' || lower === 'shift2') return 'Shift 2';
-    if (lower === '3' || lower === 'shift 3' || lower === 'shift3') return 'Shift 3';
     if (lower === '3a' || lower === 'shift 3a' || lower === 'shift3a') return 'Shift 3a';
     if (lower === '3b' || lower === 'shift 3b' || lower === 'shift3b') return 'Shift 3b';
+    if (lower === '3' || lower === 'shift 3' || lower === 'shift3') return 'Shift 3a';
     if (lower === 'libur' || lower === 'off' || lower === 'libur (off)') return 'Libur';
     if (lower === 'cuti' || lower === 'cuti tahunan') return 'Cuti';
     if (lower === 'izin' || lower === 'ijin' || lower === 'sakit') return 'Izin';
@@ -414,10 +406,10 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     // 3. Pencocokan cerdas / fuzzy keyword shift:
     if (sLower.includes('3b')) {
       const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('3b'));
-      return { jamMasuk: opt?.masuk || '13:00', jamPulang: opt?.pulang || '22:00' };
+      return { jamMasuk: opt?.masuk || '11:00', jamPulang: opt?.pulang || '20:00' };
     }
     if (sLower.includes('3a') || sLower.includes('shift 3') || sLower === '3') {
-      const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('3'));
+      const opt = allShiftOptions.find((o) => o.name.toLowerCase().includes('3a') || o.name.toLowerCase().includes('3'));
       return { jamMasuk: opt?.masuk || '12:00', jamPulang: opt?.pulang || '21:00' };
     }
     if (sLower.includes('shift 2') || sLower === '2') {
@@ -509,20 +501,22 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       : rosterList;
     let s1 = 0;
     let s2 = 0;
-    let s3 = 0;
+    let s3a = 0;
+    let s3b = 0;
     let libur = 0;
     let cuti = 0;
 
     active.forEach((r) => {
       const s = (r.shift || '').toLowerCase();
-      if (s.includes('shift 1') || s === '1') s1++;
+      if (s.includes('3b')) s3b++;
+      else if (s.includes('3a') || s.includes('shift 3') || s === '3') s3a++;
       else if (s.includes('shift 2') || s === '2') s2++;
-      else if (s.includes('shift 3') || s === '3') s3++;
+      else if (s.includes('shift 1') || s === '1') s1++;
       else if (s.includes('libur') || s.includes('off')) libur++;
       else if (s.includes('cuti') || s.includes('izin') || s.includes('ijin') || s.includes('sakit')) cuti++;
     });
 
-    return { total: active.length, s1, s2, s3, libur, cuti };
+    return { total: active.length, s1, s2, s3a, s3b, libur, cuti };
   }, [rosterList, selectedDate]);
 
   // Days in current weekly view
@@ -1371,28 +1365,28 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
 
           <div className="bg-purple-50/50 dark:bg-purple-950/30 p-3 rounded-2xl border border-purple-100 dark:border-purple-900/40">
             <span className="text-[10px] font-black text-purple-500 uppercase tracking-wider block mb-0.5">
-              Shift 3 (12:00)
+              Shift 3a (12:00)
             </span>
             <span className="text-base sm:text-lg font-black text-purple-700 dark:text-purple-300">
-              {summaryStats.s3}
+              {summaryStats.s3a}
+            </span>
+          </div>
+
+          <div className="bg-teal-50/50 dark:bg-teal-950/30 p-3 rounded-2xl border border-teal-100 dark:border-teal-900/40">
+            <span className="text-[10px] font-black text-teal-500 uppercase tracking-wider block mb-0.5">
+              Shift 3b (11:00)
+            </span>
+            <span className="text-base sm:text-lg font-black text-teal-700 dark:text-teal-300">
+              {summaryStats.s3b}
             </span>
           </div>
 
           <div className="bg-rose-50/50 dark:bg-rose-950/30 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/40">
             <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block mb-0.5">
-              Libur / Off
+              Libur / Cuti
             </span>
             <span className="text-base sm:text-lg font-black text-rose-700 dark:text-rose-300">
-              {summaryStats.libur}
-            </span>
-          </div>
-
-          <div className="bg-amber-50/50 dark:bg-amber-950/30 p-3 rounded-2xl border border-amber-100 dark:border-amber-900/40">
-            <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider block mb-0.5">
-              Cuti / Izin
-            </span>
-            <span className="text-base sm:text-lg font-black text-amber-700 dark:text-amber-300">
-              {summaryStats.cuti}
+              {summaryStats.libur + summaryStats.cuti}
             </span>
           </div>
         </div>
@@ -1431,9 +1425,10 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
           >
             <option value="all">Semua Shift</option>
-            <option value="Shift 1">Shift 1 (08:00)</option>
-            <option value="Shift 2">Shift 2 (09:00)</option>
-            <option value="Shift 3">Shift 3 (12:00)</option>
+            <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
+            <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
+            <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+            <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
             <option value="Libur">Libur (Off)</option>
             <option value="Cuti">Cuti / Izin</option>
           </select>
@@ -2138,7 +2133,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 )}
 
                 {/* Quick Shift Pills for Instant 1-Click Select */}
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {Object.keys(DEFAULT_SHIFTS).map((key) => {
                     const preset = DEFAULT_SHIFTS[key];
                     const isSelected = editingShift.shift === key;

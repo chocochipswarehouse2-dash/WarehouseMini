@@ -38,6 +38,7 @@ import {
   Map,
   ShieldAlert,
   Factory,
+  Receipt,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { hasPermission, isSuperadmin, canAccessSettings, ROLE_DETAILS } from '../services/permissions';
@@ -127,6 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
   const canCetakBarcode = userIsAdmin || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || canCetakLabel || canInventory;
+  const canFormBbk = userIsAdmin || hasPermission(session, 'menu_ops_bbk') || !!session;
 
   // HR
   const canViewKaryawan = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
@@ -247,6 +249,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: QrCode,
       description: 'Stiker Thermal 50×20 mm & Import Massal',
       access: canCetakBarcode,
+    },
+    {
+      id: 'form_bbk' as ActivePage,
+      label: 'Form BBK (Bank Keluar)',
+      shortLabel: 'Form BBK',
+      icon: Receipt,
+      description: 'Pengajuan Dana Operasional, Vendor & Riwayat BBK',
+      access: canFormBbk,
     },
   ].filter((item) => item.access);
 

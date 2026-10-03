@@ -789,7 +789,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
             </div>
 
             <div className="p-4 sm:p-5">
-              {/* TAB 1: LIST PRODUK MULTI-SELECT & OUTLET STOCK */}
+              {/* TAB 1: LIST PRODUK MASTER MULTI-SELECT */}
               {activeTab === 'catalog_multi' && (
                 <TabKatalogMultiSelect
                   productCatalog={productCatalog}

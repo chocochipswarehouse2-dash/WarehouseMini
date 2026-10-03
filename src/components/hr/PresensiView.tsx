@@ -1606,12 +1606,14 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                             onChange={(e) => setEditPresensiData({ ...editPresensiData, shift: e.target.value })}
                             className="border p-1.5 rounded-lg text-xs bg-white dark:bg-slate-900"
                           >
-                            <option value="Shift 1">Shift 1</option>
-                            <option value="Shift 2">Shift 2</option>
-                            <option value="Shift 3">Shift 3</option>
-                            <option value="Libur">Libur</option>
+                            <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
+                            <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
+                            <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+                            <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
+                            <option value="Libur">Libur (Off)</option>
                             <option value="Cuti">Cuti</option>
                             <option value="Izin">Izin</option>
+                            <option value="Sakit">Sakit</option>
                           </select>
                         </td>
                         <td className="p-3">
@@ -1880,7 +1882,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     >
                       <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
                       <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
-                      <option value="Shift 3">Shift 3 (12:00 - 21:00)</option>
+                      <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+                      <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
                       <option value="Libur">Libur (Off)</option>
                     </select>
                   </div>
@@ -1930,7 +1933,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                     >
                       <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
                       <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
-                      <option value="Shift 3">Shift 3 (12:00 - 21:00)</option>
+                      <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+                      <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
                       <option value="Libur">Libur (Off)</option>
                     </select>
                   </div>

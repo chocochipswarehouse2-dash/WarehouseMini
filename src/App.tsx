@@ -113,6 +113,7 @@ const CetakLabelView = lazyWithRetry(() => import('./components/CetakLabelView')
 const CetakBarcodeProdukView = lazyWithRetry(() => import('./components/CetakBarcodeProdukView').then(m => ({ default: m.CetakBarcodeProdukView })));
 const PesananSayaView = lazyWithRetry(() => import('./components/PesananSaya/PesananSayaView').then(m => ({ default: m.PesananSayaView })));
 const PusatResolusiView = lazyWithRetry(() => import('./components/PusatResolusi/PusatResolusiView').then(m => ({ default: m.default })));
+const FormBbkView = lazyWithRetry(() => import('./components/FormBbkView').then(m => ({ default: m.FormBbkView })));
 const SupabaseMigrationView = lazyWithRetry(() => import('./components/SupabaseMigrationView').then(m => ({ default: m.SupabaseMigrationView })));
 
 import {
@@ -192,9 +193,13 @@ const PAGE_TO_PATH: Record<ActivePage, string> = {
   penerimaan: 'penerimaan',
   manual_shipment: 'manual-shipment',
   pusat_resolusi: 'pusat-resolusi',
+  form_bbk: 'form-bbk',
 };
 
 const PATH_TO_PAGE: Record<string, ActivePage> = {
+  'form-bbk': 'form_bbk',
+  'bbk': 'form_bbk',
+  'bukti-bank-keluar': 'form_bbk',
   'operasi-stok': 'operasi_stok',
   'katalog-produk': 'katalog_produk',
   'katalog': 'katalog_produk',
@@ -1883,6 +1888,9 @@ export default function App() {
               )}
               {activePage === 'katalog_produk' && (
                   <KatalogProdukView session={session} onNotify={showToast} />
+              )}
+              {activePage === 'form_bbk' && (
+                  <FormBbkView session={session} onNotify={showToast} />
               )}
               {activePage === 'roadmap' && (
                   <RoadmapView session={session} onShowToast={showToast} />

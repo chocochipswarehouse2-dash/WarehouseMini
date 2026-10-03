@@ -32,6 +32,7 @@ export type ActivePage =
   | 'roadmap'
   | 'katalog_produk'
   | 'pusat_resolusi'
+  | 'form_bbk'
   | 'supabase_migration';
 
 export interface KatalogVariant {

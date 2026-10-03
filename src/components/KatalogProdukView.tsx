@@ -12,7 +12,6 @@ import {
   Info,
   RefreshCw,
   Printer,
-  QrCode,
   FileText,
   Eye,
   EyeOff,
@@ -64,7 +63,6 @@ import { cleanProductName } from '../utils/sortUtils';
 import { getAllProductsFromLocalDb } from '../services/localDb';
 import { getSupabaseClient } from '../services/supabase';
 import { KatalogUploadModal } from './katalog/KatalogUploadModal';
-import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { KatalogA4PrintModal } from './katalog/KatalogA4PrintModal';
 import { KatalogImageLightbox } from './katalog/KatalogImageLightbox';
 import { KatalogFilterDropdown } from './katalog/KatalogFilterDropdown';
@@ -152,9 +150,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [migrationStatus, setMigrationStatus] = useState<string>('');
 
   // Modals
-  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
-  const [barcodeTargetItem, setBarcodeTargetItem] = useState<KatalogItem | null>(null);
-  const [barcodeTargetItems, setBarcodeTargetItems] = useState<KatalogItem[] | null>(null);
   const [a4ModalOpen, setA4ModalOpen] = useState(false);
   const [a4TargetBatchIds, setA4TargetBatchIds] = useState<string[]>([]);
 
@@ -1366,7 +1361,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                 <span>Katalog Produk WMS</span>
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Katalog model pakaian & rincian varian multi-koleksi, cetak barcode thermal dan cetak katalog produk.
+                Katalog model pakaian & rincian varian multi-koleksi serta cetak dokumen katalog produk.
               </p>
             </div>
           </div>
@@ -1391,22 +1386,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
               <span>Migrasi GDrive ({totalBase64Count})</span>
             </button>
           )}
-
-          {/* Tombol Cetak Barcode */}
-          <button
-            type="button"
-            onClick={() => {
-              setBarcodeTargetItem(null);
-              setBarcodeTargetItems(allFilteredItems);
-              setBarcodeModalOpen(true);
-            }}
-            disabled={allFilteredItems.length === 0}
-            className="px-3 py-2 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/40 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer border border-violet-200 dark:border-violet-800 shadow-2xs disabled:opacity-50"
-            title="Cetak stiker barcode thermal 50x20mm"
-          >
-            <QrCode className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-            <span>Cetak Barcode ({allFilteredItems.length})</span>
-          </button>
 
           {/* Tombol Cetak Katalog */}
           <button
@@ -1782,21 +1761,7 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBarcodeTargetItem(null);
-                        setBarcodeTargetItems(batch.items);
-                        setBarcodeModalOpen(true);
-                      }}
-                      disabled={batch.items.length === 0}
-                      className="px-3 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-slate-200 dark:border-slate-700 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 whitespace-nowrap shrink-0"
-                      title="Cetak barcode seluruh produk di katalog ini"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      <span>Cetak Barcode</span>
-                    </button>
-
+                    {/* Cetak Katalog PDF */}
                     <button
                       type="button"
                       onClick={() => {
@@ -1877,11 +1842,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                             : !hideVariants
                         }
                         onToggleTable={() => handleToggleCardTable(prod.id)}
-                        onPrintBarcode={() => {
-                          setBarcodeTargetItem(prod);
-                          setBarcodeTargetItems(null);
-                          setBarcodeModalOpen(true);
-                        }}
                         onUploadPhoto={() => {
                           setTargetImageUploadItemId(prod.id);
                           imageInputRef.current?.click();
@@ -1921,11 +1881,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
                     : !hideVariants
                 }
                 onToggleTable={() => handleToggleCardTable(prod.id)}
-                onPrintBarcode={() => {
-                  setBarcodeTargetItem(prod);
-                  setBarcodeTargetItems(null);
-                  setBarcodeModalOpen(true);
-                }}
                 onUploadPhoto={() => {
                   setTargetImageUploadItemId(prod.id);
                   imageInputRef.current?.click();
@@ -1979,15 +1934,6 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         existingBatches={batches}
         onConfirmSave={handleConfirmSaveUpload}
         uploadProgressMsg={uploadProgressMsg}
-      />
-
-      {/* MODAL CETAK BARCODE THERMAL 50x20mm */}
-      <KatalogBarcodeModal
-        isOpen={barcodeModalOpen}
-        onClose={() => setBarcodeModalOpen(false)}
-        item={barcodeTargetItem}
-        items={barcodeTargetItems}
-        onNotify={onNotify}
       />
 
       {/* MODAL CETAK KATALOG */}
@@ -2056,7 +2002,6 @@ interface ProductCardItemProps {
   batch: KatalogBatch;
   isTableVisible: boolean;
   onToggleTable: () => void;
-  onPrintBarcode: () => void;
   onUploadPhoto: () => void;
   onDropImage?: (file: File | Blob) => void;
   onEditProduct: () => void;
@@ -2071,7 +2016,6 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
   batch,
   isTableVisible,
   onToggleTable,
-  onPrintBarcode,
   onUploadPhoto,
   onDropImage,
   onEditProduct,
@@ -2215,7 +2159,7 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
           </div>
         </div>
 
-        {/* Info Nama Produk, Harga, & Barcode */}
+        {/* Info Nama Produk & Harga */}
         <div className="p-4 space-y-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -2233,17 +2177,6 @@ const ProductCardItem: React.FC<ProductCardItemProps> = ({
                 Rp {item.price || '-'}
               </div>
             </div>
-
-            {/* Tombol Cetak Barcode */}
-            <button
-              type="button"
-              onClick={onPrintBarcode}
-              className="px-2.5 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/50 rounded-xl border border-violet-200 dark:border-violet-800 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
-              title="Cetak stiker barcode thermal 50x20mm produk ini"
-            >
-              <QrCode className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-              <span>Barcode</span>
-            </button>
           </div>
 
           {/* BADGE JADWAL PUBLISH ONLINE / OFFLINE */}

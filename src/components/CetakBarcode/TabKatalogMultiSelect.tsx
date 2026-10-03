@@ -3,11 +3,8 @@ import {
   Search,
   CheckSquare,
   Square,
-  SlidersHorizontal,
   Layers,
-  ArrowDownCircle,
   Plus,
-  RefreshCw,
 } from 'lucide-react';
 import { ProductItem } from '../../types';
 import {

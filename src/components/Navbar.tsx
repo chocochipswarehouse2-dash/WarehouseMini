@@ -33,6 +33,7 @@ import {
   QrCode,
   ShieldAlert,
   BookOpen,
+  Receipt,
 } from 'lucide-react';
 import { UserSession, ActivePage } from '../types';
 import { canAccessSettings } from '../services/permissions';
@@ -130,6 +131,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       
       case 'pusat_resolusi':
         return { title: 'Pusat Resolusi', subtitle: 'Layanan Retur, Refund, Komplain & Rating', icon: ShieldAlert };
+      case 'form_bbk':
+        return { title: 'Form BBK (Bank Keluar)', subtitle: 'Pengajuan & Riwayat Request BBK Vendor / Operasional', icon: Receipt };
       default:
         return { title: 'WMS', subtitle: 'Warehouse System', icon: ScanBarcode };
     }
