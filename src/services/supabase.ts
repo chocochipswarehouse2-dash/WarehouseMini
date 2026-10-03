@@ -1525,17 +1525,19 @@ export async function syncPendingStockOpnameFromLogProduk(
       const sinceDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
 
       // 1. Fetch recent SO scan logs
-      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc&limit=5000`;
+      // NOTE: Supabase caps every response at 1000 rows. A single `limit=5000` request silently
+      // truncated the SO scan list, so older invoices were reconciled with PARTIAL scans and
+      // unscanned-looking SKUs became bogus "Scan: 0" PENDING rows. Always page through all rows.
+      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc,id.asc`;
       if (options?.forceInvoices && options.forceInvoices.length > 0) {
         const inClause = options.forceInvoices.map((inv) => `"${inv}"`).join(',');
-        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc&limit=5000`;
+        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc,id.asc`;
       }
 
-      const soLogs = await supabaseFetch<LogProdukItem[]>(
+      const soLogs = await supabaseFetchAllPages<LogProdukItem>(
         'log_produk',
-        'GET',
-        null,
-        soLogsQuery
+        soLogsQuery,
+        50000
       );
 
       if (!soLogs || !soLogs.length) {
@@ -1648,11 +1650,9 @@ export async function syncPendingStockOpnameFromLogProduk(
       for (let i = 0; i < allDistinctLocations.length; i += locChunkSize) {
         const chunk = allDistinctLocations.slice(i, i + locChunkSize);
         const inClause = chunk.map((l) => `"${l}"`).join(',');
-        const stockRows = await supabaseFetch<StockRealtimeItem[]>(
+        const stockRows = await supabaseFetchAllPages<StockRealtimeItem>(
           'stok_real_fisik',
-          'GET',
-          null,
-          `lokasi=in.(${encodeURIComponent(inClause)})&select=sku,nama_produk,size,lokasi,area,sisa_stok`
+          `lokasi=in.(${encodeURIComponent(inClause)})&select=sku,nama_produk,size,lokasi,area,sisa_stok&order=lokasi.asc,sku.asc`
         );
         if (stockRows && Array.isArray(stockRows)) {
           for (const s of stockRows) {
@@ -1878,17 +1878,16 @@ export async function recalculatePendingStockOpnameQueue(
   specificInvoices?: string[]
 ): Promise<{ success: boolean; deletedCount: number; insertedCount: number; error?: string }> {
   try {
-    let queryFilter = 'status=eq.PENDING&select=id,invoice,sesi_id&limit=5000';
+    let queryFilter = 'status=eq.PENDING&select=id,invoice,sesi_id&order=id.asc';
     if (specificInvoices && specificInvoices.length > 0) {
       const inClause = specificInvoices.map((inv) => `"${inv}"`).join(',');
       queryFilter += `&invoice=in.(${encodeURIComponent(inClause)})`;
     }
 
-    const pendingRows = await supabaseFetch<{ id: string; invoice?: string; sesi_id?: string }[]>(
+    const pendingRows = await supabaseFetchAllPages<{ id: string; invoice?: string; sesi_id?: string }>(
       'stock_opname_queue',
-      'GET',
-      null,
-      queryFilter
+      queryFilter,
+      50000
     );
 
     let targetInvoices: string[] = [];
