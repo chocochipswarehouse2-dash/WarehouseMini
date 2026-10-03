@@ -3,22 +3,17 @@ import {
   Search,
   CheckSquare,
   Square,
-  Building2,
   SlidersHorizontal,
   Layers,
   ArrowDownCircle,
   Plus,
   RefreshCw,
-  Store,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { ProductItem } from '../../types';
 import {
   ProductBarcodeItem,
   getProductMasterPrice,
   formatProductPriceWithTag,
-  getOutletStockForProduct,
   isRealSize,
 } from './types';
 
@@ -27,13 +22,6 @@ interface TabKatalogMultiSelectProps {
   onAddMultipleToQueue: (items: Omit<ProductBarcodeItem, 'id' | 'selected'>[]) => void;
   onShowToast?: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
-
-const DEFAULT_MAIN_OUTLETS = [
-  { key: 'MAP', label: 'Gudang Utama (MAP / Web)' },
-  { key: 'LIVE', label: 'Studio & Live Sample' },
-  { key: 'SHOPEE', label: 'Shopee Live / Ready' },
-  { key: 'TIKTOK', label: 'TikTok Shop' },
-];
 
 export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
   productCatalog,
@@ -48,14 +36,8 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
   // Multi-choice selections: SKU -> { selected: boolean, customQty: number }
   const [itemSelections, setItemSelections] = useState<Record<string, { selected: boolean; customQty: number }>>({});
 
-  // Mode Qty: 'manual' vs 'outlet'
-  const [qtyMode, setQtyMode] = useState<'manual' | 'outlet'>('manual');
+  // Batch Qty Settings
   const [manualBatchQty, setManualBatchQty] = useState<number>(1);
-
-  // Multi-choice Outlets
-  const [selectedOutlets, setSelectedOutlets] = useState<string[]>(['MAP']);
-  const [outletDropdownOpen, setOutletDropdownOpen] = useState(false);
-  const [outletSearch, setOutletSearch] = useState('');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -72,12 +54,9 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     return map;
   }, [productCatalog]);
 
-  // Discover all possible outlets/channels dynamically across the catalog (fast scan)
-  const { availableOutlets, availableCategories } = useMemo(() => {
-    const outletsSet = new Set<string>();
-    DEFAULT_MAIN_OUTLETS.forEach((o) => outletsSet.add(o.key));
+  // Discover all possible categories across the catalog
+  const availableCategories = useMemo(() => {
     const catSet = new Set<string>();
-
     const scanLimit = Math.min(productCatalog.length, 5000);
     for (let i = 0; i < scanLimit; i++) {
       const p = productCatalog[i];
@@ -85,45 +64,9 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
       if (cat && String(cat).trim()) {
         catSet.add(String(cat).trim());
       }
-      const dpRaw = (p as any)?.dealpos_channels;
-      if (dpRaw && typeof dpRaw === 'object') {
-        const keys = Object.keys(dpRaw);
-        for (let j = 0; j < keys.length; j++) {
-          const k = keys[j];
-          if (
-            typeof dpRaw[k] === 'number' &&
-            !['TP', 'tag_price', 'TagPrice', 'price', 'harga', 'd', 'b', 'cabang'].includes(k)
-          ) {
-            outletsSet.add(k);
-          }
-        }
-      }
     }
-
-    return {
-      availableOutlets: Array.from(outletsSet),
-      availableCategories: Array.from(catSet).sort(),
-    };
+    return Array.from(catSet).sort();
   }, [productCatalog]);
-
-  // Toggle outlet selection
-  const handleToggleOutlet = (key: string) => {
-    setSelectedOutlets((prev) => {
-      if (prev.includes(key)) {
-        return prev.filter((k) => k !== key);
-      } else {
-        return [...prev, key];
-      }
-    });
-  };
-
-  const handleSelectAllOutlets = (selectAll: boolean) => {
-    if (selectAll) {
-      setSelectedOutlets(availableOutlets);
-    } else {
-      setSelectedOutlets([]);
-    }
-  };
 
   // Filtered Products List
   const filteredProducts = useMemo(() => {
@@ -155,10 +98,7 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
 
       // 3. Stock Filter
       if (stockFilter !== 'all') {
-        const currentStock =
-          qtyMode === 'outlet'
-            ? getOutletStockForProduct(p, selectedOutlets)
-            : Number(p.q || p.stokFisik || 0);
+        const currentStock = Number(p.q || p.stokFisik || 0);
 
         if (stockFilter === 'instock' && currentStock <= 0) return false;
         if (stockFilter === 'outstock' && currentStock > 0) return false;
@@ -166,12 +106,12 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
 
       return true;
     });
-  }, [productCatalog, searchQuery, selectedCategory, stockFilter, qtyMode, selectedOutlets]);
+  }, [productCatalog, searchQuery, selectedCategory, stockFilter]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategory, stockFilter, qtyMode, selectedOutlets]);
+  }, [searchQuery, selectedCategory, stockFilter]);
 
   // Pagination Slice
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
@@ -186,11 +126,6 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     const sku = String(p.k || (p as any).sku || '');
     const sel = itemSelections[sku];
     if (sel && sel.customQty !== undefined) return sel.customQty;
-
-    if (qtyMode === 'outlet') {
-      const stock = getOutletStockForProduct(p, selectedOutlets);
-      return Math.max(1, stock > 0 ? stock : 1);
-    }
     return Math.max(1, manualBatchQty);
   };
 
@@ -287,29 +222,6 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     onShowToast?.(`Qty diubah ke ${manualBatchQty} pcs untuk produk terpilih`, 'info');
   };
 
-  // Apply Outlet Stock to all selected items
-  const handleApplyOutletStockToSelected = () => {
-    if (selectedOutlets.length === 0) {
-      onShowToast?.('Pilih minimal 1 outlet terlebih dahulu', 'warning');
-      return;
-    }
-    setItemSelections((prev) => {
-      const next = { ...prev };
-      filteredProducts.forEach((p) => {
-        const sku = String(p.k || (p as any).sku || '');
-        if (!sku) return;
-        const st = getOutletStockForProduct(p, selectedOutlets);
-        const autoQty = Math.max(1, st > 0 ? st : 1);
-        next[sku] = {
-          selected: prev[sku]?.selected ?? (st > 0),
-          customQty: autoQty,
-        };
-      });
-      return next;
-    });
-    onShowToast?.(`Qty disesuaikan dengan stok ${selectedOutlets.length} outlet terpilih`, 'info');
-  };
-
   // Calculate selected items using fast Map lookup (O(selected) instead of O(catalog))
   const selectedProductsList = useMemo(() => {
     const list: ProductItem[] = [];
@@ -328,7 +240,7 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
     return selectedProductsList.reduce((acc, p) => {
       return acc + getProductQty(p);
     }, 0);
-  }, [selectedProductsList, itemSelections, qtyMode, manualBatchQty, selectedOutlets]);
+  }, [selectedProductsList, itemSelections, manualBatchQty]);
 
   // Commit to Print Queue
   const handleCommitToQueue = () => {
@@ -407,150 +319,40 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
           </div>
         </div>
 
-        {/* 2. MODE QTY CETAK: MANUAL vs OUTLET STOCK */}
-        <div className="pt-3 border-t border-slate-200 dark:border-slate-700/80 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+        {/* 2. PENGATURAN BATCH QTY CETAK */}
+        <div className="pt-3 border-t border-slate-200 dark:border-slate-700/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-              Penentuan Qty Cetak:
-            </span>
-            <div className="inline-flex rounded-xl border border-purple-200 dark:border-purple-800 bg-white dark:bg-slate-900 p-0.5 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setQtyMode('manual')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  qtyMode === 'manual'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                Isi Qty Manual
-              </button>
-              <button
-                type="button"
-                onClick={() => setQtyMode('outlet')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  qtyMode === 'outlet'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <Store className="w-3.5 h-3.5" />
-                <span>Berdasarkan Stok Outlet / Store</span>
-              </button>
+            <div className="p-1.5 bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 rounded-lg">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-black text-slate-800 dark:text-white block">
+                Pengaturan Lembar Cetak
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Atur jumlah lembar per produk atau terapkan seragam
+              </span>
             </div>
           </div>
 
-          {/* Controls for Manual Mode */}
-          {qtyMode === 'manual' && (
-            <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-              <span className="text-xs font-bold text-slate-500">Set Qty Seragam:</span>
-              <input
-                type="number"
-                min="1"
-                value={manualBatchQty}
-                onChange={(e) => setManualBatchQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="w-16 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-center text-xs font-black text-slate-900 dark:text-white"
-              />
-              <button
-                type="button"
-                onClick={handleApplyBatchQtyToSelected}
-                className="px-3 py-1 bg-purple-100 dark:bg-purple-950/60 hover:bg-purple-200 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 rounded-lg text-xs font-bold cursor-pointer transition-colors"
-              >
-                Terapkan ke Terpilih
-              </button>
-            </div>
-          )}
-
-          {/* Controls for Outlet Stock Mode */}
-          {qtyMode === 'outlet' && (
-            <div className="relative flex items-center gap-2 w-full lg:w-auto justify-end">
-              <button
-                type="button"
-                onClick={() => setOutletDropdownOpen(!outletDropdownOpen)}
-                className="px-3 py-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-2xs"
-              >
-                <Building2 className="w-3.5 h-3.5" />
-                <span>
-                  Outlet Terpilih ({selectedOutlets.length} Toko)
-                </span>
-                {outletDropdownOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleApplyOutletStockToSelected}
-                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1 shadow-xs"
-                title="Gunakan stok outlet terpilih sebagai jumlah stiker cetak"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Sinkron Qty Cetak = Stok</span>
-              </button>
-
-              {/* Outlet Multi-Select Popover */}
-              {outletDropdownOpen && (
-                <div className="absolute top-full right-0 mt-2 z-40 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
-                    <span className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
-                      <Store className="w-4 h-4 text-purple-600" />
-                      Pilih Store / Outlet:
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectAllOutlets(true)}
-                        className="text-[10px] font-bold text-purple-600 hover:underline cursor-pointer"
-                      >
-                        Pilih Semua
-                      </button>
-                      <span className="text-slate-300">•</span>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectAllOutlets(false)}
-                        className="text-[10px] font-bold text-slate-400 hover:underline cursor-pointer"
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  </div>
-
-                  <input
-                    type="text"
-                    value={outletSearch}
-                    onChange={(e) => setOutletSearch(e.target.value)}
-                    placeholder="Filter nama toko/outlet..."
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                  />
-
-                  <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                    {availableOutlets
-                      .filter((k) => k.toLowerCase().includes(outletSearch.toLowerCase()))
-                      .map((outletKey) => {
-                        const isChecked = selectedOutlets.includes(outletKey);
-                        return (
-                          <label
-                            key={outletKey}
-                            onClick={() => handleToggleOutlet(outletKey)}
-                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
-                              isChecked
-                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 font-bold'
-                                : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                            }`}
-                          >
-                            <span className="truncate">{outletKey}</span>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              readOnly
-                              className="rounded text-purple-600 focus:ring-purple-500"
-                            />
-                          </label>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Controls for Manual Batch Qty */}
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <span className="text-xs font-bold text-slate-500">Set Qty Seragam:</span>
+            <input
+              type="number"
+              min="1"
+              value={manualBatchQty}
+              onChange={(e) => setManualBatchQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              className="w-16 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-center text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <button
+              type="button"
+              onClick={handleApplyBatchQtyToSelected}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs"
+            >
+              Terapkan ke Terpilih
+            </button>
+          </div>
         </div>
       </div>
 
@@ -686,7 +488,7 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
                 <th className="py-2.5 px-2.5 text-center">Size</th>
                 <th className="py-2.5 px-3">Harga Master</th>
                 <th className="py-2.5 px-3 text-center">
-                  {qtyMode === 'outlet' ? `Stok Outlet (${selectedOutlets.length})` : 'Stok Fisik'}
+                  Stok Fisik
                 </th>
                 <th className="py-2.5 px-3 text-center w-36">Qty Cetak</th>
               </tr>
@@ -702,10 +504,7 @@ export const TabKatalogMultiSelect: React.FC<TabKatalogMultiSelectProps> = ({
                 paginatedProducts.map((prod) => {
                   const sku = String(prod.k || (prod as any).sku || '');
                   const isChecked = itemSelections[sku]?.selected ?? false;
-                  const currentStock =
-                    qtyMode === 'outlet'
-                      ? getOutletStockForProduct(prod, selectedOutlets)
-                      : Number(prod.q || prod.stokFisik || 0);
+                  const currentStock = Number(prod.q || prod.stokFisik || 0);
                   const effectiveQty = getProductQty(prod);
                   const masterPrice = getProductMasterPrice(prod);
 

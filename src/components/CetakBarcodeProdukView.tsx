@@ -9,7 +9,6 @@ import {
   Layers,
   Sparkles,
   QrCode,
-  Store,
   FileSpreadsheet,
 } from 'lucide-react';
 import { ProductItem, UserSession } from '../types';
@@ -701,7 +700,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                Cetak barcode satuan, multi-choice master katalog, berdasarkan stok outlet/store, atau import massal Excel/CSV.
+                Cetak barcode satuan, multi-choice master katalog produk, atau import massal Excel/CSV.
               </p>
             </div>
           </div>
@@ -759,7 +758,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
                 }`}
               >
                 <Layers className="w-4 h-4" />
-                <span>Pilih List Produk &amp; Stok Toko</span>
+                <span>Pilih List Master Produk</span>
               </button>
 
               <button

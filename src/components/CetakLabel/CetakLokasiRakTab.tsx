@@ -545,9 +545,18 @@ export const CetakLokasiRakTab: React.FC = () => {
         pageCss = '@page { size: 105mm 148mm; margin: 4mm; page-orientation: upright; }';
       }
 
-      // Font size mapping in pt
-      const codePt =
-        settings.codeFontSize === 'normal'
+      // Font size & QR size mapping in pt & mm
+      const is50x20 = media === 'thermal_50x20';
+
+      const codePt = is50x20
+        ? settings.codeFontSize === 'normal'
+          ? '9pt'
+          : settings.codeFontSize === 'large'
+          ? '11pt'
+          : settings.codeFontSize === 'jumbo'
+          ? '13pt'
+          : '10pt'
+        : settings.codeFontSize === 'normal'
           ? '18pt'
           : settings.codeFontSize === 'large'
           ? '24pt'
@@ -555,8 +564,17 @@ export const CetakLokasiRakTab: React.FC = () => {
           ? '42pt'
           : '32pt'; // xlarge default
 
-      const qrMm =
-        settings.qrSize === 'small'
+      const qrMm = is50x20
+        ? settings.qrSize === 'small'
+          ? '12mm'
+          : settings.qrSize === 'normal'
+          ? '14mm'
+          : settings.qrSize === 'xlarge'
+          ? '16mm'
+          : settings.qrSize === 'jumbo'
+          ? '17mm'
+          : '15mm'
+        : settings.qrSize === 'small'
           ? '22mm'
           : settings.qrSize === 'normal'
           ? '28mm'
@@ -724,6 +742,11 @@ export const CetakLokasiRakTab: React.FC = () => {
               .media-thermal_70x40  { width: 70mm; height: 40mm; padding: 2mm 2.5mm; }
               .media-thermal_50x30  { width: 50mm; height: 30mm; padding: 1.5mm 2mm; }
               .media-thermal_50x20  { width: 50mm; height: 20mm; padding: 1mm 1.5mm; }
+              .media-thermal_50x20 .loc-layout-side-by-side { gap: 2mm; height: 100%; align-items: center; }
+              .media-thermal_50x20 .loc-title-big { font-size: 11pt; line-height: 1.05; }
+              .media-thermal_50x20 .loc-payload-code { font-size: 6.5pt; line-height: 1.1; }
+              .media-thermal_50x20 .loc-badge-tag { font-size: 5.5pt; padding: 0.3mm 1mm; }
+              .media-thermal_50x20 .loc-zone-desc { font-size: 5.5pt; padding: 0.3mm 0.8mm; margin-top: 0.5mm; }
               .rotated-180 { transform: rotate(180deg); }
 
               .a6-sheet {
@@ -862,7 +885,7 @@ export const CetakLokasiRakTab: React.FC = () => {
     codePt: string,
     qrMm: string
   ): string {
-    const isSideBySide = settings.layout === 'side-by-side';
+    const isSideBySide = settings.layout === 'side-by-side' || settings.media === 'thermal_50x20';
 
     if (isSideBySide) {
       return `
@@ -1856,88 +1879,134 @@ export const CetakLokasiRakTab: React.FC = () => {
 
             <div className="p-5 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center min-h-[220px]">
               {currentPreviewItem ? (
-                <div
-                  className={`bg-white text-black p-3.5 rounded-xl shadow-md border border-slate-300 transition-all ${
-                    settings.media === 'a6_4' || settings.media === 'a6_6'
-                      ? 'w-[290px] min-h-[160px]'
-                      : 'w-[320px] min-h-[170px]'
-                  }`}
-                >
-                  {/* Top Bar: Code & Badge */}
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-1.5 mb-2">
-                    <span
-                      className="font-mono font-black text-black leading-tight"
-                      style={{
-                        fontSize:
-                          settings.codeFontSize === 'normal'
-                            ? '1.2rem'
-                            : settings.codeFontSize === 'large'
-                            ? '1.5rem'
-                            : settings.codeFontSize === 'jumbo'
-                            ? '2.2rem'
-                            : '1.8rem',
-                      }}
-                    >
-                      {currentPreviewItem.locCode}
-                    </span>
-                    {settings.showTagBadge && currentPreviewItem.tagBadge && (
-                      <span className="px-2 py-0.5 bg-black text-white rounded text-[10px] font-black uppercase tracking-wider">
-                        {currentPreviewItem.tagBadge}
-                      </span>
-                    )}
-                  </div>
+                settings.media === 'thermal_50x20' ? (
+                  /* Preview Khusus Thermal Roll 50x20 mm (Ukuran Barcode) */
+                  <div className="w-[280px] h-[112px] bg-white text-black p-2.5 rounded-xl shadow-md border border-slate-300 flex items-center justify-between gap-3 transition-all">
+                    {/* Left: QR Code Box */}
+                    <div className="w-[84px] h-[84px] flex items-center justify-center shrink-0">
+                      {qrCache[currentPreviewItem.qrPayload] ? (
+                        <img
+                          src={qrCache[currentPreviewItem.qrPayload]}
+                          alt={currentPreviewItem.qrPayload}
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 font-mono">
+                          QR...
+                        </div>
+                      )}
+                    </div>
 
-                  {/* QR Image Box */}
-                  <div className="flex items-center justify-center my-2">
-                    {qrCache[currentPreviewItem.qrPayload] ? (
-                      <img
-                        src={qrCache[currentPreviewItem.qrPayload]}
-                        alt={currentPreviewItem.qrPayload}
-                        className="object-contain"
+                    {/* Right: Info Code & Details */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {settings.showTagBadge && currentPreviewItem.tagBadge && (
+                          <span className="px-1.5 py-0.5 bg-black text-white rounded text-[8px] font-black uppercase tracking-wider">
+                            {currentPreviewItem.tagBadge}
+                          </span>
+                        )}
+                        <span className="font-mono font-black text-black leading-tight text-base sm:text-lg truncate">
+                          {currentPreviewItem.locCode}
+                        </span>
+                      </div>
+
+                      {settings.showQrPayloadText && (
+                        <div className="font-mono font-bold text-[9px] text-slate-700 truncate mt-0.5">
+                          {currentPreviewItem.qrPayload}
+                        </div>
+                      )}
+
+                      {settings.showZoneDesc && currentPreviewItem.zoneDesc && (
+                        <div className="bg-slate-100 text-slate-900 font-extrabold text-[8.5px] uppercase tracking-wider py-0.5 px-1 rounded truncate mt-1">
+                          {currentPreviewItem.zoneDesc}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`bg-white text-black p-3.5 rounded-xl shadow-md border border-slate-300 transition-all ${
+                      settings.media === 'a6_4' || settings.media === 'a6_6'
+                        ? 'w-[290px] min-h-[160px]'
+                        : 'w-[320px] min-h-[170px]'
+                    }`}
+                  >
+                    {/* Top Bar: Code & Badge */}
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-1.5 mb-2">
+                      <span
+                        className="font-mono font-black text-black leading-tight"
                         style={{
-                          width:
-                            settings.qrSize === 'small'
-                              ? '70px'
-                              : settings.qrSize === 'normal'
-                              ? '85px'
-                              : settings.qrSize === 'xlarge'
-                              ? '130px'
-                              : settings.qrSize === 'jumbo'
-                              ? '150px'
-                              : '110px',
-                          height:
-                            settings.qrSize === 'small'
-                              ? '70px'
-                              : settings.qrSize === 'normal'
-                              ? '85px'
-                              : settings.qrSize === 'xlarge'
-                              ? '130px'
-                              : settings.qrSize === 'jumbo'
-                              ? '150px'
-                              : '110px',
+                          fontSize:
+                            settings.codeFontSize === 'normal'
+                              ? '1.2rem'
+                              : settings.codeFontSize === 'large'
+                              ? '1.5rem'
+                              : settings.codeFontSize === 'jumbo'
+                              ? '2.2rem'
+                              : '1.8rem',
                         }}
-                      />
-                    ) : (
-                      <div className="w-24 h-24 bg-slate-100 flex items-center justify-center text-xs text-slate-400 font-mono">
-                        Loading QR...
+                      >
+                        {currentPreviewItem.locCode}
+                      </span>
+                      {settings.showTagBadge && currentPreviewItem.tagBadge && (
+                        <span className="px-2 py-0.5 bg-black text-white rounded text-[10px] font-black uppercase tracking-wider">
+                          {currentPreviewItem.tagBadge}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* QR Image Box */}
+                    <div className="flex items-center justify-center my-2">
+                      {qrCache[currentPreviewItem.qrPayload] ? (
+                        <img
+                          src={qrCache[currentPreviewItem.qrPayload]}
+                          alt={currentPreviewItem.qrPayload}
+                          className="object-contain"
+                          style={{
+                            width:
+                              settings.qrSize === 'small'
+                                ? '70px'
+                                : settings.qrSize === 'normal'
+                                ? '85px'
+                                : settings.qrSize === 'xlarge'
+                                ? '130px'
+                                : settings.qrSize === 'jumbo'
+                                ? '150px'
+                                : '110px',
+                            height:
+                              settings.qrSize === 'small'
+                                ? '70px'
+                                : settings.qrSize === 'normal'
+                                ? '85px'
+                                : settings.qrSize === 'xlarge'
+                                ? '130px'
+                                : settings.qrSize === 'jumbo'
+                                ? '150px'
+                                : '110px',
+                          }}
+                        />
+                      ) : (
+                        <div className="w-24 h-24 bg-slate-100 flex items-center justify-center text-xs text-slate-400 font-mono">
+                          Loading QR...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Payload Text */}
+                    {settings.showQrPayloadText && (
+                      <div className="text-center font-mono font-bold text-[11px] text-slate-700 mt-1">
+                        {currentPreviewItem.qrPayload}
+                      </div>
+                    )}
+
+                    {/* Subtitle / Zone Desc */}
+                    {settings.showZoneDesc && currentPreviewItem.zoneDesc && (
+                      <div className="text-center bg-slate-100 text-slate-900 font-extrabold text-[11px] uppercase tracking-wider py-1 px-2 rounded-lg mt-1.5">
+                        {currentPreviewItem.zoneDesc}
                       </div>
                     )}
                   </div>
-
-                  {/* Payload Text */}
-                  {settings.showQrPayloadText && (
-                    <div className="text-center font-mono font-bold text-[11px] text-slate-700 mt-1">
-                      {currentPreviewItem.qrPayload}
-                    </div>
-                  )}
-
-                  {/* Subtitle / Zone Desc */}
-                  {settings.showZoneDesc && currentPreviewItem.zoneDesc && (
-                    <div className="text-center bg-slate-100 text-slate-900 font-extrabold text-[11px] uppercase tracking-wider py-1 px-2 rounded-lg mt-1.5">
-                      {currentPreviewItem.zoneDesc}
-                    </div>
-                  )}
-                </div>
+                )
               ) : (
                 <div className="text-slate-400 text-xs">Pilih item untuk pratinjau</div>
               )}
@@ -1979,6 +2048,7 @@ export const CetakLokasiRakTab: React.FC = () => {
                       { key: 'thermal_80x50', label: 'Thermal Roll 80x50 mm' },
                       { key: 'thermal_70x40', label: 'Thermal Roll 70x40 mm' },
                       { key: 'thermal_50x30', label: 'Thermal Roll 50x30 mm' },
+                      { key: 'thermal_50x20', label: 'Thermal Roll 50x20 mm (Ukuran Barcode)' },
                     ].map((m) => (
                       <button
                         key={m.key}

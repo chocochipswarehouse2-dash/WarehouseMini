@@ -37,6 +37,7 @@ import {
   Store,
   Calendar,
   ArrowUpDown,
+  SlidersHorizontal,
 } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import JSZip from 'jszip';
@@ -67,6 +68,7 @@ import { KatalogBarcodeModal } from './katalog/KatalogBarcodeModal';
 import { KatalogA4PrintModal } from './katalog/KatalogA4PrintModal';
 import { KatalogImageLightbox } from './katalog/KatalogImageLightbox';
 import { KatalogFilterDropdown } from './katalog/KatalogFilterDropdown';
+import { KatalogFilterModal } from './katalog/KatalogFilterModal';
 import { KatalogProductModal } from './katalog/KatalogProductModal';
 import { KatalogCreateModal } from './katalog/KatalogCreateModal';
 import { KatalogBatchEditModal, BatchEditPayload } from './katalog/KatalogBatchEditModal';
@@ -107,6 +109,17 @@ const CATALOG_COLOR_PALETTES = [
   { bg: 'bg-cyan-100 dark:bg-cyan-950/60', text: 'text-cyan-800 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800' },
 ];
 
+// Label ringkas nama filter saluran
+const CHANNEL_LABELS: Record<string, string> = {
+  all: 'Semua Saluran',
+  online: 'Online',
+  offline: 'Offline',
+  online_only: 'Online Only',
+  offline_only: 'Offline Only',
+  both: 'Online & Offline',
+  none: 'Belum Ditentukan',
+};
+
 export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, onNotify }) => {
   // State Utama Batches
   const [batches, setBatches] = useState<KatalogBatch[]>([]);
@@ -123,6 +136,9 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const [hideVariants, setHideVariants] = useState(false);
   const [groupByCatalog, setGroupByCatalog] = useState(true);
   const [cardTableVisible, setCardTableVisible] = useState<Record<string, boolean>>({});
+
+  // Filter Popup Menu Modal
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
 
   // Upload Excel Flow
   const [isParsingExcel, setIsParsingExcel] = useState(false);
@@ -283,6 +299,30 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
   const selectAllCatalogs = () => {
     setSelectedCatalogIds(batches.map((b) => b.id));
   };
+
+  const deselectAllCatalogs = () => {
+    setSelectedCatalogIds([]);
+  };
+
+  const handleResetAllFilters = () => {
+    setSelectedCatalogIds(batches.map((b) => b.id));
+    setChannelFilter('all');
+    setSortOrder('newest');
+    setHideVariants(false);
+    setGroupByCatalog(true);
+    setSearchQuery('');
+    onNotify('Semua filter katalog berhasil di-reset', 'info');
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (batches.length > 0 && selectedCatalogIds.length < batches.length) count++;
+    if (channelFilter !== 'all') count++;
+    if (sortOrder !== 'newest') count++;
+    if (hideVariants) count++;
+    if (!groupByCatalog) count++;
+    return count;
+  }, [batches.length, selectedCatalogIds.length, channelFilter, sortOrder, hideVariants, groupByCatalog]);
 
   // Hitung jumlah item per kategori channel untuk filter badge
   const channelCounts = useMemo(() => {
@@ -1469,13 +1509,13 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
         </div>
       )}
 
-      {/* FILTER & KONTROL TAMPILAN (RAPI, 2 BARIS TERATUR) */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
-        {/* Baris 1: Pencarian & Kontrol Tampilan Sejajar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* FILTER & KONTROL TAMPILAN POPUP MENU */}
+      <div className="bg-white dark:bg-slate-900 p-3 sm:p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-2.5">
+        {/* Baris 1: Pencarian & Tombol Popup Filter */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           {/* Input Pencarian */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
@@ -1485,198 +1525,136 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                title="Hapus pencarian"
               >
                 ✕
               </button>
             )}
           </div>
 
-          {/* Tombol Kontrol: Hide/Unhide Tabel Varian & Grup per Katalog */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Toggle Sembunyikan / Tampilkan Tabel Varian */}
-            <button
-              type="button"
-              onClick={handleToggleGlobalHideVariants}
-              className={`flex-1 sm:flex-none px-3 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                hideVariants
-                  ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-700 shadow-2xs'
-                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
-              }`}
-              title="Sembunyikan atau tampilkan tabel rincian Warna, Size, SKU, dan Qty pada semua kartu"
-            >
-              {hideVariants ? (
-                <>
-                  <EyeOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>Tabel Varian: Ditutup</span>
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
-                  <span>Tabel Varian: Dibuka</span>
-                </>
-              )}
-            </button>
-
-            {/* Toggle Dikelompokkan per Katalog vs Tampilan Gabung */}
-            <button
-              type="button"
-              onClick={() => setGroupByCatalog(!groupByCatalog)}
-              className="flex-1 sm:flex-none px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-            >
-              <Package className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span>{groupByCatalog ? 'Per Katalog' : 'Semua Grid'}</span>
-            </button>
-          </div>
+          {/* Tombol Utama: Popup Filter & Opsi Tampilan */}
+          <button
+            type="button"
+            onClick={() => setFilterModalOpen(true)}
+            className={`px-3.5 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs whitespace-nowrap ${
+              activeFilterCount > 0
+                ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+                : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+            }`}
+            title="Buka menu filter lengkap (koleksi katalog, saluran rilis, urutan, & opsi tampilan)"
+          >
+            <SlidersHorizontal className="w-4 h-4 shrink-0" />
+            <span>Filter &amp; Tampilan</span>
+            {activeFilterCount > 0 ? (
+              <span className="w-5 h-5 rounded-full bg-white text-indigo-700 text-[10px] font-black flex items-center justify-center shadow-xs">
+                {activeFilterCount}
+              </span>
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            )}
+          </button>
         </div>
 
-        {/* Baris 2: Filter Dropdown Katalog & Filter Saluran Publish */}
-        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <KatalogFilterDropdown
-              batches={batches}
-              selectedCatalogIds={selectedCatalogIds}
-              onToggleCatalog={toggleSelectCatalog}
-              onSelectAll={selectAllCatalogs}
-              onSelectOnly={selectOnlyCatalog}
-              getBatchPalette={getBatchPalette}
-            />
-
-            {/* Selector Urutan Katalog */}
-            <div className="relative inline-flex items-center">
-              <select
-                id="katalog-sort-select"
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as KatalogSortOrder)}
-                className="appearance-none pl-8 pr-7 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                title="Urutan Tampilan Katalog Produk"
-              >
-                <option value="newest">Terbaru → Terlama (Angka Besar)</option>
-                <option value="oldest">Terlama → Terbaru (Angka Kecil)</option>
-                <option value="name_asc">Nama A → Z</option>
-                <option value="name_desc">Nama Z → A</option>
-              </select>
-              <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Filter Channel / Saluran Rilis */}
-          <div className="flex flex-wrap items-center gap-1.5 ml-auto">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" />
-              <span>Saluran:</span>
+        {/* Baris 2: Active Filter Chips (Hanya Tampil Jika Ada Filter Aktif) */}
+        {activeFilterCount > 0 && (
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">
+              Filter Aktif:
             </span>
 
-            {/* Semua */}
-            <button
-              type="button"
-              onClick={() => setChannelFilter('all')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
-                channelFilter === 'all'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-2xs'
-                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <span>Semua</span>
-              <span className="text-[10px] opacity-75 font-normal">({channelCounts.all})</span>
-            </button>
+            {/* Chip Koleksi Terpilih */}
+            {batches.length > 0 && selectedCatalogIds.length < batches.length && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold">
+                <Layers className="w-3 h-3 text-indigo-500 shrink-0" />
+                <span>{selectedCatalogIds.length} dari {batches.length} Katalog</span>
+                <button
+                  type="button"
+                  onClick={selectAllCatalogs}
+                  className="hover:text-indigo-900 dark:hover:text-white cursor-pointer ml-0.5 text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded p-0.5"
+                  title="Pilih semua katalog"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
 
-            {/* Online (Semua) */}
-            <button
-              type="button"
-              onClick={() => setChannelFilter('online')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
-                channelFilter === 'online'
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                  : 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100'
-              }`}
-              title="Tampilkan semua produk yang tayang di Online (Online Only + Online & Offline)"
-            >
-              <Globe className="w-3 h-3" />
-              <span>Online</span>
-              <span className="text-[10px] opacity-80 font-normal">({channelCounts.online})</span>
-            </button>
+            {/* Chip Saluran */}
+            {channelFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-semibold">
+                <Globe className="w-3 h-3 text-blue-500 shrink-0" />
+                <span>Saluran: {CHANNEL_LABELS[channelFilter] || channelFilter}</span>
+                <button
+                  type="button"
+                  onClick={() => setChannelFilter('all')}
+                  className="hover:text-blue-900 dark:hover:text-white cursor-pointer ml-0.5 text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 rounded p-0.5"
+                  title="Hapus filter saluran"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
 
-            {/* Offline (Semua) */}
-            <button
-              type="button"
-              onClick={() => setChannelFilter('offline')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
-                channelFilter === 'offline'
-                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
-                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100'
-              }`}
-              title="Tampilkan semua produk yang tayang di Butik / Store Offline (Offline Only + Online & Offline)"
-            >
-              <Store className="w-3 h-3" />
-              <span>Offline</span>
-              <span className="text-[10px] opacity-80 font-normal">({channelCounts.offline})</span>
-            </button>
+            {/* Chip Urutan selain Newest */}
+            {sortOrder !== 'newest' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-semibold">
+                <ArrowUpDown className="w-3 h-3 text-amber-500 shrink-0" />
+                <span>Urutan: {sortOrder === 'oldest' ? 'Terlama' : sortOrder === 'name_asc' ? 'A → Z' : 'Z → A'}</span>
+                <button
+                  type="button"
+                  onClick={() => setSortOrder('newest')}
+                  className="hover:text-amber-900 dark:hover:text-white cursor-pointer ml-0.5 text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900 rounded p-0.5"
+                  title="Kembalikan urutan default"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
 
-            {/* Online Only */}
-            <button
-              type="button"
-              onClick={() => setChannelFilter('online_only')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
-                channelFilter === 'online_only'
-                  ? 'bg-cyan-600 text-white border-cyan-600 shadow-2xs'
-                  : 'bg-cyan-50/60 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800 hover:bg-cyan-100'
-              }`}
-              title="Tampilkan produk yang HANYA dirilis di Online"
-            >
-              <span>Online Only</span>
-              <span className="text-[10px] opacity-80 font-normal">({channelCounts.online_only})</span>
-            </button>
+            {/* Chip Hide Variants */}
+            {hideVariants && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-lg text-xs font-semibold">
+                <EyeOff className="w-3 h-3 text-purple-500 shrink-0" />
+                <span>Tabel Varian Ditutup</span>
+                <button
+                  type="button"
+                  onClick={() => setHideVariants(false)}
+                  className="hover:text-purple-900 dark:hover:text-white cursor-pointer ml-0.5 text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900 rounded p-0.5"
+                  title="Buka rincian varian"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
 
-            {/* Offline Only */}
-            <button
-              type="button"
-              onClick={() => setChannelFilter('offline_only')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
-                channelFilter === 'offline_only'
-                  ? 'bg-orange-600 text-white border-orange-600 shadow-2xs'
-                  : 'bg-orange-50/60 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 border-orange-200 dark:border-orange-800 hover:bg-orange-100'
-              }`}
-              title="Tampilkan produk yang HANYA dirilis di Offline / Butik"
-            >
-              <span>Offline Only</span>
-              <span className="text-[10px] opacity-80 font-normal">({channelCounts.offline_only})</span>
-            </button>
+            {/* Chip Group By Catalog false */}
+            {!groupByCatalog && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold">
+                <Package className="w-3 h-3 text-slate-500 shrink-0" />
+                <span>Tampilan Gabung (Semua Grid)</span>
+                <button
+                  type="button"
+                  onClick={() => setGroupByCatalog(true)}
+                  className="hover:text-slate-900 dark:hover:text-white cursor-pointer ml-0.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded p-0.5"
+                  title="Kelompokkan per katalog"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
 
-            {/* Online & Offline */}
+            {/* Tombol Reset Semua */}
             <button
               type="button"
-              onClick={() => setChannelFilter('both')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
-                channelFilter === 'both'
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-              }`}
-              title="Tampilkan produk yang dirilis di Online & Offline"
+              onClick={handleResetAllFilters}
+              className="text-[11px] font-bold text-red-600 hover:text-red-700 hover:underline cursor-pointer ml-1"
             >
-              <span>Online & Offline</span>
-              <span className="text-[10px] opacity-80 font-normal">({channelCounts.both})</span>
-            </button>
-
-            {/* Belum Terjadwal */}
-            <button
-              type="button"
-              onClick={() => setChannelFilter('none')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
-                channelFilter === 'none'
-                  ? 'bg-slate-700 text-white border-slate-700 shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
-              }`}
-              title="Tampilkan produk yang belum ditentukan tanggal rilisnya"
-            >
-              <Calendar className="w-3 h-3" />
-              <span>Belum Ditentukan</span>
-              <span className="text-[10px] opacity-80 font-normal">({channelCounts.none})</span>
+              Reset Semua
             </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* STATISTIK RINGKASAN AKTIF */}
@@ -1963,6 +1941,30 @@ export const KatalogProdukView: React.FC<KatalogProdukViewProps> = ({ session, o
           })}
         </div>
       )}
+
+      {/* MODAL FILTER & OPSI TAMPILAN POPUP MENU */}
+      <KatalogFilterModal
+        isOpen={filterModalOpen}
+        onClose={() => setFilterModalOpen(false)}
+        batches={batches}
+        selectedCatalogIds={selectedCatalogIds}
+        onToggleCatalog={toggleSelectCatalog}
+        onSelectAllCatalogs={selectAllCatalogs}
+        onSelectOnlyCatalog={selectOnlyCatalog}
+        onDeselectAllCatalogs={deselectAllCatalogs}
+        channelFilter={channelFilter}
+        setChannelFilter={setChannelFilter}
+        channelCounts={channelCounts}
+        sortOrder={sortOrder}
+        setSortOrder={setSortOrder}
+        hideVariants={hideVariants}
+        setHideVariants={setHideVariants}
+        groupByCatalog={groupByCatalog}
+        setGroupByCatalog={setGroupByCatalog}
+        onResetAllFilters={handleResetAllFilters}
+        totalFilteredProducts={allFilteredItems.length}
+        getBatchPalette={getBatchPalette}
+      />
 
       {/* MODAL UPLOAD EXCEL & NAMING / REPLACE */}
       <KatalogUploadModal

@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  UploadCloud as CloudUpload,
 } from 'lucide-react';
 import { PenerimaanProduksiItem } from '../../types';
 import {

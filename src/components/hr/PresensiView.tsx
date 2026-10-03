@@ -60,7 +60,6 @@ import {
   fetchTukarShiftList,
   submitTukarShiftRecord,
   fetchLemburRecords,
-  fetchCutiRecords,
 } from '../../services/supabase';
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
