@@ -246,18 +246,18 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
   };
 
   // Delete / Clean Corrupted SKU
-  const handleDeleteCorrupted = async (sku: string) => {
+  const handleDeleteCorrupted = async (item: AnomalyItem) => {
     if (
       !window.confirm(
-        `Hapus data anomali SKU "${sku}" dari sistem WMS? Tindakan ini akan membersihkan data dari katalog master dan cache lokal.`
+        `Hapus data anomali SKU "${item.sku}" dari sistem WMS? Tindakan ini akan men-nol-kan seluruh stok fisiknya dan membersihkan data dari katalog master serta cache lokal.`
       )
     ) {
       return;
     }
 
-    setActionLoadingId(sku);
+    setActionLoadingId(item.sku);
     try {
-      const res = await deleteCorruptedSkuRecord(sku);
+      const res = await deleteCorruptedSkuRecord(item, userSession);
       if (res.success) {
         showToast(res.message, 'success');
         if (onDataFixed) onDataFixed();
@@ -932,7 +932,7 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
                                 <button
                                   type="button"
                                   disabled={actionLoadingId === item.sku}
-                                  onClick={() => handleDeleteCorrupted(item.sku)}
+                                  onClick={() => handleDeleteCorrupted(item)}
                                   className="px-2.5 py-1 text-[11px] font-bold bg-slate-200 dark:bg-slate-700 hover:bg-rose-500 hover:text-white text-slate-700 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
                                   title="Bersihkan / hapus SKU sampah ini"
                                 >

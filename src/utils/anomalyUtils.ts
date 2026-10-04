@@ -622,9 +622,10 @@ export async function batchSyncAllWithMaster(
  * Delete / deactivate corrupted SKU from master catalog & local storage
  */
 export async function deleteCorruptedSkuRecord(
-  sku: string
+  item: AnomalyItem,
+  userSession?: UserSession | null
 ): Promise<{ success: boolean; message: string }> {
-  const cleanSku = sku.trim();
+  const cleanSku = item.sku.trim();
   try {
     // 1. Clean from localStorage caches
     const cacheKeys = [
@@ -665,9 +666,53 @@ export async function deleteCorruptedSkuRecord(
       );
     }
 
+    // 3. Inject ADJ_OUT/ADJ_IN to neutralize physical stock
+    const invoice = `ADJ-PRG-${Date.now().toString().slice(-6)}`;
+    if (item.lokasiFisik && item.lokasiFisik.length > 0) {
+      for (const loc of item.lokasiFisik) {
+        if (loc.qty > 0) {
+          await insertLogProduk({
+            sku: cleanSku,
+            nama_produk: item.nama_produk,
+            size: item.size || '-',
+            qty: loc.qty,
+            lokasi: loc.lokasi,
+            area: loc.area || 'Gudang Utama',
+            type: 'ADJ_OUT',
+            pic: userSession?.name || 'Sistem WMS',
+            keterangan: `Purge corrupted/orphan SKU (Auto)`,
+            invoice,
+          });
+        }
+      }
+    }
+    if (item.negativeLocations && item.negativeLocations.length > 0) {
+      for (const loc of item.negativeLocations) {
+        if (loc.qty > 0) {
+          await insertLogProduk({
+            sku: cleanSku,
+            nama_produk: item.nama_produk,
+            size: item.size || '-',
+            qty: loc.qty,
+            lokasi: loc.lokasi,
+            area: loc.area || 'Gudang Utama',
+            type: 'ADJ_IN',
+            pic: userSession?.name || 'Sistem WMS',
+            keterangan: `Purge corrupted/orphan SKU (Auto)`,
+            invoice,
+          });
+        }
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+      window.dispatchEvent(new CustomEvent('wms_stock_updated'));
+    }
+
     return {
       success: true,
-      message: `Data sampah SKU "${cleanSku}" berhasil dibersihkan dari sistem`,
+      message: `Data SKU "${cleanSku}" beserta seluruh riwayat stoknya berhasil dibersihkan`,
     };
   } catch (err: any) {
     console.error('Error deleting corrupted SKU:', err);
