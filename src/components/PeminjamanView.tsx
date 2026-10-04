@@ -963,6 +963,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
       // 2. Also create picking tasks in Supabase for Fulfillment
       try {
+        const dateStr = nowIso.slice(2, 10).replace(/-/g, ''); // YYMMDD
+        const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const generatedInvoice = `WA${dateStr}SPS${randomStr}`;
+
         const pickingTasks: PickingListItem[] = validItems.map((it) => {
           const rawSize = (it.size || '').trim();
           const cleanSize = (rawSize && rawSize !== '-') 
@@ -978,6 +982,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                 ? it.lokasi 
                 : (emptyRacks.length > 0 ? `KOSONG (${emptyRacks.join(',')})` : 'BLOK F'));
           return {
+            invoice_picking: generatedInvoice,
             no_sj: noSps,
             tanggal: tglPinjam,
             tujuan: `SPS: ${namaPeminjam.trim()} - ${keperluan.trim()}`,

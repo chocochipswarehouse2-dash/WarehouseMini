@@ -660,6 +660,7 @@ CREATE TABLE IF NOT EXISTS public.penerimaan_recount_queue (
 -- 6. TABEL FULFILLMENT PICKING LIST
 CREATE TABLE IF NOT EXISTS public.picking_list (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_picking TEXT DEFAULT '',
   no_sj TEXT NOT NULL,
   tanggal TEXT DEFAULT '',
   tujuan TEXT DEFAULT 'Marketplace',
@@ -4259,6 +4260,10 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
   // Auto-sync from Peminjaman (for legacy Google Sheets UI submissions)
   if (peminjamanRes.status === 'fulfilled' && peminjamanRes.value && Array.isArray(peminjamanRes.value)) {
     const toInsert: any[] = [];
+    const invoiceMap = new Map<string, string>();
+    const nowIso = new Date().toISOString();
+    const dateStr = nowIso.slice(2, 10).replace(/-/g, '');
+
     for (const p of peminjamanRes.value) {
       const no_sj = String(p.no_peminjaman || '').trim().toUpperCase();
       const sku = String(p.sku || '').toUpperCase().trim();
@@ -4290,7 +4295,13 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
           // pNama = pNama;
         }
 
+        if (!invoiceMap.has(no_sj)) {
+           const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+           invoiceMap.set(no_sj, `WA${dateStr}SPS${randomStr}`);
+        }
+
         const newItem = {
+          invoice_picking: invoiceMap.get(no_sj),
           no_sj: no_sj,
           tanggal: p.tanggal_pinjam || '',
           tujuan: `SPS: ${p.pic || ''} - ${p.keperluan || ''}`,
@@ -4565,6 +4576,7 @@ export async function completePickingSuratJalanSupabase(
 export async function insertPickingListRowsToSupabase(
   newItems: Array<{
     id?: number | string;
+    invoice_picking?: string;
     no_sj: string;
     tanggal?: string;
     tujuan?: string;
@@ -4603,6 +4615,7 @@ export async function insertPickingListRowsToSupabase(
 
     return {
       id: getSafeId(it, idx),
+      invoice_picking: it.invoice_picking || '',
       no_sj: String(it.no_sj || '').trim().toUpperCase(),
       tanggal: cleanDate,
       tujuan: String(it.tujuan || 'Marketplace').trim(),
@@ -4677,11 +4690,19 @@ export async function createPickingSuratJalanSupabase(
   no_sj: string,
   tujuan: string,
   items: Array<{ sku: string; nama_produk: string; size?: string; lokasi?: string; qty_req: number }>
-): Promise<{ success: boolean; createdItems: PickingListItem[] }> {
+): Promise<{ success: boolean; createdItems: PickingListItem[]; invoice_picking?: string }> {
   const nowIso = new Date().toISOString();
   const baseTime = Date.now();
   const cleanNoSj = no_sj.trim().toUpperCase();
   const cleanTujuan = tujuan.trim() || 'Marketplace';
+
+  // 1. Generate Invoice Picking ID
+  const dateStr = nowIso.slice(2, 10).replace(/-/g, ''); // YYMMDD
+  let tipeCode = 'SJL';
+  if (cleanNoSj.includes('SPS')) tipeCode = 'SPS';
+  else if (cleanTujuan.toLowerCase().includes('marketplace') || cleanNoSj.includes('SHP') || cleanNoSj.includes('TKTK')) tipeCode = 'MRK';
+  const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const generatedInvoice = `WA${dateStr}${tipeCode}${randomStr}`;
 
   const newItems: PickingListItem[] = items.map((it, idx) => {
     const cleanSku = it.sku.trim().toUpperCase();
@@ -4703,6 +4724,7 @@ export async function createPickingSuratJalanSupabase(
 
     return {
       id: safeNumericId,
+      invoice_picking: generatedInvoice,
       no_sj: cleanNoSj,
       tanggal: nowIso.slice(0, 10),
       tujuan: cleanTujuan,
@@ -4758,7 +4780,7 @@ export async function createPickingSuratJalanSupabase(
     } catch {}
   }
 
-  return { success: true, createdItems: newItems };
+  return { success: true, createdItems: newItems, invoice_picking: generatedInvoice };
 }
 
 export async function updatePickingSuratJalanDetailsSupabase(

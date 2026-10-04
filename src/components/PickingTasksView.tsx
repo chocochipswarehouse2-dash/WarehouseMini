@@ -1877,9 +1877,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setIsCreatingSj(true);
     showGlobalLoading('Membuat SJ...');
     try {
-      const ok = await createPickingSuratJalanSupabase(newSjNumber, newSjTujuan, validRows);
-      if (ok) {
-        onNotify(`Surat Jalan ${newSjNumber} berhasil dibuat di Database!`, 'success');
+      const res = await createPickingSuratJalanSupabase(newSjNumber, newSjTujuan, validRows);
+      if (res.success) {
+        const invoiceMsg = res.invoice_picking ? ` (Kode Antrian: ${res.invoice_picking})` : '';
+        onNotify(`Surat Jalan ${newSjNumber} berhasil dibuat di Database!${invoiceMsg}`, 'success');
         setIsCreateModalOpen(false);
         setNewSjNumber('');
         setNewSjTujuan('');

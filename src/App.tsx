@@ -829,10 +829,14 @@ export default function App() {
           (payload) => {
             invalidateStokFisikCache();
             if (payload.eventType === 'INSERT' && payload.new) {
-              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number };
+              const newLog = payload.new as { type?: string; sku?: string; lokasi?: string; qty?: number, invoice?: string };
               showPushNotification('📦 Log Mutasi Baru', {
                 body: `Mutasi #${newLog.type || 'LOG'}: ${newLog.sku || 'Barang'} di lokasi ${newLog.lokasi || '-'}`,
               });
+
+              import('./services/pickingSync').then(({ processPickingSync }) => {
+                processPickingSync(newLog);
+              }).catch(console.error);
 
               // Local State Mutation to save egress: update locally instead of fetching the whole database
               if (newLog.sku && newLog.lokasi && newLog.qty) {

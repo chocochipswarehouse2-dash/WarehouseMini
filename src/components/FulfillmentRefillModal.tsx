@@ -663,6 +663,8 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     showGlobalLoading('Memproses...');
     try {
       const allCreatedItems: PickingListItem[] = [];
+      const generatedInvoices: string[] = [];
+
       for (const group of groupsToSave) {
         const formattedItems = group.items.map((it) => {
           const cleanSku = it.sku.toUpperCase().trim();
@@ -683,14 +685,18 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
         if (res && res.createdItems) {
           allCreatedItems.push(...res.createdItems);
         }
+        if (res && res.invoice_picking) {
+          generatedInvoices.push(res.invoice_picking);
+        }
       }
 
       if (andPrint) {
         handlePrintGroups(groupsToSave);
       }
 
+      const invoiceMsg = generatedInvoices.length > 0 ? ` (Kode Antrian: ${generatedInvoices.join(', ')})` : '';
       onSuccess(
-        `Berhasil menyimpan ${groupsToSave.length} Surat Jalan (${allCreatedItems.length} baris produk) ke Supabase & Daftar Tugas Picking! 🚀`,
+        `Berhasil menyimpan ${groupsToSave.length} Surat Jalan (${allCreatedItems.length} baris produk) ke Supabase & Daftar Tugas Picking! 🚀${invoiceMsg}`,
         allCreatedItems
       );
       onClose();

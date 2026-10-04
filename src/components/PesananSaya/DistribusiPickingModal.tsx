@@ -658,7 +658,8 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         if (onSuccessSentToApp) {
           onSuccessSentToApp(draft.id);
         }
-        onNotify(`Surat Jalan "${draft.no_sj}" (${totalQty} pcs) berhasil dikirim ke Tugas Picking App!`, 'success');
+        const invoiceLabel = res.invoice_picking ? ` (Kode Antrian: ${res.invoice_picking})` : '';
+        onNotify(`Surat Jalan "${draft.no_sj}" (${totalQty} pcs) berhasil dikirim ke Tugas Picking App!${invoiceLabel}`, 'success');
       }
     } catch (err: any) {
       console.error('Error send to picking app:', err);

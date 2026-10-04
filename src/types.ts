@@ -647,6 +647,7 @@ export type PickingStatus = 'PENDING' | 'SEDANG PICKING' | 'TERCETAK' | 'SELESAI
 
 export interface PickingListItem {
   id?: string | number;
+  invoice_picking?: string;
   no_sj: string;
   tanggal: string;
   tujuan: string;

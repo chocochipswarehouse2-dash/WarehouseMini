@@ -164,6 +164,7 @@ function handleWhatsAppScan(payload) {
     var currentType = '';
     var currentDeskripsi = '';
     var currentLokasi = '';
+    var explicitInvoice = '';
     var rawItems = [];
     
     var TYPE_IN = 'IN';
@@ -182,7 +183,12 @@ function handleWhatsAppScan(payload) {
       if (/^#?(SO|STOCK OPNAME|OPNAME)(\s|:|$)/i.test(line)) {
         currentType = TYPE_SO;
         var restSo = line.replace(/^#?(SO|STOCK OPNAME|OPNAME)[:\s]*/i, '').trim();
-        if (restSo && !currentLokasi) currentLokasi = restSo;
+        // Check if the rest is an explicit invoice
+        if (restSo && /^WA[0-9]{6}[A-Z0-9]{3,7}$/i.test(restSo)) {
+           explicitInvoice = restSo.toUpperCase();
+        } else if (restSo && !currentLokasi) {
+           currentLokasi = restSo;
+        }
         currentDeskripsi = 'Stock Opname WA';
         continue;
       }
@@ -190,7 +196,11 @@ function handleWhatsAppScan(payload) {
       if (/^#?(IN|MASUK)(\s|:|$)/i.test(line)) {
         currentType = TYPE_IN;
         var restIn = line.replace(/^#?(IN|MASUK)[:\s]*/i, '').trim();
-        if (restIn && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restIn)) currentLokasi = restIn;
+        if (restIn && /^WA[0-9]{6}[A-Z0-9]{3,7}$/i.test(restIn)) {
+           explicitInvoice = restIn.toUpperCase();
+        } else if (restIn && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
+           currentLokasi = restIn;
+        }
         currentDeskripsi = 'IN';
         continue;
       }
@@ -198,7 +208,11 @@ function handleWhatsAppScan(payload) {
       if (/^#?(OUT|KELUAR)(\s|:|$)/i.test(line)) {
         currentType = TYPE_OUT;
         var restOut = line.replace(/^#?(OUT|KELUAR)[:\s]*/i, '').trim();
-        if (restOut && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restOut)) currentLokasi = restOut;
+        if (restOut && /^WA[0-9]{6}[A-Z0-9]{3,7}$/i.test(restOut)) {
+           explicitInvoice = restOut.toUpperCase();
+        } else if (restOut && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
+           currentLokasi = restOut;
+        }
         currentDeskripsi = 'OUT';
         continue;
       }
@@ -299,7 +313,7 @@ function handleWhatsAppScan(payload) {
     var areaFinal = getArea(lokasiFinal);
     
     // 1 PESAN WA = 1 INVOICE
-    var invoice = generateInvoice();
+    var invoice = explicitInvoice ? explicitInvoice : generateInvoice();
     var nowIso = new Date().toISOString();
     
     // Batch lookup metadata produk (1 request kilat)
