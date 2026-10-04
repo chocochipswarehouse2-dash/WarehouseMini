@@ -128,8 +128,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canPeminjaman = userIsAdmin || hasPermission(session, 'menu_ops_peminjaman');
   const canCetakLabel = userIsAdmin || hasPermission(session, 'action_cetak_label');
   const canCetakBarcode = userIsAdmin || hasPermission(session, 'menu_ops_cetak_barcode') || hasPermission(session, 'action_cetak_barcode') || canCetakLabel || canInventory;
-  const canFormBbk = userIsAdmin || hasPermission(session, 'menu_ops_bbk') || !!session;
-
   // HR
   const canViewKaryawan = userIsAdmin || hasPermission(session, 'menu_hr_karyawan');
   const canViewPresensi = userIsAdmin || hasPermission(session, 'menu_hr_presensi');
@@ -249,14 +247,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: QrCode,
       description: 'Stiker Thermal 50×20 mm & Import Massal',
       access: canCetakBarcode,
-    },
-    {
-      id: 'form_bbk' as ActivePage,
-      label: 'Form BBK (Bank Keluar)',
-      shortLabel: 'Form BBK',
-      icon: Receipt,
-      description: 'Pengajuan Dana Operasional, Vendor & Riwayat BBK',
-      access: canFormBbk,
     },
   ].filter((item) => item.access);
 

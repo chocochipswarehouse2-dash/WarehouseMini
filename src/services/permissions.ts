@@ -284,7 +284,6 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
     case 'katalog_produk': return hasPermission(session, 'menu_ops_katalog_produk');
     case 'roadmap': return hasPermission(session, 'menu_ops_roadmap');
     case 'pusat_resolusi': return hasPermission(session, 'menu_ops_resolusi') || hasPermission(session, 'tab_ops_resolusi_retur') || hasPermission(session, 'tab_ops_resolusi_refund') || hasPermission(session, 'tab_ops_resolusi_gagal') || hasPermission(session, 'tab_ops_resolusi_komplain') || hasPermission(session, 'tab_ops_resolusi_rating');
-    case 'form_bbk': return true;
     case 'supabase_migration': return false;
     default:
       return false;
