@@ -22,7 +22,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { ProductItem, PickingListItem, StockRealtimeItem } from '../types';
-import { createPickingSuratJalanSupabase, isWarehouseLocation, fetchStockForSkus } from '../services/supabase';
+import { createPickingSuratJalanSupabase, isWarehouseLocation, getPickingPriority, fetchStockForSkus } from '../services/supabase';
 
 interface ParsedSJItem {
   nama: string;
@@ -152,7 +152,12 @@ export const FulfillmentRefillModal: React.FC<FulfillmentRefillModalProps> = ({
     }
 
     const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
-    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    allLocs.sort((a, b) => {
+      const pA = getPickingPriority(a.lokasi, a.area);
+      const pB = getPickingPriority(b.lokasi, b.area);
+      if (pA !== pB) return pA - pB;
+      return (b.qty || 0) - (a.qty || 0);
+    });
     return allLocs;
   };
 

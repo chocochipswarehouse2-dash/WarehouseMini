@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, FileText, ChevronRight
 } from 'lucide-react';
 import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, StockRealtimeItem } from '../../types';
-import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation } from '../../services/supabase';
+import { createPickingSuratJalanSupabase, fetchStockForSkus, isWarehouseLocation, getPickingPriority } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { extractSizeFromSku, cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
@@ -186,6 +186,9 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi));
     // Sort: locations with stock > 0 first (descending by qty), then locations with 0 stock
     allLocs.sort((a, b) => {
+      const pA = getPickingPriority(a.lokasi, a.area);
+      const pB = getPickingPriority(b.lokasi, b.area);
+      if (pA !== pB) return pA - pB;
       const qtyDiff = (b.qty || 0) - (a.qty || 0);
       if (qtyDiff !== 0) return qtyDiff;
       return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });

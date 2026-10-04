@@ -54,6 +54,7 @@ import {
   fetchChannelStocksBySkus,
   fetchStockForSkus,
   isWarehouseLocation,
+  getPickingPriority,
   supabaseFetch,
   insertPickingListRowsToSupabase,
   isDummyProduct,
@@ -306,7 +307,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
 
     const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
-    allLocs.sort((a, b) => (b.qty || 0) - (a.qty || 0));
+    allLocs.sort((a, b) => {
+      const pA = getPickingPriority(a.lokasi, a.area);
+      const pB = getPickingPriority(b.lokasi, b.area);
+      if (pA !== pB) return pA - pB;
+      return (b.qty || 0) - (a.qty || 0);
+    });
     return allLocs;
   };
 

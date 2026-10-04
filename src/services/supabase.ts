@@ -255,68 +255,27 @@ export function getSupabaseClient(): SupabaseClient {
   return supabaseInstance;
 }
 
-export function getAreaFromLokasi(lokasi: string, area?: string): string {
-  if (area && area.trim()) {
-    const a = area.trim();
-    // Normalize area string if clearly identifiable
-    const aUp = a.toUpperCase();
-    if (aUp.includes('BLOK')) return 'Blok F';
-    if (aUp.includes('STUDIO') || aUp.includes('FOTO')) return 'Studio';
-    if (aUp.includes('TOKO') || aUp.includes('STORE')) return 'Toko';
-    if (aUp.includes('PERBAIKAN') || aUp.includes('REPAIR') || aUp.includes('DEFECT') || aUp.includes('BS') || aUp.includes('QC') || aUp.includes('CUCI')) return 'Perbaikan';
-    if (aUp.includes('WAREHOUSE') || aUp.includes('GUDANG') || aUp === 'WH') return 'Warehouse';
-    return a;
-  }
-  const lok = String(lokasi || '').trim().toUpperCase();
-  if (!lok) return 'Warehouse';
+export function getAreaFromLokasi(lokasi: string, _area?: string): string {
+  const l = (lokasi || '').trim().toUpperCase();
+  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
+  if (/^(CC|PMK|DF)\d{3}$/.test(l)) return 'Perbaikan';
+  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l)) return 'Blok F';
+  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
+  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
+  if (/^X\d{3}$/.test(l)) return 'Transit';
+  return 'Anomali';
+}
 
-  // Area Blok F & Channel Peminjaman (Shopee, TikTok, Live, etc.)
-  if (
-    lok.includes('BLOK F') ||
-    lok.includes('BLOK-F') ||
-    lok.includes('BLOK_F') ||
-    lok.includes('SHOPEE') ||
-    lok.includes('TIKTOK') ||
-    lok.includes('TOK') ||
-    lok.includes('SHP') ||
-    lok.includes('TTK') ||
-    lok.includes('LIVE')
-  ) {
-    return 'Blok F';
-  }
-
-  // Area Studio
-  if (lok.includes('STUDIO') || lok.includes('FOTO') || lok.includes('DISPLAY') || lok.startsWith('STD')) {
-    return 'Studio';
-  }
-
-  // Area Toko
-  if (lok.startsWith('T-') || lok.startsWith('TK-') || lok.includes('TOKO') || lok.includes('STORE')) {
-    return 'Toko';
-  }
-
-  // Area Perbaikan / Defect / QC / Cuci
-  if (
-    lok.startsWith('CC') || // CC001, CC002, CC003 etc.
-    lok.startsWith('DF') || // DF014
-    lok.startsWith('PMK') || // PMK001
-    lok.includes('CUCI') ||
-    lok.includes('WASH') ||
-    lok.includes('PERBAIKAN') ||
-    lok.includes('REPAIR') ||
-    lok.includes('DEFECT') ||
-    lok.includes('BS') ||
-    lok.includes('REJECT') ||
-    lok.includes('RETUR') ||
-    lok.includes('SAMPLE') ||
-    lok.includes('DAMAGE') ||
-    lok.includes('RUSAK')
-  ) {
-    return 'Perbaikan';
-  }
-
-  // General Warehouse Racks
-  return 'Warehouse';
+/**
+ * Check if a given location & area belongs to the warehouse area (for picking & fulfillment)
+ */
+export function getPickingPriority(lokasi: string, area?: string): number {
+  const locArea = getAreaFromLokasi(lokasi, area);
+  if (locArea === 'Warehouse' || locArea === 'Aksesoris' || locArea === 'Transit') return 1;
+  if (locArea === 'Kolian') return 2;
+  if (locArea === 'Blok F') return 3;
+  if (locArea === 'Perbaikan') return 5;
+  return 4; // Anomali / Unknown
 }
 
 /**
@@ -338,56 +297,10 @@ export function isWarehouseLocation(lokasi: string, area?: string): boolean {
   ) {
     return false;
   }
-
-  // Check specific non-warehouse area categories
-  if (area && area.trim()) {
-    const a = area.trim().toUpperCase();
-    if (
-      a === 'BLOK F' ||
-      a === 'STUDIO' ||
-      a === 'TOKO' ||
-      a === 'STORE' ||
-      a === 'LIVE' ||
-      a === 'SHOPEE' ||
-      a === 'TIKTOK' ||
-      a.includes('PERBAIKAN') ||
-      a.includes('REPAIR') ||
-      a.includes('DEFECT') ||
-      a.includes('CUCI')
-    ) {
-      return false;
-    }
-  }
-
-  // Non-warehouse location/channel names to exclude from warehouse picking
-  if (
-    lok === 'BLOK F' ||
-    lok === 'BLOK-F' ||
-    lok === 'BLOK_F' ||
-    lok === 'SHOPEE' ||
-    lok === 'TIKTOK' ||
-    lok === 'LIVE' ||
-    lok === 'STUDIO' ||
-    lok === 'FOTO' ||
-    lok === 'DISPLAY' ||
-    lok === 'TOKO' ||
-    lok === 'STORE' ||
-    lok === 'CUCI' ||
-    lok === 'WASH' ||
-    lok === 'PERBAIKAN' ||
-    lok === 'REPAIR' ||
-    lok === 'DEFECT' ||
-    lok === 'BS' ||
-    lok === 'REJECT' ||
-    lok === 'RETUR' ||
-    lok === 'SAMPLE' ||
-    lok === 'DAMAGE' ||
-    lok === 'RUSAK'
-  ) {
-    return false;
-  }
-
-  return true;
+  
+  const priority = getPickingPriority(lokasi, area);
+  // Recommend for picking if Priority is 1, 2, or 3
+  return priority <= 3;
 }
 
 /**

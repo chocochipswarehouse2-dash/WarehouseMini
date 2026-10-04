@@ -42,13 +42,14 @@ function supabaseApiFetch(endpoint, method, payload) {
 }
 
 function getArea(lokasi) {
-  var lok = String(lokasi || '').trim().toUpperCase();
-  if (!lok) return 'Warehouse';
-  if (lok.indexOf('BLOK F') > -1 || lok.indexOf('SHOPEE') > -1 || lok.indexOf('TIKTOK') > -1) return 'Blok F';
-  if (lok.indexOf('STUDIO') > -1 || lok.indexOf('FOTO') > -1 || lok.indexOf('DISPLAY') > -1 || lok.indexOf('STD') === 0) return 'Studio';
-  if (lok.indexOf('T-') === 0 || lok.indexOf('TK-') === 0 || lok.indexOf('TOKO') > -1 || lok.indexOf('STORE') > -1) return 'Toko';
-  if (lok.indexOf('CC') === 0 || lok.indexOf('CUCI') > -1 || lok.indexOf('WASH') > -1 || lok.indexOf('PERBAIKAN') > -1 || lok.indexOf('REPAIR') > -1 || lok.indexOf('DEFECT') > -1 || lok.indexOf('BS') > -1 || lok.indexOf('REJECT') > -1) return 'Perbaikan';
-  return 'Warehouse';
+  var l = String(lokasi || '').trim().toUpperCase();
+  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
+  if (/^(CC|PMK|DF)\d{3}$/.test(l)) return 'Perbaikan';
+  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l)) return 'Blok F';
+  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
+  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
+  if (/^X\d{3}$/.test(l)) return 'Transit';
+  return 'Anomali';
 }
 
 function generateInvoice() {
