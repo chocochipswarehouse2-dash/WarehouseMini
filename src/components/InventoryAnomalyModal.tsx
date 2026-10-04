@@ -27,6 +27,7 @@ import {
   syncStockWithMaster,
   batchSyncAllWithMaster,
   deleteCorruptedSkuRecord,
+  batchDeleteCorruptedSkus,
   updateProductName,
 } from '../utils/anomalyUtils';
 
@@ -53,6 +54,7 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [isBatchFixing, setIsBatchFixing] = useState(false);
   const [isBatchSyncing, setIsBatchSyncing] = useState(false);
+  const [isBatchPurging, setIsBatchPurging] = useState(false);
   const [toastMessage, setToastMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -268,6 +270,40 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
       showToast(err.message || 'Gagal menghapus data', 'error');
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  // Batch Delete/Purge All Corrupted/Orphan SKUs
+  const handleBatchPurgeCorrupted = async () => {
+    // Collect all SKUs that need purging
+    const itemsToPurge = allAnomalies.filter(
+      (a) => a.categories.includes('SKU_CORRUPTED') || a.categories.includes('SKU_NOT_IN_MASTER')
+    );
+
+    if (itemsToPurge.length === 0) return;
+
+    if (
+      !window.confirm(
+        `Apakah Anda yakin ingin MENGHAPUS MASSAL ${itemsToPurge.length} data anomali (SKU Rusak / Tanpa Master)? Tindakan ini akan men-nol-kan seluruh stok fisiknya dan membuang datanya secara permanen.`
+      )
+    ) {
+      return;
+    }
+
+    setIsBatchPurging(true);
+    try {
+      const res = await batchDeleteCorruptedSkus(itemsToPurge, userSession);
+      if (res.success) {
+        showToast(res.message, 'success');
+        if (onDataFixed) onDataFixed();
+      } else {
+        showToast(res.message, 'error');
+      }
+    } catch (err: any) {
+      console.error('Error batch purging:', err);
+      showToast(err.message || 'Gagal menghapus data secara massal', 'error');
+    } finally {
+      setIsBatchPurging(false);
     }
   };
 
@@ -674,6 +710,27 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
                   <span>Reset Stok Minus ({stats.negativeStock})</span>
                 </button>
               )}
+
+              {/* BATCH ACTION: BERSIHKAN SKU RUSAK / TANPA MASTER */}
+              {(stats.corruptedSku > 0 || stats.skuNotInMaster > 0) &&
+                (activeTab === 'ALL' ||
+                  activeTab === 'SKU_CORRUPTED' ||
+                  activeTab === 'SKU_NOT_IN_MASTER') && (
+                  <button
+                    type="button"
+                    disabled={isBatchPurging}
+                    onClick={handleBatchPurgeCorrupted}
+                    className="px-3 py-1.5 text-xs font-extrabold bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 shadow-xs"
+                    title="Hapus massal SKU sampah dan netralkan stok fisiknya"
+                  >
+                    {isBatchPurging ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>Bersihkan Semua ({stats.corruptedSku + stats.skuNotInMaster})</span>
+                  </button>
+                )}
 
               <button
                 type="button"

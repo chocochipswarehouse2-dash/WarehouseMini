@@ -788,3 +788,59 @@ export async function updateProductName(
     };
   }
 }
+
+/**
+ * Batch delete/purge corrupted & orphan SKUs
+ */
+export async function batchDeleteCorruptedSkus(
+  items: AnomalyItem[],
+  userSession?: UserSession | null,
+  onProgress?: (done: number, total: number) => void
+): Promise<{ success: boolean; message: string; errors: string[] }> {
+  let purgedCount = 0;
+  const errors: string[] = [];
+  const concurrencyLimit = 5; // Use smaller concurrency because it involves multiple inserts
+
+  for (let i = 0; i < items.length; i += concurrencyLimit) {
+    const chunk = items.slice(i, i + concurrencyLimit);
+    
+    await Promise.all(
+      chunk.map(async (item) => {
+        try {
+          const res = await deleteCorruptedSkuRecord(item, userSession);
+          if (res.success) {
+            purgedCount++;
+          } else {
+            errors.push(`${item.sku}: ${res.message}`);
+          }
+        } catch (e: any) {
+          errors.push(`${item.sku}: ${e.message}`);
+        }
+      })
+    );
+
+    if (onProgress) {
+      onProgress(Math.min(i + concurrencyLimit, items.length), items.length);
+    }
+  }
+
+  // Trigger global updates only once at the end
+  if (typeof window !== 'undefined' && purgedCount > 0) {
+    window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+    window.dispatchEvent(new CustomEvent('wms_stock_updated'));
+  }
+
+  if (errors.length > 0) {
+    return {
+      success: false,
+      message: `Berhasil membersihkan ${purgedCount} item, tetapi gagal pada ${errors.length} item.`,
+      errors,
+    };
+  }
+
+  return {
+    success: true,
+    message: `Berhasil membersihkan secara massal ${purgedCount} SKU anomali beserta riwayat fisiknya.`,
+    errors: [],
+  };
+}
