@@ -274,14 +274,27 @@ function handleWhatsAppScan(payload) {
       var itemDeskripsi = currentDeskripsi || (itemType === TYPE_SO ? 'Stock Opname WA' : itemType);
       var itemArea = getArea(itemLokasi);
 
-      rawItems.push({
-        sku: itemSku,
-        qty: itemQty,
-        lokasi: itemLokasi,
-        type: itemType,
-        deskripsi: itemDeskripsi,
-        area: itemArea
-      });
+      // Cek apakah item dengan SKU, Lokasi, dan Tipe yang sama sudah ada di rawItems (Aggregasi Otomatis)
+      var existingIdx = -1;
+      for (var r = 0; r < rawItems.length; r++) {
+        if (rawItems[r].sku === itemSku && rawItems[r].lokasi === itemLokasi && rawItems[r].type === itemType) {
+          existingIdx = r;
+          break;
+        }
+      }
+      
+      if (existingIdx > -1) {
+        rawItems[existingIdx].qty += itemQty; // Jumlahkan Qty
+      } else {
+        rawItems.push({
+          sku: itemSku,
+          qty: itemQty,
+          lokasi: itemLokasi,
+          type: itemType,
+          deskripsi: itemDeskripsi,
+          area: itemArea
+        });
+      }
     }
     
     // Jika tidak ada tipe transaksi maupun lokasi valid yang terdeteksi,
