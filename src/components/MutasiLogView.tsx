@@ -124,7 +124,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearch = useDeferredValue(searchQuery);
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT' | 'SO'>('ALL');
+  const [typeFilters, setTypeFilters] = useState<string[]>(['ALL']);
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
   const [sourceFilter, setSourceFilter] = useState<ScanSourceFilter>('ALL');
   const [displayLimit, setDisplayLimit] = useState(30);
@@ -196,16 +196,16 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (sourceFilter !== 'ALL') count++;
-    if (typeFilter !== 'ALL') count++;
+    if (!typeFilters.includes('ALL') && typeFilters.length > 0) count++;
     if (areaFilter !== 'ALL') count++;
     if (isConsolidatedMode) count++;
     return count;
-  }, [sourceFilter, typeFilter, areaFilter, isConsolidatedMode]);
+  }, [sourceFilter, typeFilters, areaFilter, isConsolidatedMode]);
 
   const handleResetAllFilters = () => {
     setSearchQuery('');
     setSourceFilter('ALL');
-    setTypeFilter('ALL');
+    setTypeFilters(['ALL']);
     setAreaFilter('ALL');
     if (onNotify) onNotify('Filter telah direset ke bawaan.', 'info');
   };
@@ -293,8 +293,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       );
       if (filteredData && filteredData.length > 0) {
         // Reset type, area, and source filters if active to ensure search results are immediately visible
-        if (typeFilter !== 'ALL' || areaFilter !== 'ALL' || sourceFilter !== 'ALL') {
-          setTypeFilter('ALL');
+        if (!typeFilters.includes('ALL') || areaFilter !== 'ALL' || sourceFilter !== 'ALL') {
+          setTypeFilters(['ALL']);
           setAreaFilter('ALL');
           setSourceFilter('ALL');
         }
@@ -355,12 +355,8 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       }
 
       // Type Filter
-      if (typeFilter !== 'ALL') {
-        if (typeFilter === 'IN' && log.type !== 'IN') return false;
-        if (typeFilter === 'OUT' && log.type !== 'OUT') return false;
-        if (typeFilter === 'ADJ_IN' && log.type !== 'ADJ_IN') return false;
-        if (typeFilter === 'ADJ_OUT' && log.type !== 'ADJ_OUT') return false;
-        if (typeFilter === 'SO' && log.type !== 'SO') return false;
+      if (!typeFilters.includes('ALL') && typeFilters.length > 0) {
+        if (!typeFilters.includes(log.type)) return false;
       }
 
       // Area Filter
@@ -392,7 +388,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
       return true;
     });
-  }, [logs, sourceFilter, typeFilter, areaFilter, deferredSearch]);
+  }, [logs, sourceFilter, typeFilters, areaFilter, deferredSearch]);
 
   // Display logs: Consolidated (Grouped & Summed by Invoice + Type + SKU + Size + Lokasi) or Raw stream
   const displayLogs = useMemo<ConsolidatedLogItem[]>(() => {
@@ -1011,10 +1007,10 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:text-red-500 cursor-pointer">×</button>
               </span>
             )}
-            {typeFilter !== 'ALL' && (
+            {!typeFilters.includes('ALL') && typeFilters.length > 0 && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800/60">
-                Tipe: {typeFilter}
-                <button type="button" onClick={() => setTypeFilter('ALL')} className="hover:text-red-500 cursor-pointer">×</button>
+                Tipe: {typeFilters.join(', ')}
+                <button type="button" onClick={() => setTypeFilters(['ALL'])} className="hover:text-red-500 cursor-pointer">×</button>
               </span>
             )}
             {areaFilter !== 'ALL' && (
@@ -1062,7 +1058,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
               Tidak Ada Mutasi Log Ditemukan
             </div>
             <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-              {searchQuery || typeFilter !== 'ALL' || areaFilter !== 'ALL' || sourceFilter !== 'ALL'
+              {searchQuery || !typeFilters.includes('ALL') || areaFilter !== 'ALL' || sourceFilter !== 'ALL'
                 ? 'Tidak ada data yang sesuai dengan kombinasi filter dan kata kunci saat ini.'
                 : 'Belum ada riwayat mutasi produk di database.'}
             </p>
@@ -1083,12 +1079,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 </button>
               )}
 
-              {(searchQuery || typeFilter !== 'ALL' || areaFilter !== 'ALL' || sourceFilter !== 'ALL') && (
+              {(searchQuery || !typeFilters.includes('ALL') || areaFilter !== 'ALL' || sourceFilter !== 'ALL') && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
-                    setTypeFilter('ALL');
+                    setTypeFilters(['ALL']);
                     setAreaFilter('ALL');
                     setSourceFilter('ALL');
                   }}
@@ -2116,18 +2112,49 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
                   Jenis Mutasi
                 </label>
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
-                >
-                  <option value="ALL">Semua Jenis Mutasi</option>
-                  <option value="IN">Hanya Masuk (IN)</option>
-                  <option value="OUT">Hanya Keluar (OUT)</option>
-                  <option value="ADJ_IN">Penyesuaian Masuk (ADJ_IN)</option>
-                  <option value="ADJ_OUT">Penyesuaian Keluar (ADJ_OUT)</option>
-                  <option value="SO">Stock Opname (SO)</option>
-                </select>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTypeFilters(['ALL'])}
+                    className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer transition-colors ${
+                      typeFilters.includes('ALL')
+                        ? 'bg-slate-800 dark:bg-slate-200 border-slate-800 dark:border-slate-200 text-white dark:text-slate-900'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    Semua
+                  </button>
+                  {[
+                    { value: 'IN', label: 'IN' },
+                    { value: 'OUT', label: 'OUT' },
+                    { value: 'ADJ_IN', label: 'ADJ_IN' },
+                    { value: 'ADJ_OUT', label: 'ADJ_OUT' },
+                    { value: 'SO', label: 'SO' }
+                  ].map((typeOption) => (
+                    <button
+                      key={typeOption.value}
+                      type="button"
+                      onClick={() => {
+                        setTypeFilters((prev) => {
+                          const withoutAll = prev.filter(p => p !== 'ALL');
+                          if (withoutAll.includes(typeOption.value)) {
+                            const next = withoutAll.filter(p => p !== typeOption.value);
+                            return next.length === 0 ? ['ALL'] : next;
+                          } else {
+                            return [...withoutAll, typeOption.value];
+                          }
+                        });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer transition-colors ${
+                        typeFilters.includes(typeOption.value) && !typeFilters.includes('ALL')
+                          ? 'bg-primary-50 dark:bg-primary-950/50 border-primary-500 text-primary-700 dark:text-primary-400'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {typeOption.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* 5. Area Gudang */}
