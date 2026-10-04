@@ -294,7 +294,8 @@ export async function fixNegativeStock(
   negativeQty: number,
   nama_produk?: string,
   size?: string,
-  userSession?: UserSession | null
+  userSession?: UserSession | null,
+  area?: string
 ): Promise<{ success: boolean; message: string }> {
   try {
     const fixQty = Math.abs(negativeQty);
@@ -309,7 +310,7 @@ export async function fixNegativeStock(
       sku: sku.trim().toUpperCase(),
       nama_produk: nama_produk || sku,
       size: size || '-',
-      area: 'Gudang Utama',
+      area: area || 'Gudang Utama',
       lokasi: cleanLokasi,
       qty: fixQty,
       operator: operatorName,
@@ -346,6 +347,7 @@ export async function batchFixAllNegativeStocks(
     qty: number;
     nama_produk: string;
     size?: string;
+    area?: string;
   }> = [];
 
   anomalies.forEach((a) => {
@@ -356,6 +358,7 @@ export async function batchFixAllNegativeStocks(
         qty: loc.qty,
         nama_produk: a.nama_produk,
         size: a.size,
+        area: loc.area,
       });
     });
   });
@@ -367,16 +370,17 @@ export async function batchFixAllNegativeStocks(
   const logs: LogProdukItem[] = [];
   const operatorName = userSession?.name || userSession?.username || 'Admin WMS';
   const now = new Date().toISOString();
+  const batchInvoice = `ADJ-BATCH-${Date.now().toString().slice(-6)}`;
 
-  itemsWithNegative.forEach((item, idx) => {
+  itemsWithNegative.forEach((item) => {
     const fixQty = Math.abs(item.qty);
     logs.push({
       type: 'ADJ_IN',
-      invoice: `ADJ-BATCH-${Date.now().toString().slice(-6)}-${idx + 1}`,
+      invoice: batchInvoice,
       sku: item.sku.trim().toUpperCase(),
       nama_produk: item.nama_produk,
       size: item.size || '-',
-      area: 'Gudang Utama',
+      area: item.area || 'Gudang Utama',
       lokasi: item.lokasi,
       qty: fixQty,
       operator: operatorName,

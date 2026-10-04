@@ -125,7 +125,8 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
   const handleFixNegative = async (
     item: AnomalyItem,
     lokasi: string,
-    negativeQty: number
+    negativeQty: number,
+    area?: string
   ) => {
     const actionKey = `${item.sku}_${lokasi}`;
     setActionLoadingId(actionKey);
@@ -136,7 +137,8 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
         negativeQty,
         item.nama_produk,
         item.size,
-        userSession
+        userSession,
+        area
       );
       if (res.success) {
         showToast(res.message, 'success');
@@ -908,7 +910,8 @@ export const InventoryAnomalyModal: React.FC<InventoryAnomalyModalProps> = ({
                                         handleFixNegative(
                                           item,
                                           negLoc.lokasi,
-                                          negLoc.qty
+                                          negLoc.qty,
+                                          negLoc.area
                                         )
                                       }
                                       className="px-2.5 py-1 text-[11px] font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
