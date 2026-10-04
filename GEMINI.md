@@ -85,3 +85,25 @@ The WMS acts purely as a stateless calculator and notification auditor.
 If the system becomes unstable or logic breaks during the implementation of the "Smart Picking & WA Sync" architecture, agents MUST offer the user to revert to the pre-picking-sync stable state.
 - **Git Tag**: `restore-point-pre-picking-sync`
 - **Agent Instruction**: To rollback, execute `git reset --hard restore-point-pre-picking-sync` and push force if necessary, then confirm GAS/Supabase states. This tag guarantees a pristine state before any Picking/WA sync codebase changes were made.
+
+## 7. WMS Area & Location Prioritization Blueprint
+
+### A. Location Definitions & Mapping
+All location string inputs MUST be strictly mapped to their respective areas using the master function (`getAreaFromLokasi`).
+- **Warehouse**: `A001`-`A100`, `B001`-`B100`, `C001`-`C100`, `D001`-`D100`
+- **Aksesoris**: `BELT...`, `CARD...`, `GIFT...`, `BOX...`
+- **Transit**: `X` / `TRANSIT`
+- **Kolian**: `R0...`, `V0...`, `Z0...`
+- **Blok F**: `TIKTOK`, `SHOPEE`, `STUDIO`
+- **Perbaikan**: `CC...` (Cuci), `PMK...` (Permak), `DF...` (Defect)
+- **Anomaly**: Any location string not fitting the above patterns MUST be flagged as an anomaly.
+
+### B. Picking Prioritization Hierarchy
+Agents modifying UI sorting or task allocation MUST strictly enforce the following hierarchy (Priority 1 = Top):
+1. **Priority 1**: Warehouse + Aksesoris + Transit
+2. **Priority 2**: Kolian
+3. **Priority 3**: Blok F
+4. **Priority 4 (Fallback)**: Empty / Null locations
+5. **DO NOT PICK**: `Perbaikan` (Cuci, Permak, Defect) and `Anomali` areas are strictly excluded from automated picking recommendations.
+
+*Note: The frontend UI must display ALL valid picking locations simultaneously (grouped/sorted by priority) so that pickers have full visibility if Priority 1 stock is insufficient.*
