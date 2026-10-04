@@ -557,8 +557,8 @@ export async function batchSyncAllWithMaster(
     const url = config.url.replace(/\/$/, '');
     const key = config.key;
 
-    // Process in batches of 15 concurrent requests to prevent UI hanging and browser throttling
-    const concurrencyLimit = 15;
+    // Process in batches of 3 concurrent requests to prevent UI hanging and browser throttling
+    const concurrencyLimit = 3;
     for (let i = 0; i < mismatchItems.length; i += concurrencyLimit) {
       const chunk = mismatchItems.slice(i, i + concurrencyLimit);
       
