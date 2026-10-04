@@ -671,7 +671,7 @@ export async function deleteCorruptedSkuRecord(
     if (item.lokasiFisik && item.lokasiFisik.length > 0) {
       for (const loc of item.lokasiFisik) {
         if (loc.qty > 0) {
-          await insertLogProduk({
+          await insertLogProduk([{
             sku: cleanSku,
             nama_produk: item.nama_produk,
             size: item.size || '-',
@@ -682,14 +682,14 @@ export async function deleteCorruptedSkuRecord(
             pic: userSession?.name || 'Sistem WMS',
             keterangan: `Purge corrupted/orphan SKU (Auto)`,
             invoice,
-          });
+          }]);
         }
       }
     }
     if (item.negativeLocations && item.negativeLocations.length > 0) {
       for (const loc of item.negativeLocations) {
         if (loc.qty > 0) {
-          await insertLogProduk({
+          await insertLogProduk([{
             sku: cleanSku,
             nama_produk: item.nama_produk,
             size: item.size || '-',
@@ -700,7 +700,7 @@ export async function deleteCorruptedSkuRecord(
             pic: userSession?.name || 'Sistem WMS',
             keterangan: `Purge corrupted/orphan SKU (Auto)`,
             invoice,
-          });
+          }]);
         }
       }
     }
