@@ -509,23 +509,106 @@ export async function batchSyncAllWithMaster(
   let syncedCount = 0;
   const errors: string[] = [];
 
-  for (let i = 0; i < mismatchItems.length; i++) {
-    const item = mismatchItems[i];
+  // 1. Bulk Update LocalStorage ONCE
+  const cacheKeys = [
+    'wms_master_produk',
+    'wms_local_products',
+    'wms_dealpos_products_cache',
+    'wms_catalog_cache',
+  ];
+
+  const updateMap = new Map<string, {name: string, size: string}>();
+  for (const item of mismatchItems) {
+    updateMap.set(item.sku.trim().toUpperCase(), {
+      name: item.master_nama_produk || item.nama_produk,
+      size: item.master_size || item.size || '-'
+    });
+  }
+
+  cacheKeys.forEach((key) => {
     try {
-      const res = await syncStockWithMaster(
-        item.sku,
-        item.master_nama_produk || item.nama_produk,
-        item.master_size || item.size || '-'
-      );
-      if (res.success) {
-        syncedCount++;
-      } else {
-        errors.push(`${item.sku}: ${res.message}`);
+      const str = localStorage.getItem(key);
+      if (str) {
+        const arr = JSON.parse(str);
+        if (Array.isArray(arr)) {
+          let changed = false;
+          arr.forEach((it: any) => {
+            const clean = String(it.k || it.sku || '').trim().toUpperCase();
+            const master = updateMap.get(clean);
+            if (master) {
+              it.nama_produk = master.name;
+              it.size = master.size;
+              it.p = master.name;
+              it.s = master.size;
+              changed = true;
+            }
+          });
+          if (changed) {
+            localStorage.setItem(key, JSON.stringify(arr));
+          }
+        }
       }
-    } catch (e: any) {
-      errors.push(`${item.sku}: ${e.message}`);
+    } catch {}
+  });
+
+  // 2. Bulk Update Supabase (using concurrent requests)
+  const config = getStoredSupabaseConfig();
+  if (config?.url && config?.key) {
+    const url = config.url.replace(/\/$/, '');
+    const key = config.key;
+
+    // Process in batches of 15 concurrent requests to prevent UI hanging and browser throttling
+    const concurrencyLimit = 15;
+    for (let i = 0; i < mismatchItems.length; i += concurrencyLimit) {
+      const chunk = mismatchItems.slice(i, i + concurrencyLimit);
+      
+      await Promise.all(chunk.map(async (item) => {
+        const cleanSku = item.sku.trim();
+        const masterName = item.master_nama_produk || item.nama_produk;
+        const masterSize = item.master_size || item.size || '-';
+        try {
+           await fetch(`${url}/rest/v1/log_produk?sku=eq.${encodeURIComponent(cleanSku)}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: key,
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({
+              nama_produk: masterName,
+              size: masterSize,
+            }),
+          });
+          // Note: we can skip perbaikan_tickets or do it concurrently to be safe
+          await fetch(`${url}/rest/v1/perbaikan_tickets?sku=eq.${encodeURIComponent(cleanSku)}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: key,
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({
+              nama_produk: masterName,
+            }),
+          }).catch(() => null);
+
+          syncedCount++;
+        } catch (e: any) {
+          errors.push(`${cleanSku}: ${e.message}`);
+        }
+      }));
+      if (onProgress) onProgress(Math.min(i + concurrencyLimit, mismatchItems.length), mismatchItems.length);
     }
-    if (onProgress) onProgress(i + 1, mismatchItems.length);
+  } else {
+    errors.push('Database configuration missing');
+  }
+
+  // 3. Dispatch global events only ONCE after bulk operation finishes
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+    window.dispatchEvent(new CustomEvent('wms_stock_updated'));
   }
 
   return {
