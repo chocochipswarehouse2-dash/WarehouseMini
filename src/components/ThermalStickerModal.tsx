@@ -397,7 +397,7 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
       const isPortrait = printOrientation === 'portrait';
       const pageW = isPortrait ? '20mm' : '50mm';
       const pageH = isPortrait ? '50mm' : '20mm';
-      const pageOrientationKeyword = preventAutoRotate ? '' : (isPortrait ? ' portrait' : ' landscape');
+      const pageOrientationKeyword = isPortrait ? ' portrait' : ' landscape';
       const activeAngle = rotationAngle || (isRotated180 ? 180 : 0);
 
       printFrame.style.width = pageW;
@@ -454,7 +454,6 @@ export const ThermalStickerModal: React.FC<ThermalStickerModalProps> = ({
               @page {
                 size: ${pageW} ${pageH}${pageOrientationKeyword};
                 margin: 0mm !important;
-                ${preventAutoRotate ? 'page-orientation: upright;' : ''}
               }
               *, *::before, *::after {
                 box-sizing: border-box;

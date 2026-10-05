@@ -316,8 +316,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
 
       // 2. Derive Layout and Sizing Variables
       const isLandscape = settings.printOrientation === 'landscape';
-      const preventAutoRotate = settings.preventAutoRotate !== false;
-      const pageOrientationKeyword = preventAutoRotate ? '' : (isLandscape ? ' landscape' : ' portrait');
+      const pageOrientationKeyword = isLandscape ? ' landscape' : ' portrait';
       const stickerW = isLandscape ? '50mm' : '20mm';
       const stickerH = isLandscape ? '20mm' : '50mm';
       const rotationAngle = settings.rotationAngle ?? (settings.isRotated180 ? 180 : 0);
@@ -468,8 +467,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
           }
           @page {
             size: ${stickerW} ${stickerH}${pageOrientationKeyword};
-            margin: 0 !important;
-            ${preventAutoRotate ? 'page-orientation: upright;' : ''}
+            margin: 0mm !important;
           }
         }
         @media screen {
@@ -514,8 +512,7 @@ export const CetakBarcodeProdukView: React.FC<CetakBarcodeProdukViewProps> = ({
               }
               @page {
                 size: ${stickerW} ${stickerH}${pageOrientationKeyword};
-                margin: 0 !important;
-                ${preventAutoRotate ? 'page-orientation: upright;' : ''}
+                margin: 0mm !important;
               }
               * {
                 box-sizing: border-box;
