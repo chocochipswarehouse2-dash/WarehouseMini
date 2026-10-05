@@ -1442,10 +1442,10 @@ export async function syncPendingStockOpnameFromLogProduk(
       // NOTE: Supabase caps every response at 1000 rows. A single `limit=5000` request silently
       // truncated the SO scan list, so older invoices were reconciled with PARTIAL scans and
       // unscanned-looking SKUs became bogus "Scan: 0" PENDING rows. Always page through all rows.
-      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc,id.asc`;
+      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc`;
       if (options?.forceInvoices && options.forceInvoices.length > 0) {
         const inClause = options.forceInvoices.map((inv) => `"${inv}"`).join(',');
-        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc,id.asc`;
+        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc`;
       }
 
       const soLogs = await supabaseFetchAllPages<LogProdukItem>(
@@ -1503,7 +1503,36 @@ export async function syncPendingStockOpnameFromLogProduk(
         return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
       }
 
-      // 3. Collect distinct locations scanned per invoice and aggregate physical counts
+      // 3. Query existing INVOICES in stock_opname_queue FIRST to avoid redundant queries
+      let unprocessedInvoices = validInvoices;
+      if (!options?.forceInvoices) {
+        const existingInvoices = new Set<string>();
+        const invChunkSize = 50;
+        for (let i = 0; i < validInvoices.length; i += invChunkSize) {
+          const chunk = validInvoices.slice(i, i + invChunkSize);
+          try {
+            const inClause = chunk.map((inv) => `"${inv}"`).join(',');
+            const existingRows = await supabaseFetchAllPages<{ invoice: string }>(
+              'stock_opname_queue',
+              `invoice=in.(${encodeURIComponent(inClause)})&select=invoice`
+            );
+            if (existingRows && Array.isArray(existingRows)) {
+              for (const row of existingRows) {
+                if (row.invoice) existingInvoices.add(row.invoice.trim());
+              }
+            }
+          } catch (queryErr) {
+            console.warn('Error checking existing SO queue invoices:', queryErr);
+          }
+        }
+        unprocessedInvoices = validInvoices.filter((inv) => !existingInvoices.has(inv));
+      }
+
+      if (!unprocessedInvoices.length) {
+        return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
+      }
+
+      // 4. Collect distinct locations scanned ONLY for unprocessed invoices and aggregate physical counts
       const invoiceLocationsMap = new Map<string, Set<string>>();
       const scannedPhysicalMap = new Map<string, {
         invoice: string;
@@ -1517,7 +1546,7 @@ export async function syncPendingStockOpnameFromLogProduk(
         tanggal: string;
       }>();
 
-      for (const inv of validInvoices) {
+      for (const inv of unprocessedInvoices) {
         const meta = invoiceMeta.get(inv);
         if (!meta) continue;
         if (!invoiceLocationsMap.has(inv)) {
@@ -1549,12 +1578,11 @@ export async function syncPendingStockOpnameFromLogProduk(
         }
       }
 
-      // 4. Batch fetch system stock from stok_real_fisik for ALL locations involved
+      // 5. Batch fetch system stock from stok_real_fisik ONLY for locations of unprocessed invoices
       const allDistinctLocations = Array.from(new Set(
         Array.from(invoiceLocationsMap.values()).flatMap((s) => Array.from(s))
       ));
 
-      // locationStockMap: Map<lokasiUpper, Map<skuUpper, StockRealtimeItem>>
       const locationStockMap = new Map<string, Map<string, StockRealtimeItem>>();
       for (const loc of allDistinctLocations) {
         locationStockMap.set(loc.toUpperCase(), new Map());
@@ -1578,34 +1606,6 @@ export async function syncPendingStockOpnameFromLogProduk(
             locationStockMap.get(locKey)!.set(skuKey, s);
           }
         }
-      }
-
-      // 5. Query existing INVOICES in stock_opname_queue to avoid re-calculating them ENTIRELY
-      const existingInvoices = new Set<string>();
-      const invChunkSize = 50;
-      for (let i = 0; i < validInvoices.length; i += invChunkSize) {
-        const chunk = validInvoices.slice(i, i + invChunkSize);
-        try {
-          const inClause = chunk.map((inv) => `"${inv}"`).join(',');
-          const existingRows = await supabaseFetchAllPages<{ invoice: string }>(
-            'stock_opname_queue',
-            `invoice=in.(${encodeURIComponent(inClause)})&select=invoice`
-          );
-          if (existingRows && Array.isArray(existingRows)) {
-            for (const row of existingRows) {
-              if (row.invoice) existingInvoices.add(row.invoice.trim());
-            }
-          }
-        } catch (queryErr) {
-          console.warn('Error checking existing SO queue invoices:', queryErr);
-        }
-      }
-
-      // Filter to only truly unprocessed invoices
-      const unprocessedInvoices = validInvoices.filter(inv => !existingInvoices.has(inv));
-
-      if (!unprocessedInvoices.length) {
-        return { success: true, processedInvoices: 0, newQueueItemsCount: 0 };
       }
 
       // 6. Perform Full Location Reconciliation for each (invoice, location)
