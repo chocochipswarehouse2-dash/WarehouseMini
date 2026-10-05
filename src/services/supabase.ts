@@ -1442,10 +1442,10 @@ export async function syncPendingStockOpnameFromLogProduk(
       // NOTE: Supabase caps every response at 1000 rows. A single `limit=5000` request silently
       // truncated the SO scan list, so older invoices were reconciled with PARTIAL scans and
       // unscanned-looking SKUs became bogus "Scan: 0" PENDING rows. Always page through all rows.
-      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc`;
+      let soLogsQuery = `type=eq.SO&created_at=gte.${encodeURIComponent(sinceDate)}&order=created_at.desc,id.asc`;
       if (options?.forceInvoices && options.forceInvoices.length > 0) {
         const inClause = options.forceInvoices.map((inv) => `"${inv}"`).join(',');
-        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc`;
+        soLogsQuery = `type=eq.SO&invoice=in.(${encodeURIComponent(inClause)})&order=created_at.desc,id.asc`;
       }
 
       const soLogs = await supabaseFetchAllPages<LogProdukItem>(
