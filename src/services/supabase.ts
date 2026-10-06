@@ -3406,13 +3406,31 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       for (let i = 0; i < batchSize && offset < maxRowsPerTable; i++) {
         const off = offset;
         batchPromises.push(
-          fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
-            headers: {
-              apikey: supaKey,
-              Authorization: 'Bearer ' + supaKey,
-              'Content-Type': 'application/json',
-            },
-          }).then(r => r.ok ? r.json() : []).catch(() => null)
+          (async () => {
+            let retries = 3;
+            while (retries > 0) {
+              try {
+                const r = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+                  headers: {
+                    apikey: supaKey,
+                    Authorization: 'Bearer ' + supaKey,
+                    'Content-Type': 'application/json',
+                  },
+                });
+                if (r.ok) {
+                  return await r.json();
+                } else {
+                  // Wait and retry if it's a rate limit or server error
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  retries--;
+                }
+              } catch (err) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                retries--;
+              }
+            }
+            return null; // Return null only after all retries fail
+          })()
         );
         offset += pageSize;
       }
@@ -3421,7 +3439,12 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
       let breakLoop = false;
 
       for (const rows of results) {
-        if (rows === null) continue;
+        if (rows === null) {
+          // If a request completely failed after retries, we shouldn't abort everything.
+          // However, we did miss a page. We just log and continue so we don't drop the rest.
+          console.warn('Failed to fetch a page of master products after retries.');
+          continue;
+        }
         if (!Array.isArray(rows) || rows.length === 0) {
           breakLoop = true;
           break;
