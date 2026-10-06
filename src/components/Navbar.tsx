@@ -95,6 +95,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { title: 'Katalog Produk', subtitle: 'Manajemen Katalog Manual', icon: BookOpen };
       case 'penerimaan':
         return { title: 'Penerimaan Produksi', subtitle: 'Kedatangan Lokal CMT & Kargo', icon: Truck };
+      case 'operasi_stok':
+        return { title: 'Scanner | LOG', subtitle: 'Scan Rak, Mutasi Log & SO', icon: ScanBarcode };
       case 'scanner':
         return { title: 'Scanner', subtitle: 'Tembak Lokasi & SKU', icon: ScanBarcode };
       case 'inventory':

@@ -1956,7 +1956,7 @@ export async function processStockOpnameCsvImport(
           qty_sistem,
           qty_fisik,
           selisih,
-          status,
+          status: status as any,
           jenis: 'Opname CSV',
           alasan: reason,
           operator: operatorName,

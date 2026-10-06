@@ -10,7 +10,7 @@
  * 6. Qty minus pada DealPOS (master produk) BUKAN anomali yang perlu kita sanitasi.
  */
 import { ProductItem, StockRealtimeItem, LogProdukItem, UserSession } from '../types';
-import { insertLogProduk, getStoredSupabaseConfig } from '../services/supabase';
+import { insertLogProduk, getStoredSupabaseConfig, invalidateStokFisikCache } from '../services/supabase';
 import { buildProductLookupMap, lookupProductBySku } from './productLookup';
 
 export type AnomalyCategory =
@@ -668,42 +668,49 @@ export async function deleteCorruptedSkuRecord(
 
     // 3. Inject ADJ_OUT/ADJ_IN to neutralize physical stock
     const invoice = `ADJ-PRG-${Date.now().toString().slice(-6)}`;
-    if (item.lokasiFisik && item.lokasiFisik.length > 0) {
-      for (const loc of item.lokasiFisik) {
+    const logsToInsert: LogProdukItem[] = [];
+    const nowIso = new Date().toISOString();
+    const operator = userSession?.name || userSession?.username || 'Sistem WMS';
+
+    if (item.locations && item.locations.length > 0) {
+      for (const loc of item.locations) {
         if (loc.qty > 0) {
-          await insertLogProduk([{
+          logsToInsert.push({
             sku: cleanSku,
-            nama_produk: item.nama_produk,
+            nama_produk: item.nama_produk || cleanSku,
             size: item.size || '-',
             qty: loc.qty,
-            lokasi: loc.lokasi,
-            area: loc.area || 'Gudang Utama',
+            lokasi: loc.lokasi || 'Warehouse',
+            area: loc.area || 'Warehouse',
             type: 'ADJ_OUT',
-            pic: userSession?.name || 'Sistem WMS',
-            keterangan: `Purge corrupted/orphan SKU (Auto)`,
+            operator,
+            keterangan: 'Purge corrupted/orphan SKU (Auto)',
             invoice,
-          }]);
-        }
-      }
-    }
-    if (item.negativeLocations && item.negativeLocations.length > 0) {
-      for (const loc of item.negativeLocations) {
-        if (loc.qty > 0) {
-          await insertLogProduk([{
+            created_at: nowIso,
+          });
+        } else if (loc.qty < 0) {
+          logsToInsert.push({
             sku: cleanSku,
-            nama_produk: item.nama_produk,
+            nama_produk: item.nama_produk || cleanSku,
             size: item.size || '-',
-            qty: loc.qty,
-            lokasi: loc.lokasi,
-            area: loc.area || 'Gudang Utama',
+            qty: Math.abs(loc.qty),
+            lokasi: loc.lokasi || 'Warehouse',
+            area: loc.area || 'Warehouse',
             type: 'ADJ_IN',
-            pic: userSession?.name || 'Sistem WMS',
-            keterangan: `Purge corrupted/orphan SKU (Auto)`,
+            operator,
+            keterangan: 'Purge corrupted/orphan SKU (Auto)',
             invoice,
-          }]);
+            created_at: nowIso,
+          });
         }
       }
     }
+
+    if (logsToInsert.length > 0) {
+      await insertLogProduk(logsToInsert);
+    }
+
+    invalidateStokFisikCache();
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
