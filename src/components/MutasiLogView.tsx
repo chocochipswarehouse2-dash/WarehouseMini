@@ -1004,7 +1004,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
         </div>
 
         {/* Active Filter Strip (Shown only when active filters exist) */}
-        {(activeFilterCount > 0 || isConsolidatedMode) && (
+        {(activeFilterCount > 0 || isConsolidatedMode || searchQuery) && (
           <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
             <span className="text-slate-400 font-semibold text-[10px]">Filter Aktif:</span>
             {isConsolidatedMode && (
@@ -1031,13 +1031,31 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                 <button type="button" onClick={() => setAreaFilter('ALL')} className="hover:text-red-500 cursor-pointer">×</button>
               </span>
             )}
-            <button
-              type="button"
-              onClick={handleResetAllFilters}
-              className="text-red-600 dark:text-red-400 hover:underline font-bold ml-auto text-[11px] cursor-pointer"
-            >
-              Reset Semua
-            </button>
+
+            <div className="ml-auto flex items-center gap-2">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={handleServerSearch}
+                  disabled={isServerSearching}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] shadow-xs cursor-pointer disabled:opacity-50 transition-colors"
+                >
+                  {isServerSearching ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Search className="w-3 h-3" />
+                  )}
+                  Cari di Server Database
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="text-red-600 dark:text-red-400 hover:underline font-bold text-[11px] cursor-pointer"
+              >
+                Reset Semua
+              </button>
+            </div>
           </div>
         )}
       </div>
