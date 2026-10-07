@@ -526,7 +526,7 @@ export interface ManualShipmentHistoryLog {
 }
 
 export interface ManualShipmentItem {
-  id: string;
+  id?: string;
   nama_produk: string;
   sku: string;
   qty: number | string;
@@ -540,27 +540,133 @@ export interface ManualShipmentItem {
   sold_note?: string;
   sold_at?: string;
   sold_by?: string;
+  // Detail khusus pengerjaan Alteration & Repair per-item
+  needs_alteration?: boolean;
+  id_form_alter?: string;
+  alteration_status?: 'antrian' | 'dalam_pengerjaan' | 'selesai_qc';
+  layanan_type?: AlterationLayananType;
+  kondisi?: string;
+  alteration_detail?: string;
+  repair_detail?: string;
+}
+
+export type StoreOrderType = 'manual_shipment' | 'alteration_repair';
+export type AlterationLayananType = 'alteration' | 'repair' | 'both';
+export type AlterationSourceType = 'store' | 'warehouse';
+export type AlterationFlowStage =
+  | 'diajukan'
+  | 'dikirim_store'
+  | 'diterima_warehouse'
+  | 'dalam_pengerjaan'
+  | 'selesai_qc'
+  | 'dikirim_kembali'
+  | 'siap_dikirim'
+  | 'selesai';
+
+export interface AlterationFlowLog {
+  id: string;
+  stage: AlterationFlowStage;
+  timestamp: string;
+  actor_name: string;
+  actor_role?: string;
+  notes?: string;
+  foto_url?: string;
+}
+
+export interface AlterationRepairData {
+  layanan_type: AlterationLayananType;
+  id_form_alter?: string; // No. ID Form Alter (Manual input untuk Store, Auto untuk Warehouse)
+  sumber_barang?: AlterationSourceType; // 'store' atau 'warehouse'
+  nama_asal?: string; // Nama outlet store atau divisi gudang asal
+  pic_pemohon?: string; // PIC yang mengajukan request
+  pic_store_phone?: string; // No HP / WhatsApp PIC Store
+  pic_store_email?: string; // Email PIC Store (opsional)
+  lokasi_rak?: string; // Rak asal di gudang jika sumber dari warehouse
+  nama_customer?: string; // opsional / referensi jika ada
+  nama_sa?: string;
+  no_hp?: string;
+  toko?: string;
+  nama_produk: string;
+  sku?: string;
+  size?: string;
+  qty?: number;
+  kondisi: string;
+  perkiraan_selesai: string;
+  alteration_detail?: string;
+  repair_detail?: string;
+  pic_warehouse?: string; // PIC / Penjahit warehouse yang mengerjakan
+  status_flow?: AlterationFlowStage;
+  flow_logs?: AlterationFlowLog[];
+
+  // Pengiriman Arah 1: Dari Store ke Warehouse
+  tgl_kirim_store?: string;
+  kurir_kirim_store?: string;
+  resi_kirim_store?: string;
+  pic_kirim_store?: string;
+
+  // Penerimaan Fisik di Warehouse
+  tgl_terima_warehouse?: string;
+  pic_terima_warehouse?: string;
+  kondisi_terima_warehouse?: string;
+
+  // Pengiriman Arah 2: Dari Warehouse kembali ke Store atau Customer
+  tujuan_pengembalian?: 'store' | 'customer';
+  nama_penerima_kembali?: string;
+  no_telp_penerima_kembali?: string;
+  alamat_penerima_kembali?: string;
+  jasa_kirim_customer?: string; // Pilihan ekspedisi kirim ke customer
+  notes_pengiriman_customer?: string; // Catatan khusus pengiriman customer
+  tgl_kirim_kembali?: string;
+  ekspedisi_kembali?: string;
+  resi_kembali?: string;
+  foto_bukti_kirim?: string[];
+  catatan_kirim_kembali?: string;
+
+  // DealPOS Delivery to Store & Store Received
+  no_delivery_dealpos?: string; // No Delivery Dealpos diisi admin warehouse
+  tgl_delivery_dealpos?: string; // Tanggal input delivery dealpos
+  status_dealpos_received?: boolean; // True jika sudah di-receive oleh PIC Store
+  pic_dealpos_receiver?: string; // PIC Store yang menerima
+  tgl_dealpos_received?: string; // Tanggal & waktu received di Store
+  catatan_dealpos?: string;
+
+  is_agreed_terms?: boolean;
+  is_condition_confirmed?: boolean;
+  foto_urls?: string[];
+  status_pengerjaan?: 'Menunggu' | 'Dalam Pengerjaan' | 'Selesai' | 'Sudah Diambil' | 'Dibatalkan';
 }
 
 export interface ManualShipmentOrder {
   id?: string;
   no_pesanan?: string;
-  // Data Pengirim
+  // Jenis Pesanan Store: 'manual_shipment' (Kirim barang) atau 'alteration_repair' (Layanan perbaikan & alteration)
+  order_type?: StoreOrderType;
+  // Data Pengirim / Store
   nama_pengirim: string;
   pic_store?: string;
   no_telp_store: string;
   no_transaksi_pengirim: string[];
-  // Data Customer
+  // Data Customer / Pemilik Barang
   nama_tujuan: string;
   no_telp_tujuan: string;
   alamat_tujuan: string;
   notes_paket: string;
   no_transaksi_customer: string;
   jasa_kirim?: string;
-  // Pesanan
+  // Pesanan / Barang
   items: ManualShipmentItem[];
+  // Data Khusus Alteration & Repair (jika order_type === 'alteration_repair')
+  alteration_repair_data?: AlterationRepairData;
+  layanan_type?: AlterationLayananType;
+  kondisi?: string;
+  perkiraan_selesai?: string;
+  alteration_detail?: string;
+  repair_detail?: string;
+  is_agreed_terms?: boolean;
+  is_condition_confirmed?: boolean;
+  foto_urls?: string[];
   // Status & Meta
-  status: 'diterima' | 'diproses' | 'dikirim' | 'batal';
+  status: 'diterima' | 'diproses' | 'dikirim' | 'batal' | 'selesai' | 'diambil';
   no_resi?: string;
   created_at?: string;
   submitted_by?: string;

@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles
 } from 'lucide-react';
 import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { PhysicalScanInput } from '../PhysicalScanInput';
+import { AlterationRepairTab } from './AlterationRepairTab';
+import { AlterationRepairReceiptModal } from './AlterationRepairReceiptModal';
+import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
+import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -48,7 +52,14 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const userIsAdmin = isSuperadmin(session);
   const canAction = userIsAdmin || hasPermission(session, 'tab_ops_pesanan_manual_shipment');
 
-  const [activeTab, setActiveTab] = useState<'form' | 'rekap'>('form');
+  const [activeTab, setActiveTab] = useState<'form' | 'alteration_repair' | 'rekap'>('form');
+  const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'alteration_repair'>('all');
+  const [arReceiptOrder, setArReceiptOrder] = useState<ManualShipmentOrder | null>(null);
+  const [sjAlterModalOrder, setSjAlterModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [alterActionData, setAlterActionData] = useState<{
+    order: ManualShipmentOrder;
+    actionType: AlterationActionType;
+  } | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'card'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
   const [loading, setLoading] = useState(false);
   const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string }[]>([]);
@@ -647,6 +658,15 @@ _WMS Warehouse System_`;
     }
   };
 
+  const generateAutoMarketplaceAlterId = () => {
+    const today = new Date();
+    const y = String(today.getFullYear()).slice(-2);
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `ALT-MS-${y}${m}${d}-${randomHex}`;
+  };
+
   const handleAddItem = () => {
     setItems(prev => [...prev, {
       id: `item-${Date.now()}`, nama_produk: '', sku: '', qty: 1, fulfillment: '', size: ''
@@ -657,10 +677,38 @@ _WMS Warehouse System_`;
     setItems(prev => prev.filter(i => i.id !== id));
   };
 
+  const handleToggleItemAlteration = (id: string, checked: boolean) => {
+    setItems(prev => prev.map(item => {
+      if (item.id === id) {
+        const isMarketplace = (item.fulfillment || '').toLowerCase().includes('marketplace');
+        const autoId = isMarketplace ? generateAutoMarketplaceAlterId() : '';
+        return {
+          ...item,
+          needs_alteration: checked,
+          id_form_alter: checked ? (item.id_form_alter || autoId) : undefined,
+          layanan_type: checked ? (item.layanan_type || 'alteration') : undefined,
+          alteration_status: checked ? (item.alteration_status || 'antrian') : undefined,
+          kondisi: checked ? (item.kondisi || 'Kondisi baru / baik') : undefined,
+          alteration_detail: checked ? (item.alteration_detail || '') : undefined,
+        };
+      }
+      return item;
+    }));
+  };
+
   const handleItemChange = (id: string, field: keyof ManualShipmentItem, value: any) => {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
-        return { ...item, [field]: value };
+        const updated = { ...item, [field]: value };
+        if (field === 'fulfillment' && updated.needs_alteration) {
+          const isMarketplace = (String(value || '')).toLowerCase().includes('marketplace');
+          if (isMarketplace && (!updated.id_form_alter || !updated.id_form_alter.startsWith('ALT-MS-'))) {
+            updated.id_form_alter = generateAutoMarketplaceAlterId();
+          } else if (!isMarketplace && updated.id_form_alter?.startsWith('ALT-MS-')) {
+            updated.id_form_alter = '';
+          }
+        }
+        return updated;
       }
       return item;
     }));
@@ -693,6 +741,22 @@ _WMS Warehouse System_`;
     if (items.length === 0 || items.some(i => !i.nama_produk || !i.fulfillment)) {
       onShowToast('Harap lengkapi item produk dan pilihan fulfillment toko', 'warning');
       return;
+    }
+
+    // Validasi Item yang membutuhkan Alteration
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.needs_alteration) {
+        const isMarketplace = (it.fulfillment || '').toLowerCase().includes('marketplace');
+        if (!isMarketplace && (!it.id_form_alter || !it.id_form_alter.trim())) {
+          onShowToast(`Item #${i + 1} (${it.nama_produk || it.sku}): Pihak Store wajib mengisi No. ID Form Alter sesuai pendaftaran di Store`, 'warning');
+          return;
+        }
+        if (!it.alteration_detail || !it.alteration_detail.trim()) {
+          onShowToast(`Item #${i + 1} (${it.nama_produk || it.sku}): Rincian instruksi alteration/permak wajib diisi`, 'warning');
+          return;
+        }
+      }
     }
 
     setLoading(true);
@@ -779,7 +843,11 @@ _WMS Warehouse System_`;
           const itemsListStr = orderData.items
             .map(
               (it, idx) =>
-                `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: ${it.qty} pcs, Fulfillment: ${it.fulfillment || '-'})`
+                `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: ${it.qty} pcs, Fulfillment: ${it.fulfillment || '-'})${
+                  it.needs_alteration
+                    ? `\n     ✂️ *[Alteration: ${it.id_form_alter || 'Auto'}]* ${it.alteration_detail || '-'}`
+                    : ''
+                }`
             )
             .join('\n');
 
@@ -1242,6 +1310,129 @@ _WMS Warehouse System_`;
                           <span className="md:hidden">Hapus</span>
                         </button>
                       </div>
+                    </div>
+
+                    {/* Alteration Feature per Item */}
+                    <div className="mt-2.5 pt-2 border-t border-slate-200/80 dark:border-slate-700/80">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={!!item.needs_alteration}
+                            onChange={(e) => handleToggleItemAlteration(item.id, e.target.checked)}
+                            className="w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500 cursor-pointer"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <Scissors className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Butuh Alteration / Permak Pakaian</span>
+                          </span>
+                        </label>
+                        {item.needs_alteration && (
+                          <span className="text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 px-2 py-0.5 rounded-full font-bold">
+                            {(item.fulfillment || '').toLowerCase().includes('marketplace')
+                              ? 'ID Auto WMS'
+                              : 'ID Manual Store'}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.needs_alteration && (
+                        <div className="mt-2.5 p-3 bg-rose-50/60 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900/60 space-y-2.5 animate-in fade-in">
+                          {/* ID Form Alter & Jenis Layanan */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {/* ID Form Alter: Auto for Marketplace, Manual for Store */}
+                            <div>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <label className="block text-[10px] font-bold text-rose-900 dark:text-rose-200">
+                                  No. ID Form Alter *
+                                </label>
+                                {(item.fulfillment || '').toLowerCase().includes('marketplace') ? (
+                                  <span className="text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-400">
+                                    (Otomatis oleh WMS)
+                                  </span>
+                                ) : (
+                                  <span className="text-[9.5px] font-semibold text-amber-700 dark:text-amber-400">
+                                    (Diisi manual sesuai form store)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  required
+                                  value={item.id_form_alter || ''}
+                                  readOnly={(item.fulfillment || '').toLowerCase().includes('marketplace')}
+                                  onChange={(e) => handleItemChange(item.id, 'id_form_alter', e.target.value)}
+                                  placeholder={(item.fulfillment || '').toLowerCase().includes('marketplace') ? 'ALT-MS-XXXXX' : 'Ketik No. ID Form Alter Store...'}
+                                  className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold shadow-2xs border ${
+                                    (item.fulfillment || '').toLowerCase().includes('marketplace')
+                                      ? 'bg-slate-100 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 cursor-not-allowed'
+                                      : 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-rose-300 dark:border-rose-700'
+                                  }`}
+                                />
+                                {(item.fulfillment || '').toLowerCase().includes('marketplace') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleItemChange(item.id, 'id_form_alter', generateAutoMarketplaceAlterId())}
+                                    title="Regenerate ID Alter"
+                                    className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold shrink-0 border border-indigo-200 cursor-pointer"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Jenis Layanan */}
+                            <div>
+                              <label className="block text-[10px] font-bold text-rose-900 dark:text-rose-200 mb-0.5">
+                                Jenis Layanan:
+                              </label>
+                              <select
+                                value={item.layanan_type || 'alteration'}
+                                onChange={(e) => handleItemChange(item.id, 'layanan_type', e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-rose-300 dark:border-rose-700 shadow-2xs"
+                              >
+                                <option value="alteration">✂️ Alteration Only (Potong / Kecilkan)</option>
+                                <option value="repair">🔧 Repair Only (Permak / Resleting / Kancing)</option>
+                                <option value="both">✂️🔧 Alter & Repair</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Detail Instruksi Alteration / Permak */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-[10px] font-bold text-rose-900 dark:text-rose-200">
+                                Rincian Instruksi Alteration / Permak *
+                              </label>
+                              <div className="flex flex-wrap gap-1">
+                                {['Potong keliman 5cm', 'Kecilkan pinggang 2cm', 'Ganti resleting', 'Pasang kancing'].map((preset) => (
+                                  <button
+                                    key={preset}
+                                    type="button"
+                                    onClick={() => {
+                                      const cur = item.alteration_detail ? `${item.alteration_detail}, ${preset}` : preset;
+                                      handleItemChange(item.id, 'alteration_detail', cur);
+                                    }}
+                                    className="text-[9px] bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 hover:bg-rose-100 cursor-pointer"
+                                  >
+                                    + {preset}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <textarea
+                              rows={2}
+                              required
+                              value={item.alteration_detail || ''}
+                              onChange={(e) => handleItemChange(item.id, 'alteration_detail', e.target.value)}
+                              placeholder="Misal: Potong keliman bawah 4cm dijahit rapi dengan benang senada..."
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))
@@ -2047,6 +2238,24 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                                 </span>
                               )
                             )}
+                            {item.needs_alteration && (
+                              <div className="w-full mt-1.5 p-2 rounded-lg bg-rose-50/80 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-[11px] text-rose-900 dark:text-rose-200 space-y-0.5">
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className="flex items-center gap-1">
+                                    <Scissors className="w-3 h-3 text-rose-600" />
+                                    <span>ID Form Alter: <strong className="font-mono text-indigo-700 dark:text-indigo-300">{item.id_form_alter || '-'}</strong></span>
+                                  </span>
+                                  <span className="text-[9.5px] uppercase px-1.5 py-0.5 rounded bg-rose-200 dark:bg-rose-900 text-rose-950 dark:text-rose-100 font-bold">
+                                    {item.layanan_type || 'Alteration'}
+                                  </span>
+                                </div>
+                                {item.alteration_detail && (
+                                  <div className="text-slate-600 dark:text-slate-400 text-[10.5px]">
+                                    <strong>Instruksi:</strong> {item.alteration_detail}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="font-bold bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">x{item.qty}</div>
@@ -2274,6 +2483,16 @@ _WMS Warehouse System_`;
         (o.nama_pengirim || '').toLowerCase().trim() === userAssignedStore.toLowerCase().trim()
       );
     }
+
+    // Filter Jenis Pesanan (Manual Shipment vs Alteration & Repair)
+    if (filterOrderType !== 'all') {
+      result = result.filter(o => {
+        const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
+        if (filterOrderType === 'alteration_repair') return isAr;
+        if (filterOrderType === 'manual_shipment') return !isAr;
+        return true;
+      });
+    }
     
     // Status filter
     if (filterStatus !== 'all') {
@@ -2478,18 +2697,61 @@ _WMS Warehouse System_`;
     onShowToast(`Berhasil mengekspor ${rows.length} baris data ke format database`, 'success');
   };
 
-  const renderRekap = () => (
+  const renderRekap = () => {
+    const totalArCount = orders.filter(o => o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data).length;
+    const totalManualCount = orders.length - totalArCount;
+
+    return (
     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col h-full min-h-[600px] transition-colors">
       <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-3 bg-slate-50 dark:bg-slate-800/60">
         <div className="flex justify-between items-center flex-wrap gap-2">
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white flex items-center">
               <FileText className="w-5 h-5 mr-1.5 sm:mr-2 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              Rekap Manual Shipment
+              Rekap Pesanan Toko
             </h2>
             <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-700/80 px-2.5 py-0.5 rounded-full">
-              {filteredOrders.length} Order
+              {filteredOrders.length} Pesanan
             </span>
+
+            {/* Quick Filter Jenis Pesanan */}
+            <div className="inline-flex p-0.5 bg-slate-200/70 dark:bg-slate-700/60 rounded-lg text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setFilterOrderType('all')}
+                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                  filterOrderType === 'all'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                }`}
+              >
+                Semua ({orders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterOrderType('manual_shipment')}
+                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
+                  filterOrderType === 'manual_shipment'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'
+                }`}
+              >
+                <Package className="w-3 h-3" />
+                <span>Manual Shipment ({totalManualCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterOrderType('alteration_repair')}
+                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
+                  filterOrderType === 'alteration_repair'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-rose-600'
+                }`}
+              >
+                <Scissors className="w-3 h-3" />
+                <span>Alteration & Repair ({totalArCount})</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -2733,6 +2995,50 @@ _WMS Warehouse System_`;
                     >
                       {order.no_pesanan}
                     </div>
+                    {(() => {
+                      const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+                      if (isAr) {
+                        const ar = order.alteration_repair_data;
+                        const layanan = ar?.layanan_type || order.layanan_type || 'both';
+                        const layananText = layanan === 'alteration' ? 'ALTER' : layanan === 'repair' ? 'REPAIR' : 'ALTER + REPAIR';
+                        const flowStage = ar?.status_flow || 'diajukan';
+
+                        let stageBadge = 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300';
+                        let stageText = 'Menunggu Kirim';
+                        if (flowStage === 'dikirim_store') {
+                          stageBadge = 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300';
+                          stageText = 'Dikirim ke Gudang';
+                        } else if (flowStage === 'diterima_warehouse') {
+                          stageBadge = 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/60 dark:text-indigo-300';
+                          stageText = 'Diterima di Gudang';
+                        } else if (flowStage === 'dalam_pengerjaan') {
+                          stageBadge = 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300';
+                          stageText = 'Sedang Pengerjaan';
+                        } else if (flowStage === 'selesai_qc') {
+                          stageBadge = 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950/60 dark:text-teal-300';
+                          stageText = 'Selesai QC';
+                        } else if (flowStage === 'dikirim_kembali') {
+                          stageBadge = 'bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950/60 dark:text-sky-300';
+                          stageText = 'Dikirim Kembali';
+                        } else if (flowStage === 'selesai') {
+                          stageBadge = 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300';
+                          stageText = 'Selesai';
+                        }
+
+                        return (
+                          <div className="mt-1 flex flex-col gap-1 items-start">
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                              <Scissors className="w-2.5 h-2.5 text-rose-600" />
+                              {layananText}
+                            </span>
+                            <span className={`inline-flex items-center text-[8.5px] font-bold px-1.5 py-0.2 rounded border ${stageBadge}`}>
+                              {stageText}
+                            </span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {order.no_transaksi_customer && (
                       <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                         ID: {order.no_transaksi_customer}
@@ -2973,6 +3279,11 @@ _WMS Warehouse System_`;
                         onChange={(e) => {
                           const action = e.target.value;
                           if (action === 'print') handlePrintLabel(order);
+                          if (action === 'spk') setArReceiptOrder(order);
+                          if (action === 'sj_struk') setSjAlterModalOrder(order);
+                          if (action === 'mark_sent') setAlterActionData({ order, actionType: 'mark_sent_store' });
+                          if (action === 'mark_received') setAlterActionData({ order, actionType: 'mark_received_warehouse' });
+                          if (action === 'complete_ship') setAlterActionData({ order, actionType: 'complete_and_ship' });
                           if (action === 'edit') {
                             handleEdit(order);
                             setActiveTab('form');
@@ -2992,6 +3303,21 @@ _WMS Warehouse System_`;
                       >
                         <option value="" disabled>Aksi</option>
                         <option value="print">Print Label</option>
+                        {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
+                          <>
+                            <option value="sj_struk">Cetak SJ Struk (Rangkap 2)</option>
+                            <option value="spk">Cetak SPK Gudang</option>
+                            {order.alteration_repair_data?.status_flow === 'diajukan' && (
+                              <option value="mark_sent">Tandai Dikirim Store</option>
+                            )}
+                            {(order.alteration_repair_data?.status_flow === 'dikirim_store' || order.alteration_repair_data?.status_flow === 'diajukan') && (
+                              <option value="mark_received">Tandai Diterima Warehouse</option>
+                            )}
+                            {(order.alteration_repair_data?.status_flow === 'dalam_pengerjaan' || order.alteration_repair_data?.status_flow === 'selesai_qc') && (
+                              <option value="complete_ship">Input Bukti Kirim & Selesai</option>
+                            )}
+                          </>
+                        )}
                         <option value="edit">Edit</option>
                         <option value="sj_dealpos">Input SJ DealPOS</option>
                         <option value="resi">Update Resi</option>
@@ -3262,6 +3588,7 @@ _WMS Warehouse System_`;
                           onChange={(e) => {
                             const action = e.target.value;
                             if (action === 'print') handlePrintLabel(order);
+                            if (action === 'spk') setArReceiptOrder(order);
                             if (action === 'edit') {
                               handleEdit(order);
                               setActiveTab('form');
@@ -3281,6 +3608,9 @@ _WMS Warehouse System_`;
                         >
                           <option value="" disabled>Aksi</option>
                           <option value="print">Print Label</option>
+                          {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
+                            <option value="spk">Cetak SPK</option>
+                          )}
                           <option value="edit">Edit</option>
                           <option value="resi">Update Resi</option>
                           <option value="delete">Hapus</option>
@@ -3296,6 +3626,7 @@ _WMS Warehouse System_`;
       </div>
     </div>
   );
+};
 
   return (
     <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300">
@@ -3316,8 +3647,25 @@ _WMS Warehouse System_`;
             }}
           >
             <Package className="w-4 h-4 shrink-0" />
-            <span>{editingOrder ? 'Edit Pesanan' : 'Form Pesanan'}</span>
+            <span>{editingOrder ? 'Edit Pesanan' : 'Manual Shipment'}</span>
           </button>
+
+          <button
+            type="button"
+            id="tab-manual-alteration"
+            className={`py-1.5 px-3.5 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-150 flex items-center gap-2 cursor-pointer ${
+              activeTab === 'alteration_repair'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+            onClick={() => {
+              setActiveTab('alteration_repair');
+            }}
+          >
+            <Scissors className="w-4 h-4 shrink-0 text-rose-500" />
+            <span>Alteration & Repair</span>
+          </button>
+
           <button
             type="button"
             id="tab-manual-rekap"
@@ -3352,11 +3700,36 @@ _WMS Warehouse System_`;
         <div className={activeTab === 'form' ? 'block' : 'hidden'}>
           {renderForm()}
         </div>
+
+        <div className={activeTab === 'alteration_repair' ? 'block' : 'hidden'}>
+          <AlterationRepairTab
+            session={session}
+            productCatalog={productCatalog}
+            onShowToast={onShowToast}
+            orders={orders}
+            onOrdersUpdated={loadOrders}
+            onOrderSaved={() => {
+              loadOrders();
+            }}
+            onGoToRekap={() => {
+              setActiveTab('rekap');
+              loadOrders();
+            }}
+          />
+        </div>
         
         <div className={activeTab === 'rekap' ? 'block' : 'hidden'}>
           {renderRekap()}
         </div>
       </div>
+
+      {arReceiptOrder && (
+        <AlterationRepairReceiptModal
+          order={arReceiptOrder}
+          onClose={() => setArReceiptOrder(null)}
+          onShowToast={onShowToast}
+        />
+      )}
       {renderSjDealposModal()}
         {renderSoldOutModal()}
         {renderOrderDetailsModal()}
@@ -3936,7 +4309,15 @@ _WMS Warehouse System_`;
                           <tr key={itemIdx} className="border-b border-slate-200 text-[11px]">
                             <td className="p-1.5 text-center text-slate-500">{itemIdx + 1}</td>
                             <td className="p-1.5 font-mono font-bold text-slate-900">{item.sku}</td>
-                            <td className="p-1.5 font-semibold text-slate-800">{cleanName}</td>
+                            <td className="p-1.5 font-semibold text-slate-800">
+                              <div>{cleanName}</div>
+                              {item.needs_alteration && (
+                                <div className="text-[10px] text-rose-700 font-bold flex items-center gap-1 mt-0.5">
+                                  <span>✂️ BUTUH ALTER ({item.id_form_alter || 'Auto'}):</span>
+                                  <span className="font-normal italic text-slate-600">{item.alteration_detail || '-'}</span>
+                                </div>
+                              )}
+                            </td>
                             <td className="p-1.5 text-center font-bold">{variasi}</td>
                             <td className="p-1.5 text-center font-extrabold text-indigo-600 text-xs">{item.qty}</td>
                             <td className="p-1.5 text-center font-bold bg-slate-50 text-emerald-700">{location}</td>
