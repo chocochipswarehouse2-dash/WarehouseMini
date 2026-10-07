@@ -24,6 +24,7 @@ import {
   fetchStockOpnameQueue,
   approveStockOpnameQueueItems,
   rejectStockOpnameQueueItems,
+  undoStockOpnameQueueItems,
   deleteStockOpnameQueueItems,
   resyncStockOpnameQueueItems,
   syncPendingStockOpnameFromLogProduk,
@@ -297,6 +298,41 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
     });
   };
 
+  // Batch Undo
+  const handleUndoSelected = () => {
+    const itemsToUndo = soQueue.filter((it) => it.id && selectedSoIds.includes(it.id) && it.status === 'APPROVED');
+    if (!itemsToUndo.length) {
+      if (onNotify) onNotify('Pilih setidaknya 1 item berstatus APPROVED untuk di-undo.', 'error');
+      return;
+    }
+
+    setConfirmModal({
+      title: 'Konfirmasi Batal Approve (Undo)',
+      message: `Batal approve (Undo) untuk ${itemsToUndo.length} item SO terpilih? Status akan kembali PENDING dan log mutasi (ADJ_IN/OUT) terkait akan dihapus permanen.`,
+      confirmLabel: `Undo (${itemsToUndo.length})`,
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsActionLoading(true);
+        showGlobalLoading('Memproses Undo...');
+        try {
+          const res = await undoStockOpnameQueueItems(itemsToUndo);
+          if (res.success) {
+            if (onNotify) onNotify(`Berhasil Undo ${res.count} item SO.`, 'success');
+            await loadSoData();
+          } else {
+            if (onNotify) onNotify(`Gagal undo: ${res.error}`, 'error');
+          }
+        } catch (e: any) {
+          if (onNotify) onNotify(e.message, 'error');
+        } finally {
+          setIsActionLoading(false);
+          hideGlobalLoading();
+        }
+      },
+    });
+  };
+
   // Batch Reject
   const handleRejectSelected = () => {
     if (selectedSoIds.length === 0) return;
@@ -415,6 +451,37 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
       setIsActionLoading(false);
       hideGlobalLoading();
     }
+  };
+
+  const handleSingleUndo = async (item: StockOpnameQueueItem) => {
+    if (!canApproveSo) return;
+    if (item.status !== 'APPROVED') return;
+    
+    setConfirmModal({
+      title: 'Konfirmasi Batal Approve (Undo)',
+      message: `Batal approve (Undo) untuk SKU ${item.sku}? Status akan kembali PENDING dan log mutasi ADJ_IN/OUT akan dihapus.`,
+      confirmLabel: 'Undo Approve',
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsActionLoading(true);
+        showGlobalLoading('Memproses Undo...');
+        try {
+          const res = await undoStockOpnameQueueItems([item]);
+          if (res.success) {
+            if (onNotify) onNotify(`Undo SO ${item.sku} sukses.`, 'success');
+            await loadSoData();
+          } else {
+            if (onNotify) onNotify(`Gagal: ${res.error}`, 'error');
+          }
+        } catch (e: any) {
+          if (onNotify) onNotify(e.message, 'error');
+        } finally {
+          setIsActionLoading(false);
+          hideGlobalLoading();
+        }
+      }
+    });
   };
 
   const handleSingleDelete = (id: string, skuName?: string) => {
@@ -766,6 +833,17 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                 </button>
 
                 <button
+                  id="btnBatchUndoSo"
+                  type="button"
+                  onClick={handleUndoSelected}
+                  disabled={isActionLoading}
+                  className="px-3 py-1.5 text-xs font-bold bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Undo Terpilih</span>
+                </button>
+
+                <button
                   id="btnBatchDeleteSo"
                   type="button"
                   onClick={handleDeleteSelected}
@@ -983,12 +1061,12 @@ export const StockOpnameView: React.FC<StockOpnameViewProps> = React.memo(({
                                 <button
                                   type="button"
                                   disabled={isActionLoading}
-                                  onClick={() => handleSingleReject(item)}
-                                  title="Ubah status ke Tolak (Reject)"
-                                  className="px-2 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                                  onClick={() => handleSingleUndo(item)}
+                                  title="Batal Approve (Undo). Hapus log mutasi dan kembali ke PENDING"
+                                  className="px-2 py-1 text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
                                 >
-                                  <X className="w-3 h-3" />
-                                  <span>Reject</span>
+                                  <RefreshCw className="w-3 h-3" />
+                                  <span>Undo</span>
                                 </button>
                               </div>
                             ) : isRejected ? (

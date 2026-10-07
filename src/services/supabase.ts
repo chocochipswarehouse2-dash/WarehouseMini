@@ -2245,6 +2245,63 @@ export async function rejectStockOpnameQueueItems(
 }
 
 /**
+ * Undo Stock Opname Queue item(s) in Supabase
+ * Reverts status to PENDING and deletes associated ADJ_IN/ADJ_OUT logs
+ */
+export async function undoStockOpnameQueueItems(
+  items: StockOpnameQueueItem[]
+): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!items.length) return { success: true, count: 0 };
+
+  try {
+    // 1. Delete associated ADJ_IN / ADJ_OUT logs for APPROVED items
+    const itemsToUndo = items.filter(it => it.status === 'APPROVED');
+    
+    for (const item of itemsToUndo) {
+      // Find and delete the exact ADJ_IN/ADJ_OUT created when this was approved
+      if (item.tanggal_approve) {
+        await supabaseFetch<any[]>(
+          'log_produk',
+          'DELETE',
+          null,
+          `sku=eq.${encodeURIComponent(item.sku || '')}&lokasi=eq.${encodeURIComponent(item.lokasi || '')}&created_at=eq.${encodeURIComponent(item.tanggal_approve)}&type=in.(ADJ_IN,ADJ_OUT)`,
+          true
+        ).catch(err => {
+          console.warn('Failed to delete ADJ log for', item.sku, err);
+        });
+      }
+    }
+
+    // 2. Revert status to PENDING
+    const validIds = items.map((it) => it.id).filter(Boolean) as string[];
+    const chunkSize = 100;
+    for (let i = 0; i < validIds.length; i += chunkSize) {
+      const chunk = validIds.slice(i, i + chunkSize);
+      const inClause = chunk.map((id) => `"${id}"`).join(',');
+      const res = await supabaseFetch<any[]>(
+        'stock_opname_queue',
+        'PATCH',
+        {
+          status: 'PENDING',
+          approved_by: null,
+          tanggal_approve: null,
+        },
+        `id=in.(${encodeURIComponent(inClause)})`,
+        true
+      );
+      if (res && Array.isArray(res) && res.length === 0) {
+        throw new Error("Akses ditolak (RLS) atau gagal update.");
+      }
+    }
+
+    return { success: true, count: items.length };
+  } catch (err: any) {
+    console.error('Error undoing SO Queue items:', err);
+    return { success: false, count: 0, error: err.message || 'Gagal undo stock opname' };
+  }
+}
+
+/**
  * Delete item(s) permanently from stock_opname_queue in Supabase
  */
 export async function deleteStockOpnameQueueItems(

@@ -127,6 +127,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
   const [typeFilters, setTypeFilters] = useState<string[]>(['ALL']);
   const [areaFilter, setAreaFilter] = useState<string>('ALL');
   const [sourceFilter, setSourceFilter] = useState<ScanSourceFilter>('ALL');
+  const [viewDateFilter, setViewDateFilter] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [displayLimit, setDisplayLimit] = useState(30);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
@@ -199,14 +200,16 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     if (!typeFilters.includes('ALL') && typeFilters.length > 0) count++;
     if (areaFilter !== 'ALL') count++;
     if (isConsolidatedMode) count++;
+    if (viewDateFilter.start || viewDateFilter.end) count++;
     return count;
-  }, [sourceFilter, typeFilters, areaFilter, isConsolidatedMode]);
+  }, [sourceFilter, typeFilters, areaFilter, isConsolidatedMode, viewDateFilter]);
 
   const handleResetAllFilters = () => {
     setSearchQuery('');
     setSourceFilter('ALL');
     setTypeFilters(['ALL']);
     setAreaFilter('ALL');
+    setViewDateFilter({ start: '', end: '' });
     if (onNotify) onNotify('Filter telah direset ke bawaan.', 'info');
   };
 
@@ -347,6 +350,15 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       // Ignore QC inspections or non-inventory logs
       if (String(log.type) === 'QC_INSPEKSI' || String(log.type).startsWith('QC_')) return false;
 
+      // View Date Filter
+      if (viewDateFilter.start || viewDateFilter.end) {
+        const logDateStr = log.created_at ? (log.created_at.includes('T') ? log.created_at.split('T')[0] : log.created_at.substring(0, 10)) : '';
+        if (logDateStr) {
+          if (viewDateFilter.start && logDateStr < viewDateFilter.start) return false;
+          if (viewDateFilter.end && logDateStr > viewDateFilter.end) return false;
+        }
+      }
+
       // Source Filter (Scan via WA vs Scan via Web App)
       if (sourceFilter !== 'ALL') {
         const src = getLogSource(log);
@@ -388,7 +400,7 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
 
       return true;
     });
-  }, [logs, sourceFilter, typeFilters, areaFilter, deferredSearch]);
+  }, [logs, sourceFilter, typeFilters, areaFilter, deferredSearch, viewDateFilter]);
 
   // Display logs: Consolidated (Grouped & Summed by Invoice + Type + SKU + Size + Lokasi) or Raw stream
   const displayLogs = useMemo<ConsolidatedLogItem[]>(() => {
@@ -2104,6 +2116,27 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
                     <div>Web App</div>
                     <div className="text-[10px] text-sky-600 mt-0.5">{sourceCounts.web.toLocaleString('id-ID')}</div>
                   </button>
+                </div>
+              </div>
+
+              {/* Filter Rentang Tanggal (View) */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Rentang Tanggal Log
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={viewDateFilter.start}
+                    onChange={(e) => setViewDateFilter(prev => ({ ...prev, start: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100"
+                  />
+                  <input
+                    type="date"
+                    value={viewDateFilter.end}
+                    onChange={(e) => setViewDateFilter(prev => ({ ...prev, end: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100"
+                  />
                 </div>
               </div>
 
