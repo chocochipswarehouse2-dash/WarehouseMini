@@ -905,24 +905,45 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
       <div className="bg-white dark:bg-[#09090B] border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-xs space-y-2">
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Search Bar - Flex 1 */}
-          <div className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              id="inputSearchMutasiLog"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari Invoice, SKU, Lokasi..."
-              className="w-full pl-9 pr-7 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="relative flex-1 min-w-0 flex items-center gap-1.5 sm:gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                id="inputSearchMutasiLog"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery) {
+                    handleServerSearch();
+                  }
+                }}
+                placeholder="Cari Invoice, SKU, Lokasi..."
+                className="w-full pl-9 pr-7 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                  title="Hapus pencarian"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             {searchQuery && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                title="Hapus pencarian"
+                onClick={handleServerSearch}
+                disabled={isServerSearching}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] sm:text-xs font-bold transition-all disabled:opacity-50 shrink-0 shadow-2xs active:scale-95"
+                title="Cari riwayat lama di seluruh server"
               >
-                <X className="w-3.5 h-3.5" />
+                {isServerSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">Cari Server</span>
+                <span className="sm:hidden">Server</span>
               </button>
             )}
           </div>
