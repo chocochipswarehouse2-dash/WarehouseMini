@@ -290,7 +290,12 @@ export const MutasiLogView: React.FC<MutasiLogViewProps> = React.memo(({
     if (!searchQuery.trim()) return;
     setIsServerSearching(true);
     try {
-      const data = await fetchLogsBySearch(searchQuery.trim(), 2000);
+      const q = searchQuery.trim().toLowerCase();
+      const matchingSkus = (productCatalog || [])
+        .filter(p => (p.k && p.k.toLowerCase().includes(q)) || (p.n && p.n.toLowerCase().includes(q)))
+        .map(p => p.k);
+
+      const data = await fetchLogsBySearch(searchQuery.trim(), 2000, matchingSkus);
       const filteredData = (data || []).filter(
         (item) => item && String(item.type) !== 'QC_INSPEKSI' && !String(item.type || '').startsWith('QC_')
       );

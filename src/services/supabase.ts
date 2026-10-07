@@ -8349,15 +8349,25 @@ export async function hapusPenerimaanProduksiSingleRowFromSupabase(id: string | 
 /**
  * Fetch logs matching a search keyword from all history.
  */
-export async function fetchLogsBySearch(keyword: string, limit = 1000): Promise<LogProdukItem[]> {
-  if (!keyword) return [];
+export async function fetchLogsBySearch(keyword: string, limit = 1000, matchingSkus: string[] = []): Promise<LogProdukItem[]> {
+  if (!keyword && matchingSkus.length === 0) return [];
   try {
     const term = encodeURIComponent(`%${keyword}%`);
+    let orClause = `sku.ilike.${term},nama_produk.ilike.${term},invoice.ilike.${term},lokasi.ilike.${term},operator.ilike.${term},keterangan.ilike.${term},area.ilike.${term},type.ilike.${term}`;
+    
+    if (matchingSkus.length > 0) {
+      // Limit to max 50 SKUs to prevent URI Too Long errors
+      const safeSkus = matchingSkus.slice(0, 50).map(s => `"${encodeURIComponent(s)}"`).join(',');
+      if (safeSkus) {
+        orClause += `,sku.in.(${safeSkus})`;
+      }
+    }
+    
     const data = await supabaseFetch<LogProdukItem[]>(
       'log_produk',
       'GET',
       null,
-      `select=*&or=(sku.ilike.${term},nama_produk.ilike.${term},invoice.ilike.${term},lokasi.ilike.${term},operator.ilike.${term},keterangan.ilike.${term},area.ilike.${term},type.ilike.${term})&order=created_at.desc&limit=${limit}`
+      `select=*&or=(${orClause})&order=created_at.desc&limit=${limit}`
     );
     return data || [];
   } catch (err) {
