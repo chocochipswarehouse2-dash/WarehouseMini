@@ -337,6 +337,65 @@ export async function updateShipmentResi(id: string, resi: string, timestamp?: s
   }
 }
 
+export interface BulkResiUpdateItem {
+  id?: string;
+  no_pesanan: string;
+  no_resi: string;
+  status?: string;
+  update_status_to_dikirim?: boolean;
+}
+
+export async function bulkUpdateShipmentResi(
+  items: BulkResiUpdateItem[]
+): Promise<{ successCount: number; failCount: number; errors: string[] }> {
+  let successCount = 0;
+  let failCount = 0;
+  const errors: string[] = [];
+  const nowIso = new Date().toISOString();
+
+  // Process in small parallel chunks of 5 to ensure speed without overwhelming connections
+  const chunkSize = 5;
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (item) => {
+        try {
+          const cleanResi = (item.no_resi || '').trim();
+          if (!cleanResi) return;
+
+          const payload: any = {
+            no_resi: cleanResi,
+            tanggal_scan: nowIso,
+          };
+
+          if (item.update_status_to_dikirim) {
+            payload.status = 'dikirim';
+          } else if (item.status) {
+            payload.status = item.status;
+          }
+
+          let filter = '';
+          if (item.id) {
+            filter = `id=eq.${item.id}`;
+          } else if (item.no_pesanan) {
+            filter = `no_pesanan=eq.${encodeURIComponent(item.no_pesanan)}`;
+          } else {
+            return;
+          }
+
+          await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+          successCount++;
+        } catch (err: any) {
+          failCount++;
+          errors.push(`${item.no_pesanan}: ${err?.message || 'Gagal update'}`);
+        }
+      })
+    );
+  }
+
+  return { successCount, failCount, errors };
+}
+
 export async function deleteManualShipment(no_pesanan: string): Promise<boolean> {
   try {
     await supabaseFetch('manual_shipment', 'DELETE', null, `no_pesanan=eq.${no_pesanan}`);

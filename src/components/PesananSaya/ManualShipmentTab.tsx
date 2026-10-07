@@ -9,6 +9,7 @@ import { AlterationRepairTab } from './AlterationRepairTab';
 import { AlterationRepairReceiptModal } from './AlterationRepairReceiptModal';
 import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
+import { BulkUpdateResiModal } from './BulkUpdateResiModal';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -53,7 +54,9 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const canAction = userIsAdmin || hasPermission(session, 'tab_ops_pesanan_manual_shipment');
 
   const [activeTab, setActiveTab] = useState<'form' | 'alteration_repair' | 'rekap'>('form');
-  const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'alteration_repair'>('all');
+  const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'manual_with_alter' | 'alteration_repair'>('all');
+  const [filterAlterStatus, setFilterAlterStatus] = useState<'all' | 'manual_with_alter' | 'all_alter' | 'no_alter'>('all');
+  const [isBulkResiModalOpen, setIsBulkResiModalOpen] = useState(false);
   const [arReceiptOrder, setArReceiptOrder] = useState<ManualShipmentOrder | null>(null);
   const [sjAlterModalOrder, setSjAlterModalOrder] = useState<ManualShipmentOrder | null>(null);
   const [alterActionData, setAlterActionData] = useState<{
@@ -457,7 +460,7 @@ ${order.notes_paket ? `\n📝 *Catatan Paket:* ${order.notes_paket}` : ''}
 _WMS Warehouse System_`;
   };
   const [printPayload, setPrintPayload] = useState<{
-    mode: 'LABEL' | 'PICKING';
+    mode: 'LABEL' | 'PICKING' | 'ALTER_WORK_ORDER';
     orders: ManualShipmentOrder[];
     qrMap: Record<string, string>;
     timestamp: number;
@@ -1507,6 +1510,39 @@ _WMS Warehouse System_`;
     onShowToast(`Menyiapkan cetak ${itemsToPrint.length} picking list`, 'success');
   };
 
+  const handlePrintAlterWorkOrder = async (target: ManualShipmentOrder | ManualShipmentOrder[]) => {
+    const targetList = Array.isArray(target) ? target : [target];
+    if (targetList.length === 0) {
+      onShowToast('Pilih setidaknya satu pesanan dengan kebutuhan alteration', 'warning');
+      return;
+    }
+
+    // Generate QR Map for fast scanning on physical ticket
+    const qrMap: Record<string, string> = {};
+    for (const o of targetList) {
+      if (o.no_pesanan) {
+        try {
+          qrMap[o.no_pesanan] = await QRCode.toDataURL(o.no_pesanan, {
+            width: 150,
+            margin: 1,
+            color: { dark: '#000000', light: '#ffffff' },
+          });
+        } catch (err) {
+          console.warn('QR code gen error:', err);
+        }
+      }
+    }
+
+    setPrintPayload({
+      mode: 'ALTER_WORK_ORDER',
+      orders: targetList,
+      qrMap,
+      timestamp: Date.now(),
+    });
+
+    onShowToast(`Menyiapkan cetak SPK Penjahit (${targetList.length} pesanan)`, 'success');
+  };
+
   
   // Handler simpan No SJ DealPOS
   const handleSaveSjDealpos = async () => {
@@ -2077,6 +2113,16 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                     <Printer className="w-3.5 h-3.5 mr-1.5" />
                     Print Label
                   </button>
+                  {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                    <button 
+                      onClick={() => { setSelectedOrderDetails(null); handlePrintAlterWorkOrder(order); }}
+                      className="px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 font-semibold rounded-lg text-xs border border-rose-300 dark:border-rose-800 flex items-center transition-colors cursor-pointer"
+                      title="Cetak SPK & Instruksi Pengerjaan untuk Penjahit"
+                    >
+                      <Scissors className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                      Cetak SPK Penjahit
+                    </button>
+                  )}
                   <button 
                     type="button"
                     onClick={() => {
@@ -2484,12 +2530,30 @@ _WMS Warehouse System_`;
       );
     }
 
-    // Filter Jenis Pesanan (Manual Shipment vs Alteration & Repair)
+    // Filter Jenis Pesanan (Manual Shipment vs Alteration & Repair vs Manual With Alter)
     if (filterOrderType !== 'all') {
       result = result.filter(o => {
         const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
+        const hasAlterItem = (o.items || []).some(
+          (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+        );
         if (filterOrderType === 'alteration_repair') return isAr;
+        if (filterOrderType === 'manual_with_alter') return !isAr && hasAlterItem;
         if (filterOrderType === 'manual_shipment') return !isAr;
+        return true;
+      });
+    }
+
+    // Filter Status Alteration Dropdown
+    if (filterAlterStatus !== 'all') {
+      result = result.filter(o => {
+        const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
+        const hasAlterItem = (o.items || []).some(
+          (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+        );
+        if (filterAlterStatus === 'manual_with_alter') return !isAr && hasAlterItem;
+        if (filterAlterStatus === 'all_alter') return isAr || hasAlterItem;
+        if (filterAlterStatus === 'no_alter') return !isAr && !hasAlterItem;
         return true;
       });
     }
@@ -2699,7 +2763,20 @@ _WMS Warehouse System_`;
 
   const renderRekap = () => {
     const totalArCount = orders.filter(o => o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data).length;
+    const totalManualWithAlterCount = orders.filter(o => {
+      const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
+      return !isAr && (o.items || []).some(
+        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+      );
+    }).length;
     const totalManualCount = orders.length - totalArCount;
+    const unassignedResiCount = orders.filter(o => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
+
+    const selectedAlterOrders = orders.filter(o => {
+      if (!selectedOrders.has(o.no_pesanan)) return false;
+      const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
+      return isAr || (o.items || []).some(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
+    });
 
     return (
     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col h-full min-h-[600px] transition-colors">
@@ -2715,12 +2792,15 @@ _WMS Warehouse System_`;
             </span>
 
             {/* Quick Filter Jenis Pesanan */}
-            <div className="inline-flex p-0.5 bg-slate-200/70 dark:bg-slate-700/60 rounded-lg text-xs font-bold">
+            <div className="inline-flex p-0.5 bg-slate-200/70 dark:bg-slate-700/60 rounded-lg text-xs font-bold flex-wrap">
               <button
                 type="button"
-                onClick={() => setFilterOrderType('all')}
+                onClick={() => {
+                  setFilterOrderType('all');
+                  setFilterAlterStatus('all');
+                }}
                 className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                  filterOrderType === 'all'
+                  filterOrderType === 'all' && filterAlterStatus === 'all'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                 }`}
@@ -2729,9 +2809,12 @@ _WMS Warehouse System_`;
               </button>
               <button
                 type="button"
-                onClick={() => setFilterOrderType('manual_shipment')}
+                onClick={() => {
+                  setFilterOrderType('manual_shipment');
+                  setFilterAlterStatus('all');
+                }}
                 className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                  filterOrderType === 'manual_shipment'
+                  filterOrderType === 'manual_shipment' && filterAlterStatus === 'all'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'
                 }`}
@@ -2741,20 +2824,54 @@ _WMS Warehouse System_`;
               </button>
               <button
                 type="button"
-                onClick={() => setFilterOrderType('alteration_repair')}
+                onClick={() => {
+                  setFilterOrderType('manual_with_alter');
+                  setFilterAlterStatus('all');
+                }}
+                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
+                  filterOrderType === 'manual_with_alter'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-700 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-300 bg-rose-50/70 dark:bg-rose-950/40'
+                }`}
+                title="Filter hanya pesanan Manual Shipment yang memiliki item permintaan alteration"
+              >
+                <Scissors className="w-3 h-3" />
+                <span>Manual + Alter ({totalManualWithAlterCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterOrderType('alteration_repair');
+                  setFilterAlterStatus('all');
+                }}
                 className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
                   filterOrderType === 'alteration_repair'
-                    ? 'bg-rose-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-rose-600'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
                 }`}
               >
                 <Scissors className="w-3 h-3" />
-                <span>Alteration & Repair ({totalArCount})</span>
+                <span>Alter & Repair Standalone ({totalArCount})</span>
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            {/* Tombol Update Resi Massal */}
+            <button
+              onClick={() => setIsBulkResiModalOpen(true)}
+              className="px-2.5 py-1.5 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+              title="Update No. Resi Massal via Input Tabel Langsung atau Import CSV"
+            >
+              <Truck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Update Resi Massal</span>
+              {unassignedResiCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs">
+                  {unassignedResiCount}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={handleExportCSV}
               className="px-2.5 py-1.5 text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-400 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
@@ -2828,7 +2945,7 @@ _WMS Warehouse System_`;
             )}
           </div>
           
-          <div className="grid grid-cols-2 sm:flex items-center gap-1.5">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 flex-wrap">
             <select
               value={filterStore}
               onChange={(e) => setFilterStore(e.target.value)}
@@ -2862,6 +2979,24 @@ _WMS Warehouse System_`;
               <option value="diproses">Diproses</option>
               <option value="dikirim">Dikirim</option>
               <option value="batal">Batal</option>
+            </select>
+
+            {/* Filter Alteration */}
+            <select
+              value={filterAlterStatus}
+              onChange={(e) => setFilterAlterStatus(e.target.value as any)}
+              className={`py-1.5 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium ${
+                filterAlterStatus === 'manual_with_alter'
+                  ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 font-bold'
+                  : filterAlterStatus === 'all_alter'
+                  ? 'bg-purple-50 dark:bg-purple-950/70 border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-200 font-bold'
+                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+              }`}
+            >
+              <option value="all">Semua Kondisi Alter</option>
+              <option value="manual_with_alter">✂️ Manual Shipment + Alter ({totalManualWithAlterCount})</option>
+              <option value="all_alter">✂️ Semua Disertai Alter ({totalManualWithAlterCount + totalArCount})</option>
+              <option value="no_alter">📦 Tanpa Alteration</option>
             </select>
 
             {/* Filter Khusus Surat Jalan DealPOS untuk Fulfilment Marketplace */}
@@ -2932,6 +3067,16 @@ _WMS Warehouse System_`;
               <Printer className="w-3.5 h-3.5 mr-1.5" />
               Cetak Label A6 ({selectedOrders.size})
             </button>
+            {selectedAlterOrders.length > 0 && (
+              <button
+                onClick={() => handlePrintAlterWorkOrder(selectedAlterOrders)}
+                className="px-3 py-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-xs font-semibold flex items-center transition-colors cursor-pointer shadow-xs animate-in fade-in"
+                title="Cetak Surat Perintah Kerja (SPK) Penjahit & Rincian Alterasi"
+              >
+                <Scissors className="w-3.5 h-3.5 mr-1.5" />
+                Cetak SPK Penjahit ({selectedAlterOrders.length})
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -3037,6 +3182,22 @@ _WMS Warehouse System_`;
                           </div>
                         );
                       }
+
+                      // Badge Penanda Khusus Manual Shipment yang Disertai Alter
+                      const alterItems = (order.items || []).filter(
+                        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+                      );
+                      if (alterItems.length > 0) {
+                        return (
+                          <div className="mt-1 flex flex-col gap-1 items-start">
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs">
+                              <Scissors className="w-2.5 h-2.5 text-rose-600 animate-pulse" />
+                              <span>Disertai Alter ({alterItems.length} Item)</span>
+                            </span>
+                          </div>
+                        );
+                      }
+
                       return null;
                     })()}
                     {order.no_transaksi_customer && (
@@ -3132,6 +3293,19 @@ _WMS Warehouse System_`;
                     >
                       {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
                     </button>
+                    {(() => {
+                      const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+                      const alterItems = (order.items || []).filter(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
+                      if (!isAr && alterItems.length > 0) {
+                        return (
+                          <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 flex items-center justify-center gap-0.5 mt-1">
+                            <Scissors className="w-2.5 h-2.5" />
+                            <span>{alterItems.length} alter</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </td>
                   <td className="px-3 py-2.5 align-top min-w-[200px] max-w-[280px]">
                     {(() => {
@@ -3279,6 +3453,7 @@ _WMS Warehouse System_`;
                         onChange={(e) => {
                           const action = e.target.value;
                           if (action === 'print') handlePrintLabel(order);
+                          if (action === 'spk_penjahit') handlePrintAlterWorkOrder(order);
                           if (action === 'spk') setArReceiptOrder(order);
                           if (action === 'sj_struk') setSjAlterModalOrder(order);
                           if (action === 'mark_sent') setAlterActionData({ order, actionType: 'mark_sent_store' });
@@ -3303,6 +3478,9 @@ _WMS Warehouse System_`;
                       >
                         <option value="" disabled>Aksi</option>
                         <option value="print">Print Label</option>
+                        {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                          <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
+                        )}
                         {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
                           <>
                             <option value="sj_struk">Cetak SJ Struk (Rangkap 2)</option>
@@ -3361,15 +3539,32 @@ _WMS Warehouse System_`;
                         </div>
                       </div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${
-                      order.status === 'diterima' ? 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' : 
-                      order.status === 'diproses' ? 'border-yellow-400 dark:border-yellow-600/70 text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40' : 
-                      order.status === 'dikirim' ? 'border-emerald-400 dark:border-emerald-600/70 text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40' : 
-                      order.status === 'batal' ? 'border-red-400 dark:border-red-600/70 text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40' : 
-                      'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800'
-                    }`}>
-                      {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${
+                        order.status === 'diterima' ? 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' : 
+                        order.status === 'diproses' ? 'border-yellow-400 dark:border-yellow-600/70 text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/40' : 
+                        order.status === 'dikirim' ? 'border-emerald-400 dark:border-emerald-600/70 text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40' : 
+                        order.status === 'batal' ? 'border-red-400 dark:border-red-600/70 text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/40' : 
+                        'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800'
+                      }`}>
+                        {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
+                      </span>
+                      {(() => {
+                        const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+                        const alterItems = (order.items || []).filter(
+                          (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+                        );
+                        if (!isAr && alterItems.length > 0) {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs">
+                              <Scissors className="w-2.5 h-2.5 text-rose-600 animate-pulse" />
+                              <span>Disertai Alter ({alterItems.length})</span>
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </div>
                   
                   <div className="p-4 flex-1 space-y-3">
@@ -3575,6 +3770,16 @@ _WMS Warehouse System_`;
                     
                     {userIsAdmin && (
                       <div className="flex items-center gap-1.5">
+                        {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                          <button
+                            type="button"
+                            onClick={() => handlePrintAlterWorkOrder(order)}
+                            title="Cetak Surat Perintah Kerja (SPK) Penjahit"
+                            className="p-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
+                          >
+                            <Scissors className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handlePrintLabel(order)}
@@ -3588,6 +3793,7 @@ _WMS Warehouse System_`;
                           onChange={(e) => {
                             const action = e.target.value;
                             if (action === 'print') handlePrintLabel(order);
+                            if (action === 'spk_penjahit') handlePrintAlterWorkOrder(order);
                             if (action === 'spk') setArReceiptOrder(order);
                             if (action === 'edit') {
                               handleEdit(order);
@@ -3608,6 +3814,9 @@ _WMS Warehouse System_`;
                         >
                           <option value="" disabled>Aksi</option>
                           <option value="print">Print Label</option>
+                          {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                            <option value="spk_penjahit">✂️ SPK Penjahit</option>
+                          )}
                           {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
                             <option value="spk">Cetak SPK</option>
                           )}
@@ -4226,6 +4435,214 @@ _WMS Warehouse System_`;
                 </div>
               );
             })
+          ) : printPayload.mode === 'ALTER_WORK_ORDER' ? (
+            // Work Order / SPK Penjahit Mode
+            printPayload.orders.map((order, oIdx) => {
+              const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+              const arData = order.alteration_repair_data;
+              const alterItems = (order.items || []).filter(
+                (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail || isAr
+              );
+              const qrDataUrl = printPayload.qrMap[order.no_pesanan || ''] || '';
+              const todayStr = new Date().toLocaleDateString('id-ID', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+
+              return (
+                <div
+                  key={order.no_pesanan || oIdx}
+                  className="page-break p-6 max-w-[820px] mx-auto text-slate-900 bg-white"
+                  style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
+                >
+                  {/* Header SPK Penjahit */}
+                  <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl font-black text-rose-600 font-mono tracking-wider">✂️ CHOCOCHIPS WMS</span>
+                        <span className="text-[10px] font-bold uppercase bg-slate-900 text-white px-2 py-0.5 rounded">
+                          SPK PENJAHIT
+                        </span>
+                      </div>
+                      <div className="text-sm font-extrabold text-slate-900 mt-1">
+                        SURAT PERINTAH KERJA (SPK) & TIKET ALTERATION
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Tgl Cetak: <b>{todayStr}</b> • Operator: <b>{session?.name || getUserPersonName(session?.username) || 'Admin WMS'}</b>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {qrDataUrl && (
+                        <img
+                          src={qrDataUrl}
+                          alt="QR"
+                          className="w-16 h-16 object-contain border border-slate-300 rounded-sm"
+                        />
+                      )}
+                      <div className="text-right">
+                        <div className="text-sm font-black font-mono border-2 border-rose-600 text-rose-700 px-2.5 py-1 rounded-md inline-block">
+                          {order.no_pesanan}
+                        </div>
+                        <div className="text-xs font-bold text-slate-700 mt-1">
+                          Store: <span className="text-indigo-600">{order.nama_pengirim}</span>
+                        </div>
+                        {order.pic_store && (
+                          <div className="text-[11px] text-slate-500">PIC Store: {order.pic_store}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Customer & Return Destination Info */}
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 mb-4 text-xs">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Informasi Pemilik / Customer</div>
+                      <div className="font-bold text-slate-900 text-sm mt-0.5">{order.nama_tujuan}</div>
+                      <div className="text-slate-600 mt-0.5">No. Telp / WA: <strong>{order.no_telp_tujuan || '-'}</strong></div>
+                      <div className="text-slate-500 text-[11px] mt-0.5">{order.alamat_tujuan || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Tujuan Pengiriman & Ekspedisi</div>
+                      <div className="font-bold text-slate-900 mt-0.5">
+                        Jasa Kirim: <span className="text-indigo-600 font-extrabold">{order.jasa_kirim || '-'}</span>
+                      </div>
+                      <div className="text-slate-600 mt-0.5">
+                        Order ID Ref: <strong>{order.no_transaksi_customer || order.no_pesanan}</strong>
+                      </div>
+                      {order.notes_paket && (
+                        <div className="text-slate-700 text-[11px] mt-1 bg-white p-1.5 rounded border border-slate-200">
+                          <strong>Catatan Paket:</strong> {order.notes_paket}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Warning Banner */}
+                  <div className="mb-4 p-2.5 bg-rose-50 border-2 border-rose-500 rounded-xl text-rose-950 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">✂️</span>
+                      <div>
+                        <div className="font-black">INSTRUKSI WAJIB BAGI PENJAHIT & CHECKER QC:</div>
+                        <div className="text-[10px] text-rose-800">
+                          Kerjakan sesuai rincian ukuran & instruksi di bawah. Setelah selesai, lakukan QC kelim/fitting dan serahkan kembali ke meja packing.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider">
+                      Prioritas Alter
+                    </span>
+                  </div>
+
+                  {/* Table of Alteration Items */}
+                  <div className="border border-slate-300 rounded-xl overflow-hidden mb-5">
+                    <table className="w-full border-collapse text-xs">
+                      <thead className="bg-slate-100 border-b border-slate-300 text-slate-700 uppercase font-black text-[10px]">
+                        <tr>
+                          <th className="p-2.5 text-center w-8">No</th>
+                          <th className="p-2.5 text-left w-36">ID Form Alter</th>
+                          <th className="p-2.5 text-left">SKU & Nama Produk Pakaian</th>
+                          <th className="p-2.5 text-center w-16">Size</th>
+                          <th className="p-2.5 text-center w-12">Qty</th>
+                          <th className="p-2.5 text-left min-w-[220px]">Instruksi Pengerjaan Penjahit</th>
+                          <th className="p-2.5 text-center w-14">Paraf</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {alterItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-4 text-center text-slate-400">
+                              Tidak ada item yang memerlukan alterasi pada pesanan ini.
+                            </td>
+                          </tr>
+                        ) : (
+                          alterItems.map((item, itIdx) => {
+                            const alterId = item.id_form_alter || (isAr ? order.no_pesanan : 'ALT-AUTO');
+                            const instruction = item.alteration_detail || (isAr ? (arData?.alteration_detail || order.alteration_detail) : '-') || '-';
+
+                            return (
+                              <tr key={itIdx} className="bg-white">
+                                <td className="p-2.5 text-center font-bold text-slate-500 align-top">
+                                  {itIdx + 1}
+                                </td>
+                                <td className="p-2.5 font-mono font-black text-rose-700 align-top">
+                                  <div className="bg-rose-50 px-2 py-1 rounded border border-rose-200 inline-block text-[11px]">
+                                    {alterId}
+                                  </div>
+                                </td>
+                                <td className="p-2.5 align-top">
+                                  <div className="font-bold text-slate-900">{item.nama_produk}</div>
+                                  <div className="font-mono text-[10px] text-slate-500 mt-0.5">SKU: {item.sku || '-'}</div>
+                                </td>
+                                <td className="p-2.5 text-center font-bold text-slate-800 align-top">
+                                  <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                    {item.size || '-'}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-center font-extrabold text-slate-900 text-sm align-top">
+                                  {item.qty || 1}
+                                </td>
+                                <td className="p-2.5 align-top">
+                                  <div className="p-2 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-950 font-bold text-xs leading-relaxed">
+                                    ✂️ {instruction}
+                                  </div>
+                                </td>
+                                <td className="p-2.5 text-center align-top">
+                                  <div className="w-8 h-8 border-2 border-slate-400 rounded-md mx-auto" />
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Verification Signatures */}
+                  <div className="grid grid-cols-4 gap-4 pt-4 border-t-2 border-slate-300 text-center text-xs">
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">1. Diajukan Oleh</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">Store / Admin</div>
+                      <div className="h-14"></div>
+                      <div className="border-t border-slate-400 font-bold text-slate-800 pt-1">
+                        ({order.pic_store || session?.name || 'PIC Store'})
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">2. Diterima Penjahit</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">Tgl Masuk: ___/___</div>
+                      <div className="h-14"></div>
+                      <div className="border-t border-slate-400 font-bold text-slate-800 pt-1">
+                        (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">3. Selesai Dijahit</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">Tgl Selesai: ___/___</div>
+                      <div className="h-14"></div>
+                      <div className="border-t border-slate-400 font-bold text-slate-800 pt-1">
+                        (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">4. QC & Siap Packing</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">Checker QC</div>
+                      <div className="h-14"></div>
+                      <div className="border-t border-slate-400 font-bold text-slate-800 pt-1">
+                        (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           ) : (
             // Picking List Mode
             printPayload.orders.map((order, oIdx) => {
@@ -4238,6 +4655,9 @@ _WMS Warehouse System_`;
               });
               const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
               const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+              const alterItems = (order.items || []).filter(
+                (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+              );
 
               return (
                 <div
@@ -4268,6 +4688,26 @@ _WMS Warehouse System_`;
                       </div>
                     </div>
                   </div>
+
+                  {/* Warning Banner Khusus Jika Ada Produk Alteration */}
+                  {alterItems.length > 0 && (
+                    <div className="mb-3 p-2.5 bg-rose-50 border-2 border-rose-500 rounded-lg flex items-center justify-between text-rose-950">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✂️</span>
+                        <div>
+                          <div className="font-black text-xs">
+                            PERHATIAN: TERDAPAT {alterItems.length} ITEM DENGAN PERMINTAAN ALTERATION / PERMAK!
+                          </div>
+                          <div className="text-[10px] text-rose-800">
+                            Pisahkan produk bertanda <strong>[✂️ BUTUH ALTER]</strong> dan serahkan ke bagian penjahit bersama lembar kerja alter sebelum proses packing.
+                          </div>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-black uppercase whitespace-nowrap">
+                        Wajib Alter ({alterItems.length})
+                      </span>
+                    </div>
+                  )}
 
                   <div className="mb-3 text-[11px] leading-relaxed">
                     <div><strong>Order ID:</strong> {order.no_transaksi_customer || '-'}</div>
@@ -4306,15 +4746,18 @@ _WMS Warehouse System_`;
                         }
 
                         return (
-                          <tr key={itemIdx} className="border-b border-slate-200 text-[11px]">
+                          <tr key={itemIdx} className={`border-b border-slate-200 text-[11px] ${item.needs_alteration ? 'bg-rose-50/50' : ''}`}>
                             <td className="p-1.5 text-center text-slate-500">{itemIdx + 1}</td>
                             <td className="p-1.5 font-mono font-bold text-slate-900">{item.sku}</td>
                             <td className="p-1.5 font-semibold text-slate-800">
                               <div>{cleanName}</div>
                               {item.needs_alteration && (
-                                <div className="text-[10px] text-rose-700 font-bold flex items-center gap-1 mt-0.5">
-                                  <span>✂️ BUTUH ALTER ({item.id_form_alter || 'Auto'}):</span>
-                                  <span className="font-normal italic text-slate-600">{item.alteration_detail || '-'}</span>
+                                <div className="text-[10px] text-rose-900 font-bold flex items-start gap-1 mt-1 p-1 bg-rose-100/80 rounded border border-rose-300">
+                                  <span className="text-rose-600 shrink-0">✂️</span>
+                                  <div>
+                                    <span>[ID ALTER: {item.id_form_alter || 'Auto'}]: </span>
+                                    <span className="font-extrabold text-rose-950 underline">{item.alteration_detail || '-'}</span>
+                                  </div>
                                 </div>
                               )}
                             </td>
@@ -4355,6 +4798,15 @@ _WMS Warehouse System_`;
           )}
         </div>
       )}
+
+      {/* Modal Update Resi Massal */}
+      <BulkUpdateResiModal
+        isOpen={isBulkResiModalOpen}
+        onClose={() => setIsBulkResiModalOpen(false)}
+        orders={orders}
+        onSuccess={() => loadOrders()}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };

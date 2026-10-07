@@ -295,9 +295,9 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 
   const handleSelectItemCatalog = (index: number, p: ProductItem) => {
     handleUpdateItem(index, {
-      nama_produk: p.n || p.p || (p as any).deskripsi || (p as any).nomor || '',
-      sku: p.k || (p as any).sku || '',
-      size: p.size || p.s || '-',
+      nama_produk: String(p.n || p.p || (p as any).deskripsi || (p as any).nomor || ''),
+      sku: String(p.k || (p as any).sku || ''),
+      size: String(p.size || p.s || '-'),
       catalogSearch: '',
       showDropdown: false,
     });
@@ -332,7 +332,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
                 p: baseName,
                 size: v.size || '-',
                 s: v.size || '-',
-                category: it.category || b.name || 'Pakaian',
+                category: (it as any).category || b.name || 'Pakaian',
                 price: it.price ? parseFloat(String(it.price).replace(/[^\d.]/g, '')) : undefined,
               });
             }
@@ -348,7 +348,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
               p: baseName,
               size: '-',
               s: '-',
-              category: it.category || b.name || 'Pakaian',
+              category: (it as any).category || b.name || 'Pakaian',
               price: it.price ? parseFloat(String(it.price).replace(/[^\d.]/g, '')) : undefined,
             });
           }
@@ -2179,8 +2179,8 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
                                       </div>
                                       <div className="flex items-center gap-2 text-[11px] text-slate-500">
                                         <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{p.k}</span>
-                                        {p.size && p.size !== '-' && <span>• Size: <strong>{p.size}</strong></span>}
-                                        {p.category && <span>• {p.category}</span>}
+                                        {p.size && p.size !== '-' && <span>• Size: <strong>{String(p.size)}</strong></span>}
+                                        {p.category && <span>• {String(p.category)}</span>}
                                       </div>
                                     </div>
                                     <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2 py-1 rounded-lg shrink-0">
@@ -2700,7 +2700,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 🏬 *Sumber Fisik:* ${ar.sumber_barang === 'warehouse' ? 'Stok Warehouse (Customer Order)' : `Store (${ar.nama_asal || ord.nama_pengirim})`}
 👤 *PIC Store / SA:* ${ord.pic_store || ar.pic_pemohon || '-'} (${ar.pic_store_phone || '-'})
 ${ar.pic_store_email ? `📧 *Email PIC:* ${ar.pic_store_email}\n` : ''}📦 *Daftar Produk (${ord.items?.length || 1} item):*
-${itemsText || `  - ${ord.nama_produk || '-'} (Qty: ${ord.qty || 1} pcs)`}
+${itemsText || `  - ${ord.items?.[0]?.nama_produk || (ord as any).nama_produk || '-'} (Qty: ${ord.items?.[0]?.qty || (ord as any).qty || 1} pcs)`}
 📍 *Tujuan Kirim:* ${ar.tujuan_pengembalian === 'customer' ? `Customer (${ar.nama_penerima_kembali}) - ${ar.alamat_penerima_kembali}${ar.jasa_kirim_customer ? ` [Kurir: ${ar.jasa_kirim_customer}]` : ''}` : `Store (${ar.nama_asal || ord.nama_pengirim})`}
 ───────────────────────────
 Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! 🙏✨`

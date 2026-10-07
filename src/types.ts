@@ -545,6 +545,7 @@ export interface ManualShipmentItem {
   id_form_alter?: string;
   alteration_status?: 'antrian' | 'dalam_pengerjaan' | 'selesai_qc';
   layanan_type?: AlterationLayananType;
+  layanan_alter?: string;
   kondisi?: string;
   alteration_detail?: string;
   repair_detail?: string;
