@@ -1656,7 +1656,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => setIsMobileSidebarOpen(true)}
-          className="lg:hidden fixed bottom-6 right-6 z-40 p-3.5 bg-primary-500 text-white rounded-full shadow-lg shadow-primary-500/40 hover:bg-primary-600 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          className="lg:hidden fixed bottom-6 right-6 z-40 p-3.5 bg-primary-500 text-white rounded-full shadow-lg shadow-primary-500/40 hover:bg-primary-600 hover:scale-105 active:scale-95 transition-all cursor-pointer print:hidden"
           title="Buka Menu Navigasi"
         >
           <Menu className="w-6 h-6" />

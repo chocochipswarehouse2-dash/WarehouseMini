@@ -13,7 +13,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
   return (
     <div
       id="toastContainer"
-      className="fixed top-4 right-4 left-4 md:left-auto md:w-96 z-[100] flex flex-col gap-2 pointer-events-none"
+      className="fixed top-4 right-4 left-4 md:left-auto md:w-96 z-[100] flex flex-col gap-2 pointer-events-none print:hidden"
     >
       {toasts.map((toast, tIdx) => {
         let bgClass = 'bg-slate-900/95 border-slate-800 text-slate-100 shadow-2xl';

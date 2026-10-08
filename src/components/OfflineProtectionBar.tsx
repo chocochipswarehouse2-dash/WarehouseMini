@@ -112,7 +112,7 @@ export const OfflineProtectionBar: React.FC<OfflineProtectionBarProps> = ({ onNo
   return (
     <aside 
       aria-label="Status Koneksi & Proteksi Offline"
-      className={`w-full px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b transition-colors shadow-2xs ${
+      className={`w-full px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b transition-colors shadow-2xs print:hidden ${
       !isOnline
         ? 'bg-amber-500 text-amber-950 dark:bg-amber-600/90 dark:text-white border-amber-600/30'
         : 'bg-blue-600 text-white dark:bg-blue-700 border-blue-800/40'
