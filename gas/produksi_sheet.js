@@ -546,6 +546,47 @@ function buildBlocksFromItemsGAS(items, isCMT, specificDateStr) {
  * Sesuai format standar: Header Pink, Foto Produk Merged =IMAGE(...), Warna Merged, Size, Kolom Tanggal, Total Datang, Baris Catatan Kuning
  */
 function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
+  var oldDataMap = {};
+  var isSpecificDate = !!specificDateStr;
+  
+  try {
+    var lastRow = sheet.getLastRow();
+    var lastCol = Math.min(50, Math.max(1, sheet.getLastColumn()));
+    if (!isSpecificDate && lastRow > 2 && lastCol > 8) {
+      var header1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      var colFisik = -1, colSelisih = -1, colStatus = -1, colLog = -1;
+      for (var c = 0; c < header1.length; c++) {
+        var hText = String(header1[c]).trim().toUpperCase();
+        if (hText.indexOf('FISIK') !== -1) colFisik = c;
+        else if (hText.indexOf('SELISIH') !== -1) colSelisih = c;
+        else if (hText.indexOf('STATUS AUDIT') !== -1 || hText === 'STATUS') colStatus = c;
+        else if (hText.indexOf('LOG') !== -1 || hText.indexOf('RIWAYAT') !== -1) colLog = c;
+      }
+      
+      if (colFisik !== -1) {
+        var oldValues = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
+        for (var i = 0; i < oldValues.length; i++) {
+          var rowObj = oldValues[i];
+          var oldCode = String(rowObj[1] || '').trim().toUpperCase();
+          var oldColor = String(rowObj[5] || '').trim().toUpperCase();
+          var oldSize = String(rowObj[6] || '').trim().toUpperCase();
+          
+          if (oldCode && oldColor && oldSize) {
+            var key = oldCode + '_' + oldColor + '_' + oldSize;
+            oldDataMap[key] = {
+              fisik: colFisik !== -1 ? rowObj[colFisik] : '',
+              selisih: colSelisih !== -1 ? rowObj[colSelisih] : '',
+              status: colStatus !== -1 ? rowObj[colStatus] : '',
+              log: colLog !== -1 ? rowObj[colLog] : ''
+            };
+          }
+        }
+      }
+    }
+  } catch (eOld) {
+    Logger.log('Gagal membaca data lama hitung ulang: ' + eOld);
+  }
+
   sheet.clearContents();
   sheet.clearFormats();
   try {
@@ -553,7 +594,6 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
   } catch (eFmt) {}
 
   var currentRow = 1;
-  var isSpecificDate = !!specificDateStr;
 
   for (var b = 0; b < blocks.length; b++) {
     var block = blocks[b];
@@ -699,10 +739,19 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
         dataRowVals.push(rowNet);
 
         if (!isSpecificDate) {
-          var rQty = (sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== '') ? Number(sz.recountQty) : '';
+          var lookupKey = String(block.code || block.productCode || '').trim().toUpperCase() + '_' + 
+                          String(cg.color || cg.colorName || '').trim().toUpperCase() + '_' + 
+                          String(sz.size || sz.sizeName || '').trim().toUpperCase();
+          var oldRecord = oldDataMap[lookupKey];
+
+          var rQty = (sz.recountQty !== undefined && sz.recountQty !== null && sz.recountQty !== '') 
+                      ? Number(sz.recountQty) 
+                      : (oldRecord && oldRecord.fisik !== '' ? Number(oldRecord.fisik) : '');
+                      
           var rSelisih = rQty !== '' ? (rQty - rowNet) : '';
           var rStatus = rQty !== '' ? (rSelisih === 0 ? 'MATCH' : (rSelisih < 0 ? 'KURANG' : 'LEBIH')) : '';
-          var rLog = sz.recountNotes || sz.recountAuditor || '';
+          var rLog = (sz.recountNotes || sz.recountAuditor || '') || (oldRecord ? oldRecord.log : '');
+          
           dataRowVals.push(rQty);
           dataRowVals.push(rSelisih);
           dataRowVals.push(rStatus);
