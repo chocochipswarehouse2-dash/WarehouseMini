@@ -3483,20 +3483,22 @@ _WMS Warehouse System_`;
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            {/* Tombol Update Resi Massal */}
-            <button
-              onClick={() => setIsBulkResiModalOpen(true)}
-              className="px-2.5 py-1.5 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
-              title="Update No. Resi Massal via Input Tabel Langsung atau Import CSV"
-            >
-              <Truck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Update Resi Massal</span>
-              {unassignedResiCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs">
-                  {unassignedResiCount}
-                </span>
-              )}
-            </button>
+            {/* Tombol Update Resi Massal - Hanya Admin */}
+            {userIsAdmin && (
+              <button
+                onClick={() => setIsBulkResiModalOpen(true)}
+                className="px-2.5 py-1.5 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                title="Update No. Resi Massal via Input Tabel Langsung atau Import CSV"
+              >
+                <Truck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Update Resi Massal</span>
+                {unassignedResiCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-2xs">
+                    {unassignedResiCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             <button
               onClick={handleExportCSV}
@@ -3549,29 +3551,46 @@ _WMS Warehouse System_`;
           </div>
         </div>
 
-        {/* Filter Toolbar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
-              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            {searchTerm && (
+        {/* Filter & Pencarian Toolbar (Refactored) */}
+        <div className="flex flex-col gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+          
+          {/* Baris 1: Search Bar & Reset Filter */}
+          <div className="flex items-center gap-2 w-full">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Cari Order ID, DealPOS, Jasa Kirim, resi..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Reset Filter Pindah ke Atas */}
+            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || startDate !== '' || endDate !== '') && (
               <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                onClick={resetAllFilters}
+                className="px-3 py-1.5 flex items-center justify-center gap-1.5 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800/60 rounded-lg shadow-xs transition-colors cursor-pointer text-xs font-bold whitespace-nowrap shrink-0"
               >
-                <X className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Reset Filter</span>
+                <span className="sm:hidden">Reset</span>
               </button>
             )}
           </div>
           
-          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 flex-wrap">
+          {/* Baris 2: Grid Filter Dropdowns */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
             <select
               value={filterStore}
               onChange={(e) => setFilterStore(e.target.value)}
@@ -3673,30 +3692,6 @@ _WMS Warehouse System_`;
                 className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
               />
             </div>
-
-            {/* Tombol Reset Semua Filter */}
-            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterOrderType !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || filterStartDate || filterEndDate) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchTerm('');
-                  setFilterStore('all');
-                  setFilterJasaKirim('all');
-                  setFilterStatus('all');
-                  setFilterAlterStatus('all');
-                  setFilterOrderType('all');
-                  setFilterDealposSj('all');
-                  setFilterSoldStatus('all');
-                  setFilterStartDate('');
-                  setFilterEndDate('');
-                }}
-                className="px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 border border-rose-200 dark:border-rose-800 rounded-lg font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                title="Reset semua filter kembali ke awal"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Filter</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -4162,7 +4157,7 @@ _WMS Warehouse System_`;
                         )}
                         <option value="edit">Edit</option>
                         <option value="sj_dealpos">Input SJ DealPOS</option>
-                        <option value="resi">Update Resi</option>
+                        {userIsAdmin && <option value="resi">Update Resi</option>}
                         {order.status !== 'batal' && (
                           <option value="cancel">🚫 Batalkan Pesanan (Simpan Histori)</option>
                         )}
@@ -4500,7 +4495,7 @@ _WMS Warehouse System_`;
                             <option value="spk">Cetak SPK</option>
                           )}
                           <option value="edit">Edit</option>
-                          <option value="resi">Update Resi</option>
+                          {userIsAdmin && <option value="resi">Update Resi</option>}
                           {order.status !== 'batal' && (
                             <option value="cancel">🚫 Batalkan Pesanan (Simpan Histori)</option>
                           )}
