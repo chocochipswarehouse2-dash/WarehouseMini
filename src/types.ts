@@ -549,6 +549,7 @@ export interface ManualShipmentItem {
   kondisi?: string;
   alteration_detail?: string;
   repair_detail?: string;
+  foto_urls?: string[];
 }
 
 export type StoreOrderType = 'manual_shipment' | 'alteration_repair';
@@ -646,10 +647,12 @@ export interface ManualShipmentOrder {
   nama_pengirim: string;
   pic_store?: string;
   no_telp_store: string;
+  email_store?: string;
   no_transaksi_pengirim: string[];
   // Data Customer / Pemilik Barang
   nama_tujuan: string;
   no_telp_tujuan: string;
+  email_customer?: string;
   alamat_tujuan: string;
   notes_paket: string;
   no_transaksi_customer: string;

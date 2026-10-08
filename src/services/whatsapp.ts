@@ -1,5 +1,6 @@
 import { PeminjamanRecord, ProductItem } from '../types';
 import { extractSizeFromSku, formatProductNameWithSize, resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
+import { getSettings } from './settings';
 
 export interface FonnteConfig {
   token: string;
@@ -48,9 +49,26 @@ export function normalizeWhatsAppNumber(phone: string): string {
  * Mengambil konfigurasi WhatsApp Fonnte dari LocalStorage
  */
 export function getFonnteConfig(): FonnteConfig {
-  const token = (localStorage.getItem('wms_fonnte_token') || '').trim();
-  const groupTarget = (localStorage.getItem('wms_fonnte_group_target') || '').trim();
-  const waWebhookGasUrl = (localStorage.getItem('wms_wa_webhook_gas_url') || '').trim();
+  let token = (localStorage.getItem('wms_fonnte_token') || '').trim();
+  let groupTarget = (localStorage.getItem('wms_fonnte_group_target') || '').trim();
+  let waWebhookGasUrl = (localStorage.getItem('wms_wa_webhook_gas_url') || '').trim();
+
+  // Fallback ke global database settings jika di localStorage belum tersimpan
+  if (!token || !groupTarget) {
+    try {
+      const globalCfg = getSettings();
+      if (!token && globalCfg.fonnte_token) {
+        token = globalCfg.fonnte_token.trim();
+      }
+      if (!groupTarget && globalCfg.fonnte_group_target) {
+        groupTarget = globalCfg.fonnte_group_target.trim();
+      }
+      if (!waWebhookGasUrl && globalCfg.wa_webhook_gas_url) {
+        waWebhookGasUrl = globalCfg.wa_webhook_gas_url.trim();
+      }
+    } catch {}
+  }
+
   const rawAuto = localStorage.getItem('wms_fonnte_auto_send');
   // Default aktif jika token sudah diisi
   const autoSendEnabled = rawAuto !== null ? rawAuto === 'true' : Boolean(token);

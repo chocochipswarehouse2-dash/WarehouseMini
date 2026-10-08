@@ -72,6 +72,7 @@ import {
   getFullStoreName
 } from '../../services/gasManualShipment';
 import { formatProductNameWithSize } from '../../utils/sortUtils';
+import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 import { AlterationRepairReceiptModal } from './AlterationRepairReceiptModal';
 import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
@@ -812,6 +813,49 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
             : `Tiket ${regNo} (${finalIdFormAlter}) berhasil didaftarkan! (${formItems.length} produk). Silakan cetak Surat Jalan Struk.`,
           'success'
         );
+
+        // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke PIC Store & Grup Tim Penjahit
+        const fonnteCfg = getFonnteConfig();
+        if (fonnteCfg.token) {
+          const photoText = formFotoUrls.length > 0
+            ? `\n📸 *Foto Panduan (Google Drive):*\n` + formFotoUrls.map((u, i) => `  ${i + 1}. ${u}`).join('\n')
+            : '';
+
+          const itemsText = formItems.map((it, idx) => `*${idx + 1}. ${it.nama_produk}* (SKU: \`${it.sku || '-'}\`, Size: *${it.size || '-'}\`, Qty: *${it.qty || 1} pcs*)
+   • Layanan: *${it.layanan_type || 'Alteration'}*
+   • Instruksi: _${it.alteration_detail || it.repair_detail || 'Sesuai standar'}_`).join('\n\n');
+
+          const alterWaMsg = `✂️ *PERMINTAAN ALTER & REPAIR MASUK [${regNo}]*
+--------------------------------------------------
+Halo Tim Gudang & Penjahit, terdapat pendaftaran tiket alterasi/repair baru:
+
+📋 *Detail Tiket:*
+• *No. Tiket / Registrasi:* ${regNo}
+• *ID Form Alter:* *${finalIdFormAlter}*
+• *Sumber Barang:* ${isWarehouseStock ? 'Warehouse / Gudang' : `Store (${asalDisplayName})`}
+• *PIC Pemohon:* ${formPicPemohon.trim()} (WA: ${formPicStorePhone.trim() || '-'})
+• *Penerima Selesai:* ${formTujuanPengembalian === 'customer' ? `Customer (${formCustomerNama})` : `Outlet Store (${asalDisplayName})`}
+• *Estimasi Selesai:* ${formPerkiraanSelesai || '7 Hari'}
+
+✂️ *Daftar Produk (${formItems.length} Item):*
+${itemsText}${photoText}
+
+📝 *Catatan:* ${formNotesPaket.trim() || '-'}
+
+Mohon tim penjahit segera memeriksa detail instruksi & foto panduan di atas.
+_WMS Warehouse & Alteration System_`;
+
+          if (formPicStorePhone.trim()) {
+            sendFonnteMessage(formPicStorePhone.trim(), alterWaMsg, fonnteCfg.token).catch(() => {});
+          }
+          if (fonnteCfg.groupTarget) {
+            sendFonnteMessage(fonnteCfg.groupTarget, alterWaMsg, fonnteCfg.token)
+              .then((resF) => {
+                if (resF.success) onShowToast('✅ Notif SPK Alterasi berhasil dikirim ke Grup WA via Fonnte!', 'success');
+              })
+              .catch(() => {});
+          }
+        }
 
         // Reset form to default single item
         setFormItems([createDefaultItem()]);

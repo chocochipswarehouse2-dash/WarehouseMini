@@ -68,11 +68,7 @@ export async function processPickingSync(logEntry: any) {
         pesan = `⚠️ *[Peringatan Picking]*\nSurat Jalan: ${targetRow.no_sj}\nInvoice: ${invoice}\nSKU: ${skuUpper}\nStatus: Kelebihan ${Math.abs(selisih)} pcs.\n(Target: ${targetRow.qty_req}, Terambil: ${totalPicked})`;
       }
 
-      await sendFonnteMessage({
-        target: targetGroup,
-        message: pesan,
-        token: fonnteCfg.token
-      });
+      await sendFonnteMessage(targetGroup, pesan, fonnteCfg.token);
       console.log(`[PickingSync] Fonnte alert sent for ${invoice} - ${skuUpper}`);
     }
 

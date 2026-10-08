@@ -90,6 +90,14 @@ function initCacheFromLocalStorage(): WmsSettings {
 }
 
 /**
+ * Mengambil konfigurasi WMS aktif dari cache memori atau LocalStorage
+ */
+export function getSettings(): WmsSettings {
+  if (cachedSettings) return cachedSettings;
+  return initCacheFromLocalStorage();
+}
+
+/**
  * Ambil endpoint GAS Webhook WA yang sedang aktif
  */
 export function getStoredWaWebhookGasUrl(): string {

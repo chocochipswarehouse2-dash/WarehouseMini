@@ -33,6 +33,11 @@ function doPost(e) {
       return handleGDriveUpload(payload);
     }
 
+    // Intercept Send Email Notification (Chocochips Official)
+    if (payload.action === 'sendEmail' || payload.type === 'sendEmail') {
+      return handleSendEmail(payload);
+    }
+
     // Intercept WhatsApp / Fonnte payload (SATU-SATUNYA TUJUAN GAS)
     if ((payload.message || payload.text || payload.pesan) && (payload.sender || payload.from || payload.phone)) {
       return handleWhatsAppScan(payload);
@@ -97,6 +102,38 @@ function handleGDriveUpload(payload) {
     });
   } catch (err) {
     Logger.log('GDrive upload error: ' + err.toString());
+    return jsonResponse({ success: false, error: err.toString() });
+  }
+}
+
+/**
+ * Handle Pengiriman Email Formal Chocochips (Customer & PIC Store)
+ */
+function handleSendEmail(payload) {
+  try {
+    payload = payload || {};
+    var to = payload.to || '';
+    var subject = payload.subject || 'Notifikasi Pesanan Chocochips';
+    var htmlBody = payload.htmlBody || payload.body || '';
+    var fromName = payload.fromName || 'Chocochips';
+
+    if (!to || !htmlBody) {
+      return jsonResponse({ success: false, error: 'Target email (to) dan isi pesan (htmlBody) harus diisi.' });
+    }
+
+    MailApp.sendEmail({
+      to: to,
+      subject: subject,
+      htmlBody: htmlBody,
+      name: fromName
+    });
+
+    return jsonResponse({
+      success: true,
+      message: 'Email berhasil terkirim ke ' + to
+    });
+  } catch (err) {
+    Logger.log('handleSendEmail error: ' + err.toString());
     return jsonResponse({ success: false, error: err.toString() });
   }
 }

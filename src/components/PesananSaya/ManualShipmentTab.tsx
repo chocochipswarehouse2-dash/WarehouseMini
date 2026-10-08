@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail
 } from 'lucide-react';
+import { AlterationCameraModal } from './AlterationCameraModal';
+import { PhotoLightboxModal } from './PhotoLightboxModal';
+import { CancelOrderModal } from './CancelOrderModal';
+import { compressImage } from '../../utils/imageCompressor';
+import { uploadImageToGdrive } from '../../services/gdriveUpload';
+import { triggerOrderEmailNotifications } from '../../services/emailService';
 import { ProductItem, UserSession, ManualShipmentOrder, ManualShipmentItem } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { PhysicalScanInput } from '../PhysicalScanInput';
@@ -27,7 +33,7 @@ import {
   DEFAULT_OUTLETS,
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
-import { sendFonnteMessage } from '../../services/whatsapp';
+import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 import { supabaseFetch } from '../../services/supabase';
 import QRCode from 'qrcode';
 import {
@@ -139,6 +145,17 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     changes: string[];
   } | null>(null);
 
+  // Camera & Photo State untuk Alterasi Store (Disimpan di Google Drive)
+  const [cameraModalItem, setCameraModalItem] = useState<{ id: string; nama_produk: string; id_form_alter?: string } | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const [uploadingItemIds, setUploadingItemIds] = useState<Record<string, boolean>>({});
+  const [uploadProgressText, setUploadProgressText] = useState<Record<string, string>>({});
+  const [isSendingAlterWa, setIsSendingAlterWa] = useState<boolean>(false);
+
+  // Modal Pembatalan Pesanan (Simpan Histori & Alasan)
+  const [cancelModalOrder, setCancelModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState<boolean>(false);
+
   // Helper Clipboard dengan fallback aman
   const copyToClipboard = async (text: string, successMsg: string) => {
     try {
@@ -185,10 +202,10 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   };
 
   const generateCustomerWaTemplate = (order: ManualShipmentOrder): string => {
-    const storeName = order.nama_pengirim || 'Toko Kami';
+    const storeName = order.nama_pengirim || 'Chocochips Store';
     const customerName = order.nama_tujuan || 'Kakak';
     const jasaKirim = order.jasa_kirim || 'Ekspedisi';
-    const noResi = order.no_resi || '(Sedang diproses / Menunggu Resi)';
+    const noResi = order.no_resi || '(Menunggu Update Resi Gudang)';
     const dealposArr = Array.isArray(order.no_transaksi_pengirim)
       ? order.no_transaksi_pengirim.filter(Boolean)
       : (order.no_transaksi_pengirim ? [order.no_transaksi_pengirim] : []);
@@ -196,26 +213,151 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
       ? dealposArr.join(', ')
       : (order.no_transaksi_customer || order.no_pesanan || '-');
 
+    const alterItems = (order.items || []).filter(
+      (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+    );
+
     let itemsList = '';
     if (order.items && order.items.length > 0) {
       itemsList = order.items.map((it, idx) => {
         const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (${it.size})` : '';
-        return `  ${idx + 1}. *${it.nama_produk}*${sizeStr} - ${it.qty || 1} pcs`;
+        const alterText = (it.needs_alteration || it.id_form_alter || it.alteration_detail)
+          ? `\n     ✂️ _Permintaan Alter: ${it.alteration_detail || 'Sesuai catatan'}_`
+          : '';
+        return `  ${idx + 1}. *${it.nama_produk}*${sizeStr} - ${it.qty || 1} pcs${alterText}`;
       }).join('\n');
     }
 
-    return `Halo Kak *${customerName}*! 👋
-Terima kasih telah berbelanja di *${storeName}*.
+    const hasResi = !!(order.no_resi && order.no_resi.trim());
+    const statusNote = hasResi
+      ? `Paket pesanan Kakak telah selesai disiapkan dan diserahkan ke kurir *${jasaKirim}* dengan No. Resi: *${noResi}*.`
+      : `Pesanan Kakak saat ini sedang dalam proses penyiapan & pengerjaan teliti oleh tim workshop kami.`;
 
-Pesanan Kakak telah dikemas dan dikirimkan dengan rincian berikut:
-📦 *No. Transaksi:* ${noTrans}
-🚚 *Ekspedisi:* ${jasaKirim}
-🔖 *No. Resi:* *${noResi}*
-📍 *Alamat Pengiriman:* ${order.alamat_tujuan || '-'}
-${itemsList ? `\n📋 *Daftar Produk:*\n${itemsList}\n` : ''}${order.notes_paket ? `\n📝 *Catatan Paket:* ${order.notes_paket}\n` : ''}
-Kakak dapat memantau status pengiriman paket melalui website resmi atau aplikasi *${jasaKirim}* menggunakan No. Resi di atas.
+    const contactNote = order.no_telp_store ? `\n\n💬 *Kontak Follow Up Toko:*\nStore: *${storeName}*\nNo. Telp / WA: *${order.no_telp_store}*` : '';
 
-Terima kasih banyak atas kepercayaannya! Semoga paket lekas sampai dan bermanfaat ya Kak. ✨🙏`;
+    return `Halo Kak *${customerName}*! ✨
+Terima kasih banyak telah berbelanja di *${storeName}*.
+
+${statusNote}
+
+📋 *Rincian Pesanan:*
+• *No. Pesanan / Transaksi:* ${noTrans}
+• *Store Pengirim:* ${storeName}
+• *Ekspedisi:* ${jasaKirim}
+${hasResi ? `• 🔖 *No. Resi:* *${noResi}*\n` : ''}• *Alamat Pengiriman:* ${order.alamat_tujuan || '-'}
+
+📦 *Daftar Produk:*
+${itemsList || '  - (Rincian produk terlampir)'}
+${order.notes_paket ? `\n📝 *Catatan Paket:* ${order.notes_paket}` : ''}${contactNote}
+
+Jika Kakak memiliki pertanyaan atau membutuhkan bantuan seputar pesanan maupun alterasi, silakan langsung menghubungi tim store kami. Terima kasih banyak atas kepercayaan Kakak! 🙏🌸`;
+  };
+
+  /**
+   * Helper: Format Pesan Surat Perintah Kerja (SPK) Alterasi untuk WhatsApp (Store & Tim Penjahit Gudang)
+   */
+  const formatAlterationWorkOrderWaMessage = (order: ManualShipmentOrder): string => {
+    const alterItems = (order.items || []).filter(
+      (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+    );
+    if (alterItems.length === 0) return '';
+
+    const dealposStr = Array.isArray(order.no_transaksi_pengirim)
+      ? order.no_transaksi_pengirim.join(', ')
+      : (order.no_transaksi_pengirim || '-');
+
+    const itemsList = alterItems.map((it, idx) => {
+      const alterId = it.id_form_alter || 'ALT-AUTO';
+      const photos = it.foto_urls || [];
+      const photoText = photos.length > 0
+        ? `\n     📸 *Foto Panduan (Google Drive):*\n` + photos.map((u, i) => `       ${i + 1}. ${u}`).join('\n')
+        : '';
+
+      return `*${idx + 1}. [ID ALTER: ${alterId}]*
+   • Produk: *${it.nama_produk}* (SKU: \`${it.sku || '-'}\`, Size: *${it.size || '-'}*)
+   • Qty: *${it.qty || 1} pcs* | Fulfilment: *${it.fulfillment || 'Store'}*
+   • Layanan: *${it.layanan_type || 'Alteration'}*
+   • ✂️ *Instruksi Penjahit:*
+     _${it.alteration_detail || 'Sesuai instruksi store'}_${photoText}`;
+    }).join('\n\n');
+
+    return `✂️ *SURAT PERINTAH KERJA (SPK) ALTERASI PAKAIAN*
+--------------------------------------------------
+Halo Tim Gudang & Penjahit, terdapat permintaan alterasi pakaian dari store:
+
+📋 *Informasi Pesanan:*
+• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Store Pengirim:* ${order.nama_pengirim} (PIC: ${order.pic_store || '-'})
+• *No. HP Store:* ${order.no_telp_store || '-'}
+• *No. DealPOS:* ${dealposStr}
+• *Penerima / Customer:* ${order.nama_tujuan || '-'}
+• *Waktu Registrasi:* ${new Date().toLocaleString('id-ID')}
+
+✂️ *Rincian Item Alterasi (${alterItems.length} Item):*
+${itemsList}
+
+📝 *Catatan Paket:* ${order.notes_paket || '-'}
+
+Mohon tim penjahit segera memeriksa detail instruksi & foto panduan terlampir.
+Terima kasih!
+_WMS Warehouse & Tailor Management System_`;
+  };
+
+  /**
+   * Action Handler: Kirim notifikasi WA Alterasi via Fonnte langsung
+   */
+  const handleSendAlterWaFonnte = async (order: ManualShipmentOrder) => {
+    const alterItems = (order.items || []).filter(
+      (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+    );
+    if (alterItems.length === 0) {
+      onShowToast('Tidak ada item alterasi pada pesanan ini', 'info');
+      return;
+    }
+
+    const cfg = getFonnteConfig();
+    if (!cfg.token) {
+      onShowToast('Token Fonnte belum diatur. Silakan atur di menu Pengaturan > WhatsApp.', 'error');
+      return;
+    }
+
+    const msg = formatAlterationWorkOrderWaMessage(order);
+    setIsSendingAlterWa(true);
+
+    try {
+      let sentCount = 0;
+      let errors: string[] = [];
+
+      // 1. Kirim ke Store Pengirim
+      if (order.no_telp_store && order.no_telp_store.trim()) {
+        const resStore = await sendFonnteMessage(order.no_telp_store, msg, cfg.token);
+        if (resStore.success) {
+          sentCount++;
+        } else {
+          errors.push(`Store: ${resStore.message}`);
+        }
+      }
+
+      // 2. Kirim ke Group Target Gudang / Penjahit
+      if (cfg.groupTarget && cfg.groupTarget.trim()) {
+        const resGroup = await sendFonnteMessage(cfg.groupTarget, msg, cfg.token);
+        if (resGroup.success) {
+          sentCount++;
+        } else {
+          errors.push(`Grup: ${resGroup.message}`);
+        }
+      }
+
+      if (sentCount > 0) {
+        onShowToast(`✅ SPK Alterasi berhasil dikirim ke ${sentCount} tujuan WhatsApp via Fonnte!`, 'success');
+      } else {
+        onShowToast(`Gagal kirim via Fonnte: ${errors.join(', ') || 'Periksa nomor & kuota'}`, 'error');
+      }
+    } catch (err: any) {
+      onShowToast(`Error kirim Fonnte: ${err?.message || 'Koneksi gagal'}`, 'error');
+    } finally {
+      setIsSendingAlterWa(false);
+    }
   };
 
   /**
@@ -484,6 +626,7 @@ _WMS Warehouse System_`;
   const [pengirim, setPengirim] = useState('');
   const [picStore, setPicStore] = useState('');
   const [telpPengirim, setTelpPengirim] = useState('');
+  const [emailStore, setEmailStore] = useState('');
   const [transPengirim, setTransPengirim] = useState('');
   
   // Pilihan Jasa Kirim (Database outlet kolom C row 2)
@@ -494,6 +637,7 @@ _WMS Warehouse System_`;
 
   const [tujuan, setTujuan] = useState('');
   const [telpTujuan, setTelpTujuan] = useState('');
+  const [emailCustomer, setEmailCustomer] = useState('');
   const [alamatTujuan, setAlamatTujuan] = useState('');
   const [notesPaket, setNotesPaket] = useState('');
   const [transCustomer, setTransCustomer] = useState<string>(() => generateManualShipmentOrderId([], ''));
@@ -717,6 +861,97 @@ _WMS Warehouse System_`;
     }));
   };
 
+  // Upload Foto Alterasi Store langsung ke Google Drive via GAS Web App
+  const handleUploadItemFiles = async (itemId: string, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    setUploadingItemIds((prev) => ({ ...prev, [itemId]: true }));
+    setUploadProgressText((prev) => ({ ...prev, [itemId]: `Mengompresi 0/${files.length} foto...` }));
+
+    try {
+      const uploadedUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgressText((prev) => ({ ...prev, [itemId]: `Mengunggah foto ${i + 1}/${files.length} ke Google Drive...` }));
+
+        // 1. Kompresi gambar via HTML5 Canvas (WebP/JPEG, ~40-60KB)
+        const compressed = await compressImage(file, 1024, 0.7);
+
+        // 2. Upload langsung ke Google Drive
+        const cleanName = `Alter_Store_${itemId.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${i + 1}.jpg`;
+        const res = await uploadImageToGdrive(compressed.dataUrl, cleanName);
+
+        if (res.success && res.url) {
+          uploadedUrls.push(res.url);
+        } else {
+          console.warn('Gagal upload 1 foto ke GDrive:', res.error);
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
+        setItems((prev) =>
+          prev.map((it) => {
+            if (it.id === itemId) {
+              return {
+                ...it,
+                foto_urls: [...(it.foto_urls || []), ...uploadedUrls],
+              };
+            }
+            return it;
+          })
+        );
+        onShowToast(`${uploadedUrls.length} foto berhasil diunggah ke Google Drive!`, 'success');
+      } else {
+        onShowToast('Gagal mengupload foto ke Google Drive. Cek koneksi.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Error uploading photos to Drive:', err);
+      onShowToast(err?.message || 'Gagal memproses foto', 'error');
+    } finally {
+      setUploadingItemIds((prev) => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+      setUploadProgressText((prev) => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+    }
+  };
+
+  const handleCameraPhotoUploaded = (itemId: string, gdriveUrl: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === itemId) {
+          return {
+            ...it,
+            foto_urls: [...(it.foto_urls || []), gdriveUrl],
+          };
+        }
+        return it;
+      })
+    );
+    onShowToast('Foto kamera berhasil disimpan ke Google Drive!', 'success');
+  };
+
+  const handleRemoveItemPhoto = (itemId: string, photoIdx: number) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === itemId) {
+          const updatedPhotos = (it.foto_urls || []).filter((_, idx) => idx !== photoIdx);
+          return {
+            ...it,
+            foto_urls: updatedPhotos,
+          };
+        }
+        return it;
+      })
+    );
+    onShowToast('Foto dihapus dari item', 'info');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -787,9 +1022,11 @@ _WMS Warehouse System_`;
       nama_pengirim: pengirim.trim(),
       pic_store: picStore.trim(),
       no_telp_store: telpPengirim.trim(),
+      email_store: emailStore.trim(),
       no_transaksi_pengirim: transPengirim.split(',').map(s => s.trim()).filter(Boolean),
       nama_tujuan: tujuan.trim(),
       no_telp_tujuan: telpTujuan.trim(),
+      email_customer: emailCustomer.trim(),
       alamat_tujuan: alamatTujuan.trim(),
       notes_paket: notesPaket.trim(),
       no_transaksi_customer: finalTransCustomer,
@@ -814,47 +1051,95 @@ _WMS Warehouse System_`;
     if (result.success) {
       onShowToast(editingOrder ? 'Pesanan berhasil diupdate' : 'Pesanan berhasil disubmit', 'success');
 
-      // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke No. Telp Store (Pengirim)
-      if (orderData.no_telp_store && orderData.no_telp_store.trim()) {
-        const totalQty = orderData.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-        const dealposStr = Array.isArray(orderData.no_transaksi_pengirim)
-          ? orderData.no_transaksi_pengirim.join(', ')
-          : (orderData.no_transaksi_pengirim || '-');
+      // NOTIFIKASI EMAIL (Chocochips Official) ke Store PIC & Customer jika email dilampirkan
+      triggerOrderEmailNotifications(
+        orderData,
+        editingOrder ? 'status_diproses' : 'submit'
+      ).then((res) => {
+        if (res.storeSent || res.customerSent) {
+          const targets = [res.storeSent && 'Store PIC', res.customerSent && 'Customer'].filter(Boolean).join(' & ');
+          onShowToast(`✉️ Email resmi Chocochips terkirim ke ${targets}!`, 'success');
+        }
+      }).catch((err) => console.warn('Email notification error:', err));
 
-        if (editingOrder) {
-          // Pesan Notifikasi Perubahan Data Lengkap & Terstruktur (Diff Log)
-          const editorName = session?.name || getUserPersonName(session?.username) || 'Admin Gudang';
-          const changes = generateOrderUpdateDiff(editingOrder, orderData);
-          const updateMsg = formatOrderUpdateMessage(editingOrder, orderData, changes, editorName);
+      // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke No. Telp Store (Pengirim) & Group Gudang
+      const fonnteCfg = getFonnteConfig();
+      const alterItems = (orderData.items || []).filter(
+        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+      );
+      const isAlterationOrder = alterItems.length > 0 || orderData.order_type === 'alteration_repair';
 
-          // Buka popup modal sukses update dengan preview pesan siap salin
-          setUpdateSuccessModal({
-            order: orderData,
-            message: updateMsg,
-            changes,
-          });
+      if (!fonnteCfg.token) {
+        onShowToast('ℹ️ Token Fonnte belum diisi di Pengaturan WhatsApp. Notif WA otomatis dilewati.', 'info');
+      } else {
+        // 1. Jika pesanan disertai alterasi, kirim pesan SPK Alterasi khusus ke Store & Group Tim Penjahit
+        if (isAlterationOrder) {
+          const alterSpkMsg = formatAlterationWorkOrderWaMessage(orderData);
+          if (alterSpkMsg) {
+            // Kirim ke Store
+            if (orderData.no_telp_store && orderData.no_telp_store.trim()) {
+              sendFonnteMessage(orderData.no_telp_store, alterSpkMsg, fonnteCfg.token)
+                .then((res) => {
+                  if (res.success) {
+                    onShowToast('✅ Notif SPK Alterasi berhasil dikirim otomatis ke WA Store via Fonnte!', 'success');
+                  } else {
+                    onShowToast(`⚠️ Fonnte ke Store gagal: ${res.message}`, 'warning');
+                  }
+                })
+                .catch((err) => console.warn('Fonnte alter notice error:', err));
+            }
+            // Kirim ke Grup Gudang / Tim Penjahit jika group target diatur
+            if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim()) {
+              sendFonnteMessage(fonnteCfg.groupTarget, alterSpkMsg, fonnteCfg.token)
+                .then((res) => {
+                  if (res.success) {
+                    onShowToast('✅ Notif SPK Alterasi berhasil dikirim ke Grup Tim Jahit via Fonnte!', 'success');
+                  }
+                })
+                .catch((err) => console.warn('Fonnte group alter notice error:', err));
+            }
+          }
+        }
 
-          sendFonnteMessage(orderData.no_telp_store, updateMsg)
-            .then((res) => {
-              if (res.success) {
-                console.log('Notifikasi WA update pesanan terkirim ke store:', orderData.no_telp_store);
-              }
-            })
-            .catch((err) => console.warn('WA update notice error:', err));
-        } else {
-          // Pesan Notifikasi Submit Baru
-          const itemsListStr = orderData.items
-            .map(
-              (it, idx) =>
-                `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: ${it.qty} pcs, Fulfillment: ${it.fulfillment || '-'})${
-                  it.needs_alteration
-                    ? `\n     ✂️ *[Alteration: ${it.id_form_alter || 'Auto'}]* ${it.alteration_detail || '-'}`
-                    : ''
-                }`
-            )
-            .join('\n');
+        // 2. Kirim pesan notifikasi pesanan utama ke No. Telp Store
+        if (orderData.no_telp_store && orderData.no_telp_store.trim()) {
+          const totalQty = orderData.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+          const dealposStr = Array.isArray(orderData.no_transaksi_pengirim)
+            ? orderData.no_transaksi_pengirim.join(', ')
+            : (orderData.no_transaksi_pengirim || '-');
 
-          const submitMsg = `📦 *KONFIRMASI PESANAN MANUAL SHIPMENT BERHASIL*
+          if (editingOrder) {
+            const editorName = session?.name || getUserPersonName(session?.username) || 'Admin Gudang';
+            const changes = generateOrderUpdateDiff(editingOrder, orderData);
+            const updateMsg = formatOrderUpdateMessage(editingOrder, orderData, changes, editorName);
+
+            setUpdateSuccessModal({
+              order: orderData,
+              message: updateMsg,
+              changes,
+            });
+
+            sendFonnteMessage(orderData.no_telp_store, updateMsg, fonnteCfg.token)
+              .then((res) => {
+                if (res.success) {
+                  onShowToast('✅ Notif pembaruan pesanan terkirim ke WA Store via Fonnte!', 'success');
+                }
+              })
+              .catch((err) => console.warn('WA update notice error:', err));
+          } else if (!isAlterationOrder) {
+            // Jika bukan alterasi, kirim konfirmasi pesanan standar ke store
+            const itemsListStr = orderData.items
+              .map(
+                (it, idx) =>
+                  `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Qty: ${it.qty} pcs, Fulfillment: ${it.fulfillment || '-'})${
+                    it.needs_alteration
+                      ? `\n     ✂️ *[Alteration: ${it.id_form_alter || 'Auto'}]* ${it.alteration_detail || '-'}`
+                      : ''
+                  }`
+              )
+              .join('\n');
+
+            const submitMsg = `📦 *KONFIRMASI PESANAN MANUAL SHIPMENT BERHASIL*
 --------------------------------------------
 Halo Tim *${orderData.nama_pengirim}*, pesanan manual shipment Anda telah berhasil disubmit ke sistem WMS Gudang.
 
@@ -876,19 +1161,17 @@ ${itemsListStr}
 
 📝 *Catatan Paket:* ${orderData.notes_paket || '-'}
 
-⚠️ *PENTING - MOHON DICEK KEMBALI:*
-Silakan periksa kembali rincian data di atas untuk menghindari kesalahan input. Jika terdapat revisi atau perubahan alamat, segera hubungi Tim Admin Gudang sebelum paket diproses dan dikirim.
-
 Terima kasih!
 _WMS Warehouse System_`;
 
-          sendFonnteMessage(orderData.no_telp_store, submitMsg)
-            .then((res) => {
-              if (res.success) {
-                console.log('Notifikasi WA submit pesanan terkirim ke store:', orderData.no_telp_store);
-              }
-            })
-            .catch((err) => console.warn('WA submit notice error:', err));
+            sendFonnteMessage(orderData.no_telp_store, submitMsg, fonnteCfg.token)
+              .then((res) => {
+                if (res.success) {
+                  onShowToast('✅ Konfirmasi pesanan berhasil dikirim ke WA Store via Fonnte!', 'success');
+                }
+              })
+              .catch((err) => console.warn('WA submit notice error:', err));
+          }
         }
       }
 
@@ -904,12 +1187,14 @@ _WMS Warehouse System_`;
   const resetForm = () => {
     setEditingOrder(null);
     setPicStore('');
+    setEmailStore('');
     setTransPengirim('');
     setJasaKirim('');
     setCustomJasaKirim('');
     setIsCustomJasaKirim(false);
     setTujuan('');
     setTelpTujuan('');
+    setEmailCustomer('');
     setAlamatTujuan('');
     setNotesPaket('');
     setTransCustomer(generateManualShipmentOrderId(orders, pengirim));
@@ -1125,7 +1410,21 @@ _WMS Warehouse System_`;
                 />
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Notifikasi konfirmasi & resi dikirim ke nomor ini</p>
               </div>
-              <div className="md:col-span-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Email Store / PIC (Opsional)</span>
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">Notif Submit & WH</span>
+                </label>
+                <input
+                  type="email"
+                  value={emailStore}
+                  onChange={(e) => setEmailStore(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-sans"
+                  placeholder="store@chocochips.co.id (opsional)"
+                />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Notifikasi update progress & resi dikirim ke email ini jika diisi</p>
+              </div>
+              <div className="md:col-span-2">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                   No. Transaksi DealPOS <span className="text-red-500 font-bold">* (Wajib Diisi)</span>
                 </label>
@@ -1150,7 +1449,7 @@ _WMS Warehouse System_`;
               <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               Data Customer (Penerima)
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Nama Tujuan / Customer <span className="text-red-500">*</span>
@@ -1166,7 +1465,7 @@ _WMS Warehouse System_`;
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  No. Telp Tujuan (WhatsApp Customer) <span className="text-red-500">*</span>
+                  No. Telp Tujuan (WhatsApp) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1177,7 +1476,21 @@ _WMS Warehouse System_`;
                   required
                 />
               </div>
-              <div className="md:col-span-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Email Customer (Opsional)</span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">KOP Chocochips</span>
+                </label>
+                <input
+                  type="email"
+                  value={emailCustomer}
+                  onChange={(e) => setEmailCustomer(e.target.value)}
+                  placeholder="customer@email.com (opsional)"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-sans"
+                />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Email formal & tabel rincian ber-kop Chocochips</p>
+              </div>
+              <div className="md:col-span-3">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Alamat Lengkap Tujuan <span className="text-red-500">*</span>
                 </label>
@@ -1190,7 +1503,7 @@ _WMS Warehouse System_`;
                   required
                 />
               </div>
-              <div className="md:col-span-2">
+              <div className="md:col-span-3">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Notes Tambahan Paket (Opsional)
                 </label>
@@ -1434,6 +1747,107 @@ _WMS Warehouse System_`;
                               className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
                             />
                           </div>
+
+                          {/* Lampiran Foto Fisik / Kamera saat Fulfil dari Store */}
+                          {!((item.fulfillment || '').toLowerCase().includes('marketplace')) && (
+                            <div className="pt-2.5 mt-2.5 border-t border-rose-200/80 dark:border-rose-900/60">
+                              <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+                                <span className="text-[10px] font-bold text-rose-950 dark:text-rose-200 flex items-center gap-1.5">
+                                  <ImageIcon className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Dokumentasi Foto Fisik Alterasi (Store)</span>
+                                </span>
+                                <span className="text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                                  <span>☁️ Simpan ke Google Drive</span>
+                                </span>
+                              </div>
+
+                              {/* Tombol Opsi: 1 Tombol Buka Kamera & 1 Tombol Upload File */}
+                              <div className="flex items-center gap-2 flex-wrap mb-2">
+                                {/* Tombol Buka Kamera */}
+                                <button
+                                  type="button"
+                                  disabled={!!uploadingItemIds[item.id]}
+                                  onClick={() => setCameraModalItem({
+                                    id: item.id,
+                                    nama_produk: item.nama_produk || item.sku || 'Item Alterasi',
+                                    id_form_alter: item.id_form_alter
+                                  })}
+                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                                  title="Buka kamera perangkat untuk mengambil foto"
+                                >
+                                  <Camera className="w-3.5 h-3.5" />
+                                  <span>Buka Kamera</span>
+                                </button>
+
+                                {/* Tombol Upload dari Galeri / File */}
+                                <label className="px-3 py-1.5 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold border border-rose-300 dark:border-rose-800 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
+                                  <Upload className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Upload Galeri / File</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    disabled={!!uploadingItemIds[item.id]}
+                                    onChange={(e) => handleUploadItemFiles(item.id, e.target.files)}
+                                    className="hidden"
+                                  />
+                                </label>
+
+                                {item.foto_urls && item.foto_urls.length > 0 && (
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold ml-auto">
+                                    {item.foto_urls.length} Foto Terlampir
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Indikator Sedang Mengupload ke Google Drive */}
+                              {uploadingItemIds[item.id] && (
+                                <div className="p-2 mb-2 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300 animate-pulse">
+                                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span className="font-semibold">{uploadProgressText[item.id] || 'Mengunggah ke Google Drive...'}</span>
+                                </div>
+                              )}
+
+                              {/* Grid / List Foto yang Sudah Diunggah */}
+                              {item.foto_urls && item.foto_urls.length > 0 && (
+                                <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
+                                  {item.foto_urls.map((photoUrl, pIdx) => (
+                                    <div key={pIdx} className="relative group shrink-0 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs">
+                                      <img
+                                        src={photoUrl}
+                                        alt={`Foto ${pIdx + 1}`}
+                                        className="w-14 h-14 object-cover cursor-pointer hover:scale-105 transition-transform"
+                                        onClick={() => setPreviewPhotoUrl(photoUrl)}
+                                      />
+                                      {/* Overlay View & Delete */}
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1 transition-opacity">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPreviewPhotoUrl(photoUrl)}
+                                          title="Lihat Foto"
+                                          className="p-1 bg-white/90 text-slate-900 rounded-full hover:bg-white cursor-pointer"
+                                        >
+                                          <Eye className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveItemPhoto(item.id, pIdx)}
+                                          title="Hapus Foto"
+                                          className="p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      {/* Badge Google Drive */}
+                                      <div className="absolute bottom-0 inset-x-0 bg-slate-900/80 text-[8px] text-emerald-300 font-mono text-center py-0.2">
+                                        GDrive
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2114,14 +2528,35 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                     Print Label
                   </button>
                   {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
-                    <button 
-                      onClick={() => { setSelectedOrderDetails(null); handlePrintAlterWorkOrder(order); }}
-                      className="px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 font-semibold rounded-lg text-xs border border-rose-300 dark:border-rose-800 flex items-center transition-colors cursor-pointer"
-                      title="Cetak SPK & Instruksi Pengerjaan untuk Penjahit"
-                    >
-                      <Scissors className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
-                      Cetak SPK Penjahit
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => { setSelectedOrderDetails(null); handlePrintAlterWorkOrder(order); }}
+                        className="px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 font-semibold rounded-lg text-xs border border-rose-300 dark:border-rose-800 flex items-center transition-colors cursor-pointer"
+                        title="Cetak SPK & Instruksi Pengerjaan untuk Penjahit"
+                      >
+                        <Scissors className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                        Cetak SPK Penjahit
+                      </button>
+                      <button 
+                        type="button"
+                        disabled={isSendingAlterWa}
+                        onClick={() => handleSendAlterWaFonnte(order)}
+                        className="px-3.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-semibold rounded-lg text-xs border border-emerald-300 dark:border-emerald-800 flex items-center transition-colors cursor-pointer disabled:opacity-50"
+                        title="Kirim SPK Alterasi langsung via WhatsApp Fonnte ke Store & Tim Penjahit"
+                      >
+                        {isSendingAlterWa ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            <span>Mengirim Fonnte...</span>
+                          </>
+                        ) : (
+                          <>
+                            <SendHorizonal className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                            <span>Kirim WA Alter (Fonnte)</span>
+                          </>
+                        )}
+                      </button>
+                    </>
                   )}
                   <button 
                     type="button"
@@ -2149,6 +2584,17 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                       >
                         Update Resi
                       </button>
+                      {order.status !== 'batal' && (
+                        <button 
+                          type="button"
+                          onClick={() => { setCancelModalOrder(order); }}
+                          className="px-3.5 py-1.5 bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60 font-semibold rounded-lg text-xs border border-red-300 dark:border-red-800 flex items-center transition-colors cursor-pointer"
+                          title="Batalkan pesanan dan catat alasan ke histori"
+                        >
+                          <Ban className="w-3.5 h-3.5 mr-1.5 text-red-600" />
+                          Batalkan Pesanan
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2298,6 +2744,31 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                                 {item.alteration_detail && (
                                   <div className="text-slate-600 dark:text-slate-400 text-[10.5px]">
                                     <strong>Instruksi:</strong> {item.alteration_detail}
+                                  </div>
+                                )}
+                                {item.foto_urls && item.foto_urls.length > 0 && (
+                                  <div className="pt-1.5 border-t border-rose-200 dark:border-rose-900/60">
+                                    <div className="flex items-center justify-between text-[10px] font-bold text-rose-800 dark:text-rose-300 mb-1">
+                                      <span className="flex items-center gap-1">
+                                        <Camera className="w-3 h-3 text-rose-600" />
+                                        Foto Panduan Alterasi ({item.foto_urls.length})
+                                      </span>
+                                      <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold">☁️ Google Drive</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {item.foto_urls.map((fUrl, fIdx) => (
+                                        <div
+                                          key={fIdx}
+                                          onClick={() => setPreviewPhotoUrl(fUrl)}
+                                          className="group relative cursor-pointer rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 hover:border-rose-500 shadow-2xs"
+                                        >
+                                          <img src={fUrl} alt="" className="w-12 h-12 object-cover group-hover:scale-105 transition-transform" />
+                                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                            <Eye className="w-3.5 h-3.5 text-white" />
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2469,6 +2940,14 @@ _WMS Warehouse System_`;
           .catch((err) => console.warn('WA resi notice error:', err));
       }
 
+      // NOTIFIKASI EMAIL RESI (Chocochips Official) ke Store & Customer jika dilampirkan
+      if (targetOrder) {
+        triggerOrderEmailNotifications(
+          { ...targetOrder, no_resi: cleanResi, status: 'dikirim' },
+          'status_dikirim'
+        ).catch((err) => console.warn('Resi email trigger error:', err));
+      }
+
       loadOrders();
     } else {
       onShowToast('Gagal update resi', 'error');
@@ -2486,6 +2965,7 @@ _WMS Warehouse System_`;
     setPengirim(order.nama_pengirim || '');
     setPicStore(order.pic_store || '');
     setTelpPengirim(order.no_telp_store || '');
+    setEmailStore(order.email_store || (order.alteration_repair_data?.pic_store_email) || '');
     setTransPengirim((order.no_transaksi_pengirim || []).join(', '));
     
     if (jasaKirimList.includes(order.jasa_kirim || '')) {
@@ -2499,6 +2979,7 @@ _WMS Warehouse System_`;
     
     setTujuan(order.nama_tujuan || '');
     setTelpTujuan(order.no_telp_tujuan || '');
+    setEmailCustomer(order.email_customer || '');
     setAlamatTujuan(order.alamat_tujuan || '');
     setNotesPaket(order.notes_paket || '');
     setTransCustomer(order.no_transaksi_customer || '');
@@ -2520,6 +3001,104 @@ _WMS Warehouse System_`;
     setLoading(false);
   };
 
+  /**
+   * Action Handler: Batalkan Pesanan Manual Shipment
+   * Status diubah menjadi 'batal', alasan pembatalan dicatat ke audit trail history_logs,
+   * histori tetap tersimpan permanen di sistem, dan notifikasi WA dikirim via Fonnte jika dipilih.
+   */
+  const handleConfirmCancelOrder = async (
+    order: ManualShipmentOrder,
+    reason: string,
+    notes: string,
+    sendWa: boolean
+  ) => {
+    setIsSubmittingCancel(true);
+    try {
+      const actor = session?.name || getUserPersonName(session?.username) || 'Admin';
+      const nowStr = new Date().toISOString();
+      const reasonText = reason === 'Lainnya (Tuliskan alasan spesifik)' && notes
+        ? notes
+        : `${reason}${notes ? ` - ${notes}` : ''}`;
+
+      const cancelLog = {
+        id: `hist_cancel_${Date.now()}`,
+        timestamp: nowStr,
+        actor,
+        action: 'cancelled_all' as const,
+        note: `Pesanan dibatalkan. Alasan: ${reasonText}`,
+      };
+
+      const existingLogs = Array.isArray(order.history_logs) ? order.history_logs : [];
+      const updatedLogs = [...existingLogs, cancelLog];
+
+      // Tandai status items juga agar konsisten
+      const updatedItems = (order.items || []).map((it) => ({
+        ...it,
+        item_status: 'cancelled' as const,
+      }));
+
+      const dateIdStr = new Date().toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const updatedOrder: ManualShipmentOrder = {
+        ...order,
+        status: 'batal',
+        items: updatedItems,
+        history_logs: updatedLogs,
+        notes_paket: `${order.notes_paket || ''}\n[BATAL]: Alasan: ${reasonText} (oleh ${actor} pada ${dateIdStr})`.trim(),
+      };
+
+      const res = await editManualShipment(updatedOrder);
+      if (res.success) {
+        onShowToast(`Pesanan ${order.no_pesanan} berhasil dibatalkan. Histori tersimpan.`, 'success');
+
+        // Kirim notifikasi WA pembatalan via Fonnte jika diminta
+        if (sendWa && order.no_telp_store && order.no_telp_store.trim()) {
+          const fonnteCfg = getFonnteConfig();
+          if (fonnteCfg.token) {
+            const waCancelMsg = `🚫 *PEMBATALAN PESANAN MANUAL SHIPMENT*\n--------------------------------------------\nHalo Tim *${order.nama_pengirim || 'Store'}*, pesanan berikut telah dibatalkan di sistem WMS Gudang:\n\n📋 *Rincian Pesanan:*\n• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}\n• *Store Pengirim:* ${order.nama_pengirim || '-'} (PIC: ${order.pic_store || '-'})\n• *Customer Tujuan:* ${order.nama_tujuan || '-'} (${order.no_telp_tujuan || '-'})\n• *Alamat:* ${order.alamat_tujuan || '-'}\n• *Total Produk:* ${order.items?.length || 0} item\n\n⚠️ *Alasan Pembatalan:*\n👉 *${reasonText}*\n• *Dibatalkan Oleh:* ${actor} (${dateIdStr})\n\nHistori pesanan ini tetap disimpan di sistem rekap WMS untuk kebutuhan pelacakan & audit.\nTerima kasih!\n_WMS Warehouse System_`;
+
+            sendFonnteMessage(order.no_telp_store, waCancelMsg, fonnteCfg.token)
+              .then((r) => {
+                if (r.success) {
+                  onShowToast('✅ Notif pembatalan terkirim ke WA Store via Fonnte!', 'success');
+                } else {
+                  console.warn('Fonnte cancel notice warning:', r.message);
+                }
+              })
+              .catch((err) => console.warn('Fonnte cancel error:', err));
+
+            if (fonnteCfg.groupTarget && fonnteCfg.groupTarget.trim()) {
+              sendFonnteMessage(fonnteCfg.groupTarget, waCancelMsg, fonnteCfg.token).catch(() => {});
+            }
+          }
+        }
+
+        // NOTIFIKASI EMAIL PEMBATALAN (Chocochips Official) ke Store & Customer jika dilampirkan
+        triggerOrderEmailNotifications(updatedOrder, 'status_batal', reasonText)
+          .catch((err) => console.warn('Cancel email error:', err));
+
+        setCancelModalOrder(null);
+        if (selectedOrderDetails?.no_pesanan === order.no_pesanan) {
+          setSelectedOrderDetails(updatedOrder);
+        }
+        await loadOrders();
+      } else {
+        onShowToast(`Gagal membatalkan pesanan: ${res.message}`, 'error');
+      }
+    } catch (err: any) {
+      console.error('Error saat batalkan pesanan:', err);
+      onShowToast(`Error: ${err?.message || 'Gagal membatalkan pesanan'}`, 'error');
+    } finally {
+      setIsSubmittingCancel(false);
+    }
+  };
+
   const filteredOrders = useMemo(() => {
     let result = orders;
 
@@ -2539,7 +3118,7 @@ _WMS Warehouse System_`;
         );
         if (filterOrderType === 'alteration_repair') return isAr;
         if (filterOrderType === 'manual_with_alter') return !isAr && hasAlterItem;
-        if (filterOrderType === 'manual_shipment') return !isAr;
+        if (filterOrderType === 'manual_shipment') return !isAr && !hasAlterItem;
         return true;
       });
     }
@@ -2560,17 +3139,41 @@ _WMS Warehouse System_`;
     
     // Status filter
     if (filterStatus !== 'all') {
-      result = result.filter(o => o.status === filterStatus);
+      const targetStatus = filterStatus.toLowerCase().trim();
+      result = result.filter(o => {
+        const s = (o.status || '').toLowerCase().trim();
+        if (targetStatus === 'pending') {
+          return s === 'pending' || s === 'menunggu' || s === 'diajukan' || !s;
+        }
+        if (targetStatus === 'diterima') {
+          return s === 'diterima' || s === 'terima';
+        }
+        if (targetStatus === 'diproses') {
+          return s === 'diproses' || s === 'proses' || s === 'proses_packing' || s === 'sedang_diproses';
+        }
+        if (targetStatus === 'dikirim') {
+          return s === 'dikirim' || s === 'kirim';
+        }
+        if (targetStatus === 'batal') {
+          return s === 'batal' || s === 'cancelled' || s === 'canceled';
+        }
+        return s === targetStatus;
+      });
     }
     
     // Store filter
     if (filterStore !== 'all') {
-      result = result.filter(o => o.nama_pengirim === filterStore);
+      const targetStore = filterStore.toLowerCase().trim();
+      result = result.filter(o => {
+        const sender = (o.nama_pengirim || '').toLowerCase().trim();
+        return sender === targetStore || sender.includes(targetStore) || targetStore.includes(sender);
+      });
     }
 
     // Jasa Kirim filter
     if (filterJasaKirim !== 'all') {
-      result = result.filter(o => o.jasa_kirim === filterJasaKirim);
+      const targetJk = filterJasaKirim.toLowerCase().trim();
+      result = result.filter(o => (o.jasa_kirim || '').toLowerCase().trim() === targetJk);
     }
     
     // Date filter
@@ -2578,18 +3181,20 @@ _WMS Warehouse System_`;
       const start = new Date(filterStartDate);
       start.setHours(0, 0, 0, 0);
       result = result.filter(o => {
-        if (!o.created_at) return false;
-        const d = new Date(o.created_at);
-        return d >= start;
+        const rawDate = o.created_at || (o as any).tanggal;
+        if (!rawDate) return false;
+        const d = new Date(rawDate);
+        return !isNaN(d.getTime()) && d >= start;
       });
     }
     if (filterEndDate) {
       const end = new Date(filterEndDate);
       end.setHours(23, 59, 59, 999);
       result = result.filter(o => {
-        if (!o.created_at) return false;
-        const d = new Date(o.created_at);
-        return d <= end;
+        const rawDate = o.created_at || (o as any).tanggal;
+        if (!rawDate) return false;
+        const d = new Date(rawDate);
+        return !isNaN(d.getTime()) && d <= end;
       });
     }
 
@@ -2632,7 +3237,21 @@ _WMS Warehouse System_`;
     }
     
     return result;
-  }, [orders, searchTerm, filterStore, filterJasaKirim, filterStatus, filterStartDate, filterEndDate, filterDealposSj, filterSoldStatus]);
+  }, [
+    orders,
+    searchTerm,
+    filterStore,
+    filterJasaKirim,
+    filterStatus,
+    filterStartDate,
+    filterEndDate,
+    filterDealposSj,
+    filterSoldStatus,
+    filterOrderType,
+    filterAlterStatus,
+    userIsAdmin,
+    userAssignedStore,
+  ]);
 
     // Hitung jumlah order yang memiliki produk Marketplace yang butuh No SJ DealPOS
   const pendingSjCount = useMemo(() => {
@@ -2769,7 +3388,13 @@ _WMS Warehouse System_`;
         (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
       );
     }).length;
-    const totalManualCount = orders.length - totalArCount;
+    const totalManualPureCount = orders.filter(o => {
+      const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
+      const hasAlter = (o.items || []).some(
+        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+      );
+      return !isAr && !hasAlter;
+    }).length;
     const unassignedResiCount = orders.filter(o => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
 
     const selectedAlterOrders = orders.filter(o => {
@@ -2820,7 +3445,7 @@ _WMS Warehouse System_`;
                 }`}
               >
                 <Package className="w-3 h-3" />
-                <span>Manual Shipment ({totalManualCount})</span>
+                <span>Manual Shipment ({totalManualPureCount})</span>
               </button>
               <button
                 type="button"
@@ -3047,6 +3672,30 @@ _WMS Warehouse System_`;
                 className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
               />
             </div>
+
+            {/* Tombol Reset Semua Filter */}
+            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterOrderType !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || filterStartDate || filterEndDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setFilterStore('all');
+                  setFilterJasaKirim('all');
+                  setFilterStatus('all');
+                  setFilterAlterStatus('all');
+                  setFilterOrderType('all');
+                  setFilterDealposSj('all');
+                  setFilterSoldStatus('all');
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+                className="px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 border border-rose-200 dark:border-rose-800 rounded-lg font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                title="Reset semua filter kembali ke awal"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Filter</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -3297,10 +3946,19 @@ _WMS Warehouse System_`;
                       const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
                       const alterItems = (order.items || []).filter(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
                       if (!isAr && alterItems.length > 0) {
+                        const alterPhotoCount = (order.items || []).reduce((acc, it) => acc + (it.foto_urls?.length || 0), 0);
                         return (
-                          <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 flex items-center justify-center gap-0.5 mt-1">
-                            <Scissors className="w-2.5 h-2.5" />
-                            <span>{alterItems.length} alter</span>
+                          <div className="flex flex-col items-center gap-0.5 mt-1">
+                            <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 flex items-center justify-center gap-0.5">
+                              <Scissors className="w-2.5 h-2.5" />
+                              <span>{alterItems.length} alter</span>
+                            </div>
+                            {alterPhotoCount > 0 && (
+                              <span className="text-[8.5px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5">
+                                <Camera className="w-2.5 h-2.5" />
+                                <span>{alterPhotoCount} foto</span>
+                              </span>
+                            )}
                           </div>
                         );
                       }
@@ -3470,6 +4128,8 @@ _WMS Warehouse System_`;
                               applyToAllMarketplace: true
                             });
                           }
+                          if (action === 'kirim_wa_alter') handleSendAlterWaFonnte(order);
+                          if (action === 'cancel') setCancelModalOrder(order);
                           if (action === 'resi') handleUpdateResi(order.no_pesanan!);
                           if (action === 'delete') handleDelete(order.no_pesanan!);
                           e.target.value = ''; // reset after selection
@@ -3479,7 +4139,10 @@ _WMS Warehouse System_`;
                         <option value="" disabled>Aksi</option>
                         <option value="print">Print Label</option>
                         {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
-                          <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
+                          <>
+                            <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
+                            <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
+                          </>
                         )}
                         {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
                           <>
@@ -3499,7 +4162,10 @@ _WMS Warehouse System_`;
                         <option value="edit">Edit</option>
                         <option value="sj_dealpos">Input SJ DealPOS</option>
                         <option value="resi">Update Resi</option>
-                        <option value="delete">Hapus</option>
+                        {order.status !== 'batal' && (
+                          <option value="cancel">🚫 Batalkan Pesanan (Simpan Histori)</option>
+                        )}
+                        <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
                       </select>
                     </td>
                   )}
@@ -3555,10 +4221,17 @@ _WMS Warehouse System_`;
                           (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
                         );
                         if (!isAr && alterItems.length > 0) {
+                          const photoCount = (order.items || []).reduce((acc, it) => acc + (it.foto_urls?.length || 0), 0);
                           return (
                             <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs">
                               <Scissors className="w-2.5 h-2.5 text-rose-600 animate-pulse" />
                               <span>Disertai Alter ({alterItems.length})</span>
+                              {photoCount > 0 && (
+                                <span className="text-emerald-700 dark:text-emerald-400 font-bold ml-0.5 flex items-center gap-0.5">
+                                  <Camera className="w-2.5 h-2.5" />
+                                  <span>{photoCount} Foto</span>
+                                </span>
+                              )}
                             </span>
                           );
                         }
@@ -3806,7 +4479,9 @@ _WMS Warehouse System_`;
                               applyToAllMarketplace: true
                             });
                           }
-                          if (action === 'resi') handleUpdateResi(order.no_pesanan!);
+                            if (action === 'kirim_wa_alter') handleSendAlterWaFonnte(order);
+                            if (action === 'cancel') setCancelModalOrder(order);
+                            if (action === 'resi') handleUpdateResi(order.no_pesanan!);
                             if (action === 'delete') handleDelete(order.no_pesanan!);
                             e.target.value = ''; // reset after selection
                           }}
@@ -3815,14 +4490,20 @@ _WMS Warehouse System_`;
                           <option value="" disabled>Aksi</option>
                           <option value="print">Print Label</option>
                           {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
-                            <option value="spk_penjahit">✂️ SPK Penjahit</option>
+                            <>
+                              <option value="spk_penjahit">✂️ SPK Penjahit</option>
+                              <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
+                            </>
                           )}
                           {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
                             <option value="spk">Cetak SPK</option>
                           )}
                           <option value="edit">Edit</option>
                           <option value="resi">Update Resi</option>
-                          <option value="delete">Hapus</option>
+                          {order.status !== 'batal' && (
+                            <option value="cancel">🚫 Batalkan Pesanan (Simpan Histori)</option>
+                          )}
+                          <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
                         </select>
                       </div>
                     )}
@@ -4590,6 +5271,23 @@ _WMS Warehouse System_`;
                                   <div className="p-2 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-950 font-bold text-xs leading-relaxed">
                                     ✂️ {instruction}
                                   </div>
+                                  {item.foto_urls && item.foto_urls.length > 0 && (
+                                    <div className="mt-2 pt-2 border-t border-slate-200">
+                                      <div className="text-[10px] font-bold text-slate-600 mb-1">
+                                        Foto Panduan Store ({item.foto_urls.length} Foto):
+                                      </div>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {item.foto_urls.map((fUrl, fIdx) => (
+                                          <img
+                                            key={fIdx}
+                                            src={fUrl}
+                                            alt="Panduan Alterasi"
+                                            className="w-16 h-16 object-cover rounded border border-slate-300 shadow-2xs"
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="p-2.5 text-center align-top">
                                   <div className="w-8 h-8 border-2 border-slate-400 rounded-md mx-auto" />
@@ -4644,157 +5342,197 @@ _WMS Warehouse System_`;
               );
             })
           ) : (
-            // Picking List Mode
-            printPayload.orders.map((order, oIdx) => {
+            // Massal Multi-Order Picking List Mode (Hemat Kertas, Banyak Order per Lembar)
+            (() => {
               const todayStr = new Date().toLocaleDateString('id-ID', {
+                weekday: 'long',
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
               });
-              const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
-              const totalQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
-              const alterItems = (order.items || []).filter(
-                (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-              );
+              const totalOrders = printPayload.orders.length;
+              const totalAllItems = printPayload.orders.reduce((acc, o) => acc + (o.items?.length || 0), 0);
+              const totalAllQty = printPayload.orders.reduce((acc, o) => acc + (o.items || []).reduce((q, it) => q + (Number(it.qty) || 0), 0), 0);
+              const operatorName = session?.name || getUserPersonName(session?.username) || 'Petugas Gudang';
 
               return (
-                <div
-                  key={order.no_pesanan || oIdx}
-                  className="page-break p-5 max-w-[800px] mx-auto text-slate-900 bg-white"
-                  style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
-                >
-                  <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-4">
-                    <div>
-                      <div className="text-lg font-black tracking-wide text-indigo-600 flex items-center gap-2">
-                        <img src="/logo.svg" alt="" referrerPolicy="no-referrer" className="h-5 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
-                        WMS
-                      </div>
-                      <div className="text-sm font-extrabold mt-0.5">SURAT JALAN PICKING MANUAL SHIPMENT</div>
-                      <div className="text-[11px] text-slate-500 mt-1">
-                        Tanggal: <b>{todayStr}</b> • Admin: <b>{session?.name || getUserPersonName(session?.username) || 'Admin'}</b>
+                <div className="p-4 max-w-[850px] mx-auto text-black bg-white">
+                  {/* Batch Header Sekali di Atas */}
+                  <div className="border-b-2 border-black pb-2.5 mb-3 flex justify-between items-center break-inside-avoid">
+                    <div className="flex items-center gap-2.5">
+                      <img src="/logo.svg" alt="" referrerPolicy="no-referrer" className="h-6 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                      <div>
+                        <div className="text-base font-black tracking-wider uppercase text-black">
+                          CHOCOCHIPS WMS — DAFTAR PICKING MASSAL
+                        </div>
+                        <div className="text-[10px] text-gray-700">
+                          Tgl Cetak: <strong>{todayStr}</strong> • Picker/Admin: <strong>{operatorName}</strong>
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-base font-black font-mono border-2 border-slate-900 px-2.5 py-1 rounded-md inline-block">
-                        {order.no_pesanan}
-                      </div>
-                      <div className="text-xs font-bold text-slate-700 mt-1">
-                        Dari: <span className="text-indigo-600">{order.nama_pengirim}</span>
-                      </div>
-                      <div className="text-xs font-bold text-slate-700 mt-0.5">
-                        Tujuan: <span className="text-emerald-700">{order.nama_tujuan}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Warning Banner Khusus Jika Ada Produk Alteration */}
-                  {alterItems.length > 0 && (
-                    <div className="mb-3 p-2.5 bg-rose-50 border-2 border-rose-500 rounded-lg flex items-center justify-between text-rose-950">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">✂️</span>
-                        <div>
-                          <div className="font-black text-xs">
-                            PERHATIAN: TERDAPAT {alterItems.length} ITEM DENGAN PERMINTAAN ALTERATION / PERMAK!
-                          </div>
-                          <div className="text-[10px] text-rose-800">
-                            Pisahkan produk bertanda <strong>[✂️ BUTUH ALTER]</strong> dan serahkan ke bagian penjahit bersama lembar kerja alter sebelum proses packing.
-                          </div>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-black uppercase whitespace-nowrap">
-                        Wajib Alter ({alterItems.length})
+                      <span className="border border-black px-2 py-0.5 rounded text-[11px] font-black uppercase inline-block">
+                        {totalOrders} Pesanan | {totalAllItems} SKU | {totalAllQty} Pcs
                       </span>
                     </div>
-                  )}
-
-                  <div className="mb-3 text-[11px] leading-relaxed">
-                    <div><strong>Order ID:</strong> {order.no_transaksi_customer || '-'}</div>
-                    <div><strong>Jasa Kirim:</strong> {order.jasa_kirim || '-'}</div>
-                    <div><strong>DealPOS:</strong> {dealPosStr}</div>
                   </div>
 
-                  <table className="w-full border-collapse mb-5 text-[11px]">
-                    <thead>
-                      <tr className="bg-slate-100 border-b-2 border-slate-300 text-[10px] uppercase text-slate-600">
-                        <th className="p-2 text-center w-8">NO</th>
-                        <th className="p-2 text-left w-36">SKU / CODE</th>
-                        <th className="p-2 text-left">NAMA PRODUK</th>
-                        <th className="p-2 text-center w-14">SIZE</th>
-                        <th className="p-2 text-center w-14">QTY</th>
-                        <th className="p-2 text-center w-20">LOKASI</th>
-                        <th className="p-2 text-center w-10">CEK</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {order.items?.map((item, itemIdx) => {
-                        let location = '-';
-                        let variasi = 'Default';
-                        let cleanName = item.nama_produk;
-                        const parts = item.nama_produk.split('-');
-                        if (parts.length > 1) {
-                          variasi = parts[parts.length - 1].trim();
-                          cleanName = parts.slice(0, parts.length - 1).join('-').trim();
-                        }
+                  {/* Daftar Pesanan Mengalir Rapi per Lembar */}
+                  <div className="space-y-3">
+                    {printPayload.orders.map((order, oIdx) => {
+                      const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
+                      const orderQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+                      const alterItems = (order.items || []).filter(
+                        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
+                      );
 
-                        if (item.fulfillment === 'Marketplace') {
-                          const prod = productCatalog.find(p => p.k === item.sku);
-                          if (prod && prod.lokasi) location = prod.lokasi;
-                        } else {
-                          location = item.fulfillment;
-                        }
-
-                        return (
-                          <tr key={itemIdx} className={`border-b border-slate-200 text-[11px] ${item.needs_alteration ? 'bg-rose-50/50' : ''}`}>
-                            <td className="p-1.5 text-center text-slate-500">{itemIdx + 1}</td>
-                            <td className="p-1.5 font-mono font-bold text-slate-900">{item.sku}</td>
-                            <td className="p-1.5 font-semibold text-slate-800">
-                              <div>{cleanName}</div>
-                              {item.needs_alteration && (
-                                <div className="text-[10px] text-rose-900 font-bold flex items-start gap-1 mt-1 p-1 bg-rose-100/80 rounded border border-rose-300">
-                                  <span className="text-rose-600 shrink-0">✂️</span>
-                                  <div>
-                                    <span>[ID ALTER: {item.id_form_alter || 'Auto'}]: </span>
-                                    <span className="font-extrabold text-rose-950 underline">{item.alteration_detail || '-'}</span>
-                                  </div>
-                                </div>
+                      return (
+                        <div
+                          key={order.no_pesanan || oIdx}
+                          className="border border-black rounded-sm bg-white overflow-hidden text-black"
+                          style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
+                        >
+                          {/* Order Separator Header Bar */}
+                          <div className="bg-gray-100 border-b border-black px-2.5 py-1 flex items-center justify-between text-[11px] font-bold flex-wrap gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-black text-black">
+                                #{oIdx + 1}. [{order.no_pesanan}]
+                              </span>
+                              {order.no_transaksi_customer && (
+                                <span className="text-gray-800">
+                                  Ref: <strong>{order.no_transaksi_customer}</strong>
+                                </span>
                               )}
-                            </td>
-                            <td className="p-1.5 text-center font-bold">{variasi}</td>
-                            <td className="p-1.5 text-center font-extrabold text-indigo-600 text-xs">{item.qty}</td>
-                            <td className="p-1.5 text-center font-bold bg-slate-50 text-emerald-700">{location}</td>
-                            <td className="p-1.5 text-center">
-                              <div className="w-3.5 h-3.5 border-2 border-slate-400 rounded-xs mx-auto" />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              <span>&bull;</span>
+                              <span>Tujuan: <strong>{order.nama_tujuan}</strong></span>
+                              <span>&bull;</span>
+                              <span>Store: <strong>{order.nama_pengirim}</strong></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-700">Kurir: <strong>{order.jasa_kirim || '-'}</strong></span>
+                              <span>&bull;</span>
+                              <span>DealPOS: <strong>{dealPosStr}</strong></span>
+                              <span className="bg-black text-white px-1.5 py-0.2 rounded text-[10px] font-black">
+                                {orderQty} Pcs
+                              </span>
+                            </div>
+                          </div>
 
-                  <div className="flex justify-between items-end mt-6 pt-3 border-t border-dashed border-slate-300 text-[11px]">
-                    <div className="text-slate-500">
-                      Total Item: <b>{order.items?.length || 0} SKU</b> • Total Qty: <b>{totalQty} Pcs</b>
+                          {/* Alert Alterasi jika Ada */}
+                          {alterItems.length > 0 && (
+                            <div className="px-2.5 py-0.5 bg-rose-50 border-b border-rose-300 text-[10px] font-bold text-rose-950 flex items-center justify-between">
+                              <span>
+                                ✂️ PERHATIAN: TERDAPAT {alterItems.length} ITEM BUTUH ALTERASI! (Pisahkan ke penjahit dengan SPK)
+                              </span>
+                              <span className="uppercase text-[9px] bg-rose-600 text-white px-1 rounded font-black">
+                                Wajib Alter
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Tabel Item Pesanan Kompak */}
+                          <table className="w-full border-collapse text-[10.5px]">
+                            <thead>
+                              <tr className="border-b border-gray-300 bg-gray-50 text-[9.5px] uppercase text-gray-700 font-bold">
+                                <th className="py-1 px-1.5 text-center w-7 border-r border-gray-200">No</th>
+                                <th className="py-1 px-2 text-left w-32 border-r border-gray-200">SKU / Kode</th>
+                                <th className="py-1 px-2 text-left border-r border-gray-200">Nama Produk</th>
+                                <th className="py-1 px-1.5 text-center w-12 border-r border-gray-200">Size</th>
+                                <th className="py-1 px-1.5 text-center w-10 border-r border-gray-200">Qty</th>
+                                <th className="py-1 px-2 text-center w-24 border-r border-gray-200">Lokasi Rak</th>
+                                <th className="py-1 px-1.5 text-center w-9 border-r border-gray-200">Cek</th>
+                                <th className="py-1 px-2 text-left w-44">Keterangan / Alter</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {order.items?.map((item, itemIdx) => {
+                                let location = '-';
+                                let variasi = item.size || '-';
+                                let cleanName = item.nama_produk;
+                                const parts = item.nama_produk.split('-');
+                                if (parts.length > 1 && (!item.size || item.size === '-')) {
+                                  variasi = parts[parts.length - 1].trim();
+                                  cleanName = parts.slice(0, parts.length - 1).join('-').trim();
+                                }
+
+                                if (item.fulfillment === 'Marketplace') {
+                                  const prod = productCatalog.find(p => p.k === item.sku);
+                                  if (prod && prod.lokasi) location = prod.lokasi;
+                                } else {
+                                  location = item.fulfillment || '-';
+                                }
+
+                                const hasItemAlter = item.needs_alteration || !!item.id_form_alter || !!item.alteration_detail;
+
+                                return (
+                                  <tr key={itemIdx} className={`border-b border-gray-200 ${hasItemAlter ? 'bg-rose-50/40' : ''}`}>
+                                    <td className="py-1 px-1.5 text-center text-gray-600 border-r border-gray-200">{itemIdx + 1}</td>
+                                    <td className="py-1 px-2 font-mono font-bold text-black border-r border-gray-200">{item.sku}</td>
+                                    <td className="py-1 px-2 font-semibold text-black border-r border-gray-200">
+                                      {cleanName}
+                                    </td>
+                                    <td className="py-1 px-1.5 text-center font-bold border-r border-gray-200">{variasi}</td>
+                                    <td className="py-1 px-1.5 text-center font-extrabold text-black text-[11px] border-r border-gray-200">{item.qty || 1}</td>
+                                    <td className="py-1 px-2 text-center font-black text-black border-r border-gray-200 bg-gray-50/50">{location}</td>
+                                    <td className="py-1 px-1.5 text-center border-r border-gray-200">
+                                      <div className="w-3.5 h-3.5 border border-black rounded-xs mx-auto" />
+                                    </td>
+                                    <td className="py-1 px-2 text-[10px] text-gray-800">
+                                      {hasItemAlter ? (
+                                        <span className="font-bold text-rose-900">
+                                          ✂️ {item.alteration_detail || 'Alterasi'} {item.id_form_alter ? `(${item.id_form_alter})` : ''}
+                                        </span>
+                                      ) : (
+                                        '-'
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Summary & Signatures Sekali di Akhir Halaman */}
+                  <div
+                    className="mt-4 pt-3 border-t-2 border-black flex justify-between items-end text-[11px] text-black"
+                    style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
+                  >
+                    <div>
+                      <div className="font-bold">Total Batch Picking: {totalOrders} Pesanan | {totalAllItems} SKU | {totalAllQty} Pcs</div>
+                      <div className="text-[10px] text-gray-600 mt-0.5">
+                        * Centang [✓] setiap item yang telah diambil dari rak. Pisahkan produk alter ke tim penjahit.
+                      </div>
                     </div>
-                    <div className="flex gap-10 text-center">
+                    <div className="flex gap-8 text-center">
                       <div>
-                        <div className="mb-9 text-slate-500">Petugas Picking</div>
-                        <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
-                          ({session?.name || getUserPersonName(session?.username) || 'Petugas'})
+                        <div className="text-[10px] text-gray-600 mb-7">Petugas Picker</div>
+                        <div className="font-bold border-t border-black pt-1 min-w-[80px]">
+                          ({operatorName})
                         </div>
                       </div>
                       <div>
-                        <div className="mb-9 text-slate-500">Checker / QC</div>
-                        <div className="font-bold border-t border-slate-400 pt-1 min-w-[90px]">
-                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                        <div className="text-[10px] text-gray-600 mb-7">Checker / QC</div>
+                        <div className="font-bold border-t border-black pt-1 min-w-[80px]">
+                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-gray-600 mb-7">Packing / Ekspedisi</div>
+                        <div className="font-bold border-t border-black pt-1 min-w-[80px]">
+                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
               );
-            })
+            })()
           )}
         </div>
       )}
@@ -4806,6 +5544,35 @@ _WMS Warehouse System_`;
         orders={orders}
         onSuccess={() => loadOrders()}
         onShowToast={onShowToast}
+      />
+
+      {/* Modal Kamera Alterasi Store */}
+      <AlterationCameraModal
+        isOpen={!!cameraModalItem}
+        onClose={() => setCameraModalItem(null)}
+        itemTitle={cameraModalItem?.nama_produk}
+        idFormAlter={cameraModalItem?.id_form_alter}
+        onPhotoUploaded={(gdriveUrl) => {
+          if (cameraModalItem) {
+            handleCameraPhotoUploaded(cameraModalItem.id, gdriveUrl);
+          }
+        }}
+      />
+
+      {/* Modal Lightbox Foto Full Resolution */}
+      <PhotoLightboxModal
+        photoUrl={previewPhotoUrl}
+        onClose={() => setPreviewPhotoUrl(null)}
+        title="Dokumentasi Foto Fisik Alterasi Store"
+      />
+
+      {/* Modal Pembatalan Pesanan (Simpan Histori & Alasan) */}
+      <CancelOrderModal
+        isOpen={!!cancelModalOrder}
+        order={cancelModalOrder}
+        onClose={() => setCancelModalOrder(null)}
+        onConfirmCancel={handleConfirmCancelOrder}
+        isSubmitting={isSubmittingCancel}
       />
     </div>
   );

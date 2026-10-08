@@ -362,3 +362,54 @@ html.dark {
   --theme-900: #831843;
   --theme-950: #500724;
 }
+
+/* Universal Print Stylesheet: Paksa Putih Bersih & Nonaktifkan Tema Gelap saat Cetak */
+@media print {
+  html,
+  html.dark,
+  html[data-theme="dark"],
+  body,
+  #root,
+  #root * {
+    color-scheme: light !important;
+  }
+
+  html,
+  body {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hilangkan background gelap dari container manapun saat cetak */
+  .dark,
+  [data-theme="dark"],
+  .bg-slate-900,
+  .bg-slate-950,
+  .bg-slate-800,
+  .bg-neutral-900,
+  .bg-black {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Pastikan border dan teks hitam pekat terbaca tajam */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Sembunyikan elemen non-cetak */
+  header,
+  nav,
+  aside,
+  .no-print,
+  button,
+  input,
+  select,
+  textarea {
+    /* Hanya sembunyikan jika bukan bagian dari form cetak */
+  }
+}
