@@ -457,72 +457,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         Alat & Utilitas
       </div>
 
-      {/* PWA App Install Modal (Android, iPhone & PC) */}
-      {(() => {
-        const isDesktop = typeof window !== 'undefined' && !/android|iphone|ipad|ipod/i.test(navigator.userAgent);
-        return (
-          <button
-            type="button"
-            onClick={() => {
-              onOpenApkModal();
-              onCloseMobile();
-            }}
-            title={isDesktop ? "Buka / Pasang Aplikasi ke PC (Jendela Penuh Tanpa Browser)" : "Pasang Aplikasi ke Android & iPhone (PWA Instan)"}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-              collapsed ? 'justify-center px-2' : ''
-            }`}
-          >
-            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-              {isDesktop ? (
-                <Monitor className="w-4 h-4 text-primary-500" />
-              ) : (
-                <Smartphone className="w-4 h-4 text-primary-500" />
-              )}
-            </div>
-            {!collapsed && (
-              <span className="truncate">
-                {isDesktop ? 'Pasang Aplikasi PC (Desktop)' : 'Install Aplikasi HP (PWA)'}
-              </span>
-            )}
-          </button>
-        );
-      })()}
-
-      {/* Push Notification Toggle */}
-      <button
-        type="button"
-        onClick={onRequestNotification}
-        title={
-          notificationPermission === 'granted'
-            ? 'Notifikasi Suara & Push Aktif'
-            : 'Aktifkan Notifikasi'
-        }
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
-          collapsed ? 'justify-center px-2' : ''
-        }`}
-      >
-        <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
-          {notificationPermission === 'granted' ? (
-            <BellRing className="w-4 h-4 text-primary-500" />
-          ) : (
-            <Bell className="w-4 h-4 text-slate-400" />
-          )}
-        </div>
-        {!collapsed && (
-          <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span>Notifikasi</span>
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold ${
-                notificationPermission === 'granted'
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
-                  : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-              }`}
-            >
-              {notificationPermission === 'granted' ? 'ON' : 'OFF'}
-            </span>
-          </div>
-        )}
-      </button>
 
       {/* Unduh Dokumen PDF Matriks Hak Akses (Admin Only) */}
       {userIsAdmin && (
@@ -638,46 +572,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       )}
 
-      
-
-      {/* Roadmap & Fitur (Semua User dapat Request Fitur & Pantau Dev) */}
-      <button
-        type="button"
-        onClick={() => {
-          handleNavClick('roadmap');
-          onCloseMobile();
-        }}
-        title="Roadmap Pengembangan & Request Fitur"
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-          activePage === 'roadmap'
-            ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
-            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-        } ${collapsed ? 'justify-center px-2' : ''}`}
-      >
-        <div
-          className={`p-1.5 rounded-lg shrink-0 ${
-            activePage === 'roadmap'
-              ? 'bg-white/20 text-white'
-              : 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400'
-          }`}
-        >
-          <Map className="w-4 h-4" />
-        </div>
-        {!collapsed && (
-          <div className="flex-1 text-left truncate flex items-center justify-between">
-            <span className="truncate font-extrabold">Roadmap & Fitur</span>
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
-                activePage === 'roadmap'
-                  ? 'bg-black/20 text-white'
-                  : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
-              }`}
-            >
-              NEW
-            </span>
-          </div>
-        )}
-      </button>
 
       {/* Tema & Tampilan (Untuk Semua Pengguna) */}
       <button
