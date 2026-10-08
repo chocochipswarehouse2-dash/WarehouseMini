@@ -42,6 +42,7 @@ import {
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
 import { BulkUpdateResiIgLiveModal } from './BulkUpdateResiIgLiveModal';
+import { ImportPesananIgLiveModal } from './ImportPesananIgLiveModal';
 import QRCode from 'qrcode';
 
 const QRCodeDisplay = ({ text }: { text: string }) => {
@@ -80,8 +81,9 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // View Modes
   const [activeSubTab, setActiveSubTab] = useState<'orders' | 'picking'>('orders');
 
-  // Bulk Resi Modal State
+  // Bulk Resi & Import Modal State
   const [isBulkUpdateResiModalOpen, setIsBulkUpdateResiModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Modals
   const [isGasModalOpen, setIsGasModalOpen] = useState<boolean>(false);
@@ -397,6 +399,24 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     }
 
     setIsAddEditModalOpen(false);
+  };
+
+  const handleBatchUpdateResi = (updates: { id: string; newResi: string }[]) => {
+    const updated = orders.map((o) => {
+      const match = updates.find((u) => u.id === o.id);
+      if (match) {
+        return { ...o, no_resi: match.newResi };
+      }
+      return o;
+    });
+    setOrders(updated);
+    saveStoredIgLiveOrders(updated);
+  };
+
+  const handleImportOrders = (newOrders: IGLiveOrder[]) => {
+    const combined = [...newOrders, ...orders];
+    setOrders(combined);
+    saveStoredIgLiveOrders(combined);
   };
 
   // Delete Order
@@ -719,11 +739,11 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsBulkUpdateResiModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Update Resi Massal</span>
+              <span>Import Pesanan (GSheet)</span>
             </button>
 
             <button
@@ -734,6 +754,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Update Resi Massal</span>
             </button>
+
+
 
             <button
               type="button"
@@ -1146,7 +1168,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                   <tr className="bg-slate-100/80 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 uppercase font-bold">
                     <th className="p-3 text-center w-12">Pick</th>
                     <th className="p-3 text-center w-28">Lokasi Rak</th>
-                    <th className="p-3 w-36">Area (Prioritas)</th>
                     <th className="p-3">SKU & Nama Master Produk</th>
                     <th className="p-3 text-center w-16">Size</th>
                     <th className="p-3 text-center w-20">Total Qty</th>
@@ -1156,7 +1177,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {pickingItemsGrouped.pickingList.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
                         Tidak ada antrean pesanan yang perlu di-pick saat ini.
                       </td>
                     </tr>
@@ -1187,19 +1208,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                           </td>
                           <td className="p-3 text-center font-mono font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800/80 text-sm">
                             {item.lokasi}
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.priority === 1
-                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                                  : item.priority === 2
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                  : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
-                              }`}
-                            >
-                              {item.area} (P{item.priority})
-                            </span>
                           </td>
                           <td className="p-3">
                             <div className="font-mono font-bold text-slate-900 dark:text-white">
@@ -1670,16 +1678,15 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         isOpen={isBulkUpdateResiModalOpen}
         onClose={() => setIsBulkUpdateResiModalOpen(false)}
         orders={orders}
-        onSaveBatch={handleBulkUpdateResiSuccess}
+        onSaveBatch={handleBatchUpdateResi}
         onShowToast={onShowToast}
       />
 
-      {/* 5. Modal Bulk Update Resi */}
-      <BulkUpdateResiIgLiveModal
-        isOpen={isBulkUpdateResiModalOpen}
-        onClose={() => setIsBulkUpdateResiModalOpen(false)}
-        orders={orders}
-        onSaveBatch={handleBulkUpdateResiSuccess}
+      {/* 6. Modal Import Pesanan dari GSheet */}
+      <ImportPesananIgLiveModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSaveBatch={handleImportOrders}
         onShowToast={onShowToast}
       />
 

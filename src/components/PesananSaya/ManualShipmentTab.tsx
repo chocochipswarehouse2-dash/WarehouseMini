@@ -80,25 +80,21 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     const userName = (session.name || '').toLowerCase().trim();
     const userUname = (session.username || '').toLowerCase().trim();
 
-    // OVERRIDE KHUSUS: chococpj di-set ke Gaia Pontianak sesuai request user
-    if (userUname === 'chococpj') {
-      return 'Gaia Pontianak';
-    }
-
     // List outlets untuk pencocokan
     const allOutlets = outlets.length > 0 ? outlets : DEFAULT_OUTLETS;
     const match = allOutlets.find((o) => {
       const oName = o.nama.toLowerCase().trim();
+      const oKode = 'kode' in o && o.kode ? (o as any).kode.toLowerCase() : '';
+      
+      // Jangan gunakan kata generic 'store' untuk mencocokkan nama outlet
+      const isGenericDiv = userDiv === 'store' || userDiv === 'outlet';
+
       return (
-        userDiv === oName ||
-        userDiv.includes(oName) ||
-        oName.includes(userDiv) ||
-        userName === oName ||
-        userName.includes(oName) ||
-        userUname === oName ||
-        userUname.includes(oName) ||
-        // Cocokkan juga dengan kode outlet (misal: 'chococpj' -> 'cpj')
-        ('kode' in o && o.kode && (userUname.includes((o as any).kode.toLowerCase()) || userDiv.includes((o as any).kode.toLowerCase())))
+        (!isGenericDiv && userDiv && (userDiv === oName || userDiv.includes(oName) || oName.includes(userDiv))) ||
+        (userName && (userName === oName || userName.includes(oName))) ||
+        (userUname && (userUname === oName || userUname.includes(oName))) ||
+        (oKode && userUname && userUname.includes(oKode)) ||
+        (oKode && userDiv && userDiv.includes(oKode))
       );
     });
 
