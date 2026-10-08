@@ -41,6 +41,7 @@ import {
   lookupMasterProduct
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
+import { BulkUpdateResiIgLiveModal } from './BulkUpdateResiIgLiveModal';
 
 interface IGLiveTabProps {
   session: UserSession | null;
@@ -67,6 +68,9 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // View Modes
   const [activeSubTab, setActiveSubTab] = useState<'orders' | 'picking'>('orders');
 
+  // Bulk Resi Modal State
+  const [isBulkUpdateResiModalOpen, setIsBulkUpdateResiModalOpen] = useState(false);
+
   // Modals
   const [isGasModalOpen, setIsGasModalOpen] = useState<boolean>(false);
   const [tempGasUrl, setTempGasUrl] = useState<string>('');
@@ -74,6 +78,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [editingOrder, setEditingOrder] = useState<IGLiveOrder | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [orderToDelete, setOrderToDelete] = useState<IGLiveOrder | null>(null);
+
+
   const [isCancelModalOpen, setIsCancelModalOpen] = useState<boolean>(false);
   const [orderToCancel, setOrderToCancel] = useState<IGLiveOrder | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
@@ -200,6 +206,18 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     setOrders(updated);
     saveStoredIgLiveOrders(updated);
     onShowToast(`Status pesanan diperbarui menjadi ${newStatus}`, 'success');
+  };
+
+  const handleBulkUpdateResiSuccess = (updates: { id: string; newResi: string }[]) => {
+    const updated = orders.map(o => {
+      const update = updates.find(u => u.id === o.id);
+      if (update) {
+        return { ...o, no_resi: update.newResi, updated_at: new Date().toISOString() };
+      }
+      return o;
+    });
+    setOrders(updated);
+    saveStoredIgLiveOrders(updated);
   };
 
   // Open Add Modal
@@ -591,6 +609,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
   return (
     <div className="space-y-4">
+      <div className={`${printMode ? 'hidden print:hidden' : 'space-y-4'}`}>
       {/* Top Banner & Header */}
       <div className="bg-gradient-to-r from-pink-600 via-rose-600 to-purple-700 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-pink-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -676,6 +695,24 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tambah Pesanan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsBulkUpdateResiModalOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Update Resi Massal</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsBulkUpdateResiModalOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Update Resi Massal</span>
             </button>
 
             <button
@@ -953,8 +990,22 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                             <div className="text-[11px] text-slate-500">
                               {order.layanan || 'Reguler'}
                             </div>
-                            <div className="font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px] mt-1 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded inline-block">
-                              Resi: {order.no_resi || '-'}
+                            <div className="mt-1 flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-500 font-bold uppercase">Input Resi:</label>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  placeholder="Input No Resi..."
+                                  value={order.no_resi === '-' ? '' : (order.no_resi || '')}
+                                  onChange={(e) => {
+                                    const val = e.target.value.toUpperCase();
+                                    const updated = orders.map(o => o.id === order.id ? { ...o, no_resi: val, updated_at: new Date().toISOString() } : o);
+                                    setOrders(updated);
+                                    saveStoredIgLiveOrders(updated);
+                                  }}
+                                  className="w-full text-xs py-1 px-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-1 focus:ring-pink-500 font-mono font-bold"
+                                />
+                              </div>
                             </div>
                           </td>
                           <td className="p-3 text-center align-top">
@@ -1593,6 +1644,26 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* 5. Modal Bulk Update Resi */}
+      <BulkUpdateResiIgLiveModal
+        isOpen={isBulkUpdateResiModalOpen}
+        onClose={() => setIsBulkUpdateResiModalOpen(false)}
+        orders={orders}
+        onSaveBatch={handleBulkUpdateResiSuccess}
+        onShowToast={onShowToast}
+      />
+
+      {/* 5. Modal Bulk Update Resi */}
+      <BulkUpdateResiIgLiveModal
+        isOpen={isBulkUpdateResiModalOpen}
+        onClose={() => setIsBulkUpdateResiModalOpen(false)}
+        orders={orders}
+        onSaveBatch={handleBulkUpdateResiSuccess}
+        onShowToast={onShowToast}
+      />
+
+      </div>
 
       {/* ========================================================================= */}
       {/* PRINT AREA (Hidden in Screen, Visible in @media print) */}
