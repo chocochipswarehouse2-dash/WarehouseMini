@@ -37,6 +37,7 @@ import {
   PenerimaanProduksiItem,
   ProductItem,
   PenerimaanRecountLogItem,
+  PenerimaanRecountLogDetailItem,
 } from '../../types';
 import {
   updatePenerimaanProduksiItemsInSupabase,
@@ -2349,7 +2350,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                       (it) => (it.kode_produksi || '').trim().toUpperCase() === historyTargetCode.trim().toUpperCase()
                     );
                     if (codeItems.length > 0) {
-                      const gMap = new Map<string, { warna: string; size: string; qty_sebelumnya: number; qty_fisik: number; selisih: number; catatan?: string }>();
+                      const gMap = new Map<string, PenerimaanRecountLogDetailItem>();
                       codeItems.forEach((it) => {
                         const key = `${it.warna || '-'}_${it.size || '-'}`;
                         const prevQ = Number(it.qty) || 0;
@@ -2362,6 +2363,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                             qty_fisik: 0,
                             selisih: 0,
                             catatan: it.recount_notes,
+                            kode_produksi: (log as any).kode_produksi || '',
+                            tanggal_penerimaan: (log as any).tanggal_penerimaan || '',
                           });
                         }
                         const rec = gMap.get(key)!;

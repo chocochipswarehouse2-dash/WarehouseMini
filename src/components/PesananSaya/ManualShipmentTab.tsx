@@ -4520,7 +4520,8 @@ _WMS Warehouse System_`;
 };
 
   return (
-    <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300">
+    <>
+    <div className="max-w-7xl mx-auto p-2.5 sm:p-5 lg:p-6 animate-in fade-in duration-300 print:hidden">
       {/* Tab Navigation - Compact, Sleek & Aesthetic */}
       <div className="flex items-center justify-between flex-wrap gap-2.5 mb-4">
         <div className="inline-flex p-1 bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-xs">
@@ -4859,56 +4860,9 @@ _WMS Warehouse System_`;
         </div>
       )}
 
-      {/* CSS @media print terisolasi ke #manual-shipment-print-area untuk keandalan cetak di HP / mobile & desktop */}
-      {printPayload && (
-        <style>{`
-          @media print {
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-              ${printPayload.mode === 'LABEL' ? 'width: 105mm !important; height: 148mm !important;' : ''}
-              overflow: visible !important;
-            }
-            body * {
-              visibility: hidden !important;
-            }
-            #manual-shipment-print-area, #manual-shipment-print-area * {
-              visibility: visible !important;
-            }
-            #manual-shipment-print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: ${printPayload.mode === 'LABEL' ? '105mm' : '100%'} !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-              color: #000000 !important;
-              z-index: 999999 !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            @page {
-              size: ${printPayload.mode === 'LABEL' ? '105mm 148mm' : 'auto'};
-              margin: ${printPayload.mode === 'LABEL' ? '0 !important' : '10mm !important'};
-            }
-            .page-break {
-              box-sizing: border-box !important;
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-            .page-break:not(:last-child) {
-              page-break-after: always !important;
-              break-after: page !important;
-            }
-            .page-break:last-child {
-              page-break-after: avoid !important;
-              break-after: avoid !important;
-            }
-          }
-        `}</style>
-      )}
+
+    </div>
+
 
       {/* Floating Action Bar jika dialog cetak perlu dipicu manual di HP */}
       {printPayload && (
@@ -5343,200 +5297,130 @@ _WMS Warehouse System_`;
               );
             })
           ) : (
-            // Massal Multi-Order Picking List Mode (Hemat Kertas, Banyak Order per Lembar)
+            // Massal Multi-Order Picking List Mode (Shopee Tabular Style)
             (() => {
-              const todayStr = new Date().toLocaleDateString('id-ID', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              });
+              const todayStr = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
               const totalOrders = printPayload.orders.length;
-              const totalAllItems = printPayload.orders.reduce((acc, o) => acc + (o.items?.length || 0), 0);
               const totalAllQty = printPayload.orders.reduce((acc, o) => acc + (o.items || []).reduce((q, it) => q + (Number(it.qty) || 0), 0), 0);
               const operatorName = session?.name || getUserPersonName(session?.username) || 'Petugas Gudang';
 
               return (
-                <div className="p-4 max-w-[850px] mx-auto text-black bg-white">
-                  {/* Batch Header Sekali di Atas */}
-                  <div className="border-b-2 border-black pb-2.5 mb-3 flex justify-between items-center break-inside-avoid">
-                    <div className="flex items-center gap-2.5">
-                      <img src="/logo.svg" alt="" referrerPolicy="no-referrer" className="h-6 object-contain hidden print:block" onError={(e) => e.currentTarget.style.display = 'none'} />
+                <div className="bg-white w-full text-black p-2 max-w-[850px] mx-auto text-[9.5px]">
+                  {/* Print Header */}
+                  <div className="border-b-2 border-black pb-2 mb-3">
+                    <div className="flex justify-between items-start">
                       <div>
-                        <div className="text-base font-black tracking-wider uppercase text-black">
-                          CHOCOCHIPS WMS — DAFTAR PICKING MASSAL
-                        </div>
-                        <div className="text-[10px] text-gray-700">
-                          Tgl Cetak: <strong>{todayStr}</strong> • Picker/Admin: <strong>{operatorName}</strong>
+                        <h1 className="text-base font-black tracking-tight uppercase">
+                          SURAT JALAN & PICKING LIST MANUAL SHIPMENT
+                        </h1>
+                        <div className="text-[10px] text-gray-700 mt-0.5">
+                          WMS Warehouse Management System • Format A4 Portrait
                         </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="border border-black px-2 py-0.5 rounded text-[11px] font-black uppercase inline-block">
-                        {totalOrders} Pesanan | {totalAllItems} SKU | {totalAllQty} Pcs
-                      </span>
+                      <div className="text-right text-[10px] font-mono">
+                        <div><b>Tgl Cetak:</b> {todayStr}</div>
+                        <div><b>Filter:</b> Manual Shipment</div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Daftar Pesanan Mengalir Rapi per Lembar */}
-                  <div className="space-y-3">
-                    {printPayload.orders.map((order, oIdx) => {
-                      const dealPosStr = (order.no_transaksi_pengirim || []).join(', ') || '-';
-                      const orderQty = (order.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
-                      const alterItems = (order.items || []).filter(
-                        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-                      );
+                  {/* Summary Info */}
+                  <div className="flex justify-between items-center text-[10px] mb-3 bg-gray-100 p-2 border border-gray-300 rounded">
+                    <div><b>Total Pesanan:</b> {totalOrders} Pesanan</div>
+                    <div><b>Total Barang:</b> {totalAllQty} Pcs</div>
+                    <div><b>Petugas Picking:</b> {operatorName}</div>
+                    <div><b>Petugas QC / Packing:</b> ____________________</div>
+                  </div>
 
-                      return (
-                        <div
-                          key={order.no_pesanan || oIdx}
-                          className="border border-black rounded-sm bg-white overflow-hidden text-black"
-                          style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
-                        >
-                          {/* Order Separator Header Bar */}
-                          <div className="bg-gray-100 border-b border-black px-2.5 py-1 flex items-center justify-between text-[11px] font-bold flex-wrap gap-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-black text-black">
-                                #{oIdx + 1}. [{order.no_pesanan}]
-                              </span>
-                              {order.no_transaksi_customer && (
-                                <span className="text-gray-800">
-                                  Ref: <strong>{order.no_transaksi_customer}</strong>
-                                </span>
+                  {/* Orders Table */}
+                  <table className="w-full border-collapse text-[9.5px]">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        <th className="border border-black p-1 text-center font-black w-[4%]">No</th>
+                        <th className="border border-black p-1 text-center font-black w-[15%]">No. Pesanan & Resi</th>
+                        <th className="border border-black p-1 text-center font-black w-[12%]">Opsi Pengiriman</th>
+                        <th className="border border-black p-1 text-center font-black w-[15%]">Nama Penerima & HP</th>
+                        <th className="border border-black p-1 text-center font-black w-[10%]">Lokasi Rak</th>
+                        <th className="border border-black p-1 text-left font-black w-[25%]">SKU & Nama Barang</th>
+                        <th className="border border-black p-1 text-center font-black w-[5%]">Qty</th>
+                        <th className="border border-black p-1 text-center font-black w-[4%]">Pick</th>
+                        <th className="border border-black p-1 text-left font-black w-[10%]">Catatan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printPayload.orders.map((order, orderIdx) => {
+                        const rowCount = order.items?.length || 1;
+                        
+                        return (order.items || []).map((item, itemIdx) => (
+                          <tr key={`${order.no_pesanan}-${itemIdx}`}>
+                            {/* Order-level merged columns */}
+                            {itemIdx === 0 && (
+                              <>
+                                <td rowSpan={rowCount} className="border border-black p-1 text-center align-middle font-bold">
+                                  {orderIdx + 1}
+                                </td>
+                                <td rowSpan={rowCount} className="border border-black p-1 text-center align-middle font-mono">
+                                  <div className="font-black text-[10px]">{order.no_pesanan}</div>
+                                  {order.no_resi && <div className="text-[8.5px] text-gray-700 mt-0.5">{order.no_resi}</div>}
+                                </td>
+                                <td rowSpan={rowCount} className="border border-black p-1 text-center align-middle font-bold text-[9px]">
+                                  {order.jasa_kirim || '-'}
+                                  {order.no_transaksi_pengirim && order.no_transaksi_pengirim.length > 0 && (
+                                    <div className="text-[8px] text-gray-600 mt-0.5">
+                                      DealPOS: {order.no_transaksi_pengirim.join(', ')}
+                                    </div>
+                                  )}
+                                </td>
+                                <td rowSpan={rowCount} className="border border-black p-1 align-middle">
+                                  <div className="font-bold">{order.nama_tujuan}</div>
+                                  {order.no_telp_tujuan && <div className="font-mono text-[8.5px] text-gray-700">{order.no_telp_tujuan}</div>}
+                                </td>
+                              </>
+                            )}
+
+                            {/* Item-level Lokasi Rak */}
+                            <td className="border border-black p-1 text-center align-middle font-black text-[10px] bg-gray-50">
+                              {item.lokasi || '-'}
+                            </td>
+
+                            {/* Item SKU & Nama */}
+                            <td className="border border-black p-1 align-middle">
+                              <div className="font-black text-[9.5px]">{item.sku}</div>
+                              <div className="text-gray-800 text-[8.5px]">{item.nama_produk}</div>
+                              {item.size && (
+                                <div className="text-gray-600 italic text-[8px]">Var: {item.size}</div>
                               )}
-                              <span>&bull;</span>
-                              <span>Tujuan: <strong>{order.nama_tujuan}</strong></span>
-                              <span>&bull;</span>
-                              <span>Store: <strong>{order.nama_pengirim}</strong></span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-700">Kurir: <strong>{order.jasa_kirim || '-'}</strong></span>
-                              <span>&bull;</span>
-                              <span>DealPOS: <strong>{dealPosStr}</strong></span>
-                              <span className="bg-black text-white px-1.5 py-0.2 rounded text-[10px] font-black">
-                                {orderQty} Pcs
-                              </span>
-                            </div>
-                          </div>
+                              {(item.needs_alteration || !!item.id_form_alter) && (
+                                <div className="text-rose-600 font-bold text-[8px] mt-0.5">Wajib Alterasi!</div>
+                              )}
+                            </td>
 
-                          {/* Alert Alterasi jika Ada */}
-                          {alterItems.length > 0 && (
-                            <div className="px-2.5 py-0.5 bg-rose-50 border-b border-rose-300 text-[10px] font-bold text-rose-950 flex items-center justify-between">
-                              <span>
-                                ✂️ PERHATIAN: TERDAPAT {alterItems.length} ITEM BUTUH ALTERASI! (Pisahkan ke penjahit dengan SPK)
-                              </span>
-                              <span className="uppercase text-[9px] bg-rose-600 text-white px-1 rounded font-black">
-                                Wajib Alter
-                              </span>
-                            </div>
-                          )}
+                            {/* Qty */}
+                            <td className="border border-black p-1 text-center align-middle font-black text-[11px]">
+                              {item.qty}
+                            </td>
 
-                          {/* Tabel Item Pesanan Kompak */}
-                          <table className="w-full border-collapse text-[10.5px]">
-                            <thead>
-                              <tr className="border-b border-gray-300 bg-gray-50 text-[9.5px] uppercase text-gray-700 font-bold">
-                                <th className="py-1 px-1.5 text-center w-7 border-r border-gray-200">No</th>
-                                <th className="py-1 px-2 text-left w-32 border-r border-gray-200">SKU / Kode</th>
-                                <th className="py-1 px-2 text-left border-r border-gray-200">Nama Produk</th>
-                                <th className="py-1 px-1.5 text-center w-12 border-r border-gray-200">Size</th>
-                                <th className="py-1 px-1.5 text-center w-10 border-r border-gray-200">Qty</th>
-                                <th className="py-1 px-2 text-center w-24 border-r border-gray-200">Lokasi Rak</th>
-                                <th className="py-1 px-1.5 text-center w-9 border-r border-gray-200">Cek</th>
-                                <th className="py-1 px-2 text-left w-44">Keterangan / Alter</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {order.items?.map((item, itemIdx) => {
-                                let location = '-';
-                                let variasi = item.size || '-';
-                                let cleanName = item.nama_produk;
-                                const parts = item.nama_produk.split('-');
-                                if (parts.length > 1 && (!item.size || item.size === '-')) {
-                                  variasi = parts[parts.length - 1].trim();
-                                  cleanName = parts.slice(0, parts.length - 1).join('-').trim();
-                                }
+                            {/* Checkbox */}
+                            <td className="border border-black p-1 align-middle text-center">
+                              <div className="w-3.5 h-3.5 border border-black mx-auto"></div>
+                            </td>
 
-                                if (item.fulfillment === 'Marketplace') {
-                                  const prod = productCatalog.find(p => p.k === item.sku);
-                                  if (prod && prod.lokasi) location = prod.lokasi;
-                                } else {
-                                  location = item.fulfillment || '-';
-                                }
-
-                                const hasItemAlter = item.needs_alteration || !!item.id_form_alter || !!item.alteration_detail;
-
-                                return (
-                                  <tr key={itemIdx} className={`border-b border-gray-200 ${hasItemAlter ? 'bg-rose-50/40' : ''}`}>
-                                    <td className="py-1 px-1.5 text-center text-gray-600 border-r border-gray-200">{itemIdx + 1}</td>
-                                    <td className="py-1 px-2 font-mono font-bold text-black border-r border-gray-200">{item.sku}</td>
-                                    <td className="py-1 px-2 font-semibold text-black border-r border-gray-200">
-                                      {cleanName}
-                                    </td>
-                                    <td className="py-1 px-1.5 text-center font-bold border-r border-gray-200">{variasi}</td>
-                                    <td className="py-1 px-1.5 text-center font-extrabold text-black text-[11px] border-r border-gray-200">{item.qty || 1}</td>
-                                    <td className="py-1 px-2 text-center font-black text-black border-r border-gray-200 bg-gray-50/50">{location}</td>
-                                    <td className="py-1 px-1.5 text-center border-r border-gray-200">
-                                      <div className="w-3.5 h-3.5 border border-black rounded-xs mx-auto" />
-                                    </td>
-                                    <td className="py-1 px-2 text-[10px] text-gray-800">
-                                      {hasItemAlter ? (
-                                        <span className="font-bold text-rose-900">
-                                          ✂️ {item.alteration_detail || 'Alterasi'} {item.id_form_alter ? `(${item.id_form_alter})` : ''}
-                                        </span>
-                                      ) : (
-                                        '-'
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Summary & Signatures Sekali di Akhir Halaman */}
-                  <div
-                    className="mt-4 pt-3 border-t-2 border-black flex justify-between items-end text-[11px] text-black"
-                    style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
-                  >
-                    <div>
-                      <div className="font-bold">Total Batch Picking: {totalOrders} Pesanan | {totalAllItems} SKU | {totalAllQty} Pcs</div>
-                      <div className="text-[10px] text-gray-600 mt-0.5">
-                        * Centang [✓] setiap item yang telah diambil dari rak. Pisahkan produk alter ke tim penjahit.
-                      </div>
-                    </div>
-                    <div className="flex gap-8 text-center">
-                      <div>
-                        <div className="text-[10px] text-gray-600 mb-7">Petugas Picker</div>
-                        <div className="font-bold border-t border-black pt-1 min-w-[80px]">
-                          ({operatorName})
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-600 mb-7">Checker / QC</div>
-                        <div className="font-bold border-t border-black pt-1 min-w-[80px]">
-                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-600 mb-7">Packing / Ekspedisi</div>
-                        <div className="font-bold border-t border-black pt-1 min-w-[80px]">
-                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                            {/* Catatan / Keterangan */}
+                            <td className="border border-black p-1 text-[8px] align-middle">
+                              {itemIdx === 0 && order.notes_paket ? order.notes_paket : ''}
+                            </td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               );
             })()
           )}
         </div>
       )}
+
 
       {/* Modal Update Resi Massal */}
       <BulkUpdateResiModal
@@ -5575,6 +5459,6 @@ _WMS Warehouse System_`;
         onConfirmCancel={handleConfirmCancelOrder}
         isSubmitting={isSubmittingCancel}
       />
-    </div>
+    </>
   );
 };

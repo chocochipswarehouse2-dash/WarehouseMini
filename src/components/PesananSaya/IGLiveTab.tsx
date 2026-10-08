@@ -649,7 +649,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className={`${printMode ? 'hidden print:hidden' : 'space-y-4'}`}>
+      <div className="space-y-4 print:hidden">
       {/* Top Banner & Header */}
       <div className="bg-gradient-to-r from-pink-600 via-rose-600 to-purple-700 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-pink-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -1839,130 +1839,114 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         </div>
       )}
 
-      {/* B. Print Picking List Massal (Hemat Kertas, Standar Lokasi Prioritas) */}
+      {/* B. Print Picking List Massal (Shopee Tabular Style) */}
       {printMode === 'pickingMassal' && (
-        <div id="print-area" className="hidden print:block bg-white text-black p-4 max-w-[850px] mx-auto font-sans text-xs">
-          {/* Header Batch Sekali di Atas */}
-          <div className="border-b-2 border-black pb-2 mb-3 flex justify-between items-center">
-            <div>
-              <div className="text-base font-black tracking-widest uppercase">
-                CHOCOCHIPS WMS — DAFTAR PICKING IG LIVE
+        <div id="print-area" className="hidden print:block bg-white w-full text-black p-4 max-w-[850px] mx-auto text-[9.5px]">
+          {/* Print Header */}
+          <div className="border-b-2 border-black pb-2 mb-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-base font-black tracking-tight uppercase">
+                  SURAT JALAN & PICKING LIST IG LIVE
+                </h1>
+                <div className="text-[10px] text-gray-700 mt-0.5">
+                  WMS Warehouse Management System • Format A4 Portrait
+                </div>
               </div>
-              <div className="text-[10px] text-gray-700">
-                Tgl Cetak: <strong>{new Date().toLocaleString('id-ID')}</strong> • Picker: <strong>{session?.name || 'Petugas Gudang'}</strong>
+              <div className="text-right text-[10px] font-mono">
+                <div><b>Tgl Cetak:</b> {new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                <div><b>Picker/Admin:</b> {session?.name || 'Petugas Gudang'}</div>
               </div>
-            </div>
-            <div className="text-right">
-              <span className="border-2 border-black px-2 py-0.5 rounded text-[11px] font-black uppercase inline-block">
-                {pickingItemsGrouped.targetOrders.length} Pesanan | {pickingItemsGrouped.pickingList.length} SKU Unik
-              </span>
             </div>
           </div>
 
-          {/* Tabel Pengambilan Rak Terpadu */}
-          <table className="w-full border-collapse border border-black text-[10.5px] mb-4">
+          {/* Summary Info */}
+          <div className="flex justify-between items-center text-[10px] mb-3 bg-gray-100 p-2 border border-gray-300 rounded">
+            <div><b>Total Pesanan:</b> {pickingItemsGrouped.targetOrders.length} Pesanan</div>
+            <div><b>Total Barang:</b> {pickingItemsGrouped.targetOrders.reduce((sum, o) => sum + (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0), 0)} Pcs</div>
+            <div><b>Petugas Picking:</b> ____________________</div>
+            <div><b>Petugas QC / Packing:</b> ____________________</div>
+          </div>
+
+          {/* Orders Table */}
+          <table className="w-full border-collapse text-[9.5px]">
             <thead>
-              <tr className="bg-gray-100 border-b border-black text-[9.5px] uppercase font-bold text-black">
-                <th className="py-1 px-1.5 text-center w-7 border-r border-black">No</th>
-                <th className="py-1 px-2 text-center w-24 border-r border-black">Lokasi Rak</th>
-                <th className="py-1 px-2 text-left w-32 border-r border-black">SKU</th>
-                <th className="py-1 px-2 text-left border-r border-black">Nama Master Produk</th>
-                <th className="py-1 px-1.5 text-center w-12 border-r border-black">Size</th>
-                <th className="py-1 px-1.5 text-center w-12 border-r border-black">Total</th>
-                <th className="py-1 px-1.5 text-center w-8 border-r border-black">Cek</th>
-                <th className="py-1 px-2 text-left">Alokasi No. Pesanan</th>
+              <tr className="bg-gray-200">
+                <th className="border border-black p-1 text-center font-black w-[4%]">No</th>
+                <th className="border border-black p-1 text-center font-black w-[15%]">No. Pesanan & Resi</th>
+                <th className="border border-black p-1 text-center font-black w-[12%]">Opsi Pengiriman</th>
+                <th className="border border-black p-1 text-center font-black w-[15%]">Nama Penerima & HP</th>
+                <th className="border border-black p-1 text-center font-black w-[10%]">Lokasi Rak</th>
+                <th className="border border-black p-1 text-left font-black w-[25%]">SKU & Nama Barang</th>
+                <th className="border border-black p-1 text-center font-black w-[5%]">Qty</th>
+                <th className="border border-black p-1 text-center font-black w-[4%]">Pick</th>
+                <th className="border border-black p-1 text-left font-black w-[10%]">Catatan</th>
               </tr>
             </thead>
             <tbody>
-              {pickingItemsGrouped.pickingList.map((item, idx) => (
-                <tr key={idx} className="border-b border-gray-300">
-                  <td className="py-1 px-1.5 text-center border-r border-black font-bold">
-                    {idx + 1}
-                  </td>
-                  <td className="py-1 px-2 text-center font-mono font-black border-r border-black bg-gray-50">
-                    {item.lokasi}
-                  </td>
-                  <td className="py-1 px-2 font-mono font-bold border-r border-black">
-                    {item.sku}
-                  </td>
-                  <td className="py-1 px-2 font-semibold border-r border-black">
-                    {item.nama_produk}
-                  </td>
-                  <td className="py-1 px-1.5 text-center font-bold border-r border-black">
-                    {item.size}
-                  </td>
-                  <td className="py-1 px-1.5 text-center font-black text-sm border-r border-black">
-                    {item.totalQty}
-                  </td>
-                  <td className="py-1 px-1.5 text-center border-r border-black">
-                    <div className="w-3.5 h-3.5 border border-black rounded-xs mx-auto" />
-                  </td>
-                  <td className="py-1 px-2 text-[9.5px]">
-                    {item.orders.map((o) => `${o.no_pesanan} (${o.qty})`).join(', ')}
-                  </td>
-                </tr>
-              ))}
+              {pickingItemsGrouped.targetOrders.map((order, orderIdx) => {
+                const rowCount = order.items?.length || 1;
+                
+                return (order.items || []).map((item, itemIdx) => (
+                  <tr key={`${order.no_pesanan}-${itemIdx}`}>
+                    {/* Order-level merged columns */}
+                    {itemIdx === 0 && (
+                      <>
+                        <td rowSpan={rowCount} className="border border-black p-1 text-center align-middle font-bold">
+                          {orderIdx + 1}
+                        </td>
+                        <td rowSpan={rowCount} className="border border-black p-1 text-center align-middle font-mono">
+                          <div className="font-black text-[10px]">{order.no_pesanan}</div>
+                          {order.no_resi && <div className="text-[8.5px] text-gray-700 mt-0.5">{order.no_resi}</div>}
+                        </td>
+                        <td rowSpan={rowCount} className="border border-black p-1 text-center align-middle font-bold text-[9px]">
+                          {order.ekspedisi || '-'}
+                          {order.layanan && (
+                            <div className="text-[8px] text-gray-600 mt-0.5">
+                              {order.layanan}
+                            </div>
+                          )}
+                        </td>
+                        <td rowSpan={rowCount} className="border border-black p-1 align-middle">
+                          <div className="font-bold">{order.nama_pembeli}</div>
+                          {order.no_telp && <div className="font-mono text-[8.5px] text-gray-700">{order.no_telp}</div>}
+                        </td>
+                      </>
+                    )}
+
+                    {/* Item-level Lokasi Rak */}
+                    <td className="border border-black p-1 text-center align-middle font-black text-[10px] bg-gray-50">
+                      {item.lokasi || '-'}
+                    </td>
+
+                    {/* Item SKU & Nama */}
+                    <td className="border border-black p-1 align-middle">
+                      <div className="font-black text-[9.5px]">{item.sku}</div>
+                      <div className="text-gray-800 text-[8.5px]">{item.nama_produk}</div>
+                      {item.size && (
+                        <div className="text-gray-600 italic text-[8px]">Var: {item.size}</div>
+                      )}
+                    </td>
+
+                    {/* Qty */}
+                    <td className="border border-black p-1 text-center align-middle font-black text-[11px]">
+                      {item.qty}
+                    </td>
+
+                    {/* Checkbox */}
+                    <td className="border border-black p-1 align-middle text-center">
+                      <div className="w-3.5 h-3.5 border border-black mx-auto"></div>
+                    </td>
+
+                    {/* Catatan / Keterangan */}
+                    <td className="border border-black p-1 text-[8px] align-middle">
+                      {itemIdx === 0 && order.catatan ? order.catatan : ''}
+                    </td>
+                  </tr>
+                ));
+              })}
             </tbody>
           </table>
-
-          {/* Rincian Alokasi Per Pesanan (Mengalir Rapi di Bawahnya) */}
-          <div className="mt-4 pt-3 border-t-2 border-black">
-            <div className="text-[11px] font-black uppercase mb-2">
-              Daftar Rincian Pesanan dalam Batch Ini:
-            </div>
-            <div className="space-y-2">
-              {pickingItemsGrouped.targetOrders.map((ord, oIdx) => (
-                <div
-                  key={oIdx}
-                  className="border border-black p-2 bg-white"
-                  style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
-                >
-                  <div className="flex justify-between items-center text-[10px] font-bold border-b border-gray-300 pb-1 mb-1">
-                    <span>
-                      #{oIdx + 1}. [{ord.no_pesanan}] &bull; Penerima: <strong>{ord.nama_pembeli}</strong> ({ord.username_ig})
-                    </span>
-                    <span>
-                      Kurir: <strong>{ord.ekspedisi}</strong> &bull; Resi: {ord.no_resi}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-[9.5px]">
-                    {(ord.items || []).map((it, itIdx) => (
-                      <span key={itIdx} className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300">
-                        {it.sku} ({it.size}) - {it.lokasi} x <strong>{it.qty}</strong>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Tanda Tangan Verifikasi */}
-          <div
-            className="mt-6 pt-3 border-t-2 border-black flex justify-between items-end text-[11px]"
-            style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
-          >
-            <div>
-              <div className="font-bold">Total Batch: {pickingItemsGrouped.targetOrders.length} Pesanan Selesai Di-pick</div>
-              <div className="text-[10px] text-gray-600 mt-0.5">
-                * Pastikan semua item telah dicek ke rak sebelum diserahkan ke meja packing.
-              </div>
-            </div>
-            <div className="flex gap-8 text-center">
-              <div>
-                <div className="text-[10px] text-gray-600 mb-8">Petugas Picker</div>
-                <div className="font-bold border-t border-black pt-1 min-w-[90px]">
-                  ({session?.name || 'Picker'})
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-gray-600 mb-8">Checker / QC</div>
-                <div className="font-bold border-t border-black pt-1 min-w-[90px]">
-                  (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </div>

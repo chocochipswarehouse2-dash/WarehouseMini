@@ -405,6 +405,52 @@ export const HrApprovalView: React.FC<HrApprovalViewProps> = ({ session, onShowT
     }
   };
 
+  const handleResetCuti = async (item: PerijinanCutiRecord) => {
+    if (!window.confirm(`Batal approval dan kembalikan status cuti/izin ${item.nama} menjadi "Diajukan"?`)) return;
+    setProcessingId(item.id);
+    try {
+      await updateCutiStatus(item.id, 'Diajukan', session?.name || 'Admin', null);
+      if (item.status === 'Disetujui') {
+        await removeRosterShiftForCuti(item);
+      }
+      setCutiList((prev) =>
+        prev.map((r) =>
+          r.id === item.id
+            ? { ...r, status: 'Diajukan', approved_by: null }
+            : r
+        )
+      );
+      playSuccessBeep();
+      onShowToast?.(`Status cuti/izin ${item.nama} dikembalikan ke Diajukan.`, 'success');
+    } catch (err: any) {
+      console.error('Failed to reset cuti:', err);
+      playErrorBeep();
+      onShowToast?.(err.message || 'Gagal mereset status permohonan', 'error');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleDeleteCuti = async (item: PerijinanCutiRecord) => {
+    if (!window.confirm(`Hapus permanen permohonan cuti/izin ${item.nama}? Data tidak bisa dikembalikan.`)) return;
+    setProcessingId(item.id);
+    try {
+      await deleteCutiRecord(item.id);
+      if (item.status === 'Disetujui') {
+        await removeRosterShiftForCuti(item);
+      }
+      setCutiList((prev) => prev.filter((r) => r.id !== item.id));
+      playSuccessBeep();
+      onShowToast?.(`Permohonan cuti/izin ${item.nama} telah dihapus.`, 'success');
+    } catch (err: any) {
+      console.error('Failed to delete cuti:', err);
+      playErrorBeep();
+      onShowToast?.(err.message || 'Gagal menghapus permohonan', 'error');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   // Handle Approve Tukar Shift (AUTOMATICALLY SWAPS ROSTER SHIFTS FOR BOTH EMPLOYEES!)
   const handleApproveTukarShift = async (item: TukarShiftRecord) => {
     setProcessingId(item.id);

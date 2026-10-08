@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Download, UploadCloud, CheckCircle2, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import Papa from 'papaparse';
-import { IGLiveOrder } from '../../types';
+import { IGLiveOrder } from '../../services/igLiveService';
 
 interface BulkUpdateResiIgLiveModalProps {
   isOpen: boolean;

@@ -192,6 +192,7 @@ export interface KaryawanRecord {
   hobi?: string;
   kontak_darurat?: string;
   foto?: string;
+  status_aktif?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -260,7 +261,7 @@ export interface PerijinanCutiRecord {
   tgl_selesai: string;
   jumlah_hari: number;
   alasan: string;
-  status: 'Diajukan' | 'Disetujui' | 'Ditolak';
+  status: 'Diajukan' | 'Disetujui' | 'Ditolak' | 'Dibatalkan';
   approved_by?: string | null;
   approved_at?: string | null;
   catatan?: string | null;
@@ -533,6 +534,7 @@ export interface ManualShipmentItem {
   qty: number | string;
   fulfillment: string;
   size?: string;
+  lokasi?: string;
   no_sj_dealpos?: string;
   sj_updated_at?: string;
   sj_updated_by?: string;
@@ -586,6 +588,7 @@ export interface AlterationRepairData {
   pic_store_email?: string; // Email PIC Store (opsional)
   lokasi_rak?: string; // Rak asal di gudang jika sumber dari warehouse
   nama_customer?: string; // opsional / referensi jika ada
+  email_customer?: string; // opsional email customer
   nama_sa?: string;
   no_hp?: string;
   toko?: string;
