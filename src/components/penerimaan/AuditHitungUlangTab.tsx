@@ -289,25 +289,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     };
     window.addEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
 
-    // Auto-poll cloud every 60 seconds for real-time multi-device sync
-    const pollInterval = setInterval(() => {
-      if (isMounted) {
-        fetchRecountAuditMapFromCloud().then((m) => {
-          if (m && typeof m === 'object' && isMounted) {
-            setRecountAuditMap(m);
-          }
-        });
-        fetchPenerimaanRecountQueueFromSupabase().then((q) => {
-          if (q && typeof q === 'object' && isMounted) {
-            setQueueMap(q);
-          }
-        });
-      }
-    }, 60000);
-
     return () => {
       isMounted = false;
-      clearInterval(pollInterval);
       window.removeEventListener('wms_recount_queue_updated', handleQueueSyncEvent);
       window.removeEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
     };
