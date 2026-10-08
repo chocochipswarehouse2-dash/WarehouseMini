@@ -1180,7 +1180,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
             <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Settings className="w-5 h-5 text-pink-600" />
-                Pengaturan URL GAS (Google Apps Script)
+                Pengaturan Sinkronisasi Data (GAS / GSheets)
               </h3>
               <button
                 type="button"
@@ -1192,17 +1192,17 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
-              Masukkan URL Web App dari deployment Google Apps Script (GAS) untuk menarik data pesanan IG Live secara otomatis dari Google Sheets.
+              Masukkan URL Web App GAS atau Link Google Sheets (pastikan akses "Anyone with the link"!) untuk menarik data pesanan secara otomatis.
             </p>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  URL Web App GAS:
+                  URL Web App GAS / Link Google Sheets:
                 </label>
                 <input
                   type="url"
-                  placeholder="https://script.google.com/macros/s/.../exec"
+                  placeholder="https://docs.google.com/spreadsheets/d/... atau https://script.google.com/.../exec"
                   value={tempGasUrl}
                   onChange={(e) => setTempGasUrl(e.target.value)}
                   className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 text-slate-900 dark:text-white"

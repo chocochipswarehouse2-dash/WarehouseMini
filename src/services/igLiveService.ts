@@ -476,43 +476,156 @@ export function saveStoredIgLiveGasUrl(url: string): void {
   }
 }
 
+import Papa from 'papaparse';
+
 /**
- * Tarik / Sinkronisasi Data Pesanan dari URL GAS
+ * Tarik / Sinkronisasi Data Pesanan dari URL GAS atau Google Sheets langsung
  */
 export async function fetchOrdersFromGas(
   gasUrl: string,
   catalog: ProductItem[]
 ): Promise<{ success: boolean; orders?: IGLiveOrder[]; message: string }> {
-  const url = (gasUrl || '').trim();
+  let url = (gasUrl || '').trim();
   if (!url) {
-    return { success: false, message: 'URL GAS belum diatur' };
+    return { success: false, message: 'URL GAS / Google Sheets belum diatur' };
   }
 
+  // Deteksi apakah ini link Google Sheets
+  const isGoogleSheets = url.includes('docs.google.com/spreadsheets') || url.includes('spreadsheets.google.com');
+
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    const json = await response.json();
     let rawList: any[] = [];
 
-    if (Array.isArray(json)) {
-      rawList = json;
-    } else if (json && Array.isArray(json.data)) {
-      rawList = json.data;
-    } else if (json && Array.isArray(json.orders)) {
-      rawList = json.orders;
-    } else if (json && Array.isArray(json.pesanan)) {
-      rawList = json.pesanan;
+    if (isGoogleSheets) {
+      // 1. Ekstrak ID dan GID dari link Google Sheets
+      const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
+      
+      if (!idMatch) {
+        throw new Error('Link Google Sheets tidak valid (ID tidak ditemukan)');
+      }
+      
+      const sheetId = idMatch[1];
+      const gid = gidMatch ? gidMatch[1] : '0';
+      
+      // 2. Ubah menjadi link export CSV
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+      
+      // 3. Fetch CSV data
+      const response = await fetch(csvUrl);
+      if (!response.ok) {
+        throw new Error(`Gagal mengunduh CSV (HTTP ${response.status}). Pastikan akses sheet adalah "Anyone with the link".`);
+      }
+      
+      const csvText = await response.text();
+      
+      // 4. Parsing menggunakan PapaParse
+      const parsed = Papa.parse(csvText, {
+        header: false,
+        skipEmptyLines: true,
+      });
+      
+      if (parsed.errors && parsed.errors.length > 0) {
+        console.warn('[IGLIVE] PapaParse errors:', parsed.errors);
+      }
+      
+      const rows = parsed.data as string[][];
+      
+      // Asumsi format kolom sesuai sheet "transaksi":
+      // Baris 0: Instruksi
+      // Baris 1: Header (NAMA PEMESAN, NO HP, ALAMAT, KODE, PRODUCT NAME, SIZE, SKU, HARGA LIVE, QTY, PRICE, SHIPPING, TOTAL, STATUS, KET, RESI)
+      // Baris 2 dst: Data
+      
+      let dataStartRow = 1;
+      // Cari baris header secara dinamis jika format agak bergeser
+      for (let i = 0; i < Math.min(5, rows.length); i++) {
+        if (rows[i].length > 5 && String(rows[i][0]).toUpperCase().includes('NAMA PEMESAN')) {
+          dataStartRow = i + 1;
+          break;
+        }
+      }
+      
+      const cleanNumber = (str: string) => {
+        if (!str) return 0;
+        return Number(String(str).replace(/[^0-9.-]+/g, '')) || 0;
+      };
+
+      for (let i = dataStartRow; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r[0] && !r[1] && !r[6]) continue; // Skip baris kosong
+        
+        // Pemetaan kolom berdasarkan struktur CSV
+        const namaPembeli = r[0] || 'Customer IG';
+        const noHp = r[1] || '';
+        const alamat = r[2] || '';
+        // const kode = r[3] || ''; // Tidak wajib
+        const productName = r[4] || '';
+        const size = r[5] || '';
+        const sku = r[6] || '';
+        const hargaLive = cleanNumber(r[7]);
+        const qty = cleanNumber(r[8]) || 1;
+        // const price = cleanNumber(r[9]); // Sama dengan harga * qty
+        const shipping = cleanNumber(r[10]);
+        const total = cleanNumber(r[11]);
+        const rawStatus = String(r[12] || '').toLowerCase().trim();
+        const catatan = r[13] || '';
+        const resi = r[14] || '';
+        
+        let status: IGLiveOrderStatus = 'siap_diproses';
+        if (rawStatus.includes('cancel') || rawStatus.includes('batal')) status = 'batal';
+        else if (rawStatus.includes('selesai') || rawStatus.includes('done')) status = 'selesai';
+        else if (rawStatus.includes('dikirim') || rawStatus.includes('kirim')) status = 'dikirim';
+        else if (rawStatus.includes('proses') || rawStatus.includes('packing')) status = 'diproses';
+        else if (rawStatus.includes('tunggu') || rawStatus.includes('belum bayar')) status = 'menunggu_pembayaran';
+        
+        rawList.push({
+          id: `IGL-GS-${Date.now()}-${i}`,
+          no_pesanan: `IGL-GS-${Date.now()}-${i}`,
+          nama_pembeli: namaPembeli,
+          username_ig: namaPembeli.replace(/\s+/g, '_').toLowerCase(),
+          no_telp: noHp,
+          alamat_lengkap: alamat,
+          biaya_ongkir: shipping,
+          total_bayar: total,
+          status,
+          catatan,
+          no_resi: resi,
+          items: [
+            {
+              sku,
+              nama_produk: productName,
+              size,
+              qty,
+              harga: hargaLive
+            }
+          ]
+        });
+      }
+
     } else {
-      throw new Error('Format respon JSON dari GAS tidak valid (harus array atau { data: [...] })');
+      // Logic untuk GAS JSON API
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP Error: ${response.status}`);
+      }
+
+      const json = await response.json();
+
+      if (Array.isArray(json)) {
+        rawList = json;
+      } else if (json && Array.isArray(json.data)) {
+        rawList = json.data;
+      } else if (json && Array.isArray(json.orders)) {
+        rawList = json.orders;
+      } else if (json && Array.isArray(json.pesanan)) {
+        rawList = json.pesanan;
+      } else {
+        throw new Error('Format respon JSON dari GAS tidak valid (harus array atau { data: [...] })');
+      }
     }
 
     // Mapping raw data into standardized IGLiveOrder
@@ -536,8 +649,8 @@ export async function fetchOrdersFromGas(
         const master = lookupMasterProduct(sku, catalog);
         return {
           sku: master.sku || sku,
-          nama_produk: master.nama_produk,
-          size: master.size,
+          nama_produk: master.nama_produk || rawIt.nama_produk,
+          size: master.size !== '-' ? master.size : (rawIt.size || '-'),
           qty: Number(rawIt.qty || 1) || 1,
           harga: Number(rawIt.harga || rawIt.price || master.harga || 0),
           lokasi: master.lokasi,
@@ -579,13 +692,13 @@ export async function fetchOrdersFromGas(
     return {
       success: true,
       orders: mapped,
-      message: `Berhasil menarik ${mapped.length} pesanan dari GAS`,
+      message: `Berhasil menarik ${mapped.length} pesanan dari sumber data`,
     };
   } catch (err: any) {
-    console.error('[IGLIVE] Gagal fetch dari GAS:', err);
+    console.error('[IGLIVE] Gagal fetch:', err);
     return {
       success: false,
-      message: err?.message || 'Gagal terhubung ke endpoint GAS',
+      message: err?.message || 'Gagal terhubung ke sumber data',
     };
   }
 }
