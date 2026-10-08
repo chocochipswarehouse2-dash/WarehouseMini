@@ -442,6 +442,11 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     const userName = (session.name || '').toLowerCase().trim();
     const userUname = (session.username || '').toLowerCase().trim();
 
+    // OVERRIDE KHUSUS: chococpj di-set ke Gaia Pontianak sesuai request user
+    if (userUname === 'chococpj') {
+      return 'Gaia Pontianak';
+    }
+
     const allOutlets = outlets.length > 0 ? outlets : DEFAULT_OUTLETS;
     const match = allOutlets.find((o) => {
       const oName = o.nama.toLowerCase().trim();

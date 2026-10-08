@@ -80,6 +80,11 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     const userName = (session.name || '').toLowerCase().trim();
     const userUname = (session.username || '').toLowerCase().trim();
 
+    // OVERRIDE KHUSUS: chococpj di-set ke Gaia Pontianak sesuai request user
+    if (userUname === 'chococpj') {
+      return 'Gaia Pontianak';
+    }
+
     // List outlets untuk pencocokan
     const allOutlets = outlets.length > 0 ? outlets : DEFAULT_OUTLETS;
     const match = allOutlets.find((o) => {

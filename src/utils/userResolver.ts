@@ -19,7 +19,7 @@ const BASELINE_USER_NAMES: Record<string, string> = {
   admin: 'Warehouse Admin',
   admin2: 'Warehouse Admin',
   chocoadm: 'Warehouse Admin',
-  chococpj: 'Central Park Jakarta',
+  chococpj: 'Gaia Pontianak',
   chocostyling: 'Chocostyling',
   chocolive: 'chocoLIVE',
   yesinta: 'Yesinta Agistisari',
