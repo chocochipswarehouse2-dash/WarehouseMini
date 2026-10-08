@@ -330,7 +330,10 @@ export async function updateShipmentStatus(id: string, status: string): Promise<
 
 export async function updateShipmentResi(id: string, resi: string, timestamp?: string): Promise<boolean> {
   try {
-    const payload: any = { no_resi: resi };
+    const payload: any = { 
+      no_resi: resi,
+      status: 'dikirim' // Auto-update status when resi is inputted
+    };
     if (timestamp) {
       payload.tanggal_scan = timestamp;
     }

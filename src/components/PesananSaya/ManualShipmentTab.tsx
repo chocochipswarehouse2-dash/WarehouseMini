@@ -3602,7 +3602,7 @@ _WMS Warehouse System_`;
           </div>
           
           {/* Baris 2: Grid Filter Dropdowns */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
               value={filterStore}
               onChange={(e) => setFilterStore(e.target.value)}
@@ -4930,7 +4930,7 @@ _WMS Warehouse System_`;
               return (
                 <div
                   key={order.no_pesanan || orderIdx}
-                  className="page-break w-[105mm] min-h-[140mm] p-[2mm] box-border bg-white relative flex flex-col justify-between"
+                  className="page-break w-full h-[148mm] max-h-[148mm] box-border bg-white relative flex flex-col justify-between overflow-hidden"
                   style={{
                     pageBreakAfter: orderIdx < printPayload.orders.length - 1 ? 'always' : 'auto',
                     breakAfter: orderIdx < printPayload.orders.length - 1 ? 'page' : 'auto',
@@ -4938,7 +4938,7 @@ _WMS Warehouse System_`;
                     breakInside: 'avoid',
                   }}
                 >
-                  <div className="w-full h-full min-h-[136mm] border-[2px] border-black flex flex-col bg-white box-border text-black">
+                  <div className="w-full h-full border-[2px] border-black flex flex-col bg-white box-border text-black overflow-hidden">
                     {/* TOP FIXED AREA */}
                     <div className="flex flex-col shrink-0">
                        {/* 1. Header Label */}

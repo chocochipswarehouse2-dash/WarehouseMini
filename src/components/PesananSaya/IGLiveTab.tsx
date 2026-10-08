@@ -41,6 +41,7 @@ import {
   lookupMasterProduct
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
+import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { BulkUpdateResiIgLiveModal } from './BulkUpdateResiIgLiveModal';
 import { ImportPesananIgLiveModal } from './ImportPesananIgLiveModal';
 import QRCode from 'qrcode';
@@ -71,6 +72,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [orders, setOrders] = useState<IGLiveOrder[]>([]);
   const [gasUrl, setGasUrl] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const userIsAdmin = isSuperadmin(session);
 
   // Filter & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -746,14 +748,16 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
               <span>Import Pesanan (GSheet)</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsBulkUpdateResiModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Update Resi Massal</span>
-            </button>
+            {userIsAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsBulkUpdateResiModalOpen(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Update Resi Massal</span>
+              </button>
+            )}
 
 
 

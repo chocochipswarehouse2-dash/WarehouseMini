@@ -413,3 +413,4 @@ html.dark {
     /* Hanya sembunyikan jika bukan bagian dari form cetak */
   }
 }
+@media print { @page { margin: 0; } }
