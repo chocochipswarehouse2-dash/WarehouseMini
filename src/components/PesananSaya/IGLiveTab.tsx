@@ -42,6 +42,18 @@ import {
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
 import { BulkUpdateResiIgLiveModal } from './BulkUpdateResiIgLiveModal';
+import QRCode from 'qrcode';
+
+const QRCodeDisplay = ({ text }: { text: string }) => {
+  const [url, setUrl] = useState<string>('');
+  useEffect(() => {
+    QRCode.toDataURL(text, { width: 120, margin: 1 })
+      .then(res => setUrl(res))
+      .catch(err => console.error(err));
+  }, [text]);
+  if (!url) return <div className="w-16 h-16 bg-gray-100 flex items-center justify-center text-[8px] mx-auto border border-dashed border-gray-300">QR</div>;
+  return <img src={url} alt="QR Code" className="w-16 h-16 mx-auto object-contain" />;
+};
 
 interface IGLiveTabProps {
   session: UserSession | null;
@@ -95,7 +107,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [formNoTelp, setFormNoTelp] = useState<string>('');
   const [formAlamat, setFormAlamat] = useState<string>('');
   const [formKota, setFormKota] = useState<string>('');
-  const [formEkspedisi, setFormEkspedisi] = useState<string>('J&T Express');
+  const [formEkspedisi, setFormEkspedisi] = useState<string>('JNE');
   const [formLayanan, setFormLayanan] = useState<string>('Reguler');
   const [formNoResi, setFormNoResi] = useState<string>('');
   const [formStatus, setFormStatus] = useState<IGLiveOrderStatus>('siap_diproses');
@@ -106,12 +118,20 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
 
   // Load Initial Data
   useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintMode(null);
+      setPrintOrders([]);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+
     const loadedGasUrl = getStoredIgLiveGasUrl();
     setGasUrl(loadedGasUrl);
     setTempGasUrl(loadedGasUrl);
 
     const loadedOrders = getStoredIgLiveOrders(productCatalog);
     setOrders(loadedOrders);
+
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
   }, [productCatalog]);
 
   // Sync / Refresh from GAS
@@ -230,7 +250,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     setFormNoTelp('');
     setFormAlamat('');
     setFormKota('');
-    setFormEkspedisi('J&T Express');
+    setFormEkspedisi('JNE');
     setFormLayanan('Reguler');
     setFormNoResi('');
     setFormStatus('siap_diproses');
@@ -1714,18 +1734,9 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                   <div className="font-mono font-black text-lg tracking-wider">
                     {order.no_resi || order.no_pesanan}
                   </div>
-                  {/* Visual Barcode Pattern */}
-                  <div className="flex justify-center items-center gap-[2px] h-8 my-1">
-                    {Array.from({ length: 42 }).map((_, bIdx) => (
-                      <div
-                        key={bIdx}
-                        className="bg-black"
-                        style={{
-                          width: bIdx % 3 === 0 ? '3px' : bIdx % 2 === 0 ? '1.5px' : '2px',
-                          height: bIdx % 5 === 0 ? '80%' : '100%',
-                        }}
-                      />
-                    ))}
+                  {/* QR Code Pattern */}
+                  <div className="my-1">
+                    <QRCodeDisplay text={order.no_pesanan} />
                   </div>
                   <div className="text-[10px] font-mono font-bold">
                     Order ID: {order.no_pesanan}
@@ -1847,7 +1858,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
               <tr className="bg-gray-100 border-b border-black text-[9.5px] uppercase font-bold text-black">
                 <th className="py-1 px-1.5 text-center w-7 border-r border-black">No</th>
                 <th className="py-1 px-2 text-center w-24 border-r border-black">Lokasi Rak</th>
-                <th className="py-1 px-2 text-left w-24 border-r border-black">Area (Prio)</th>
                 <th className="py-1 px-2 text-left w-32 border-r border-black">SKU</th>
                 <th className="py-1 px-2 text-left border-r border-black">Nama Master Produk</th>
                 <th className="py-1 px-1.5 text-center w-12 border-r border-black">Size</th>
@@ -1864,9 +1874,6 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                   </td>
                   <td className="py-1 px-2 text-center font-mono font-black border-r border-black bg-gray-50">
                     {item.lokasi}
-                  </td>
-                  <td className="py-1 px-2 border-r border-black text-[9.5px] font-bold">
-                    {item.area} (P{item.priority})
                   </td>
                   <td className="py-1 px-2 font-mono font-bold border-r border-black">
                     {item.sku}
