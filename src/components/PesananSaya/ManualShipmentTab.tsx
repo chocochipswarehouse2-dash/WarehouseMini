@@ -3577,9 +3577,21 @@ _WMS Warehouse System_`;
             </div>
 
             {/* Reset Filter Pindah ke Atas */}
-            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || startDate !== '' || endDate !== '') && (
+            {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || filterStartDate !== '' || filterEndDate !== '') && (
               <button
-                onClick={resetAllFilters}
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setFilterStore('all');
+                  setFilterJasaKirim('all');
+                  setFilterStatus('all');
+                  setFilterAlterStatus('all');
+                  setFilterOrderType('all');
+                  setFilterDealposSj('all');
+                  setFilterSoldStatus('all');
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
                 className="px-3 py-1.5 flex items-center justify-center gap-1.5 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800/60 rounded-lg shadow-xs transition-colors cursor-pointer text-xs font-bold whitespace-nowrap shrink-0"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
