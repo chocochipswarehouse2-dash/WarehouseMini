@@ -93,6 +93,7 @@ export type UserPermissionKey =
   | 'tab_ops_pesanan_manual_shipment'
   | 'tab_ops_pesanan_transfer_order'
   | 'tab_ops_pesanan_shopee'
+  | 'tab_ops_pesanan_iglive'
   | 'tab_ops_pesanan_tiktok'
   | 'tab_ops_pesanan_website'
   | 'tab_ops_pesanan_woocommerce'

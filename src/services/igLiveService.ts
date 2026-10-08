@@ -1,0 +1,591 @@
+import { ProductItem } from '../types';
+import { getAreaFromLokasi, getPickingPriority } from './supabase';
+
+export type IGLiveOrderStatus =
+  | 'menunggu_pembayaran'
+  | 'siap_diproses'
+  | 'diproses'
+  | 'dikirim'
+  | 'selesai'
+  | 'batal';
+
+export interface IGLiveItem {
+  sku: string;
+  nama_produk: string;
+  size: string;
+  qty: number;
+  harga?: number;
+  lokasi?: string;
+  area?: string;
+  priority?: number;
+  picked?: boolean;
+}
+
+export interface IGLiveOrder {
+  id: string;
+  no_pesanan: string;
+  tanggal: string; // ISO string or YYYY-MM-DD HH:mm
+  session_live?: string;
+  username_ig: string;
+  nama_pembeli: string;
+  no_telp: string;
+  alamat_lengkap: string;
+  kota_kabupaten?: string;
+  provinsi?: string;
+  kode_pos?: string;
+
+  // Ekspedisi
+  ekspedisi: string;
+  layanan?: string;
+  no_resi: string;
+  biaya_ongkir?: number;
+  total_bayar?: number;
+
+  status: IGLiveOrderStatus;
+  alasan_batal?: string;
+  catatan?: string;
+
+  items: IGLiveItem[];
+
+  // Tracking
+  waktu_picking?: string;
+  petugas_picking?: string;
+  is_picked?: boolean;
+  waktu_packing?: string;
+  petugas_packing?: string;
+  waktu_kirim?: string;
+
+  created_at?: string;
+  updated_at?: string;
+}
+
+const STORAGE_KEY_ORDERS = 'chocochips_iglive_orders_v1';
+const STORAGE_KEY_GAS_URL = 'chocochips_iglive_gas_url_v1';
+
+/**
+ * Standard SKU Lookup dari Master Product Catalog
+ * Menjamin nama produk dan size selalu sesuai standar master data, tanpa anomali.
+ */
+export function lookupMasterProduct(sku: string, catalog: ProductItem[]): {
+  sku: string;
+  nama_produk: string;
+  size: string;
+  lokasi: string;
+  area: string;
+  priority: number;
+  harga?: number;
+} {
+  const cleanSku = (sku || '').trim().toUpperCase();
+  const match = catalog.find(
+    (p) => (p.k || '').trim().toUpperCase() === cleanSku
+  );
+
+  if (match) {
+    const rawLokasi = match.lokasi || '-';
+    const area = getAreaFromLokasi(rawLokasi);
+    const priority = getPickingPriority(rawLokasi, area);
+
+    return {
+      sku: match.k,
+      nama_produk: match.n || match.p || cleanSku,
+      size: match.s || '-',
+      lokasi: rawLokasi,
+      area,
+      priority,
+      harga: match.price || 0,
+    };
+  }
+
+  // Fallback jika belum di catalog
+  const area = getAreaFromLokasi('-');
+  return {
+    sku: cleanSku,
+    nama_produk: cleanSku,
+    size: '-',
+    lokasi: '-',
+    area,
+    priority: 4,
+    harga: 0,
+  };
+}
+
+/**
+ * Generate Realistic Dummy Orders untuk IG Live
+ */
+export function getInitialDummyOrders(catalog: ProductItem[]): IGLiveOrder[] {
+  // Ambil beberapa SKU dari catalog jika ada, atau gunakan default
+  const getCatSku = (idx: number, fallback: { sku: string; nama: string; size: string; loc: string }) => {
+    if (catalog && catalog.length > idx && catalog[idx].k) {
+      const c = catalog[idx];
+      return {
+        sku: c.k,
+        nama: c.n || c.p || c.k,
+        size: c.s || 'M',
+        loc: c.lokasi || 'A005',
+      };
+    }
+    return fallback;
+  };
+
+  const p1 = getCatSku(0, { sku: 'DRS-VELVET-M', nama: 'Velvet Midnight Evening Dress', size: 'M', loc: 'A012' });
+  const p2 = getCatSku(1, { sku: 'TOP-SILK-S', nama: 'Silk Bow Satin Blouse Ivory', size: 'S', loc: 'B024' });
+  const p3 = getCatSku(2, { sku: 'PNT-WIDE-L', nama: 'Highwaist Pleated Trousers Cream', size: 'L', loc: 'A045' });
+  const p4 = getCatSku(3, { sku: 'BLZ-CHIC-FREE', nama: 'Oversized Tweed Cropped Blazer', size: 'Free', loc: 'C018' });
+  const p5 = getCatSku(4, { sku: 'BELT-GOLD-UNI', nama: 'Golden Chain Leather Waist Belt', size: 'All Size', loc: 'BELT002' });
+  const p6 = getCatSku(5, { sku: 'KOL-BASIC-M', nama: 'Basic Linen Shirt Soft Pastel', size: 'M', loc: 'R015' });
+
+  const now = new Date();
+  const formatTime = (minusHours: number) => {
+    const d = new Date(now.getTime() - minusHours * 3600 * 1000);
+    return d.toISOString().replace('T', ' ').substring(0, 19);
+  };
+
+  return [
+    {
+      id: 'IGL-20261008-001',
+      no_pesanan: 'IGL-20261008-001',
+      tanggal: formatTime(2),
+      session_live: 'Live Flash Drop Autumn 10.10',
+      username_ig: '@clarashintaa_',
+      nama_pembeli: 'Clara Shinta',
+      no_telp: '081288992211',
+      alamat_lengkap: 'Jl. Senopati No. 42B, Kebayoran Baru, Jakarta Selatan',
+      kota_kabupaten: 'Jakarta Selatan',
+      provinsi: 'DKI Jakarta',
+      kode_pos: '12190',
+      ekspedisi: 'J&T Express',
+      layanan: 'Reguler',
+      no_resi: 'JT98217349182',
+      biaya_ongkir: 18000,
+      total_bayar: 348000,
+      status: 'siap_diproses',
+      catatan: 'Kirim sebelum jam 3 sore ya kak, terima kasih!',
+      items: [
+        {
+          sku: p1.sku,
+          nama_produk: p1.nama,
+          size: p1.size,
+          qty: 1,
+          harga: 250000,
+          lokasi: p1.loc,
+          area: getAreaFromLokasi(p1.loc),
+          priority: getPickingPriority(p1.loc),
+          picked: false,
+        },
+        {
+          sku: p5.sku,
+          nama_produk: p5.nama,
+          size: p5.size,
+          qty: 1,
+          harga: 80000,
+          lokasi: p5.loc,
+          area: getAreaFromLokasi(p5.loc),
+          priority: getPickingPriority(p5.loc),
+          picked: false,
+        },
+      ],
+    },
+    {
+      id: 'IGL-20261008-002',
+      no_pesanan: 'IGL-20261008-002',
+      tanggal: formatTime(3),
+      session_live: 'Live Flash Drop Autumn 10.10',
+      username_ig: '@anissa_boutique',
+      nama_pembeli: 'Anissa Rahmawati',
+      no_telp: '081399881122',
+      alamat_lengkap: 'Cluster Graha Harmoni Blok B2 No. 8, BSD City, Tangerang Selatan',
+      kota_kabupaten: 'Tangerang Selatan',
+      provinsi: 'Banten',
+      kode_pos: '15310',
+      ekspedisi: 'SiCepat',
+      layanan: 'BEST (Next Day)',
+      no_resi: '002938174011',
+      biaya_ongkir: 22000,
+      total_bayar: 420000,
+      status: 'diproses',
+      waktu_picking: formatTime(1),
+      petugas_picking: 'Ahmad Gudang',
+      is_picked: true,
+      catatan: 'Tolong packing bubble wrap rapi ya.',
+      items: [
+        {
+          sku: p2.sku,
+          nama_produk: p2.nama,
+          size: p2.size,
+          qty: 2,
+          harga: 199000,
+          lokasi: p2.loc,
+          area: getAreaFromLokasi(p2.loc),
+          priority: getPickingPriority(p2.loc),
+          picked: true,
+        },
+      ],
+    },
+    {
+      id: 'IGL-20261008-003',
+      no_pesanan: 'IGL-20261008-003',
+      tanggal: formatTime(5),
+      session_live: 'Live Flash Drop Autumn 10.10',
+      username_ig: '@nadia.febriana',
+      nama_pembeli: 'Nadia Febriana',
+      no_telp: '085712345678',
+      alamat_lengkap: 'Jl. Riau No. 115, Bandung Wetan, Kota Bandung',
+      kota_kabupaten: 'Kota Bandung',
+      provinsi: 'Jawa Barat',
+      kode_pos: '40115',
+      ekspedisi: 'JNE Express',
+      layanan: 'Reguler',
+      no_resi: 'JNE8877112200',
+      biaya_ongkir: 15000,
+      total_bayar: 310000,
+      status: 'dikirim',
+      waktu_picking: formatTime(4),
+      petugas_picking: 'Ahmad Gudang',
+      is_picked: true,
+      waktu_packing: formatTime(3),
+      petugas_packing: 'Siti Packing',
+      waktu_kirim: formatTime(2),
+      items: [
+        {
+          sku: p3.sku,
+          nama_produk: p3.nama,
+          size: p3.size,
+          qty: 1,
+          harga: 295000,
+          lokasi: p3.loc,
+          area: getAreaFromLokasi(p3.loc),
+          priority: getPickingPriority(p3.loc),
+          picked: true,
+        },
+      ],
+    },
+    {
+      id: 'IGL-20261008-004',
+      no_pesanan: 'IGL-20261008-004',
+      tanggal: formatTime(6),
+      session_live: 'Live Evening Glam Session',
+      username_ig: '@jessica_milla',
+      nama_pembeli: 'Jessica Aurelia',
+      no_telp: '081122334455',
+      alamat_lengkap: 'Apartemen Menteng Park Tower Diamond Lt. 18 No. 05, Jakarta Pusat',
+      kota_kabupaten: 'Jakarta Pusat',
+      provinsi: 'DKI Jakarta',
+      kode_pos: '10330',
+      ekspedisi: 'SPX Express',
+      layanan: 'Standard',
+      no_resi: 'SPXID029482718',
+      biaya_ongkir: 12000,
+      total_bayar: 490000,
+      status: 'siap_diproses',
+      catatan: 'Titip di resepsionis lobi.',
+      items: [
+        {
+          sku: p4.sku,
+          nama_produk: p4.nama,
+          size: p4.size,
+          qty: 1,
+          harga: 478000,
+          lokasi: p4.loc,
+          area: getAreaFromLokasi(p4.loc),
+          priority: getPickingPriority(p4.loc),
+          picked: false,
+        },
+      ],
+    },
+    {
+      id: 'IGL-20261008-005',
+      no_pesanan: 'IGL-20261008-005',
+      tanggal: formatTime(8),
+      session_live: 'Live Evening Glam Session',
+      username_ig: '@maya.anggelia',
+      nama_pembeli: 'Maya Anggelia',
+      no_telp: '081988776655',
+      alamat_lengkap: 'Perumahan Bukit Golf Mediterania Blok D8 No. 12, Pantai Indah Kapuk',
+      kota_kabupaten: 'Jakarta Utara',
+      provinsi: 'DKI Jakarta',
+      kode_pos: '14470',
+      ekspedisi: 'J&T Express',
+      layanan: 'Reguler',
+      no_resi: 'JT09812739182',
+      biaya_ongkir: 18000,
+      total_bayar: 238000,
+      status: 'menunggu_pembayaran',
+      catatan: 'Menunggu konfirmasi bukti transfer BCA',
+      items: [
+        {
+          sku: p6.sku,
+          nama_produk: p6.nama,
+          size: p6.size,
+          qty: 1,
+          harga: 220000,
+          lokasi: p6.loc,
+          area: getAreaFromLokasi(p6.loc),
+          priority: getPickingPriority(p6.loc),
+          picked: false,
+        },
+      ],
+    },
+    {
+      id: 'IGL-20261008-006',
+      no_pesanan: 'IGL-20261008-006',
+      tanggal: formatTime(12),
+      session_live: 'Live Flash Drop Autumn 10.10',
+      username_ig: '@fannytan__',
+      nama_pembeli: 'Fanny Tanaka',
+      no_telp: '082155443322',
+      alamat_lengkap: 'Jl. Mayjend Sungkono No. 89, Dukuh Pakis, Surabaya',
+      kota_kabupaten: 'Surabaya',
+      provinsi: 'Jawa Timur',
+      kode_pos: '60225',
+      ekspedisi: 'JNE Express',
+      layanan: 'YES',
+      no_resi: 'JNE9911228833',
+      biaya_ongkir: 35000,
+      total_bayar: 585000,
+      status: 'selesai',
+      waktu_picking: formatTime(10),
+      is_picked: true,
+      waktu_packing: formatTime(9),
+      waktu_kirim: formatTime(8),
+      items: [
+        {
+          sku: p1.sku,
+          nama_produk: p1.nama,
+          size: p1.size,
+          qty: 1,
+          harga: 250000,
+          lokasi: p1.loc,
+          area: getAreaFromLokasi(p1.loc),
+          priority: getPickingPriority(p1.loc),
+          picked: true,
+        },
+        {
+          sku: p3.sku,
+          nama_produk: p3.nama,
+          size: p3.size,
+          qty: 1,
+          harga: 295000,
+          lokasi: p3.loc,
+          area: getAreaFromLokasi(p3.loc),
+          priority: getPickingPriority(p3.loc),
+          picked: true,
+        },
+      ],
+    },
+    {
+      id: 'IGL-20261008-007',
+      no_pesanan: 'IGL-20261008-007',
+      tanggal: formatTime(15),
+      session_live: 'Live Flash Drop Autumn 10.10',
+      username_ig: '@dewi_sari88',
+      nama_pembeli: 'Dewi Sartika',
+      no_telp: '081233449988',
+      alamat_lengkap: 'Jl. Gatot Subroto No. 200, Semarang Selatan',
+      kota_kabupaten: 'Semarang',
+      provinsi: 'Jawa Tengah',
+      kode_pos: '50241',
+      ekspedisi: 'SiCepat',
+      layanan: 'Reguler',
+      no_resi: '-',
+      biaya_ongkir: 16000,
+      total_bayar: 215000,
+      status: 'batal',
+      alasan_batal: 'Permintaan pembeli: Salah pilih size dan transfer dibatalkan',
+      items: [
+        {
+          sku: p2.sku,
+          nama_produk: p2.nama,
+          size: p2.size,
+          qty: 1,
+          harga: 199000,
+          lokasi: p2.loc,
+          area: getAreaFromLokasi(p2.loc),
+          priority: getPickingPriority(p2.loc),
+          picked: false,
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * Load Orders from LocalStorage (or initial dummy)
+ */
+export function getStoredIgLiveOrders(catalog: ProductItem[]): IGLiveOrder[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ORDERS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Enforce SKU master catalog lookup on load
+        return parsed.map((order: IGLiveOrder) => ({
+          ...order,
+          items: (order.items || []).map((it) => {
+            const master = lookupMasterProduct(it.sku, catalog);
+            return {
+              ...it,
+              nama_produk: master.nama_produk || it.nama_produk,
+              size: master.size !== '-' ? master.size : it.size,
+              lokasi: master.lokasi !== '-' ? master.lokasi : (it.lokasi || '-'),
+              area: master.area,
+              priority: master.priority,
+            };
+          }),
+        }));
+      }
+    }
+  } catch (err) {
+    console.warn('[IGLIVE] Error reading localStorage orders:', err);
+  }
+
+  const initial = getInitialDummyOrders(catalog);
+  saveStoredIgLiveOrders(initial);
+  return initial;
+}
+
+/**
+ * Save Orders to LocalStorage
+ */
+export function saveStoredIgLiveOrders(orders: IGLiveOrder[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
+  } catch (err) {
+    console.error('[IGLIVE] Gagal menyimpan orders ke localStorage:', err);
+  }
+}
+
+/**
+ * Get GAS Web App URL
+ */
+export function getStoredIgLiveGasUrl(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEY_GAS_URL) || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Save GAS Web App URL
+ */
+export function saveStoredIgLiveGasUrl(url: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_GAS_URL, url.trim());
+  } catch {
+    // noop
+  }
+}
+
+/**
+ * Tarik / Sinkronisasi Data Pesanan dari URL GAS
+ */
+export async function fetchOrdersFromGas(
+  gasUrl: string,
+  catalog: ProductItem[]
+): Promise<{ success: boolean; orders?: IGLiveOrder[]; message: string }> {
+  const url = (gasUrl || '').trim();
+  if (!url) {
+    return { success: false, message: 'URL GAS belum diatur' };
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    let rawList: any[] = [];
+
+    if (Array.isArray(json)) {
+      rawList = json;
+    } else if (json && Array.isArray(json.data)) {
+      rawList = json.data;
+    } else if (json && Array.isArray(json.orders)) {
+      rawList = json.orders;
+    } else if (json && Array.isArray(json.pesanan)) {
+      rawList = json.pesanan;
+    } else {
+      throw new Error('Format respon JSON dari GAS tidak valid (harus array atau { data: [...] })');
+    }
+
+    // Mapping raw data into standardized IGLiveOrder
+    const mapped: IGLiveOrder[] = rawList.map((row, idx) => {
+      const orderNo = String(
+        row.no_pesanan || row.order_id || row.id || `IGL-${Date.now()}-${idx + 1}`
+      ).trim();
+
+      // Normalize items
+      const rawItems = Array.isArray(row.items)
+        ? row.items
+        : [
+            {
+              sku: row.sku || row.kode || row.item_code || '',
+              qty: Number(row.qty || row.jumlah || 1),
+            },
+          ];
+
+      const items: IGLiveItem[] = rawItems.map((rawIt: any) => {
+        const sku = String(rawIt.sku || rawIt.kode || rawIt.item_code || '').trim();
+        const master = lookupMasterProduct(sku, catalog);
+        return {
+          sku: master.sku || sku,
+          nama_produk: master.nama_produk,
+          size: master.size,
+          qty: Number(rawIt.qty || 1) || 1,
+          harga: Number(rawIt.harga || rawIt.price || master.harga || 0),
+          lokasi: master.lokasi,
+          area: master.area,
+          priority: master.priority,
+          picked: !!rawIt.picked,
+        };
+      });
+
+      return {
+        id: orderNo,
+        no_pesanan: orderNo,
+        tanggal: row.tanggal || row.created_at || new Date().toISOString().substring(0, 19).replace('T', ' '),
+        session_live: row.session_live || row.live_session || 'IG Live Session',
+        username_ig: row.username_ig || row.ig_handle || row.username || '@customer',
+        nama_pembeli: row.nama_pembeli || row.customer_name || row.pembeli || 'Customer IG',
+        no_telp: row.no_telp || row.phone || row.whatsapp || '',
+        alamat_lengkap: row.alamat_lengkap || row.alamat || row.address || '',
+        kota_kabupaten: row.kota || row.kota_kabupaten || '',
+        provinsi: row.provinsi || '',
+        kode_pos: row.kode_pos || '',
+        ekspedisi: row.ekspedisi || row.courier || row.kurir || 'J&T Express',
+        layanan: row.layanan || row.service || 'Reguler',
+        no_resi: row.no_resi || row.resi || row.tracking_no || '-',
+        biaya_ongkir: Number(row.biaya_ongkir || row.ongkir || 0),
+        total_bayar: Number(row.total_bayar || row.total || 0),
+        status: (row.status as IGLiveOrderStatus) || 'siap_diproses',
+        alasan_batal: row.alasan_batal || '',
+        catatan: row.catatan || row.notes || '',
+        items,
+        is_picked: !!row.is_picked,
+        waktu_picking: row.waktu_picking,
+        petugas_picking: row.petugas_picking,
+      };
+    });
+
+    // Save and return
+    saveStoredIgLiveOrders(mapped);
+    return {
+      success: true,
+      orders: mapped,
+      message: `Berhasil menarik ${mapped.length} pesanan dari GAS`,
+    };
+  } catch (err: any) {
+    console.error('[IGLIVE] Gagal fetch dari GAS:', err);
+    return {
+      success: false,
+      message: err?.message || 'Gagal terhubung ke endpoint GAS',
+    };
+  }
+}

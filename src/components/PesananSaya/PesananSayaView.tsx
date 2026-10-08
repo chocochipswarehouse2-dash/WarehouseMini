@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { 
   Package, LayoutDashboard, Truck, Store, ShoppingBag, 
-  Globe, ShoppingCart, Tag, Search 
+  Globe, ShoppingCart, Tag, Search, Radio 
 } from 'lucide-react';
 import { UserSession, ProductItem } from '../../types';
 import { ManualShipmentTab } from './ManualShipmentTab';
 import { DistribusiStoreTab } from './DistribusiStoreTab';
+import { IGLiveTab } from './IGLiveTab';
 
 interface PesananSayaViewProps {
   session: UserSession | null;
@@ -13,7 +14,7 @@ interface PesananSayaViewProps {
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type TabType = 'dashboard' | 'manual_shipment' | 'distribusi' | 'shopee' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
+type TabType = 'dashboard' | 'manual_shipment' | 'distribusi' | 'shopee' | 'iglive' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
 
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { ShopeeTab } from './ShopeeTab';
@@ -41,6 +42,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
     { id: 'manual_shipment', label: 'Store', shortLabel: 'Store', icon: Store, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50', permissionKey: 'tab_ops_pesanan_manual_shipment' },
     { id: 'distribusi', label: 'Transfer Order', shortLabel: 'Transfer', icon: Truck, color: 'bg-emerald-600 shadow-emerald-600/25 ring-emerald-500/50', permissionKey: 'tab_ops_pesanan_transfer_order' },
     { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', permissionKey: 'tab_ops_pesanan_shopee' },
+    { id: 'iglive', label: 'IG Live', shortLabel: 'IG Live', icon: Radio, color: 'bg-gradient-to-r from-pink-600 to-rose-600 shadow-pink-600/25 ring-pink-500/50', permissionKey: 'tab_ops_pesanan_iglive' },
     { id: 'tiktok', label: 'Tiktok', shortLabel: 'Tiktok', icon: ShoppingBag, color: 'bg-rose-600 shadow-rose-600/25 ring-rose-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_tiktok' },
     { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_website' },
     { id: 'woocommerce', label: 'WooCommerce', shortLabel: 'Woo', icon: ShoppingCart, color: 'bg-purple-600 shadow-purple-600/25 ring-purple-500/50', isComingSoon: true, permissionKey: 'tab_ops_pesanan_woocommerce' },
@@ -180,6 +182,11 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
         {activeTab === 'shopee' && (
           <div>
             <ShopeeTab onShowToast={onShowToast} />
+          </div>
+        )}
+        {activeTab === 'iglive' && (
+          <div>
+            <IGLiveTab session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
           </div>
         )}
         {activeTab === 'tiktok' && <div className="py-2">{renderDummyTab('Tiktok')}</div>}

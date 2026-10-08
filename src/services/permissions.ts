@@ -53,6 +53,7 @@ export const PERMISSION_GROUPS = [
       { key: 'tab_ops_pesanan_manual_shipment', label: 'Tab Manual Shipment', description: 'Kelola kiriman manual', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_transfer_order', label: 'Tab Transfer Order', description: 'Kelola transfer order', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_shopee', label: 'Tab Shopee', description: 'Data pesanan Shopee', isSuperadminOnly: false },
+      { key: 'tab_ops_pesanan_iglive', label: 'Tab IG Live', description: 'Data pesanan IG Live', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_tiktok', label: 'Tab Tiktok', description: 'Data pesanan Tiktok', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_website', label: 'Tab Website', description: 'Data pesanan Website', isSuperadminOnly: false },
       { key: 'tab_ops_pesanan_woocommerce', label: 'Tab Woocommerce', description: 'Data pesanan Woocommerce', isSuperadminOnly: false },

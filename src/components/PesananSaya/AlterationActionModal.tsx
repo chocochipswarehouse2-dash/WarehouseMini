@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { ManualShipmentOrder, AlterationFlowStage, AlterationFlowLog } from '../../types';
 import { editManualShipment } from '../../services/gasManualShipment';
+import { triggerOrderEmailNotifications } from '../../services/emailService';
+import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 
 export type AlterationActionType = 'mark_sent_store' | 'mark_received_warehouse' | 'complete_and_ship' | 'mark_dealpos_received';
 
@@ -200,6 +202,38 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
       const res = await editManualShipment(updatedOrder);
       if (res.success) {
         onShowToast(`Berhasil memperbarui status alur: ${logNotes}`, 'success');
+
+        // Notifikasi WA (Fonnte) ke Store Penginput
+        const storePhone = (order.no_telp_store || '').trim();
+        if (storePhone) {
+          const fonnteCfg = getFonnteConfig();
+          let waStatusMsg = '';
+          if (actionType === 'mark_received_warehouse') {
+            waStatusMsg = `📦 *UPDATE STATUS: PAKET DITERIMA GUDANG PUSAT*\n--------------------------------------------\nHalo Tim *${storeName}*,\nPaket alterasi dengan No. Tiket *${order.no_pesanan}* telah DITERIMA oleh tim Warehouse (${picTerimaWarehouse}).\n\n👗 *Produk:* ${productName} (${sku})\n📋 *Kondisi:* ${kondisiTerimaWarehouse}\n\nStatus saat ini: *Diterima & Siap Masuk Antrean Pengerjaan*.\n_Chocochips Official Boutique_`;
+          } else if (actionType === 'complete_and_ship') {
+            waStatusMsg = `🚚 *UPDATE STATUS: PESANAN ALTERASI TELAH DIKIRIM*\n--------------------------------------------\nHalo Tim *${storeName}*,\nPengerjaan alterasi untuk No. Tiket *${order.no_pesanan}* telah SELESAI dan diserahkan ke pihak ekspedisi.\n\n👗 *Produk:* ${productName} (${sku})\n🚚 *Ekspedisi:* ${ekspedisiKembali}\n📦 *No. Resi:* *${resiKembali || '-'}*\n📍 *Tujuan:* ${tujuanPengembalian === 'customer' ? `Customer (${namaPenerima})` : `Store (${namaPenerima})`}\n\nSilakan infokan nomor resi ini kepada customer terkait jika diperlukan.\n_Chocochips Official Boutique_`;
+          }
+
+          if (waStatusMsg && fonnteCfg.token) {
+            sendFonnteMessage(storePhone, waStatusMsg, fonnteCfg.token)
+              .then((r) => {
+                if (r.success) {
+                  console.log(`[WA] Notif status ${actionType} terkirim ke store:`, storePhone);
+                }
+              })
+              .catch((err) => console.warn('WA status notice error:', err));
+          }
+        }
+
+        // Notifikasi Email (Chocochips Official) ke PIC Store & Customer jika dilampirkan
+        if (actionType === 'mark_received_warehouse') {
+          triggerOrderEmailNotifications(updatedOrder, 'status_diterima', kondisiTerimaWarehouse)
+            .catch((err) => console.warn('Email status_diterima notice error:', err));
+        } else if (actionType === 'complete_and_ship') {
+          triggerOrderEmailNotifications(updatedOrder, 'status_dikirim', catatanKirimKembali)
+            .catch((err) => console.warn('Email status_dikirim notice error:', err));
+        }
+
         onSuccess(updatedOrder);
         onClose();
       } else {

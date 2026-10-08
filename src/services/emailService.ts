@@ -16,6 +16,24 @@ interface SendEmailParams {
 }
 
 /**
+ * Format Nama Resmi Store Chocochips:
+ * "Chocochips - Nama store yang submit data"
+ * Tanpa embel-embel tambahan karangan sendiri karena pesan formal.
+ */
+export function getFormalStoreBrandName(storeNameRaw?: string): string {
+  const clean = (storeNameRaw || '').trim();
+  if (!clean) return 'Chocochips';
+  if (/^chocochips\s*[-–—]/i.test(clean)) {
+    return clean;
+  }
+  if (/^chocochips/i.test(clean)) {
+    const remainder = clean.replace(/^chocochips\s*/i, '').trim();
+    return remainder ? `Chocochips - ${remainder}` : 'Chocochips';
+  }
+  return `Chocochips - ${clean}`;
+}
+
+/**
  * Kirim email via Google Apps Script (GAS) Webhook
  */
 export async function sendEmailViaGas(params: SendEmailParams): Promise<{ success: boolean; message: string }> {
@@ -61,22 +79,26 @@ export async function sendEmailViaGas(params: SendEmailParams): Promise<{ succes
 }
 
 /**
- * Format Header Formal Chocochips (Bukan WMS)
+ * KOP Resmi Chocochips:
+ * "Chocochips - Nama store yang submit data"
+ * "CHOCOCHIPS — Official Boutique & Tailoring Care" (Bukan WMS)
  */
-function getChocochipsEmailHeader(title: string, subtitle: string): string {
+function getChocochipsEmailHeader(storeName: string, title: string, subtitle: string): string {
+  const brandName = getFormalStoreBrandName(storeName);
+
   return `
-    <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%); padding: 32px 24px; text-align: center; border-radius: 12px 12px 0 0; color: #ffffff;">
-      <div style="letter-spacing: 4px; font-size: 24px; font-weight: 800; text-transform: uppercase; margin-bottom: 6px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
-        CHOCOCHIPS
+    <div style="background-color: #111827; padding: 30px 24px; text-align: center; border-radius: 8px 8px 0 0; color: #ffffff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+      <div style="letter-spacing: 2.5px; font-size: 21px; font-weight: 800; text-transform: uppercase; margin-bottom: 6px; color: #ffffff;">
+        ${brandName}
       </div>
-      <div style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #c7d2fe; margin-bottom: 12px;">
-        Official Boutique & Tailoring Care
+      <div style="font-size: 11.5px; letter-spacing: 1.8px; text-transform: uppercase; color: #94a3b8; margin-bottom: 14px; font-weight: 600;">
+        CHOCOCHIPS — Official Boutique & Tailoring Care
       </div>
-      <div style="height: 1px; width: 60px; background-color: #f43f5e; margin: 0 auto 12px auto;"></div>
-      <div style="font-size: 16px; font-weight: 700; color: #ffffff;">
+      <div style="height: 1px; width: 48px; background-color: #e2e8f0; margin: 0 auto 14px auto;"></div>
+      <div style="font-size: 15px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">
         ${title}
       </div>
-      <div style="font-size: 12px; color: #e0e7ff; margin-top: 4px;">
+      <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">
         ${subtitle}
       </div>
     </div>
@@ -87,24 +109,24 @@ function getChocochipsEmailHeader(title: string, subtitle: string): string {
  * Format Footer Formal Chocochips dengan Kontak Store Terkait
  */
 function getChocochipsEmailFooter(order: ManualShipmentOrder): string {
-  const storeName = order.nama_pengirim || 'Chocochips Official Boutique';
+  const brandName = getFormalStoreBrandName(order.nama_pengirim);
   const pic = order.pic_store ? ` (PIC: ${order.pic_store})` : '';
   const phone = order.no_telp_store || '-';
 
   return `
-    <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 24px; border-radius: 0 0 12px 12px; font-size: 12px; color: #475569; font-family: sans-serif;">
-      <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-        <div style="font-weight: 700; color: #1e293b; font-size: 13px; margin-bottom: 6px; display: flex; align-items: center;">
-          📍 Kontak Store untuk Follow Up & Pertanyaan:
+    <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 22px 24px; border-radius: 0 0 8px 8px; font-size: 12px; color: #475569; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+      <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px; margin-bottom: 14px;">
+        <div style="font-weight: 700; color: #0f172a; font-size: 12.5px; margin-bottom: 6px;">
+          📍 Kontak Store untuk Follow Up:
         </div>
         <div style="color: #334155; line-height: 1.6;">
-          • <strong>Store:</strong> ${storeName}${pic}<br/>
-          • <strong>Telepon / WhatsApp:</strong> <a href="https://wa.me/${phone.replace(/[^0-9]/g, '')}" style="color: #4f46e5; font-weight: 600; text-decoration: none;">${phone}</a><br/>
-          Jika Kakak ingin menanyakan status pengerjaan alterasi atau pengiriman, silakan langsung menghubungi kontak store di atas.
+          • <strong>Store:</strong> ${brandName}${pic}<br/>
+          • <strong>Telepon / WhatsApp:</strong> <a href="https://wa.me/${phone.replace(/[^0-9]/g, '')}" style="color: #0284c7; font-weight: 600; text-decoration: none;">${phone}</a><br/>
+          Jika ada pertanyaan terkait rincian pesanan maupun pengerjaan alterasi pakaian, silakan menghubungi kontak store di atas.
         </div>
       </div>
-      <div style="text-align: center; color: #94a3b8; font-size: 11px;">
-        Email ini dikirimkan secara resmi oleh sistem layanan pelanggan Chocochips.<br/>
+      <div style="text-align: center; color: #94a3b8; font-size: 11px; line-height: 1.5;">
+        Email ini dikirimkan secara resmi oleh ${brandName}.<br/>
         © ${new Date().getFullYear()} Chocochips. All Rights Reserved.
       </div>
     </div>
@@ -140,7 +162,7 @@ function getProductTableHtml(order: ManualShipmentOrder): string {
     return `
       <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 10px 8px; text-align: center; font-size: 12px; color: #64748b;">${idx + 1}</td>
-        <td style="padding: 10px 8px; font-size: 12px; color: #1e293b; font-weight: 600;">
+        <td style="padding: 10px 8px; font-size: 12px; color: #0f172a; font-weight: 600;">
           ${cleanName}
           ${alterNote}
         </td>
@@ -172,40 +194,35 @@ function getProductTableHtml(order: ManualShipmentOrder): string {
 /**
  * Buat Isi Email Formal untuk Customer
  */
-export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailNotificationEvent, extraNotes?: string): { subject: string; html: string } {
+export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailNotificationEvent, extraNotes?: string): { subject: string; html: string; fromName: string } {
+  const brandName = getFormalStoreBrandName(order.nama_pengirim);
   const customerName = order.nama_tujuan || 'Pelanggan Terhormat';
   const orderId = order.no_transaksi_customer || order.no_pesanan || '-';
-  const storeName = order.nama_pengirim || 'Chocochips Store';
 
-  let eventTitle = 'Informasi Pesanan Chocochips';
-  let eventBadgeColor = '#3b82f6';
-  let eventText = 'Pesanan Kakak sedang kami tangani.';
+  let eventTitle = 'Informasi Pesanan';
+  let eventText = 'Pesanan Anda sedang kami tangani.';
 
   if (event === 'submit') {
     eventTitle = 'Konfirmasi Penerimaan Pesanan';
-    eventText = `Pesanan Kakak telah berhasil didaftarkan oleh <strong>${storeName}</strong> dan diteruskan ke tim workshop untuk persiapan.`;
+    eventText = `Pesanan Anda telah berhasil didaftarkan oleh <strong>${brandName}</strong> dan diteruskan untuk persiapan.`;
   } else if (event === 'status_diterima') {
-    eventTitle = 'Pesanan Diterima di Gudang / Workshop';
-    eventBadgeColor = '#6366f1';
-    eventText = 'Paket pakaian Kakak telah diterima dengan baik di Workshop Pusat dan siap masuk ke antrean pengerjaan.';
+    eventTitle = 'Pesanan Diterima di Gudang';
+    eventText = 'Paket pakaian Anda telah diterima dengan baik di Gudang Pusat dan siap masuk ke antrean pengerjaan.';
   } else if (event === 'status_diproses') {
-    eventTitle = 'Pesanan & Alterasi Sedang Dikerjakan';
-    eventBadgeColor = '#f59e0b';
-    eventText = 'Pakaian Kakak saat ini sedang dalam proses pengerjaan teliti oleh tim penjahit & QC profesional kami.';
+    eventTitle = 'Pesanan Sedang Dikerjakan';
+    eventText = 'Pakaian Anda saat ini sedang dalam proses pengerjaan oleh tim penjahit & QC kami.';
   } else if (event === 'status_dikirim') {
-    eventTitle = 'Pesanan Telah Dikirimkan! 🚚';
-    eventBadgeColor = '#10b981';
-    eventText = `Kabar gembira! Pesanan Kakak telah selesai dikemas rapi dan diserahkan ke pihak ekspedisi <strong>${order.jasa_kirim || 'Kurir'}</strong>.`;
+    eventTitle = 'Pesanan Telah Dikirimkan';
+    eventText = `Pesanan Anda telah selesai dikemas rapi dan diserahkan ke pihak ekspedisi <strong>${order.jasa_kirim || 'Kurir'}</strong>.`;
   } else if (event === 'status_batal') {
     eventTitle = 'Pemberitahuan Pembatalan Pesanan';
-    eventBadgeColor = '#ef4444';
-    eventText = `Pesanan dengan nomor <strong>${orderId}</strong> telah dibatalkan atas permintaan/kendala terkait.`;
+    eventText = `Pesanan dengan nomor <strong>${orderId}</strong> telah dibatalkan.`;
   }
 
-  const subject = `[Chocochips] ${eventTitle} - ${orderId}`;
+  const subject = `[${brandName}] ${eventTitle} - ${orderId}`;
 
   const resiBox = order.no_resi ? `
-    <div style="background-color: #ecfdf5; border: 2px dashed #10b981; border-radius: 8px; padding: 14px; margin: 16px 0; text-align: center;">
+    <div style="background-color: #ecfdf5; border: 2px dashed #10b981; border-radius: 6px; padding: 14px; margin: 16px 0; text-align: center;">
       <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #065f46;">Nomor Resi Pengiriman</div>
       <div style="font-size: 20px; font-family: monospace; font-weight: 800; color: #047857; margin-top: 4px; letter-spacing: 2px;">
         ${order.no_resi}
@@ -230,12 +247,12 @@ export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailN
       <title>${subject}</title>
     </head>
     <body style="margin: 0; padding: 20px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-      <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); overflow: hidden;">
-        ${getChocochipsEmailHeader(eventTitle, `Order ID: ${orderId}`)}
+      <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;">
+        ${getChocochipsEmailHeader(order.nama_pengirim, eventTitle, `No. Pesanan: ${orderId}`)}
 
         <div style="padding: 24px;">
-          <div style="font-size: 15px; color: #1e293b; line-height: 1.6; margin-bottom: 16px;">
-            Halo Kak <strong>${customerName}</strong>,
+          <div style="font-size: 15px; color: #0f172a; line-height: 1.6; margin-bottom: 14px;">
+            Yth. <strong>${customerName}</strong>,
           </div>
           <p style="font-size: 13px; color: #475569; line-height: 1.6; margin: 0 0 16px 0;">
             ${eventText}
@@ -245,17 +262,17 @@ export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailN
           ${notesBox}
 
           <!-- Info Box Ringkasan -->
-          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 16px 0; font-size: 12px; color: #334155; line-height: 1.7;">
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px; margin: 16px 0; font-size: 12px; color: #334155; line-height: 1.7;">
             <table style="width: 100%; border-collapse: collapse;">
-              <tr><td style="width: 140px; color: #64748b; font-weight: 600;">No. Pesanan:</td><td><strong>${orderId}</strong></td></tr>
-              <tr><td style="color: #64748b; font-weight: 600;">Store Asal:</td><td>${storeName}</td></tr>
+              <tr><td style="width: 130px; color: #64748b; font-weight: 600;">No. Pesanan:</td><td><strong>${orderId}</strong></td></tr>
+              <tr><td style="color: #64748b; font-weight: 600;">Store Asal:</td><td>${brandName}</td></tr>
               <tr><td style="color: #64748b; font-weight: 600;">Alamat Kirim:</td><td>${order.alamat_tujuan || '-'}</td></tr>
               <tr><td style="color: #64748b; font-weight: 600;">Ekspedisi:</td><td>${order.jasa_kirim || '-'}</td></tr>
             </table>
           </div>
 
-          <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-top: 20px; margin-bottom: 6px;">
-            Rincian Produk & Busana:
+          <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 18px; margin-bottom: 6px;">
+            Rincian Produk:
           </div>
           ${getProductTableHtml(order)}
         </div>
@@ -266,38 +283,38 @@ export function buildCustomerEmailHtml(order: ManualShipmentOrder, event: EmailN
     </html>
   `;
 
-  return { subject, html };
+  return { subject, html, fromName: brandName };
 }
 
 /**
  * Buat Isi Email Notifikasi untuk PIC Store
  */
-export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNotificationEvent, extraNotes?: string): { subject: string; html: string } {
-  const storeName = order.nama_pengirim || 'Store';
+export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNotificationEvent, extraNotes?: string): { subject: string; html: string; fromName: string } {
+  const brandName = getFormalStoreBrandName(order.nama_pengirim);
   const pic = order.pic_store || 'PIC Store';
   const orderId = order.no_transaksi_customer || order.no_pesanan || '-';
 
-  let eventTitle = 'Update Status Pesanan Manual';
-  let eventText = `Terdapat pembaruan status pesanan untuk toko ${storeName}.`;
+  let eventTitle = 'Update Status Pesanan';
+  let eventText = `Terdapat pembaruan status pesanan.`;
 
   if (event === 'submit') {
     eventTitle = 'Pesanan Baru Berhasil Didaftarkan';
-    eventText = `Pesanan telah sukses dicatat di sistem dan masuk ke antrean picking & workshop gudang.`;
+    eventText = `Pesanan telah sukses dicatat di sistem dan masuk ke antrean picking & pengerjaan.`;
   } else if (event === 'status_diterima') {
-    eventTitle = 'Gudang Menerima Paket Toko';
-    eventText = `Fisik paket/produk dari toko telah diverifikasi dan diterima oleh admin gudang.`;
+    eventTitle = 'Paket Diterima di Gudang';
+    eventText = `Fisik paket/produk dari toko telah diverifikasi dan diterima oleh tim gudang.`;
   } else if (event === 'status_diproses') {
-    eventTitle = 'Pesanan / Alterasi Sedang Dikerjakan';
+    eventTitle = 'Pesanan Sedang Diproses';
     eventText = `Pesanan sedang dikerjakan oleh tim penjahit & persiapan picking.`;
   } else if (event === 'status_dikirim') {
     eventTitle = 'Pesanan Telah Dikirim (Resi Terbit)';
-    eventText = `Pesanan telah diserahkan ke kurir ekspedisi. Harap segera infokan No. Resi ke customer terkait.`;
+    eventText = `Pesanan telah diserahkan ke pihak ekspedisi. Harap segera infokan No. Resi ke customer.`;
   } else if (event === 'status_batal') {
     eventTitle = 'Pesanan Dibatalkan';
-    eventText = `Pesanan ini telah ditandai batal. Alasan: ${extraNotes || 'Pembatalan sistem'}. Histori tetap tersimpan.`;
+    eventText = `Pesanan ini telah ditandai batal. Alasan: ${extraNotes || 'Pembatalan sistem'}.`;
   }
 
-  const subject = `[Chocochips Store Notification] ${eventTitle} - ${orderId} (${storeName})`;
+  const subject = `[${brandName}] ${eventTitle} - ${orderId}`;
 
   const html = `
     <!DOCTYPE html>
@@ -307,19 +324,19 @@ export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNoti
       <title>${subject}</title>
     </head>
     <body style="margin: 0; padding: 20px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-      <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); overflow: hidden;">
-        ${getChocochipsEmailHeader(eventTitle, `Toko: ${storeName} | PIC: ${pic}`)}
+      <div style="max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;">
+        ${getChocochipsEmailHeader(order.nama_pengirim, eventTitle, `PIC: ${pic} | No: ${orderId}`)}
 
         <div style="padding: 24px;">
-          <div style="font-size: 15px; color: #1e293b; line-height: 1.6; margin-bottom: 12px;">
-            Halo Tim <strong>${storeName}</strong> (PIC: ${pic}),
+          <div style="font-size: 15px; color: #0f172a; line-height: 1.6; margin-bottom: 12px;">
+            Yth. PIC Store <strong>${pic}</strong> (${brandName}),
           </div>
           <p style="font-size: 13px; color: #475569; line-height: 1.6; margin: 0 0 16px 0;">
             ${eventText}
           </p>
 
           ${order.no_resi ? `
-            <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin: 14px 0;">
+            <div style="background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 6px; padding: 12px; margin: 14px 0;">
               <span style="font-size: 11px; font-weight: 700; color: #065f46; text-transform: uppercase;">No. Resi Pengiriman:</span>
               <div style="font-size: 18px; font-family: monospace; font-weight: 800; color: #047857; margin-top: 2px;">
                 ${order.no_resi} (${order.jasa_kirim || 'Kurir'})
@@ -328,7 +345,7 @@ export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNoti
           ` : ''}
 
           <!-- Data Customer -->
-          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 16px 0; font-size: 12px; color: #334155; line-height: 1.7;">
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px; margin: 16px 0; font-size: 12px; color: #334155; line-height: 1.7;">
             <table style="width: 100%; border-collapse: collapse;">
               <tr><td style="width: 130px; color: #64748b; font-weight: 600;">Customer Tujuan:</td><td><strong>${order.nama_tujuan}</strong> (${order.no_telp_tujuan})</td></tr>
               <tr><td style="color: #64748b; font-weight: 600;">Alamat Kirim:</td><td>${order.alamat_tujuan || '-'}</td></tr>
@@ -337,7 +354,7 @@ export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNoti
             </table>
           </div>
 
-          <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-top: 16px; margin-bottom: 6px;">
+          <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 16px; margin-bottom: 6px;">
             Rincian Item:
           </div>
           ${getProductTableHtml(order)}
@@ -349,7 +366,7 @@ export function buildStoreEmailHtml(order: ManualShipmentOrder, event: EmailNoti
     </html>
   `;
 
-  return { subject, html };
+  return { subject, html, fromName: brandName };
 }
 
 /**
@@ -367,12 +384,12 @@ export async function triggerOrderEmailNotifications(
   // 1. Notifikasi ke PIC Store (jika email store dilampirkan)
   const storeEmail = (order.email_store || (order.alteration_repair_data?.pic_store_email) || '').trim();
   if (storeEmail && storeEmail.includes('@')) {
-    const { subject, html } = buildStoreEmailHtml(order, event, extraNotes);
+    const { subject, html, fromName } = buildStoreEmailHtml(order, event, extraNotes);
     const res = await sendEmailViaGas({
       to: storeEmail,
       subject,
       htmlBody: html,
-      fromName: 'Chocochips Official Notification',
+      fromName,
     });
     storeSent = res.success;
     if (res.success) {
@@ -383,12 +400,12 @@ export async function triggerOrderEmailNotifications(
   // 2. Notifikasi ke Customer (jika email customer dilampirkan)
   const customerEmail = (order.email_customer || (order.alteration_repair_data?.email_customer) || '').trim();
   if (customerEmail && customerEmail.includes('@')) {
-    const { subject, html } = buildCustomerEmailHtml(order, event, extraNotes);
+    const { subject, html, fromName } = buildCustomerEmailHtml(order, event, extraNotes);
     const res = await sendEmailViaGas({
       to: customerEmail,
       subject,
       htmlBody: html,
-      fromName: 'Chocochips',
+      fromName,
     });
     customerSent = res.success;
     if (res.success) {
