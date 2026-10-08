@@ -234,6 +234,11 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
     delete submitPayload.pic_warehouse;
     delete submitPayload.status_flow;
     delete submitPayload.flow_logs;
+    
+    // Hapus field tambahan dari UI agar tidak crash di schema DB
+    delete submitPayload.email_customer;
+    delete submitPayload.email_store;
+    delete submitPayload.pic_store;
 
     await supabaseFetch('manual_shipment', 'POST', [submitPayload]);
     return { success: true, message: 'Berhasil menyimpan data ke Supabase' };
@@ -481,6 +486,11 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     delete patchPayload.pic_warehouse;
     delete patchPayload.status_flow;
     delete patchPayload.flow_logs;
+    
+    // Hapus field tambahan UI
+    delete patchPayload.email_customer;
+    delete patchPayload.email_store;
+    delete patchPayload.pic_store;
 
     await supabaseFetch('manual_shipment', 'PATCH', patchPayload, `id=eq.${payload.id}`);
     return { success: true, message: 'Berhasil mengupdate data' };
