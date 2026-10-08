@@ -289,7 +289,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     };
     window.addEventListener('wms_recount_audit_updated', handleAuditUpdateEvent);
 
-    // Auto-poll cloud every 10 seconds for real-time multi-device sync
+    // Auto-poll cloud every 60 seconds for real-time multi-device sync
     const pollInterval = setInterval(() => {
       if (isMounted) {
         fetchRecountAuditMapFromCloud().then((m) => {
@@ -303,7 +303,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           }
         });
       }
-    }, 10000);
+    }, 60000);
 
     return () => {
       isMounted = false;
