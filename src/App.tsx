@@ -658,7 +658,7 @@ export default function App() {
     localStorage.setItem('wms_theme_font_size', themeFontSize);
     
     // Remove previous font classes
-    document.documentElement.classList.remove('font-sans', 'font-inter', 'font-mono', 'font-serif', 'font-rounded');
+    document.documentElement.classList.remove('font-sans', 'font-ios', 'font-samsung', 'font-inter', 'font-mono', 'font-serif', 'font-rounded');
     document.documentElement.classList.add(`font-${themeFont}`);
     
     document.documentElement.setAttribute('data-theme-icon', themeIconStyle);

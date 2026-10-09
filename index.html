@@ -34,6 +34,11 @@
             document.documentElement.setAttribute('data-theme', 'light');
             document.documentElement.style.colorScheme = 'light';
           }
+          var savedFont = localStorage.getItem('wms_theme_font');
+          if (savedFont) {
+            document.documentElement.classList.add('font-' + savedFont);
+            document.documentElement.setAttribute('data-theme-font', savedFont);
+          }
         } catch(e) {}
       })();
     </script>
@@ -78,10 +83,12 @@
     </script>
     
 
-    <!-- Google Font -->
+    <!-- Google Font & Web Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@100..1000&family=JetBrains+Mono:wght@500;600;700&family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/sf-pro-display" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/samsungone" rel="stylesheet">
     <!-- Auto-Check Service Worker Updates on Page Load -->
     <script>
       if ('serviceWorker' in navigator) {

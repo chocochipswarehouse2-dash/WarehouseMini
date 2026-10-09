@@ -1214,8 +1214,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
                     { id: 'sans', name: 'Default (Plus Jakarta)' },
-                    { id: 'rounded', name: 'Rounded (Quicksand)' },
+                    { id: 'ios', name: 'iPhone (SF Pro)' },
+                    { id: 'samsung', name: 'Samsung Sans' },
                     { id: 'inter', name: 'Inter (Modern)' },
+                    { id: 'rounded', name: 'Rounded (Quicksand)' },
                     { id: 'serif', name: 'Serif (Playfair)' },
                     { id: 'mono', name: 'Monospace (Tech)' },
                   ].map((f) => (

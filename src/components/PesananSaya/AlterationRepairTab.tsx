@@ -24,10 +24,8 @@ import {
   RefreshCw,
   Building2,
   Warehouse,
-  ShieldCheck,
   Clock,
   ArrowRight,
-  ChevronRight,
   Filter,
   Eye,
   Layers,
@@ -36,7 +34,6 @@ import {
   MessageSquare,
   AlertTriangle,
   Truck,
-  PackageCheck,
   Send,
   Share2,
   Copy,
@@ -65,8 +62,6 @@ import initial325bData from '../../data/initialKatalog325b.json';
 import {
   submitManualShipment,
   fetchManualShipments,
-  editManualShipment,
-  updateAlterationFlowStage,
   fetchOutlets,
   DEFAULT_OUTLETS,
   getFullStoreName
@@ -87,71 +82,55 @@ interface AlterationRepairTabProps {
   onGoToRekap?: () => void;
 }
 
-const FLOW_STAGES: {
-  key: AlterationFlowStage;
-  label: string;
-  shortLabel: string;
-  stepNum: number;
-  description: string;
-  badgeClass: string;
-}[] = [
-  {
-    key: 'diajukan',
-    label: '1. Diajukan (Input Store)',
-    shortLabel: 'Input Store',
-    stepNum: 1,
-    description: 'Permintaan dibuat, menunggu dikirim ke Warehouse',
-    badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700',
-  },
-  {
-    key: 'dikirim_store',
-    label: '2. Dikirim ke Warehouse',
-    shortLabel: 'Kirim ke WH',
-    stepNum: 2,
-    description: 'Barang sedang dalam perjalanan menuju Warehouse',
-    badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-700',
-  },
-  {
-    key: 'diterima_warehouse',
-    label: '3. Diterima di Gudang',
-    shortLabel: 'Tiba di WH',
-    stepNum: 3,
-    description: 'Fisik barang tiba di Warehouse & diverifikasi',
-    badgeClass: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700',
-  },
-  {
-    key: 'dalam_pengerjaan',
-    label: '4. Dalam Pengerjaan',
-    shortLabel: 'Pengerjaan',
-    stepNum: 4,
-    description: 'Sedang dialter / repair oleh tim penjahit gudang',
-    badgeClass: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300 dark:border-purple-700',
-  },
-  {
-    key: 'selesai_qc',
-    label: '5. Selesai QC & Perbaikan',
-    shortLabel: 'Selesai QC',
-    stepNum: 5,
-    description: 'Pengerjaan selesai dan lolos inspeksi QC',
-    badgeClass: 'bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300 border-teal-300 dark:border-teal-700',
-  },
-  {
-    key: 'dikirim_kembali',
-    label: '6. Dikirim Kembali',
-    shortLabel: 'Dikirim Balik',
-    stepNum: 6,
-    description: 'Sedang dikirim ke Customer / Store dengan bukti kirim',
-    badgeClass: 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300 dark:border-sky-700',
-  },
-  {
-    key: 'selesai',
-    label: '7. Selesai (Closed)',
-    shortLabel: 'Selesai',
-    stepNum: 7,
-    description: 'Barang telah diterima kembali dan proses selesai',
-    badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700',
-  },
+// Customer Courier Options
+const CUSTOMER_COURIER_OPTIONS = [
+  'JNE REG',
+  'JNE YES',
+  'JNE OKE',
+  'SiCepat REG',
+  'SiCepat BEST',
+  'SiCepat Cargo',
+  'J&T Express',
+  'Shopee Xpress (SPX)',
+  'Lion Parcel',
+  'Paxel (Same Day / Next Day)',
+  'GoSend Instant',
+  'GoSend Sameday',
+  'GrabExpress Instant',
+  'GrabExpress Sameday',
+  'Lalamove',
+  'Kurir Internal Store / Gudang',
+  'Custom / Ekspedisi Lainnya',
 ];
+
+// Multi-Item Structure Interface
+interface FormAlterationItemState {
+  id: string;
+  sku: string;
+  nama_produk: string;
+  size: string;
+  qty: number;
+  layanan_type: AlterationLayananType;
+  kondisi: string;
+  alteration_detail: string;
+  repair_detail: string;
+  catalogSearch: string;
+  showDropdown: boolean;
+}
+
+const createDefaultItem = (): FormAlterationItemState => ({
+  id: `alt_item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+  sku: '',
+  nama_produk: '',
+  size: '-',
+  qty: 1,
+  layanan_type: 'alteration',
+  kondisi: 'Kondisi baik & bersih',
+  alteration_detail: '',
+  repair_detail: '',
+  catalogSearch: '',
+  showDropdown: false,
+});
 
 export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   session,
@@ -165,87 +144,17 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [internalOrders, setInternalOrders] = useState<ManualShipmentOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string; kode?: string }[]>([]);
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Modal Surat Jalan Struk & Action Modal State
+  // Modals state
   const [sjStrukModalOrder, setSjStrukModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [spkModalOrder, setSpkModalOrder] = useState<ManualShipmentOrder | null>(null);
   const [actionModalData, setActionModalData] = useState<{
     order: ManualShipmentOrder;
     actionType: AlterationActionType;
   } | null>(null);
-
-  // Modal Flow Update State
-  const [selectedOrderForFlow, setSelectedOrderForFlow] = useState<ManualShipmentOrder | null>(null);
-  const [nextStage, setNextStage] = useState<AlterationFlowStage>('diterima_warehouse');
-  const [flowNotes, setFlowNotes] = useState('');
-  const [flowPicWarehouse, setFlowPicWarehouse] = useState('');
-  const [isUpdatingFlow, setIsUpdatingFlow] = useState(false);
-
-  // Modal Timeline State
-  const [timelineOrder, setTimelineOrder] = useState<ManualShipmentOrder | null>(null);
-
-  // Modal Print SPK
-  const [spkModalOrder, setSpkModalOrder] = useState<ManualShipmentOrder | null>(null);
-
-  // Modal Preview Image
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
-
-  // Filters State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterSource, setFilterSource] = useState<'all' | 'store' | 'warehouse'>('all');
-  const [filterStage, setFilterStage] = useState<string>('all');
-  const [filterService, setFilterService] = useState<'all' | 'alteration' | 'repair' | 'both'>('all');
-
-  // Customer Courier Options
-  const CUSTOMER_COURIER_OPTIONS = [
-    'JNE REG',
-    'JNE YES',
-    'JNE OKE',
-    'SiCepat REG',
-    'SiCepat BEST',
-    'SiCepat Cargo',
-    'J&T Express',
-    'Shopee Xpress (SPX)',
-    'Lion Parcel',
-    'Paxel (Same Day / Next Day)',
-    'GoSend Instant',
-    'GoSend Sameday',
-    'GrabExpress Instant',
-    'GrabExpress Sameday',
-    'Lalamove',
-    'Kurir Internal Store / Gudang',
-    'Custom / Ekspedisi Lainnya',
-  ];
-
-  // Multi-Item Structure Interface
-  interface FormAlterationItemState {
-    id: string;
-    sku: string;
-    nama_produk: string;
-    size: string;
-    qty: number;
-    layanan_type: AlterationLayananType;
-    kondisi: string;
-    alteration_detail: string;
-    repair_detail: string;
-    catalogSearch: string;
-    showDropdown: boolean;
-  }
-
-  const createDefaultItem = (): FormAlterationItemState => ({
-    id: `alt_item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    sku: '',
-    nama_produk: '',
-    size: '-',
-    qty: 1,
-    layanan_type: 'alteration',
-    kondisi: 'Kondisi baik & bersih',
-    alteration_detail: '',
-    repair_detail: '',
-    catalogSearch: '',
-    showDropdown: false,
-  });
+  const [submittedSummaryOrder, setSubmittedSummaryOrder] = useState<ManualShipmentOrder | null>(null);
 
   // Form Creation State
   const [formSource, setFormSource] = useState<AlterationSourceType>('store');
@@ -259,12 +168,10 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [formCustomerNama, setFormCustomerNama] = useState<string>('');
   const [formCustomerHp, setFormCustomerHp] = useState<string>('');
   const [formCustomerAlamat, setFormCustomerAlamat] = useState<string>('');
-  const [formCatatanCustomer, setFormCatatanCustomer] = useState<string>('');
   const [formTujuanPengembalian, setFormTujuanPengembalian] = useState<'customer' | 'store'>('store');
   const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE REG');
   const [formCustomJasaKirim, setFormCustomJasaKirim] = useState<string>('');
   const [formNotesPaket, setFormNotesPaket] = useState<string>('');
-  const [formTanggal, setFormTanggal] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [formPerkiraanSelesai, setFormPerkiraanSelesai] = useState<string>('');
   const [formFotoUrls, setFormFotoUrls] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -275,10 +182,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   // Autocomplete catalog search & Dropsearch
   const [extraCatalogProducts, setExtraCatalogProducts] = useState<ProductItem[]>([]);
 
-  // Modal Submission Summary
-  const [submittedSummaryOrder, setSubmittedSummaryOrder] = useState<ManualShipmentOrder | null>(null);
-
-  // Helper item array managers
+  // Item array managers
   const handleAddItem = () => {
     setFormItems((prev) => [...prev, createDefaultItem()]);
   };
@@ -298,8 +202,8 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     handleUpdateItem(index, {
       nama_produk: String(p.n || p.p || (p as any).deskripsi || (p as any).nomor || ''),
       sku: String(p.k || (p as any).sku || ''),
-      size: String(p.size || p.s || '-'),
-      catalogSearch: '',
+      size: p.size && p.size !== '-' ? String(p.size) : '-',
+      catalogSearch: String(p.n || p.p || (p as any).deskripsi || (p as any).nomor || ''),
       showDropdown: false,
     });
   };
@@ -359,43 +263,39 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     return list;
   };
 
-  // Load Extra Catalog Items from Storage/Supabase if needed
+  // Load Katalog data
   useEffect(() => {
-    const loadExtraProducts = async () => {
-      try {
-        const batches = await loadKatalogBatches();
-        if (batches && batches.length > 0) {
-          const extracted = extractProductsFromBatches(batches);
-          setExtraCatalogProducts(extracted);
-        } else {
-          // Fallback to initial json
-          const parsed = parseStoredKatalogBatches(JSON.stringify(initial325bData));
-          setExtraCatalogProducts(extractProductsFromBatches(parsed));
-        }
-      } catch (err) {
-        console.warn('Error loading catalog batches for dropsearch:', err);
+    try {
+      const stored = localStorage.getItem(KATALOG_STORAGE_KEY);
+      let loadedBatches: KatalogBatch[] = [];
+      if (stored) {
+        loadedBatches = parseStoredKatalogBatches(stored);
       }
-    };
-    loadExtraProducts();
+      if (loadedBatches.length === 0 && Array.isArray(initial325bData) && initial325bData.length > 0) {
+        loadedBatches = initial325bData as unknown as KatalogBatch[];
+      }
+      const flattened = extractProductsFromBatches(loadedBatches);
+      setExtraCatalogProducts(flattened);
+    } catch (e) {
+      console.warn('Gagal memuat batch katalog:', e);
+    }
   }, []);
 
-  // Combined product catalog (guaranteed rich dataset for dropsearch)
+  // Combined product catalog
   const allCatalogProducts = useMemo(() => {
-    const seen = new Set<string>();
     const combined: ProductItem[] = [];
+    const seen = new Set<string>();
 
-    // 1. From prop
     (productCatalog || []).forEach((p) => {
-      const key = `${p.k}_${p.size || ''}`.toUpperCase();
+      const key = `${p.k}_${p.size || p.s || ''}`.toUpperCase();
       if (!seen.has(key)) {
         seen.add(key);
         combined.push(p);
       }
     });
 
-    // 2. From extra batches
     extraCatalogProducts.forEach((p) => {
-      const key = `${p.k}_${p.size || ''}`.toUpperCase();
+      const key = `${p.k}_${p.size || p.s || ''}`.toUpperCase();
       if (!seen.has(key)) {
         seen.add(key);
         combined.push(p);
@@ -446,7 +346,6 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     const match = allOutlets.find((o) => {
       const oName = o.nama.toLowerCase().trim();
       const oKode = 'kode' in o && o.kode ? (o as any).kode.toLowerCase() : '';
-      
       const isGenericDiv = userDiv === 'store' || userDiv === 'outlet';
 
       return (
@@ -469,94 +368,15 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     if (!formPicPemohon && session) {
       setFormPicPemohon(session.name || session.username || '');
     }
-    if (!flowPicWarehouse && session) {
-      setFlowPicWarehouse(session.name || session.username || '');
-    }
   }, [userAssignedStore, session]);
 
-  // Filter only Alteration & Repair orders
-  const alterationOrders = useMemo(() => {
+  // Filter only Alteration & Repair orders count for Rekap indicator
+  const alterationOrdersCount = useMemo(() => {
     return allOrders.filter((o) => {
       const no = (o.no_pesanan || '').toUpperCase();
-      const isAr = o.order_type === 'alteration_repair' || no.startsWith('AR-') || no.startsWith('REP-') || no.startsWith('ALT-') || !!o.alteration_repair_data;
-      return isAr;
-    });
+      return o.order_type === 'alteration_repair' || no.startsWith('AR-') || no.startsWith('REP-') || no.startsWith('ALT-') || !!o.alteration_repair_data;
+    }).length;
   }, [allOrders]);
-
-  // Filtered list
-  const filteredOrders = useMemo(() => {
-    return alterationOrders.filter((o) => {
-      const ar = o.alteration_repair_data;
-      const sumber = ar?.sumber_barang || (o.nama_pengirim?.toLowerCase().includes('gudang') || o.nama_pengirim?.toLowerCase().includes('warehouse') ? 'warehouse' : 'store');
-      const stage = ar?.status_flow || 'diajukan';
-      const service = ar?.layanan_type || o.layanan_type || 'both';
-
-      // 1. Source filter
-      if (filterSource !== 'all' && sumber !== filterSource) return false;
-
-      // 2. Stage filter
-      if (filterStage !== 'all' && stage !== filterStage) return false;
-
-      // 3. Service filter
-      if (filterService !== 'all' && service !== filterService) return false;
-
-      // 4. Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const no = (o.no_pesanan || '').toLowerCase();
-        const prod = (o.items?.[0]?.nama_produk || '').toLowerCase();
-        const sku = (o.items?.[0]?.sku || '').toLowerCase();
-        const pemohon = (ar?.pic_pemohon || o.pic_store || o.submitted_by || '').toLowerCase();
-        const asal = (ar?.nama_asal || o.nama_pengirim || '').toLowerCase();
-        const warehousePic = (ar?.pic_warehouse || '').toLowerCase();
-        const rak = (ar?.lokasi_rak || '').toLowerCase();
-
-        const match =
-          no.includes(q) ||
-          prod.includes(q) ||
-          sku.includes(q) ||
-          pemohon.includes(q) ||
-          asal.includes(q) ||
-          warehousePic.includes(q) ||
-          rak.includes(q);
-
-        if (!match) return false;
-      }
-
-      return true;
-    });
-  }, [alterationOrders, filterSource, filterStage, filterService, searchQuery]);
-
-  // KPI Metrics
-  const metrics = useMemo(() => {
-    const total = alterationOrders.length;
-    let diajukan = 0;
-    let diterimaWarehouse = 0;
-    let dalamPengerjaan = 0;
-    let selesaiQc = 0;
-    let siapKirim = 0;
-    let selesai = 0;
-
-    alterationOrders.forEach((o) => {
-      const st = o.alteration_repair_data?.status_flow || 'diajukan';
-      if (st === 'diajukan') diajukan++;
-      else if (st === 'diterima_warehouse') diterimaWarehouse++;
-      else if (st === 'dalam_pengerjaan') dalamPengerjaan++;
-      else if (st === 'selesai_qc') selesaiQc++;
-      else if (st === 'siap_dikirim') siapKirim++;
-      else if (st === 'selesai') selesai++;
-    });
-
-    return {
-      total,
-      diajukan,
-      diterimaWarehouse,
-      dalamPengerjaan,
-      selesaiQc,
-      siapKirim,
-      selesai,
-    };
-  }, [alterationOrders]);
 
   // Helper generate Registration No
   const generateRegistrationNo = (source: AlterationSourceType, storeName: string) => {
@@ -632,7 +452,22 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     }
   };
 
-  // Submit new request
+  // Reset form
+  const handleResetForm = () => {
+    setFormItems([createDefaultItem()]);
+    setFormIdFormAlter('');
+    setFormRefNo('');
+    setFormCustomerNama('');
+    setFormCustomerHp('');
+    setFormCustomerAlamat('');
+    setFormNotesPaket('');
+    setFormCustomJasaKirim('');
+    setFormFotoUrls([]);
+    setFormPerkiraanSelesai('');
+    onShowToast('Formulir berhasil direset', 'info');
+  };
+
+  // Submit request
   const handleSubmitNewRequest = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -858,7 +693,7 @@ _WMS Warehouse & Alteration System_`;
           }
         }
 
-        // Reset form to default single item
+        // Reset form
         setFormItems([createDefaultItem()]);
         setFormIdFormAlter('');
         setFormRefNo('');
@@ -868,7 +703,6 @@ _WMS Warehouse & Alteration System_`;
         setFormNotesPaket('');
         setFormCustomJasaKirim('');
         setFormFotoUrls([]);
-        setShowCreateModal(false);
 
         // Open Submission Summary Notification Modal
         setSubmittedSummaryOrder(newOrderPayload);
@@ -893,1675 +727,927 @@ _WMS Warehouse & Alteration System_`;
     }
   };
 
-  // Handle open flow update modal
-  const handleOpenFlowUpdate = (order: ManualShipmentOrder) => {
-    setSelectedOrderForFlow(order);
-    const currStage = order.alteration_repair_data?.status_flow || 'diajukan';
-
-    // Suggest next stage in sequence
-    const currIdx = FLOW_STAGES.findIndex((s) => s.key === currStage);
-    const nextIdx = currIdx >= 0 && currIdx < FLOW_STAGES.length - 1 ? currIdx + 1 : currIdx;
-    setNextStage(FLOW_STAGES[nextIdx]?.key || 'diterima_warehouse');
-    setFlowNotes('');
-    setFlowPicWarehouse(order.alteration_repair_data?.pic_warehouse || session?.name || session?.username || '');
-  };
-
-  // Submit flow stage update
-  const handleSaveFlowUpdate = async () => {
-    if (!selectedOrderForFlow) return;
-
-    setIsUpdatingFlow(true);
-    try {
-      const actor = flowPicWarehouse.trim() || session?.name || session?.username || 'Tim Warehouse';
-      const res = await updateAlterationFlowStage(
-        selectedOrderForFlow,
-        nextStage,
-        actor,
-        flowNotes.trim(),
-        flowPicWarehouse.trim()
-      );
-
-      if (res.success) {
-        onShowToast(`Status flow berhasil diperbarui ke tahap: ${nextStage}`, 'success');
-        setSelectedOrderForFlow(null);
-
-        // Refresh
-        if (onOrdersUpdated) {
-          onOrdersUpdated();
-        } else {
-          fetchOrdersDirectly();
-        }
-      } else {
-        onShowToast(res.message || 'Gagal update status flow', 'error');
-      }
-    } catch (err: any) {
-      onShowToast(err.message || 'Gagal memperbarui status', 'error');
-    } finally {
-      setIsUpdatingFlow(false);
-    }
-  };
-
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
       {/* ==================================================== */}
-      {/* HEADER SECTION: Title & Actions */}
+      {/* HEADER SECTION: Clean Title, Store Info & Rekap Jump */}
       {/* ==================================================== */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/20">
-              <Scissors className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Alteration & Repair Tracking</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold">
-                  Warehouse Operations
-                </span>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-rose-500 text-white shadow-md shadow-rose-500/20 shrink-0">
+            <Scissors className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                Alteration & Repair
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Monitoring alur pengerjaan alter & repair barang oleh Warehouse (Sumber Store & Internal Gudang)
-              </p>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 font-bold">
+                Form Input
+              </span>
             </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Form pendaftaran tiket perbaikan & alterasi pakaian (Store & Internal Warehouse)
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-stretch sm:self-auto flex-wrap">
-          <button
-            type="button"
-            onClick={() => {
-              if (onOrdersUpdated) onOrdersUpdated();
-              else fetchOrdersDirectly();
-            }}
-            disabled={isLoadingOrders}
-            className="p-2 sm:px-3 sm:py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            title="Refresh Data"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoadingOrders ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end flex-wrap">
+          {formOutlet && (
+            <div className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+              <Store className="w-3.5 h-3.5 text-rose-500" />
+              <span>{formOutlet}</span>
+            </div>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Buat Request Baru</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ==================================================== */}
-      {/* SUMMARY STATS BAR (PIPELINE COUNTER) */}
-      {/* ==================================================== */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        <div 
-          onClick={() => setFilterStage('all')}
-          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-            filterStage === 'all'
-              ? 'bg-slate-900 dark:bg-slate-800 text-white border-slate-900 shadow-sm'
-              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider opacity-75">Total Tiket</div>
-          <div className="text-xl font-black mt-1">{metrics.total}</div>
-          <div className="text-[10px] opacity-75 mt-0.5">Semua antrian</div>
-        </div>
-
-        <div 
-          onClick={() => setFilterStage('diajukan')}
-          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-            filterStage === 'diajukan'
-              ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-amber-300'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">1. Diajukan</div>
-          <div className="text-xl font-black mt-1 text-amber-700 dark:text-amber-300">{metrics.diajukan}</div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Menunggu gudang</div>
-        </div>
-
-        <div 
-          onClick={() => setFilterStage('diterima_warehouse')}
-          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-            filterStage === 'diterima_warehouse'
-              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-blue-300'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">2. Diterima</div>
-          <div className="text-xl font-black mt-1 text-blue-700 dark:text-blue-300">{metrics.diterimaWarehouse}</div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Tiba di gudang</div>
-        </div>
-
-        <div 
-          onClick={() => setFilterStage('dalam_pengerjaan')}
-          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-            filterStage === 'dalam_pengerjaan'
-              ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-purple-300'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">3. Pengerjaan</div>
-          <div className="text-xl font-black mt-1 text-purple-700 dark:text-purple-300">{metrics.dalamPengerjaan}</div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Sedang dialter</div>
-        </div>
-
-        <div 
-          onClick={() => setFilterStage('selesai_qc')}
-          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-            filterStage === 'selesai_qc'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-indigo-300'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">4. Selesai QC</div>
-          <div className="text-xl font-black mt-1 text-indigo-700 dark:text-indigo-300">{metrics.selesaiQc}</div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Lolos verifikasi QC</div>
-        </div>
-
-        <div 
-          onClick={() => setFilterStage('selesai')}
-          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-            filterStage === 'selesai'
-              ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-emerald-300'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">5-6. Siap / Selesai</div>
-          <div className="text-xl font-black mt-1 text-emerald-700 dark:text-emerald-300">{metrics.siapKirim + metrics.selesai}</div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Selesai dikerjakan</div>
-        </div>
-      </div>
-
-      {/* ==================================================== */}
-      {/* FILTER & SEARCH BAR */}
-      {/* ==================================================== */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari SKU, Nama Produk, No Tiket, PIC, Toko..."
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          {searchQuery && (
+          {onGoToRekap && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              onClick={onGoToRekap}
+              className="px-3.5 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Buka Rekap Pesanan untuk memantau status pesanan dan cetak SPK"
             >
-              <X className="w-3.5 h-3.5" />
+              <History className="w-4 h-4 text-blue-500" />
+              <span>Buka Rekap Pesanan</span>
+              {alterationOrdersCount > 0 && (
+                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                  {alterationOrdersCount}
+                </span>
+              )}
             </button>
           )}
         </div>
-
-        {/* Source Filter */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-semibold shrink-0">
-            <button
-              type="button"
-              onClick={() => setFilterSource('all')}
-              className={`px-2.5 py-1 rounded-lg transition-all ${
-                filterSource === 'all'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              Semua Asal
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterSource('store')}
-              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
-                filterSource === 'store'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs font-bold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              <Building2 className="w-3 h-3" />
-              <span>Dari Store</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterSource('warehouse')}
-              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
-                filterSource === 'warehouse'
-                  ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-xs font-bold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              <Warehouse className="w-3 h-3" />
-              <span>Dari Warehouse</span>
-            </button>
-          </div>
-
-          {/* Service filter */}
-          <select
-            value={filterService}
-            onChange={(e) => setFilterService(e.target.value as any)}
-            className="text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-700 dark:text-slate-200 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="all">Semua Layanan</option>
-            <option value="alteration">✂️ Alteration</option>
-            <option value="repair">🔧 Repair</option>
-            <option value="both">✂️+🔧 Both</option>
-          </select>
-        </div>
       </div>
 
       {/* ==================================================== */}
-      {/* TICKET CARDS LIST (FLOW TRACKING BOARD) */}
+      {/* FORM INPUT UTAMA (LANGSUNG TAMPIL - TANPA MODAL) */}
       {/* ==================================================== */}
-      <div className="space-y-3">
-        {filteredOrders.length === 0 ? (
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center space-y-3">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-500 flex items-center justify-center mx-auto">
-              <Scissors className="w-7 h-7" />
+      <form onSubmit={handleSubmitNewRequest} className="space-y-4">
+        {/* ==================================================== */}
+        {/* BAGIAN 1: SUMBER FISIK BARANG & IDENTITAS STORE */}
+        {/* ==================================================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                1. Sumber Fisik Barang & Pengirim
+              </h3>
             </div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-              Tidak Ada Tiket Alteration & Repair
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              {searchQuery || filterSource !== 'all' || filterStage !== 'all' || filterService !== 'all'
-                ? 'Tidak ada tiket yang sesuai dengan filter atau kata kunci pencarian.'
-                : 'Belum ada permintaan alter/repair yang terdaftar. Klik tombol "+ Buat Request Baru" untuk mendaftarkan barang.'}
-            </p>
+            <span className="text-[11px] text-slate-500">
+              Pilih asal fisik barang yang dikerjakan
+            </span>
+          </div>
+
+          {/* Toggle Skenario Sumber Barang */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <button
               type="button"
-              onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+              onClick={() => {
+                setFormSource('store');
+                if (formIdFormAlter.startsWith('ALT-WH-')) setFormIdFormAlter('');
+              }}
+              className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-start gap-1 transition-all cursor-pointer text-left ${
+                formSource === 'store'
+                  ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-500 text-rose-950 dark:text-rose-100 ring-2 ring-rose-500/20 shadow-xs'
+                  : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              <span>Buat Request Baru</span>
+              <div className="flex items-center gap-1.5 font-bold">
+                <Store className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>1. Fisik dari Store / Toko</span>
+              </div>
+              <span className={`text-[11px] ${formSource === 'store' ? 'text-rose-700 dark:text-rose-300' : 'text-slate-500'}`}>
+                Barang fisik dari outlet toko dikirim ke Warehouse untuk di-alter/repair
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFormSource('warehouse');
+                if (!formIdFormAlter || !formIdFormAlter.startsWith('ALT-WH-')) {
+                  setFormIdFormAlter(generateAutoWarehouseId());
+                }
+              }}
+              className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-start gap-1 transition-all cursor-pointer text-left ${
+                formSource === 'warehouse'
+                  ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-500 text-purple-950 dark:text-purple-100 ring-2 ring-purple-500/20 shadow-xs'
+                  : 'bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 font-bold">
+                <Warehouse className="w-4 h-4 text-purple-600 shrink-0" />
+                <span>2. Ambil Stok Gudang (Customer Order)</span>
+              </div>
+              <span className={`text-[11px] ${formSource === 'warehouse' ? 'text-purple-700 dark:text-purple-300' : 'text-slate-500'}`}>
+                Pembelian customer dari stok warehouse yang sekalian minta di-alter sebelum dikirim
+              </span>
             </button>
           </div>
-        ) : (
-          filteredOrders.map((order) => {
-            const ar = order.alteration_repair_data;
-            const sumber = ar?.sumber_barang || (order.nama_pengirim?.toLowerCase().includes('gudang') ? 'warehouse' : 'store');
-            const asalName = ar?.nama_asal || order.nama_pengirim || 'Store';
-            const currentStageKey = (ar?.status_flow || 'diajukan') as AlterationFlowStage;
-            const stageConfig = FLOW_STAGES.find((s) => s.key === currentStageKey) || FLOW_STAGES[0];
-            const currentStepIdx = FLOW_STAGES.findIndex((s) => s.key === currentStageKey);
 
-            const item = order.items?.[0];
-            const productName = item?.nama_produk || 'Produk Pakaian';
-            const sku = item?.sku || '-';
-            const size = item?.size || '-';
-            const qty = item?.qty || 1;
-
-            const picPemohon = ar?.pic_pemohon || order.pic_store || order.submitted_by || 'PIC';
-            const picWarehouse = ar?.pic_warehouse || 'Belum Ditugaskan';
-            const logs = Array.isArray(ar?.flow_logs) ? ar.flow_logs : [];
-            const lastLog = logs.length > 0 ? logs[logs.length - 1] : null;
-
-            return (
-              <div
-                key={order.no_pesanan || order.id}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800/80 rounded-2xl p-4 sm:p-5 shadow-xs transition-all space-y-4"
-              >
-                {/* Header Ticket Card */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs font-black text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
-                      {order.no_pesanan}
-                    </span>
-
-                    {/* Source Badge */}
-                    {sumber === 'warehouse' ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                        <Warehouse className="w-3 h-3" />
-                        <span>Stok Gudang (Order Toko: {asalName})</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                        <Store className="w-3 h-3" />
-                        <span>Fisik dari Store: {asalName}</span>
-                      </span>
-                    )}
-
-                    {ar?.nama_customer && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                        <User className="w-3 h-3 text-slate-500" />
-                        <span>Cust: <strong>{ar.nama_customer}</strong></span>
-                      </span>
-                    )}
-
-                    {/* Service Type Badge */}
-                    {ar?.layanan_type === 'alteration' ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                        <Scissors className="w-3 h-3" />
-                        <span>Alteration</span>
-                      </span>
-                    ) : ar?.layanan_type === 'repair' ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                        <Wrench className="w-3 h-3" />
-                        <span>Repair</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                        <Scissors className="w-3 h-3" />
-                        <span>Alter & Repair</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Current Stage Badge & Date */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${stageConfig.badgeClass}`}>
-                      {stageConfig.label}
-                    </span>
-                    {order.perkiraan_selesai && (
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        <span>Target: <strong>{order.perkiraan_selesai}</strong></span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* VISUAL FLOW STEPPER (6 Stages) */}
-                <div className="py-1">
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2">
-                    {FLOW_STAGES.map((step, idx) => {
-                      const isPast = idx < currentStepIdx;
-                      const isCurrent = idx === currentStepIdx;
-
-                      return (
-                        <div
-                          key={step.key}
-                          className={`p-2 rounded-xl border text-center transition-all ${
-                            isCurrent
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-500/30'
-                              : isPast
-                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 font-semibold'
-                              : 'bg-slate-50 dark:bg-slate-800/40 text-slate-400 border-slate-200 dark:border-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-center gap-1 text-[10px] font-bold mb-0.5">
-                            {isPast ? (
-                              <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 inline" />
-                            ) : (
-                              <span>Step {step.stepNum}</span>
-                            )}
-                          </div>
-                          <div className="text-[11px] font-black leading-tight truncate">
-                            {step.shortLabel}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Details Section */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-50 dark:bg-slate-800/40 p-3 sm:p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                  {/* Product Info */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Produk & SKU</span>
-                    <div className="font-black text-slate-900 dark:text-white text-sm leading-snug">
-                      {productName}
-                    </div>
-                    <div className="text-slate-600 dark:text-slate-300 font-mono text-[11px]">
-                      SKU: <strong className="text-indigo-600 dark:text-indigo-400">{sku}</strong>
-                    </div>
-                    <div className="text-slate-600 dark:text-slate-300 text-[11px]">
-                      Size: <strong>{size}</strong> • Qty: <strong>{qty} pcs</strong>
-                    </div>
-                    {order.kondisi && (
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-                        Kondisi: <em>{order.kondisi}</em>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Instructions */}
-                  <div className="space-y-1 md:col-span-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Instruksi Pengerjaan Gudang</span>
-                    {order.alteration_detail && (
-                      <div className="p-2 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-800/40 text-[11px] text-indigo-950 dark:text-indigo-200 leading-relaxed">
-                        <strong className="block text-indigo-700 dark:text-indigo-400 font-bold mb-0.5">✂️ Alteration:</strong>
-                        {order.alteration_detail}
-                      </div>
-                    )}
-                    {order.repair_detail && (
-                      <div className="p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/40 text-[11px] text-amber-950 dark:text-amber-200 leading-relaxed mt-1">
-                        <strong className="block text-amber-700 dark:text-amber-400 font-bold mb-0.5">🔧 Repair:</strong>
-                        {order.repair_detail}
-                      </div>
-                    )}
-                    {!order.alteration_detail && !order.repair_detail && (
-                      <div className="text-slate-400 italic text-[11px]">Tidak ada instruksi khusus tertulis</div>
-                    )}
-                  </div>
-
-                  {/* PIC & Last Progress Log */}
-                  <div className="space-y-1.5 flex flex-col justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Petugas & PIC</span>
-                      <div className="text-[11px] text-slate-700 dark:text-slate-300">
-                        PIC Pemohon: <strong>{picPemohon}</strong>
-                      </div>
-                      <div className="text-[11px] text-slate-700 dark:text-slate-300">
-                        Penjahit/Warehouse: <strong>{picWarehouse}</strong>
-                      </div>
-                    </div>
-
-                    {lastLog && (
-                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] text-slate-600 dark:text-slate-400">
-                        <span className="font-bold text-slate-800 dark:text-slate-200 block truncate">
-                          Log Terakhir: {lastLog.notes || `Update ke ${lastLog.stage}`}
-                        </span>
-                        <span className="text-[9px] text-slate-400 block">
-                          oleh {lastLog.actor_name} • {new Date(lastLog.timestamp).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Photos thumbnails */}
-                    {ar?.foto_urls && ar.foto_urls.length > 0 && (
-                      <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
-                        {ar.foto_urls.map((fUrl, fIdx) => (
-                          <img
-                            key={fIdx}
-                            src={fUrl}
-                            alt=""
-                            onClick={() => setPreviewPhotoUrl(fUrl)}
-                            className="w-8 h-8 rounded-md object-cover border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity shrink-0"
-                          />
-                        ))}
-                        <span className="text-[10px] text-slate-400">({ar.foto_urls.length} foto)</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* DealPOS Delivery to Store Banner & Received Action */}
-                {ar?.no_delivery_dealpos && (
-                  <div className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
-                    ar.status_dealpos_received
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-                      : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-800 text-indigo-950 dark:text-indigo-200'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`p-1.5 rounded-lg ${ar.status_dealpos_received ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white'}`}>
-                        {ar.status_dealpos_received ? <CheckCircle2 className="w-4 h-4" /> : <Truck className="w-4 h-4" />}
-                      </div>
-                      <div>
-                        <div className="font-bold flex items-center gap-1.5">
-                          <span>Delivery DealPOS: <strong className="font-mono">{ar.no_delivery_dealpos}</strong></span>
-                          {ar.status_dealpos_received ? (
-                            <span className="bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 text-[10px] px-1.5 py-0.2 rounded font-bold">
-                              TELAH DITERIMA (RECEIVED)
-                            </span>
-                          ) : (
-                            <span className="bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-200 text-[10px] px-1.5 py-0.2 rounded font-bold">
-                              MENUNGGU TERIMA STORE
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] opacity-80">
-                          {ar.status_dealpos_received ? (
-                            <span>Diterima oleh PIC Store: <strong>{ar.pic_dealpos_receiver || 'PIC Store'}</strong> ({ar.tgl_dealpos_received || '-'})</span>
-                          ) : (
-                            <span>Diinput oleh Admin Warehouse. Menunggu PIC Store melakukan konfirmasi terima.</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {!ar.status_dealpos_received && (
-                      <button
-                        type="button"
-                        onClick={() => setActionModalData({ order, actionType: 'mark_dealpos_received' })}
-                        className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0 active:scale-95"
-                      >
-                        <PackageCheck className="w-3.5 h-3.5" />
-                        <span>Konfirmasi Terima di Store (Received)</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Card Actions Footer */}
-                <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {/* Tombol Cetak SJ Struk Rangkap 2 */}
-                    <button
-                      type="button"
-                      onClick={() => setSjStrukModalOrder(order)}
-                      className="px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 border border-amber-300 dark:border-amber-700/80 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                      title="Cetak Surat Jalan Format Struk Kasir Rangkap 2 (Store & Fisik Baju)"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-amber-600" />
-                      <span>SJ Struk (Rangkap 2)</span>
-                    </button>
-
-                    {/* Tombol Cetak SPK Work Order */}
-                    <button
-                      type="button"
-                      onClick={() => setSpkModalOrder(order)}
-                      className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Cetak Surat Perintah Kerja (SPK) Internal Gudang"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-indigo-500" />
-                      <span className="hidden sm:inline">SPK Gudang</span>
-                    </button>
-
-                    {/* Tombol Timeline */}
-                    <button
-                      type="button"
-                      onClick={() => setTimelineOrder(order)}
-                      className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <History className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Timeline ({logs.length})</span>
-                    </button>
-                  </div>
-
-                  {/* Contextual Action Buttons (2-Way Flow) */}
-                  <div className="flex items-center gap-2">
-                    {/* Aksi 1: Toko Kirim ke Gudang */}
-                    {currentStageKey === 'diajukan' && (
-                      <button
-                        type="button"
-                        onClick={() => setActionModalData({ order, actionType: 'mark_sent_store' })}
-                        className="px-3.5 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                      >
-                        <Truck className="w-3.5 h-3.5" />
-                        <span>Kirim ke Warehouse</span>
-                      </button>
-                    )}
-
-                    {/* Aksi 2: Gudang Terima Barang */}
-                    {(currentStageKey === 'dikirim_store' || currentStageKey === 'diajukan') && (
-                      <button
-                        type="button"
-                        onClick={() => setActionModalData({ order, actionType: 'mark_received_warehouse' })}
-                        className="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                      >
-                        <PackageCheck className="w-3.5 h-3.5" />
-                        <span>Terima di Warehouse</span>
-                      </button>
-                    )}
-
-                    {/* Aksi 3: Selesai & Kirim Bukti */}
-                    {(currentStageKey === 'dalam_pengerjaan' || currentStageKey === 'selesai_qc') && (
-                      <button
-                        type="button"
-                        onClick={() => setActionModalData({ order, actionType: 'complete_and_ship' })}
-                        className="px-3.5 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Selesai & Bukti Kirim</span>
-                      </button>
-                    )}
-
-                    {/* Aksi 4: Konfirmasi Received jika ada dealpos dan belum received */}
-                    {ar?.no_delivery_dealpos && !ar?.status_dealpos_received && (
-                      <button
-                        type="button"
-                        onClick={() => setActionModalData({ order, actionType: 'mark_dealpos_received' })}
-                        className="px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                      >
-                        <PackageCheck className="w-3.5 h-3.5" />
-                        <span>Receive di Store</span>
-                      </button>
-                    )}
-
-                    {/* Aksi 5: Notifikasi WA */}
-                    {(currentStageKey === 'dikirim_kembali' || currentStageKey === 'selesai') && (
-                      <button
-                        type="button"
-                        onClick={() => setActionModalData({ order, actionType: 'complete_and_ship' })}
-                        className="px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Share2 className="w-3.5 h-3.5" />
-                        <span>WA Bukti Kirim</span>
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => handleOpenFlowUpdate(order)}
-                      className="px-3 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <span>Update Flow</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* ==================================================== */}
-      {/* MODAL 1: UPDATE STATUS FLOW DIALOG */}
-      {/* ==================================================== */}
-      {selectedOrderForFlow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full overflow-hidden my-auto">
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-indigo-600 text-white">
-                  <Scissors className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Update Tahapan Flow Alteration & Repair
-                  </h3>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    No. Tiket: {selectedOrderForFlow.no_pesanan}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedOrderForFlow(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 text-xs">
-              {/* Product recap */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-1">
-                <div className="font-bold text-slate-900 dark:text-white text-xs">
-                  {selectedOrderForFlow.items?.[0]?.nama_produk}
-                </div>
-                <div className="text-slate-500 text-[11px]">
-                  Asal: <strong>{selectedOrderForFlow.alteration_repair_data?.nama_asal || selectedOrderForFlow.nama_pengirim}</strong> • SKU: {selectedOrderForFlow.items?.[0]?.sku}
-                </div>
-              </div>
-
-              {/* Stage selector */}
+          {/* Form ID & Lokasi Rak */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {formSource === 'store' ? (
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Pilih Tahapan Progres Baru:
-                </label>
-                <div className="space-y-1.5">
-                  {FLOW_STAGES.map((s) => {
-                    const isSelected = nextStage === s.key;
-                    return (
-                      <div
-                        key={s.key}
-                        onClick={() => setNextStage(s.key)}
-                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                          isSelected
-                            ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-900 dark:text-indigo-200 font-bold shadow-xs'
-                            : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="text-xs">{s.label}</div>
-                          <div className="text-[10px] text-slate-400">{s.description}</div>
-                        </div>
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'}`}>
-                          {isSelected && <Check className="w-2.5 h-2.5" />}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Warehouse PIC */}
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Petugas / Penjahit Warehouse:
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                  <span>No. ID Form Alter (Diisi Manual oleh Store) *</span>
+                  <span className="text-[10px] font-semibold text-rose-500">Wajib Diisi Manual</span>
                 </label>
                 <input
                   type="text"
-                  value={flowPicWarehouse}
-                  onChange={(e) => setFlowPicWarehouse(e.target.value)}
-                  placeholder="Nama penjahit / operator gudang..."
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+                  required
+                  value={formIdFormAlter || ''}
+                  onChange={(e) => setFormIdFormAlter(e.target.value)}
+                  placeholder="Contoh: ALT/CP/2026/001 atau No. Form Fisik Store..."
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700/80 rounded-xl text-slate-900 dark:text-white font-mono font-bold focus:ring-2 focus:ring-rose-500 text-xs"
                 />
               </div>
-
-              {/* Progress Note */}
+            ) : (
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Catatan Progres Pengerjaan:
+                <label className="block text-xs font-bold text-purple-900 dark:text-purple-300 mb-1 flex items-center justify-between">
+                  <span>No. ID Form Alter (Otomatis Sistem):</span>
+                  <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/60 px-1.5 py-0.5 rounded">
+                    AUTO-GENERATED
+                  </span>
                 </label>
-                <textarea
-                  value={flowNotes}
-                  onChange={(e) => setFlowNotes(e.target.value)}
-                  rows={3}
-                  placeholder="Contoh: Sudah selesai dipotong 4cm, sedang proses obras keliman bawah..."
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={formIdFormAlter || ''}
+                    className="w-full px-3 py-2 bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 rounded-xl text-purple-950 dark:text-purple-200 font-mono font-bold text-xs cursor-not-allowed"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFormIdFormAlter(generateAutoWarehouseId())}
+                    className="p-2 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900 dark:hover:bg-purple-800 text-purple-700 dark:text-purple-200 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer"
+                    title="Generate Ulang ID"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {formSource === 'warehouse' ? (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Lokasi Rak / Bin Gudang (Opsional):
+                </label>
+                <input
+                  type="text"
+                  value={formWarehouseRak || ''}
+                  onChange={(e) => setFormWarehouseRak(e.target.value)}
+                  placeholder="Misal: A012, B005, X..."
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs uppercase"
                 />
               </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  No. Referensi / Kasir Store (Opsional):
+                </label>
+                <input
+                  type="text"
+                  value={formRefNo || ''}
+                  onChange={(e) => setFormRefNo(e.target.value)}
+                  placeholder="No. Transaksi Kasir POS..."
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Store & PIC Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Store / Outlet Pengirim:
+              </label>
+              <select
+                value={formOutlet || (outlets.length > 0 ? outlets[0].nama : DEFAULT_OUTLETS[0].nama)}
+                onChange={(e) => setFormOutlet(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-rose-500 text-xs"
+              >
+                {(outlets.length > 0 ? outlets : DEFAULT_OUTLETS).map((o) => (
+                  <option key={o.nama} value={o.nama}>
+                    {o.nama}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedOrderForFlow(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveFlowUpdate}
-                disabled={isUpdatingFlow}
-                className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {isUpdatingFlow ? 'Menyimpan...' : 'Simpan Update Flow'}
-              </button>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                PIC Store / SA *
+              </label>
+              <input
+                type="text"
+                required
+                value={formPicPemohon || ''}
+                onChange={(e) => setFormPicPemohon(e.target.value)}
+                placeholder="Nama SA / PIC..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-rose-500 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
+                <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                <span>No. WhatsApp PIC Store *</span>
+              </label>
+              <input
+                type="tel"
+                required
+                value={formPicStorePhone || ''}
+                onChange={(e) => setFormPicStorePhone(e.target.value)}
+                placeholder="0812xxxx (Untuk notif WA)..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-rose-500 text-xs font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
+                <Mail className="w-3.5 h-3.5 text-blue-600" />
+                <span>Email PIC Store (Opsional):</span>
+              </label>
+              <input
+                type="email"
+                value={formPicStoreEmail || ''}
+                onChange={(e) => setFormPicStoreEmail(e.target.value)}
+                placeholder="pic.store@chocochips.co.id..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-rose-500 text-xs"
+              />
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ==================================================== */}
-      {/* MODAL 2: TIMELINE RIWAYAT LENGKAP */}
-      {/* ==================================================== */}
-      {timelineOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full overflow-hidden my-auto">
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-slate-800 text-white">
-                  <History className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Timeline Riwayat Alur Pengerjaan
-                  </h3>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    No. Tiket: {timelineOrder.no_pesanan}
-                  </p>
-                </div>
-              </div>
+          {/* Pilihan Kirim Produk: Store Terkait vs Alamat Customer */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+              Pilihan Kirim Produk Setelah Selesai Dikerjakan:
+            </label>
+            <div className="grid grid-cols-2 gap-2 max-w-md">
               <button
                 type="button"
-                onClick={() => setTimelineOrder(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                onClick={() => setFormTujuanPengembalian('store')}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                  formTujuanPengembalian === 'store'
+                    ? 'bg-rose-500 text-white border-rose-500 shadow-xs'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
+                }`}
               >
-                <X className="w-5 h-5" />
+                <Store className="w-3.5 h-3.5" />
+                <span>Kembali ke Store Asal</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormTujuanPengembalian('customer')}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                  formTujuanPengembalian === 'customer'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Langsung ke Customer</span>
               </button>
             </div>
 
-            <div className="p-5 max-h-[65vh] overflow-y-auto space-y-4">
-              {(!timelineOrder.alteration_repair_data?.flow_logs || timelineOrder.alteration_repair_data.flow_logs.length === 0) ? (
-                <div className="text-center py-6 text-slate-400 text-xs">
-                  Belum ada catatan riwayat flow.
-                </div>
-              ) : (
-                <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-700">
-                  {timelineOrder.alteration_repair_data.flow_logs.map((log, lIdx) => {
-                    const stConfig = FLOW_STAGES.find((s) => s.key === log.stage) || { label: log.stage, badgeClass: '' };
-                    return (
-                      <div key={log.id || lIdx} className="relative group text-xs">
-                        {/* Dot indicator */}
-                        <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white dark:border-slate-900 shadow-xs" />
-                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-1">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <span className="font-bold text-slate-900 dark:text-white">
-                              {stConfig.label}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {new Date(log.timestamp).toLocaleString('id-ID')}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">
-                            Operator / PIC: {log.actor_name} {log.actor_role ? `(${log.actor_role})` : ''}
-                          </div>
-                          {log.notes && (
-                            <p className="text-slate-700 dark:text-slate-300 text-[11px] pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
-                              {log.notes}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-right">
-              <button
-                type="button"
-                onClick={() => setTimelineOrder(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================== */}
-      {/* MODAL 3: INPUT FORM REQUEST BARU */}
-      {/* ==================================================== */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden my-auto">
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-950/90 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-xs">
-                  <Scissors className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Pendaftaran Request Alteration & Repair Baru
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Input tiket pengerjaan untuk tim perbaikan Warehouse
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Form Body */}
-            <form onSubmit={handleSubmitNewRequest} className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
-              {/* 1. ASAL / SUMBER FISIK BARANG */}
-              <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 space-y-3">
+            {/* Form Data Customer (Wajib jika kirim ke Customer) */}
+            {formTujuanPengembalian === 'customer' && (
+              <div className="p-3.5 sm:p-4 bg-purple-50/70 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 space-y-3 animate-in fade-in">
                 <div className="flex items-center justify-between">
-                  <label className="font-extrabold text-indigo-950 dark:text-indigo-200 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Sumber Fisik Barang:</span>
+                  <span className="font-bold text-purple-950 dark:text-purple-200 text-xs flex items-center gap-1.5">
+                    <Send className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Data Pengiriman Langsung ke Customer</span>
+                  </span>
+                  <span className="text-[10px] bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-0.5 rounded-full font-bold">
+                    Wajib Lengkap
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
+                      Nama Penerima Customer *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formCustomerNama || ''}
+                      onChange={(e) => setFormCustomerNama(e.target.value)}
+                      placeholder="Nama lengkap customer..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white font-medium text-xs shadow-2xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
+                      No. WhatsApp / Telp Customer *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={formCustomerHp || ''}
+                      onChange={(e) => setFormCustomerHp(e.target.value)}
+                      placeholder="0812xxxxxxx"
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs font-bold shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
+                    Alamat Lengkap Pengiriman Customer *
                   </label>
-                  <span className="text-[10px] text-slate-500 font-medium">Pilih skenario asal barang</span>
+                  <textarea
+                    rows={2}
+                    required
+                    value={formCustomerAlamat || ''}
+                    onChange={(e) => setFormCustomerAlamat(e.target.value)}
+                    placeholder="Alamat lengkap (Jalan, No Rumah, Kelurahan, Kecamatan, Kota/Kab, Kode Pos)..."
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
+                  />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormSource('store');
-                      if (formIdFormAlter.startsWith('ALT-WH-')) setFormIdFormAlter('');
-                    }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex flex-col items-start gap-0.5 transition-all cursor-pointer text-left ${
-                      formSource === 'store'
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold">
-                      <Store className="w-3.5 h-3.5 shrink-0" />
-                      <span>1. Fisik dari Store / Toko</span>
-                    </div>
-                    <span className={`text-[10px] ${formSource === 'store' ? 'text-indigo-100' : 'text-slate-400'}`}>
-                      Barang dari toko, dikirim ke gudang
-                    </span>
-                  </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
+                      Pilihan Jasa Kirim / Ekspedisi ke Customer:
+                    </label>
+                    <select
+                      value={formJasaKirimCustomer}
+                      onChange={(e) => setFormJasaKirimCustomer(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white font-semibold text-xs shadow-2xs"
+                    >
+                      {CUSTOMER_COURIER_OPTIONS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormSource('warehouse');
-                      if (!formIdFormAlter || !formIdFormAlter.startsWith('ALT-WH-')) {
-                        setFormIdFormAlter(generateAutoWarehouseId());
-                      }
-                    }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex flex-col items-start gap-0.5 transition-all cursor-pointer text-left ${
-                      formSource === 'warehouse'
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold">
-                      <Warehouse className="w-3.5 h-3.5 shrink-0" />
-                      <span>2. Ambil Stok Gudang</span>
-                    </div>
-                    <span className={`text-[10px] ${formSource === 'warehouse' ? 'text-purple-100' : 'text-slate-400'}`}>
-                      Pembelian customer sekalian di-alter
-                    </span>
-                  </button>
-                </div>
-
-                {/* Sub-inputs: ID Form Alter & PIC Store Contacts */}
-                <div className="space-y-2.5 pt-1">
-                  {/* ID Form Alter: Store (Manual) vs Warehouse (Otomatis) */}
-                  {formSource === 'store' ? (
+                  {formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' ? (
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                        <span>No. ID Form Alter (Diisi Manual oleh Store) *</span>
-                        <span className="text-[10px] font-normal text-rose-500">Wajib Diisi Manual</span>
+                      <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
+                        Nama Ekspedisi Custom *
                       </label>
                       <input
                         type="text"
                         required
-                        value={formIdFormAlter || ''}
-                        onChange={(e) => setFormIdFormAlter(e.target.value)}
-                        placeholder="Contoh: ALT/CP/2026/001 atau No. Form Fisik Store..."
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-xl text-slate-900 dark:text-white font-mono font-bold focus:ring-2 focus:ring-indigo-500 text-xs"
+                        value={formCustomJasaKirim || ''}
+                        onChange={(e) => setFormCustomJasaKirim(e.target.value)}
+                        placeholder="Ketik nama ekspedisi / kurir..."
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white text-xs font-bold shadow-2xs"
                       />
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1 flex items-center justify-between">
-                        <span>No. ID Form Alter (Otomatis Dibuat Sistem):</span>
-                        <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/60 px-1.5 py-0.5 rounded">
-                          AUTO-GENERATED
-                        </span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={formIdFormAlter || ''}
-                          className="w-full px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 rounded-xl text-purple-950 dark:text-purple-200 font-mono font-bold text-xs cursor-not-allowed"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setFormIdFormAlter(generateAutoWarehouseId())}
-                          className="px-2.5 py-1.5 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900 dark:hover:bg-purple-800 text-purple-700 dark:text-purple-200 rounded-xl text-[10px] font-bold shrink-0 transition-colors"
-                          title="Generate Ulang ID"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Store & PIC Name */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                        Store / Outlet Pengirim:
-                      </label>
-                      <select
-                        value={formOutlet || (outlets.length > 0 ? outlets[0].nama : DEFAULT_OUTLETS[0].nama)}
-                        onChange={(e) => setFormOutlet(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-1 focus:ring-indigo-500 text-xs"
-                      >
-                        {(outlets.length > 0 ? outlets : DEFAULT_OUTLETS).map((o) => (
-                          <option key={o.nama} value={o.nama}>
-                            {o.nama}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                        PIC Store / SA *
+                      <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
+                        Catatan Khusus Pengiriman (Opsional):
                       </label>
                       <input
                         type="text"
-                        required
-                        value={formPicPemohon || ''}
-                        onChange={(e) => setFormPicPemohon(e.target.value)}
-                        placeholder="Nama SA / PIC Store..."
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-1 focus:ring-indigo-500 text-xs"
+                        value={formNotesPaket || ''}
+                        onChange={(e) => setFormNotesPaket(e.target.value)}
+                        placeholder="Patokan lokasi / instruksi kurir..."
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white text-xs shadow-2xs"
                       />
                     </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ==================================================== */}
+        {/* BAGIAN 2: DAFTAR PRODUK & RINCIAN PERBAIKAN (MULTI-ITEM) */}
+        {/* ==================================================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-rose-500" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  2. Daftar Pakaian / Produk ({formItems.length})
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Daftarkan pakaian yang akan di-alter atau repair. Anda dapat menambahkan beberapa item sekaligus.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleAddItem}
+              className="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Tambah Produk</span>
+            </button>
+          </div>
+
+          {/* List of Items */}
+          <div className="space-y-4">
+            {formItems.map((item, idx) => (
+              <div
+                key={item.id || idx}
+                className="p-3.5 sm:p-4 bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 relative transition-all"
+              >
+                {/* Item Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 bg-rose-500 text-white rounded-lg text-xs font-bold">
+                      #{idx + 1}
+                    </span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+                      {item.nama_produk ? item.nama_produk : `Pakaian #${idx + 1}`}
+                    </span>
+                    {item.sku && (
+                      <span className="text-[10px] font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                        {item.sku}
+                      </span>
+                    )}
                   </div>
 
-                  {/* No HP PIC Store & Email PIC Store */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-emerald-600" />
-                        <span>No. HP / WhatsApp PIC Store *</span>
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        value={formPicStorePhone || ''}
-                        onChange={(e) => setFormPicStorePhone(e.target.value)}
-                        placeholder="0812xxxx (Untuk notifikasi submit & update)..."
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-1 focus:ring-indigo-500 text-xs font-mono"
-                      />
-                    </div>
+                  {formItems.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(idx)}
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Hapus item ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus</span>
+                    </button>
+                  )}
+                </div>
 
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
-                        <Mail className="w-3 h-3 text-blue-600" />
-                        <span>Email PIC Store (Opsional)</span>
-                      </label>
-                      <input
-                        type="email"
-                        value={formPicStoreEmail || ''}
-                        onChange={(e) => setFormPicStoreEmail(e.target.value)}
-                        placeholder="pic.store@chocochips.co.id..."
-                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium focus:ring-1 focus:ring-indigo-500 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Pilihan Kirim Produk: Store Terkait vs Alamat Customer */}
-                  <div className="pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Pilihan Kirim Produk Setelah Selesai:
+                {/* Dropsearch Katalog per Item */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                      <Search className="w-3 h-3 text-rose-500" />
+                      <span>Cari dari Katalog (Dropsearch):</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setFormTujuanPengembalian('store')}
-                        className={`py-1.5 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                          formTujuanPengembalian === 'store'
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        <Store className="w-3.5 h-3.5" />
-                        <span>Store Terkait</span>
-                      </button>
+                    <span className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
+                      {allCatalogProducts.length} Produk Tersedia
+                    </span>
+                  </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setFormTujuanPengembalian('customer')}
-                        className={`py-1.5 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                          formTujuanPengembalian === 'customer'
-                            ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Alamat Customer</span>
-                      </button>
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={item.catalogSearch || ''}
+                        onChange={(e) =>
+                          handleUpdateItem(idx, {
+                            catalogSearch: e.target.value,
+                            showDropdown: true,
+                          })
+                        }
+                        onFocus={() => handleUpdateItem(idx, { showDropdown: true })}
+                        placeholder={`Ketik SKU / Nama produk #${idx + 1} untuk dropsearch...`}
+                        className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs focus:border-rose-500 focus:outline-none shadow-2xs"
+                      />
+                      {item.catalogSearch && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateItem(idx, {
+                              catalogSearch: '',
+                              showDropdown: false,
+                            })
+                          }
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
 
-                    {/* Form Data Customer (Wajib jika kirim ke Customer) */}
-                    {formTujuanPengembalian === 'customer' && (
-                      <div className="mt-2.5 p-3.5 bg-purple-50/70 dark:bg-purple-950/50 rounded-xl border border-purple-200 dark:border-purple-800 space-y-2.5 animate-in fade-in">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-purple-950 dark:text-purple-200 text-xs flex items-center gap-1.5">
-                            <Send className="w-3.5 h-3.5 text-purple-600" />
-                            Data Pengiriman Langsung ke Customer
-                          </span>
-                          <span className="text-[10px] bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-0.5 rounded-full font-bold">
-                            Wajib Lengkap
-                          </span>
+                    {/* Floating Dropdown */}
+                    {item.showDropdown && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
+                        <div className="sticky top-0 bg-slate-100 dark:bg-slate-950 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center select-none">
+                          <span>Pilih Produk ({allCatalogProducts.filter((p) => {
+                            if (!item.catalogSearch) return true;
+                            const q = item.catalogSearch.toLowerCase();
+                            return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
+                          }).length})</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateItem(idx, { showDropdown: false })}
+                            className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                          >
+                            Tutup [×]
+                          </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[10px] font-bold text-purple-900 dark:text-purple-300 mb-0.5">
-                              Nama Penerima Customer *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formCustomerNama || ''}
-                              onChange={(e) => setFormCustomerNama(e.target.value)}
-                              placeholder="Nama lengkap customer..."
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white font-medium text-xs shadow-2xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-purple-900 dark:text-purple-300 mb-0.5">
-                              No. WhatsApp / Telp Customer *
-                            </label>
-                            <input
-                              type="tel"
-                              required
-                              value={formCustomerHp || ''}
-                              onChange={(e) => setFormCustomerHp(e.target.value)}
-                              placeholder="0812xxxxxxx"
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs font-bold shadow-2xs"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-purple-900 dark:text-purple-300 mb-0.5">
-                            Alamat Lengkap Pengiriman *
-                          </label>
-                          <textarea
-                            rows={2}
-                            required
-                            value={formCustomerAlamat || ''}
-                            onChange={(e) => setFormCustomerAlamat(e.target.value)}
-                            placeholder="Alamat lengkap (Jalan, No Rumah/RT/RW, Kelurahan, Kecamatan, Kota/Kab, Kode Pos)..."
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
-                          />
-                        </div>
-
-                        {/* Opsi Jasa Kirim / Ekspedisi ke Customer */}
-                        <div className="pt-1 border-t border-purple-200/70 dark:border-purple-800/70 space-y-1.5">
-                          <label className="block text-[10px] font-bold text-purple-900 dark:text-purple-300">
-                            Pilihan Jasa Kirim / Ekspedisi ke Customer:
-                          </label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <select
-                                value={formJasaKirimCustomer}
-                                onChange={(e) => setFormJasaKirimCustomer(e.target.value)}
-                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white font-semibold text-xs shadow-2xs"
-                              >
-                                {CUSTOMER_COURIER_OPTIONS.map((c) => (
-                                  <option key={c} value={c}>
-                                    {c}
-                                  </option>
-                                ))}
-                              </select>
+                        {allCatalogProducts
+                          .filter((p) => {
+                            if (!item.catalogSearch) return true;
+                            const q = item.catalogSearch.toLowerCase().trim();
+                            return (
+                              (p.n || p.p || '').toLowerCase().includes(q) ||
+                              (p.k || '').toLowerCase().includes(q) ||
+                              (p.category || '').toLowerCase().includes(q)
+                            );
+                          })
+                          .slice(0, 20)
+                          .map((p, pIdx) => (
+                            <div
+                              key={`${p.k}_${p.size || ''}_${pIdx}`}
+                              onClick={() => handleSelectItemCatalog(idx, p)}
+                              className="p-2.5 hover:bg-rose-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors"
+                            >
+                              <div className="space-y-0.5 pr-2">
+                                <div className="font-bold text-slate-800 dark:text-white text-xs">
+                                  {p.n || p.p || 'Produk Pakaian'}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                  <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">{p.k}</span>
+                                  {p.size && p.size !== '-' && <span>• Size: <strong>{String(p.size)}</strong></span>}
+                                  {p.category && <span>• {String(p.category)}</span>}
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950 px-2 py-1 rounded-lg shrink-0">
+                                Pilih
+                              </span>
                             </div>
+                          ))}
 
-                            {formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' ? (
-                              <div>
-                                <input
-                                  type="text"
-                                  required
-                                  value={formCustomJasaKirim || ''}
-                                  onChange={(e) => setFormCustomJasaKirim(e.target.value)}
-                                  placeholder="Ketik nama ekspedisi / kurir..."
-                                  className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white text-xs font-bold shadow-2xs"
-                                />
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="text"
-                                  value={formNotesPaket || ''}
-                                  onChange={(e) => setFormNotesPaket(e.target.value)}
-                                  placeholder="Catatan pengiriman / patokan lokasi (opsional)..."
-                                  className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg text-slate-900 dark:text-white text-xs shadow-2xs"
-                                />
-                              </div>
-                            )}
+                        {allCatalogProducts.filter((p) => {
+                          if (!item.catalogSearch) return true;
+                          const q = item.catalogSearch.toLowerCase();
+                          return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
+                        }).length === 0 && (
+                          <div className="p-3 text-center text-slate-400 text-xs">
+                            Tidak ditemukan produk untuk &ldquo;{item.catalogSearch}&rdquo;. Silakan ketik nama produk manual di bawah.
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
-              </div>
 
-              {/* 2. DAFTAR PRODUK & RINCIAN PERBAIKAN (MULTI-ITEM SUPPORT) */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-                  <div>
-                    <label className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
-                      <Tag className="w-4 h-4 text-indigo-600" />
-                      <span>Daftar Pakaian / Produk yang Dikerjakan ({formItems.length})</span>
+                {/* Detail Nama Produk, SKU, Size, Qty */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      Nama Produk *
                     </label>
-                    <p className="text-[11px] text-slate-500">
-                      Anda dapat menambahkan lebih dari 1 pakaian dalam 1 nomor tiket & pengiriman yang sama.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddItem}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Tambah Produk</span>
-                  </button>
-                </div>
-
-                {/* Items List */}
-                <div className="space-y-4">
-                  {formItems.map((item, idx) => (
-                    <div
-                      key={item.id || idx}
-                      className="p-3.5 bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 relative transition-all"
-                    >
-                      {/* Item Header */}
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 bg-indigo-600 text-white rounded-lg text-xs font-bold">
-                            #{idx + 1}
-                          </span>
-                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-                            {item.nama_produk ? item.nama_produk : `Pakaian #${idx + 1}`}
-                          </span>
-                          {item.sku && (
-                            <span className="text-[10px] font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                              {item.sku}
-                            </span>
-                          )}
-                        </div>
-
-                        {formItems.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(idx)}
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 p-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                            title="Hapus item ini"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Hapus</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Dropsearch Katalog per Item */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                            <Search className="w-3 h-3 text-indigo-500" />
-                            <span>Cari dari Katalog (Dropsearch):</span>
-                          </label>
-                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
-                            {allCatalogProducts.length} Produk Tersedia
-                          </span>
-                        </div>
-
-                        <div className="relative">
-                          <div className="relative">
-                            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            <input
-                              type="text"
-                              value={item.catalogSearch || ''}
-                              onChange={(e) =>
-                                handleUpdateItem(idx, {
-                                  catalogSearch: e.target.value,
-                                  showDropdown: true,
-                                })
-                              }
-                              onFocus={() => handleUpdateItem(idx, { showDropdown: true })}
-                              placeholder={`Ketik SKU / Nama produk #${idx + 1} untuk dropsearch...`}
-                              className="w-full pl-8 pr-8 py-1.5 bg-white dark:bg-slate-800 border-2 border-indigo-100 dark:border-indigo-900 rounded-xl text-slate-900 dark:text-white font-medium text-xs focus:border-indigo-500 focus:outline-none shadow-2xs"
-                            />
-                            {item.catalogSearch && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleUpdateItem(idx, {
-                                    catalogSearch: '',
-                                    showDropdown: false,
-                                  })
-                                }
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Floating Dropdown */}
-                          {item.showDropdown && (
-                            <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
-                              <div className="sticky top-0 bg-slate-100 dark:bg-slate-950 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center select-none">
-                                <span>Pilih Produk ({allCatalogProducts.filter((p) => {
-                                  if (!item.catalogSearch) return true;
-                                  const q = item.catalogSearch.toLowerCase();
-                                  return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
-                                }).length})</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateItem(idx, { showDropdown: false })}
-                                  className="text-slate-400 hover:text-slate-600 font-bold"
-                                >
-                                  Tutup [×]
-                                </button>
-                              </div>
-
-                              {allCatalogProducts
-                                .filter((p) => {
-                                  if (!item.catalogSearch) return true;
-                                  const q = item.catalogSearch.toLowerCase().trim();
-                                  return (
-                                    (p.n || p.p || '').toLowerCase().includes(q) ||
-                                    (p.k || '').toLowerCase().includes(q) ||
-                                    (p.category || '').toLowerCase().includes(q)
-                                  );
-                                })
-                                .slice(0, 20)
-                                .map((p, pIdx) => (
-                                  <div
-                                    key={`${p.k}_${p.size || ''}_${pIdx}`}
-                                    onClick={() => handleSelectItemCatalog(idx, p)}
-                                    className="p-2.5 hover:bg-indigo-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors"
-                                  >
-                                    <div className="space-y-0.5 pr-2">
-                                      <div className="font-bold text-slate-800 dark:text-white text-xs">
-                                        {p.n || p.p || 'Produk Pakaian'}
-                                      </div>
-                                      <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                                        <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{p.k}</span>
-                                        {p.size && p.size !== '-' && <span>• Size: <strong>{String(p.size)}</strong></span>}
-                                        {p.category && <span>• {String(p.category)}</span>}
-                                      </div>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2 py-1 rounded-lg shrink-0">
-                                      Pilih
-                                    </span>
-                                  </div>
-                                ))}
-
-                              {allCatalogProducts.filter((p) => {
-                                if (!item.catalogSearch) return true;
-                                const q = item.catalogSearch.toLowerCase();
-                                return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
-                              }).length === 0 && (
-                                <div className="p-3 text-center text-slate-400 text-xs">
-                                  Tidak ditemukan produk untuk &ldquo;{item.catalogSearch}&rdquo;. Silakan ketik nama produk manual di bawah.
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Detail Nama Produk, SKU, Size, Qty */}
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                        <div className="sm:col-span-2">
-                          <label className="block text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-0.5">
-                            Nama Produk *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={item.nama_produk || ''}
-                            onChange={(e) => handleUpdateItem(idx, { nama_produk: e.target.value })}
-                            placeholder="Misal: Sarah Linen Dress..."
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-medium text-xs shadow-2xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-0.5">
-                            SKU / Kode
-                          </label>
-                          <input
-                            type="text"
-                            value={item.sku || ''}
-                            onChange={(e) => handleUpdateItem(idx, { sku: e.target.value })}
-                            placeholder="SKU-XXX..."
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs font-bold shadow-2xs"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-0.5">
-                              Size
-                            </label>
-                            <input
-                              type="text"
-                              value={item.size || '-'}
-                              onChange={(e) => handleUpdateItem(idx, { size: e.target.value })}
-                              placeholder="S/M/L"
-                              className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs font-semibold shadow-2xs text-center"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-0.5">
-                              Qty *
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              required
-                              value={item.qty ?? 1}
-                              onChange={(e) => handleUpdateItem(idx, { qty: Number(e.target.value) || 1 })}
-                              className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold text-xs shadow-2xs text-center"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Jenis Layanan per Item */}
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Layanan untuk Pakaian #{idx + 1}:
-                        </label>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItem(idx, { layanan_type: 'alteration' })}
-                            className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 ${
-                              item.layanan_type === 'alteration'
-                                ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-500 text-rose-900 dark:text-rose-200 font-bold shadow-xs'
-                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
-                            }`}
-                          >
-                            <Scissors className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Alter Only</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItem(idx, { layanan_type: 'repair' })}
-                            className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 ${
-                              item.layanan_type === 'repair'
-                                ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-500 text-amber-900 dark:text-amber-200 font-bold shadow-xs'
-                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
-                            }`}
-                          >
-                            <Wrench className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Repair Only</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItem(idx, { layanan_type: 'both' })}
-                            className={`py-1.5 px-2 rounded-lg border text-center transition-all cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 ${
-                              item.layanan_type === 'both'
-                                ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-900 dark:text-indigo-200 font-bold shadow-xs'
-                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
-                            }`}
-                          >
-                            <div className="flex items-center gap-0.5">
-                              <Scissors className="w-3 h-3 text-indigo-600" />
-                              <Wrench className="w-3 h-3 text-indigo-600" />
-                            </div>
-                            <span>Alter & Repair</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Kondisi Fisik Barang */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300">
-                            Kondisi Fisik Barang:
-                          </label>
-                          <div className="flex flex-wrap gap-1">
-                            {conditionPresets.slice(0, 4).map((c) => (
-                              <button
-                                key={c}
-                                type="button"
-                                onClick={() => handleUpdateItem(idx, { kondisi: c })}
-                                className="text-[9px] bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
-                              >
-                                {c}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <input
-                          type="text"
-                          value={item.kondisi || ''}
-                          onChange={(e) => handleUpdateItem(idx, { kondisi: e.target.value })}
-                          className="w-full px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs shadow-2xs"
-                        />
-                      </div>
-
-                      {/* Instruksi Alteration */}
-                      {(item.layanan_type === 'alteration' || item.layanan_type === 'both') && (
-                        <div className="p-2.5 bg-rose-50/50 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/60 rounded-xl space-y-1">
-                          <div className="flex items-center justify-between">
-                            <label className="font-bold text-rose-950 dark:text-rose-200 text-[11px] flex items-center gap-1">
-                              <Scissors className="w-3 h-3 text-rose-600" />
-                              <span>Instruksi Alteration #{idx + 1} *</span>
-                            </label>
-                            <div className="flex flex-wrap gap-1">
-                              {alterationPresets.slice(0, 3).map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => handleUpdateItem(idx, { alteration_detail: p })}
-                                  className="text-[9px] bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 hover:bg-rose-100 cursor-pointer"
-                                >
-                                  + {p.split(' ')[0]} {p.split(' ')[1]}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <textarea
-                            rows={2}
-                            required
-                            value={item.alteration_detail || ''}
-                            onChange={(e) => handleUpdateItem(idx, { alteration_detail: e.target.value })}
-                            placeholder="Misal: Potong keliman 4cm, kecilkan lingkar pinggang 2cm..."
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
-                          />
-                        </div>
-                      )}
-
-                      {/* Instruksi Repair */}
-                      {(item.layanan_type === 'repair' || item.layanan_type === 'both') && (
-                        <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 rounded-xl space-y-1">
-                          <div className="flex items-center justify-between">
-                            <label className="font-bold text-amber-950 dark:text-amber-200 text-[11px] flex items-center gap-1">
-                              <Wrench className="w-3 h-3 text-amber-600" />
-                              <span>Instruksi Repair #{idx + 1} *</span>
-                            </label>
-                            <div className="flex flex-wrap gap-1">
-                              {repairPresets.slice(0, 3).map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => handleUpdateItem(idx, { repair_detail: p })}
-                                  className="text-[9px] bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 hover:bg-amber-100 cursor-pointer"
-                                >
-                                  + {p.split(' ')[0]} {p.split(' ')[1]}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <textarea
-                            rows={2}
-                            required
-                            value={item.repair_detail || ''}
-                            onChange={(e) => handleUpdateItem(idx, { repair_detail: e.target.value })}
-                            placeholder="Misal: Ganti resleting belakang YKK warna senada, jahit sobekan lengan..."
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Bottom Add Item Button */}
-                <button
-                  type="button"
-                  onClick={handleAddItem}
-                  className="w-full py-2.5 border-2 border-dashed border-indigo-300 dark:border-indigo-800 hover:border-indigo-500 rounded-2xl text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center gap-2 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Tambah Pakaian / Produk Lainnya ke Tiket Ini</span>
-                </button>
-              </div>
-
-              {/* 3. TARGET PENYELESAIAN (ESTIMASI SELESAI) */}
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 text-xs">
-                  Target Tanggal Selesai Warehouse:
-                </label>
-                <div className="flex items-center gap-2 mb-2">
-                  <input
-                    type="date"
-                    value={formPerkiraanSelesai || ''}
-                    onChange={(e) => setFormPerkiraanSelesai(e.target.value)}
-                    className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate(1)}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 cursor-pointer"
-                  >
-                    +1 Hari
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate(3)}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 cursor-pointer"
-                  >
-                    +3 Hari
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate(7)}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 cursor-pointer"
-                  >
-                    +7 Hari
-                  </button>
-                </div>
-              </div>
-
-              {/* 4. FOTO LAMPIRAN */}
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 text-xs">
-                  Dokumentasi Foto Fisik / Bagian yang Perlu Dikerjakan:
-                </label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer font-semibold text-slate-700 dark:text-slate-300 text-xs">
-                    <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Upload / Ambil Foto</span>
                     <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handlePhotoUpload}
-                      className="hidden"
+                      type="text"
+                      required
+                      value={item.nama_produk || ''}
+                      onChange={(e) => handleUpdateItem(idx, { nama_produk: e.target.value })}
+                      placeholder="Misal: Sarah Linen Dress..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-medium text-xs shadow-2xs"
                     />
-                  </label>
-                  {isUploadingPhoto && <span className="text-slate-400 text-xs">Memproses foto...</span>}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      SKU / Kode
+                    </label>
+                    <input
+                      type="text"
+                      value={item.sku || ''}
+                      onChange={(e) => handleUpdateItem(idx, { sku: e.target.value })}
+                      placeholder="SKU-XXX..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs font-bold shadow-2xs"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Size
+                      </label>
+                      <input
+                        type="text"
+                        value={item.size || '-'}
+                        onChange={(e) => handleUpdateItem(idx, { size: e.target.value })}
+                        placeholder="S/M/L"
+                        className="w-full px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs font-semibold shadow-2xs text-center"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Qty *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        required
+                        value={item.qty ?? 1}
+                        onChange={(e) => handleUpdateItem(idx, { qty: Number(e.target.value) || 1 })}
+                        className="w-full px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold text-xs shadow-2xs text-center"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {formFotoUrls.length > 0 && (
-                  <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-1">
-                    {formFotoUrls.map((fUrl, fIdx) => (
-                      <div key={fIdx} className="relative group shrink-0">
-                        <img
-                          src={fUrl}
-                          alt=""
-                          className="w-12 h-12 object-cover rounded-lg border border-slate-300"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setFormFotoUrls((prev) => prev.filter((_, i) => i !== fIdx))}
-                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5"
-                        >
-                          <X className="w-2.5 h-2.5" />
-                        </button>
+                {/* Jenis Layanan per Item */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Layanan untuk Pakaian #{idx + 1}:
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateItem(idx, { layanan_type: 'alteration' })}
+                      className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                        item.layanan_type === 'alteration'
+                          ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-500 text-rose-900 dark:text-rose-200 font-bold shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
+                      }`}
+                    >
+                      <Scissors className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Alter Only</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateItem(idx, { layanan_type: 'repair' })}
+                      className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                        item.layanan_type === 'repair'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-500 text-amber-900 dark:text-amber-200 font-bold shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
+                      }`}
+                    >
+                      <Wrench className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Repair Only</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateItem(idx, { layanan_type: 'both' })}
+                      className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                        item.layanan_type === 'both'
+                          ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-900 dark:text-indigo-200 font-bold shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        <Scissors className="w-3 h-3 text-indigo-600" />
+                        <Wrench className="w-3 h-3 text-indigo-600" />
                       </div>
-                    ))}
+                      <span>Alter & Repair</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Kondisi Fisik Barang */}
+                <div>
+                  <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      Kondisi Fisik Barang:
+                    </label>
+                    <div className="flex flex-wrap gap-1">
+                      {conditionPresets.slice(0, 4).map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => handleUpdateItem(idx, { kondisi: c })}
+                          className="text-[9px] bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={item.kondisi || ''}
+                    onChange={(e) => handleUpdateItem(idx, { kondisi: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs shadow-2xs"
+                  />
+                </div>
+
+                {/* Instruksi Alteration */}
+                {(item.layanan_type === 'alteration' || item.layanan_type === 'both') && (
+                  <div className="p-3 bg-rose-50/50 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/60 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <label className="font-bold text-rose-950 dark:text-rose-200 text-xs flex items-center gap-1">
+                        <Scissors className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Instruksi Alteration #{idx + 1} *</span>
+                      </label>
+                      <div className="flex flex-wrap gap-1">
+                        {alterationPresets.slice(0, 3).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => handleUpdateItem(idx, { alteration_detail: p })}
+                            className="text-[9px] bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 hover:bg-rose-100 cursor-pointer"
+                          >
+                            + {p.split(' ')[0]} {p.split(' ')[1]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <textarea
+                      rows={2}
+                      required
+                      value={item.alteration_detail || ''}
+                      onChange={(e) => handleUpdateItem(idx, { alteration_detail: e.target.value })}
+                      placeholder="Misal: Potong keliman 4cm, kecilkan lingkar pinggang 2cm..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
+                    />
+                  </div>
+                )}
+
+                {/* Instruksi Repair */}
+                {(item.layanan_type === 'repair' || item.layanan_type === 'both') && (
+                  <div className="p-3 bg-amber-50/50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <label className="font-bold text-amber-950 dark:text-amber-200 text-xs flex items-center gap-1">
+                        <Wrench className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Instruksi Repair #{idx + 1} *</span>
+                      </label>
+                      <div className="flex flex-wrap gap-1">
+                        {repairPresets.slice(0, 3).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => handleUpdateItem(idx, { repair_detail: p })}
+                            className="text-[9px] bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 hover:bg-amber-100 cursor-pointer"
+                          >
+                            + {p.split(' ')[0]} {p.split(' ')[1]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <textarea
+                      rows={2}
+                      required
+                      value={item.repair_detail || ''}
+                      onChange={(e) => handleUpdateItem(idx, { repair_detail: e.target.value })}
+                      placeholder="Misal: Ganti resleting belakang YKK warna senada, jahit sobekan lengan..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-lg text-slate-900 dark:text-white text-xs resize-none shadow-2xs"
+                    />
                   </div>
                 )}
               </div>
+            ))}
+          </div>
 
-              {/* Submit Button */}
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{isSubmitting ? 'Mendaftarkan...' : 'Daftarkan Request & Buat Tiket'}</span>
-                </button>
+          {/* Add Item Button */}
+          <button
+            type="button"
+            onClick={handleAddItem}
+            className="w-full py-2.5 border-2 border-dashed border-rose-300 dark:border-rose-800 hover:border-rose-500 rounded-2xl text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-2 hover:bg-rose-50/40 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Tambah Pakaian Lainnya ke Tiket Ini</span>
+          </button>
+        </div>
+
+        {/* ==================================================== */}
+        {/* BAGIAN 3: TARGET WAKTU, CATATAN & FOTO DOKUMENTASI */}
+        {/* ==================================================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-500" />
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                3. Target Waktu & Dokumentasi Foto
+              </h3>
+            </div>
+            <span className="text-[11px] text-slate-500">
+              Estimasi penyelesaian & foto panduan
+            </span>
+          </div>
+
+          {/* Target Selesai */}
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 text-xs">
+              Target Tanggal Selesai Warehouse:
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="date"
+                value={formPerkiraanSelesai || ''}
+                onChange={(e) => setFormPerkiraanSelesai(e.target.value)}
+                className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => handleSetPresetDate(1)}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                +1 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetPresetDate(3)}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                +3 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetPresetDate(7)}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                +7 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetPresetDate(14)}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                +14 Hari
+              </button>
+            </div>
+          </div>
+
+          {/* Foto Lampiran */}
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1 text-xs">
+              Dokumentasi Foto Fisik / Bagian yang Perlu Dikerjakan:
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer font-semibold text-slate-700 dark:text-slate-300 text-xs">
+                <Camera className="w-4 h-4 text-rose-500" />
+                <span>Upload / Ambil Foto</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+              </label>
+              {isUploadingPhoto && <span className="text-slate-400 text-xs animate-pulse">Memproses foto...</span>}
+            </div>
+
+            {formFotoUrls.length > 0 && (
+              <div className="flex items-center gap-2 mt-2.5 overflow-x-auto pb-1">
+                {formFotoUrls.map((fUrl, fIdx) => (
+                  <div key={fIdx} className="relative group shrink-0">
+                    <img
+                      src={fUrl}
+                      alt=""
+                      onClick={() => setPreviewPhotoUrl(fUrl)}
+                      className="w-14 h-14 object-cover rounded-xl border border-slate-300 dark:border-slate-700 cursor-pointer hover:opacity-90"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFormFotoUrls((prev) => prev.filter((_, i) => i !== fIdx))}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 cursor-pointer shadow-xs"
+                      title="Hapus foto"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            </form>
+            )}
           </div>
         </div>
-      )}
+
+        {/* ==================================================== */}
+        {/* ACTION BAR: RESET & SUBMIT BUTTON */}
+        {/* ==================================================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="px-3.5 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Form</span>
+            </button>
+
+            {onGoToRekap && (
+              <button
+                type="button"
+                onClick={onGoToRekap}
+                className="px-3.5 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto border border-slate-200 dark:border-slate-700"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Lihat Rekap Pesanan</span>
+              </button>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full sm:w-auto px-6 py-2.5 text-xs sm:text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl shadow-md shadow-rose-500/20 hover:shadow-rose-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-98"
+          >
+            <Save className={`w-4 h-4 ${isSubmitting ? 'animate-spin' : ''}`} />
+            <span>{isSubmitting ? 'Mendaftarkan Tiket...' : 'Simpan & Daftarkan Request Alteration & Repair'}</span>
+          </button>
+        </div>
+      </form>
 
       {/* ==================================================== */}
-      {/* MODAL 4: CETAK WORK ORDER SPK */}
+      {/* MODAL: CETAK WORK ORDER SPK GUDANG */}
       {/* ==================================================== */}
       {spkModalOrder && (
         <AlterationRepairReceiptModal
@@ -2572,7 +1658,7 @@ _WMS Warehouse & Alteration System_`;
       )}
 
       {/* ==================================================== */}
-      {/* MODAL 4B: CETAK SURAT JALAN STRUK (RANGKAP 2) */}
+      {/* MODAL: CETAK SURAT JALAN STRUK (RANGKAP 2) */}
       {/* ==================================================== */}
       {sjStrukModalOrder && (
         <SuratJalanAlterReceiptModal
@@ -2583,7 +1669,7 @@ _WMS Warehouse & Alteration System_`;
       )}
 
       {/* ==================================================== */}
-      {/* MODAL 4C: AKSI 2-ARAH (KIRIM STORE / TERIMA GUDANG / BUKTI KIRIM) */}
+      {/* MODAL: AKSI 2-ARAH (KIRIM STORE / TERIMA GUDANG) */}
       {/* ==================================================== */}
       {actionModalData && (
         <AlterationActionModal
@@ -2600,7 +1686,7 @@ _WMS Warehouse & Alteration System_`;
       )}
 
       {/* ==================================================== */}
-      {/* MODAL 4D: STATUS SUBMIT & RINCIAN PENDAFTARAN */}
+      {/* MODAL: STATUS SUBMIT & RINCIAN PENDAFTARAN */}
       {/* ==================================================== */}
       {submittedSummaryOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
@@ -2612,8 +1698,8 @@ _WMS Warehouse & Alteration System_`;
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black">Status Submit: Berhasil Didaftarkan!</h3>
-                  <p className="text-[11px] text-emerald-100">Rincian tiket telah dicatat dan siap diproses</p>
+                  <h3 className="text-sm font-black">Tiket Berhasil Didaftarkan!</h3>
+                  <p className="text-[11px] text-emerald-100">Tiket Alteration & Repair siap diproses</p>
                 </div>
               </div>
               <button
@@ -2627,11 +1713,10 @@ _WMS Warehouse & Alteration System_`;
 
             {/* Rincian Submit Content */}
             <div className="p-5 space-y-3.5 text-xs">
-              {/* Ticket & ID Summary */}
               <div className="p-3 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5">
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-500">No. Registrasi Tiket:</span>
-                  <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">{submittedSummaryOrder.no_pesanan}</span>
+                  <span className="font-mono font-black text-rose-600 dark:text-rose-400">{submittedSummaryOrder.no_pesanan}</span>
                 </div>
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-500">No. ID Form Alter:</span>
@@ -2648,81 +1733,46 @@ _WMS Warehouse & Alteration System_`;
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-slate-500">Layanan:</span>
                   <span className="font-bold text-rose-600 dark:text-rose-400 uppercase">
-                    {submittedSummaryOrder.alteration_repair_data?.layanan_type}
+                    {submittedSummaryOrder.alteration_repair_data?.layanan_type || 'Alteration'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-500">PIC SA / Store:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                    {submittedSummaryOrder.pic_store || submittedSummaryOrder.alteration_repair_data?.pic_pemohon} ({submittedSummaryOrder.no_telp_store || '-'})
                   </span>
                 </div>
               </div>
 
-              {/* PIC & Tujuan Info */}
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-200 dark:border-blue-800">
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold block">PIC STORE / SA</span>
-                  <div className="font-bold text-slate-800 dark:text-slate-200">{submittedSummaryOrder.pic_store}</div>
-                  <div className="text-slate-600 dark:text-slate-400 font-mono text-[10px]">WA: {submittedSummaryOrder.no_telp_store || '-'}</div>
-                  {submittedSummaryOrder.alteration_repair_data?.pic_store_email && (
-                    <div className="text-slate-500 text-[9.5px] truncate">Email: {submittedSummaryOrder.alteration_repair_data.pic_store_email}</div>
-                  )}
+              {/* Items List */}
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  Daftar Pakaian ({submittedSummaryOrder.items?.length || 1} Item):
                 </div>
-                <div className="p-2.5 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800">
-                  <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold block">TUJUAN PENGIRIMAN</span>
-                  <div className="font-bold text-slate-800 dark:text-slate-200 truncate">{submittedSummaryOrder.nama_tujuan}</div>
-                  <div className="text-slate-600 dark:text-slate-400 font-mono text-[10px]">Telp: {submittedSummaryOrder.no_telp_tujuan || '-'}</div>
-                  <div className="text-slate-500 text-[9.5px] truncate">{submittedSummaryOrder.alamat_tujuan}</div>
-                </div>
-              </div>
-
-              {/* Product Details (Multi-item support) */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
-                  <span>Rincian Produk ({submittedSummaryOrder.items?.length || 1} Item)</span>
-                  <span>Total Qty: {submittedSummaryOrder.items?.reduce((s, it) => s + (Number(it.qty) || 1), 0) || 1} pcs</span>
-                </div>
-
-                <div className="space-y-2 max-h-48 overflow-y-auto divide-y divide-slate-200/60 dark:divide-slate-700/60">
-                  {(submittedSummaryOrder.items && submittedSummaryOrder.items.length > 0 ? submittedSummaryOrder.items : [{
-                    nama_produk: submittedSummaryOrder.alteration_repair_data?.nama_produk || 'Produk Pakaian',
-                    sku: submittedSummaryOrder.alteration_repair_data?.sku || '-',
-                    size: submittedSummaryOrder.alteration_repair_data?.size || '-',
-                    qty: submittedSummaryOrder.alteration_repair_data?.qty || 1,
-                    layanan_type: submittedSummaryOrder.layanan_type,
-                    alteration_detail: submittedSummaryOrder.alteration_detail,
-                    repair_detail: submittedSummaryOrder.repair_detail,
-                  }]).map((it, itIdx) => (
-                    <div key={itIdx} className={`space-y-1 ${itIdx > 0 ? 'pt-2' : ''}`}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900 dark:text-white text-xs">
-                          #{itIdx + 1} {it.nama_produk}
-                        </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                          Qty: {it.qty} pcs
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-[10.5px] text-slate-600 dark:text-slate-400 font-mono">
-                        <span>SKU: <strong>{it.sku || '-'}</strong></span>
-                        <span>• Size: <strong>{it.size || '-'}</strong></span>
-                        {it.layanan_type && <span>• <span className="uppercase text-rose-600 dark:text-rose-400 font-bold">{it.layanan_type}</span></span>}
-                      </div>
-                      {(it.alteration_detail || it.repair_detail) && (
-                        <div className="text-[10px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
-                          {it.alteration_detail && <div>✂️ <strong>Alter:</strong> {it.alteration_detail}</div>}
-                          {it.repair_detail && <div>🔧 <strong>Repair:</strong> {it.repair_detail}</div>}
-                        </div>
-                      )}
+                {(submittedSummaryOrder.items || []).map((it, i) => (
+                  <div key={i} className="p-2 bg-slate-100/70 dark:bg-slate-800/50 rounded-lg text-xs space-y-1 border border-slate-200 dark:border-slate-700/60">
+                    <div className="font-bold text-slate-800 dark:text-slate-200 flex justify-between">
+                      <span>#{i + 1} {it.nama_produk}</span>
+                      <span className="text-rose-600 dark:text-rose-400 font-mono font-bold">{it.qty || 1} pcs</span>
                     </div>
-                  ))}
-                </div>
-
-                {submittedSummaryOrder.alteration_repair_data?.jasa_kirim_customer && (
-                  <div className="pt-1.5 border-t border-slate-200 dark:border-slate-700 text-[10.5px] text-purple-700 dark:text-purple-300 flex items-center justify-between font-semibold">
-                    <span>🚚 Ekspedisi ke Customer:</span>
-                    <span className="font-bold font-mono">{submittedSummaryOrder.alteration_repair_data.jasa_kirim_customer}</span>
+                    <div className="flex items-center gap-2 text-[10.5px] text-slate-600 dark:text-slate-400 font-mono">
+                      <span>SKU: <strong>{it.sku || '-'}</strong></span>
+                      <span>• Size: <strong>{it.size || '-'}</strong></span>
+                      {it.layanan_type && <span>• <span className="uppercase text-rose-600 dark:text-rose-400 font-bold">{it.layanan_type}</span></span>}
+                    </div>
+                    {(it.alteration_detail || it.repair_detail) && (
+                      <div className="text-[10px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                        {it.alteration_detail && <div>✂️ <strong>Alter:</strong> {it.alteration_detail}</div>}
+                        {it.repair_detail && <div>🔧 <strong>Repair:</strong> {it.repair_detail}</div>}
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
 
               {/* Action Buttons */}
               <div className="space-y-2 pt-1">
-                {/* Kirim WhatsApp */}
+                {/* Salin / Kirim Template WhatsApp */}
                 <button
                   type="button"
                   onClick={() => {
@@ -2737,8 +1787,7 @@ _WMS Warehouse & Alteration System_`;
      ${it.alteration_detail ? `- Alter: ${it.alteration_detail}\n     ` : ''}${it.repair_detail ? `- Repair: ${it.repair_detail}` : ''}`
                     ).join('\n');
 
-                    const text = encodeURIComponent(
-`*RINCIAN PENDAFTARAN ALTERATION & REPAIR* ✨
+                    const text = `*RINCIAN PENDAFTARAN ALTERATION & REPAIR* ✨
 ───────────────────────────
 🔖 *No. ID Form Alter:* *${ar.id_form_alter || ord.no_pesanan}*
 📋 *No. Tiket Sistem:* ${ord.no_pesanan}
@@ -2746,22 +1795,20 @@ _WMS Warehouse & Alteration System_`;
 👤 *PIC Store / SA:* ${ord.pic_store || ar.pic_pemohon || '-'} (${ar.pic_store_phone || '-'})
 ${ar.pic_store_email ? `📧 *Email PIC:* ${ar.pic_store_email}\n` : ''}📦 *Daftar Produk (${ord.items?.length || 1} item):*
 ${itemsText || `  - ${ord.items?.[0]?.nama_produk || (ord as any).nama_produk || '-'} (Qty: ${ord.items?.[0]?.qty || (ord as any).qty || 1} pcs)`}
-📍 *Tujuan Kirim:* ${ar.tujuan_pengembalian === 'customer' ? `Customer (${ar.nama_penerima_kembali}) - ${ar.alamat_penerima_kembali}${ar.jasa_kirim_customer ? ` [Kurir: ${ar.jasa_kirim_customer}]` : ''}` : `Store (${ar.nama_asal || ord.nama_pengirim})`}
+📍 *Tujuan Kirim:* ${ar.tujuan_pengembalian === 'customer' ? `Customer (${ar.nama_penerima_kembali}) - ${ar.alamat_penerima_kembali}` : `Store (${ar.nama_asal || ord.nama_pengirim})`}
 ───────────────────────────
-Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! 🙏✨`
-                    );
+Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! 🙏✨`;
 
-                    if (cleanPhone.length >= 9) {
-                      window.open(`https://wa.me/${cleanPhone}?text=${text}`, '_blank');
-                    } else {
-                      navigator.clipboard.writeText(decodeURIComponent(text));
-                      onShowToast('Template rincian WhatsApp disalin ke clipboard!', 'info');
-                    }
+                    navigator.clipboard.writeText(text).then(() => {
+                      onShowToast('Template WhatsApp disalin ke clipboard!', 'success');
+                    }).catch(() => {
+                      onShowToast('Gagal menyalin ke clipboard', 'error');
+                    });
                   }}
                   className="w-full py-2 px-3 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Share2 className="w-4 h-4" />
-                  <span>📱 Kirim Rincian Submit via WhatsApp</span>
+                  <span>📱 Salin Rincian Tiket untuk WhatsApp</span>
                 </button>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -2791,13 +1838,27 @@ Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! �
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setSubmittedSummaryOrder(null)}
-                    className="py-2 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <span>Selesai & Tutup</span>
-                  </button>
+                  {onGoToRekap ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubmittedSummaryOrder(null);
+                        onGoToRekap();
+                      }}
+                      className="py-2 px-3 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>Ke Rekap Pesanan</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedSummaryOrder(null)}
+                      className="py-2 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <span>Input Tiket Baru</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2806,7 +1867,7 @@ Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! �
       )}
 
       {/* ==================================================== */}
-      {/* MODAL 5: PREVIEW FOTO */}
+      {/* MODAL: PREVIEW FOTO */}
       {/* ==================================================== */}
       {previewPhotoUrl && (
         <div 
@@ -2818,7 +1879,7 @@ Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! �
             <button
               type="button"
               onClick={() => setPreviewPhotoUrl(null)}
-              className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full hover:bg-black"
+              className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full hover:bg-black cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>

@@ -53,8 +53,10 @@ export const ThemePickerModal: React.FC<ThemePickerModalProps> = ({
 
   const fonts = [
     { id: 'sans', name: 'Default (Plus Jakarta)', class: 'font-sans' },
-    { id: 'rounded', name: 'Rounded (Quicksand)', class: 'font-rounded' },
+    { id: 'ios', name: 'iPhone (SF Pro)', class: 'font-ios' },
+    { id: 'samsung', name: 'Samsung Sans', class: 'font-samsung' },
     { id: 'inter', name: 'Inter (Modern)', class: 'font-inter' },
+    { id: 'rounded', name: 'Rounded (Quicksand)', class: 'font-rounded' },
     { id: 'serif', name: 'Serif (Playfair)', class: 'font-serif' },
     { id: 'mono', name: 'Monospace (Tech)', class: 'font-mono' },
   ];

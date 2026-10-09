@@ -7,7 +7,7 @@ import { ProductItem, StockRealtimeItem, PengecekanSJDraft } from '../types';
 import { isDummyProduct } from './supabase';
 
 const DB_NAME = 'WMS_LOCAL_DB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -78,6 +78,13 @@ export async function getLocalDb(): Promise<IDBDatabase> {
       // 5. Surat Jalan Pengecekan Drafts Store
       if (!db.objectStoreNames.contains('sj_drafts')) {
         db.createObjectStore('sj_drafts', { keyPath: 'id' });
+      }
+
+      // 6. Website Orders Store
+      if (!db.objectStoreNames.contains('website_orders')) {
+        const orderStore = db.createObjectStore('website_orders', { keyPath: 'orderId' });
+        orderStore.createIndex('status_sistem', 'status_sistem', { unique: false });
+        orderStore.createIndex('tanggal_upload', 'tanggal_upload', { unique: false });
       }
     };
 
@@ -514,6 +521,66 @@ export async function getShopeeOrder(noPesanan: string): Promise<any | null> {
   } catch (err) {
     return null;
   }
+}
+
+// --- WEBSITE ORDERS STORE ---
+
+export async function saveWebsiteOrders(orders: any[]): Promise<void> {
+  if (!orders.length) return;
+  const db = await getLocalDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('website_orders', 'readwrite');
+    const store = tx.objectStore('website_orders');
+    for (const order of orders) {
+      store.put(order);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getWebsiteOrders(): Promise<any[]> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('website_orders', 'readonly');
+      const store = tx.objectStore('website_orders');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
+export async function getWebsiteOrder(orderId: string): Promise<any | null> {
+  try {
+    const db = await getLocalDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('website_orders', 'readonly');
+      const store = tx.objectStore('website_orders');
+      const request = store.get(orderId);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function deleteWebsiteOrders(orderIds: string[]): Promise<void> {
+  if (!orderIds.length) return;
+  const db = await getLocalDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('website_orders', 'readwrite');
+    const store = tx.objectStore('website_orders');
+    for (const id of orderIds) {
+      store.delete(id);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 // --- SURAT JALAN PENGECEKAN DRAFTS STORE ---
