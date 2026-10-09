@@ -188,6 +188,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   // 3-Level Filters (Sesuai Seller Center Shopee)
+  const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(false);
   const [filterTipePesanan, setFilterTipePesanan] = useState<TipePesananFilter>('ALL');
   const [filterBatasWaktu, setFilterBatasWaktu] = useState<BatasWaktuFilter>('ALL');
   const [selectedOpsiPengiriman, setSelectedOpsiPengiriman] = useState<string>('ALL');
@@ -1001,7 +1002,7 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto">
             {/* Hidden File Input for Excel Import */}
             <input
               type="file"
@@ -1018,34 +1019,32 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={loading}
-                  className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50 active:scale-95"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50 active:scale-95 col-span-1"
                 >
-                  <Upload className="w-4 h-4" />
-                  <span>Import Excel Shopee</span>
+                  <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="truncate">Import Excel</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleSyncMasterProducts}
                   disabled={isSyncingMaster || orders.length === 0}
-                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  className="px-3 sm:px-3.5 py-2 sm:py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 col-span-1"
                   title="Cocokkan ulang seluruh nama produk & lokasi rak dengan Master Katalog Database"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 text-blue-500 ${isSyncingMaster ? 'animate-spin' : ''}`} />
-                  <span>Sinkron Master</span>
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-500 shrink-0 ${isSyncingMaster ? 'animate-spin' : ''}`} />
+                  <span className="truncate">Sinkron Master</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handlePrintPickingList}
                   disabled={displayOrders.length === 0}
-                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 col-span-1"
                   title="Cetak Surat Jalan Picking List format A4 Portrait sesuai urutan custom sort"
                 >
-                  <Printer className="w-4 h-4 text-orange-400" />
-                  <span>
-                    Cetak SJ Picking {selectedOpsiPengiriman !== 'ALL' ? `(${selectedOpsiPengiriman})` : '(Semua)'}
-                  </span>
+                  <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-400 shrink-0" />
+                  <span className="truncate">Cetak SJ</span>
                 </button>
 
                 <button
@@ -1055,10 +1054,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                     handleUpdateOrderStatus(targetIds, 'proses_picking', `${targetIds.length} pesanan dipindahkan ke PROSES PICKING!`);
                   }}
                   disabled={displayOrders.length === 0}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50 active:scale-95"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50 active:scale-95 col-span-1"
                 >
-                  <Play className="w-4 h-4" />
-                  <span>Kirim Tugas Picking {selectedOrders.size > 0 ? `(${selectedOrders.size})` : ''}</span>
+                  <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="truncate">Kirim Picking {selectedOrders.size > 0 ? `(${selectedOrders.size})` : ''}</span>
                 </button>
               </>
             )}
@@ -1070,10 +1069,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                   type="button"
                   onClick={handlePrintPickingList}
                   disabled={displayOrders.length === 0}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer col-span-1"
                 >
-                  <Printer className="w-4 h-4 text-blue-500" />
-                  <span>Cetak Ulang SJ</span>
+                  <Printer className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="truncate">Cetak Ulang SJ</span>
                 </button>
 
                 <button
@@ -1083,10 +1082,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                     handleUpdateOrderStatus(targetIds, 'proses_packing', `${targetIds.length} pesanan dialihkan ke PROSES PACKING!`);
                   }}
                   disabled={displayOrders.length === 0}
-                  className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50 active:scale-95"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50 active:scale-95 col-span-1"
                 >
-                  <ArrowRight className="w-4 h-4" />
-                  <span>Selesai Picking → Kirim ke Packing {selectedOrders.size > 0 ? `(${selectedOrders.size})` : ''}</span>
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Ke Packing {selectedOrders.size > 0 ? `(${selectedOrders.size})` : ''}</span>
                 </button>
               </>
             )}
@@ -1100,10 +1099,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
                   handleUpdateOrderStatus(targetIds, 'paket_terkirim', `${targetIds.length} paket ditandai TERKIRIM!`);
                 }}
                 disabled={displayOrders.length === 0}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50 active:scale-95"
+                className="px-3 sm:px-4 py-2 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50 active:scale-95 col-span-2 sm:col-span-1 w-full sm:w-auto"
               >
-                <Truck className="w-4 h-4" />
-                <span>Tandai Terkirim {selectedOrders.size > 0 ? `(${selectedOrders.size})` : ''}</span>
+                <Truck className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Tandai Terkirim {selectedOrders.size > 0 ? `(${selectedOrders.size})` : ''}</span>
               </button>
             )}
 
@@ -1112,10 +1111,10 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
               <button
                 type="button"
                 onClick={() => handleDeleteOrders(Array.from(selectedOrders))}
-                className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-400 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                className="px-3 py-2 sm:py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-400 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer col-span-2 sm:col-span-1"
                 title="Hapus pesanan terpilih"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
                 <span>Hapus ({selectedOrders.size})</span>
               </button>
             )}
@@ -1212,146 +1211,166 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
         {/* ========================================================================= */}
         {/* 3-LEVEL SELLER CENTER FILTERS & CUSTOM SORT (LEGA & TIDAK KETUTUP SCROLLBAR) */}
         {/* ========================================================================= */}
-        <div className="bg-white dark:bg-[#131d31] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="bg-white dark:bg-[#131d31] p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
           {/* Top Search & Custom Sort Row */}
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3">
             {/* Search Input */}
-            <div className="relative w-full md:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 placeholder="Cari no pesanan, resi, penerima, SKU, CCTV..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-white"
+                className="w-full pl-8 pr-7 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-white"
               />
               {searchTerm && (
                 <button
+                  type="button"
                   onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Custom Sort Selector */}
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 shrink-0">
-                <ArrowUpDown className="w-3.5 h-3.5 text-orange-500" />
-                <span>Custom Sort:</span>
+            {/* Custom Sort Selector & Mobile Filter Toggle */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0 hidden sm:inline">Sort:</span>
+                <select
+                  value={customSort}
+                  onChange={(e) => setCustomSort(e.target.value as CustomSortOption)}
+                  className="w-full sm:w-auto px-2.5 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-extrabold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer truncate"
+                >
+                  <option value="opsi_pengiriman_no_pesanan">1. Opsi Pengiriman + No. Pesanan</option>
+                  <option value="waktu_pembayaran_asc">2. Waktu Bayar (Terlama)</option>
+                  <option value="waktu_pembayaran_desc">3. Waktu Bayar (Terbaru)</option>
+                  <option value="no_pesanan_asc">4. No. Pesanan (A-Z)</option>
+                </select>
               </div>
-              <select
-                value={customSort}
-                onChange={(e) => setCustomSort(e.target.value as CustomSortOption)}
-                className="flex-1 md:flex-none px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-extrabold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
-              >
-                <option value="opsi_pengiriman_no_pesanan">1. Opsi Pengiriman + No. Pesanan</option>
-                <option value="waktu_pembayaran_asc">2. Waktu Pembayaran (Terlama ke Terbaru)</option>
-                <option value="waktu_pembayaran_desc">3. Waktu Pembayaran (Terbaru ke Terlama)</option>
-                <option value="no_pesanan_asc">4. No. Pesanan (A-Z)</option>
-              </select>
-            </div>
-          </div>
 
-          {/* LEVEL 1: TIPE PESANAN FILTER */}
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 w-28 shrink-0">
-              Tipe Pesanan
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: 'ALL', label: 'Semua', count: tabOrdersOnly.length },
-                { id: 'Reguler', label: 'Pesanan Reguler', count: countTipeReguler },
-                { id: 'Instant', label: 'Instant', count: countTipeInstant },
-                { id: 'Same Day', label: 'Same Day', count: countTipeSameDay },
-                { id: 'Hemat', label: 'Hemat', count: countTipeHemat },
-                { id: 'Cargo', label: 'Cargo', count: countTipeCargo },
-              ].map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setFilterTipePesanan(t.id as TipePesananFilter)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    filterTipePesanan === t.id
-                      ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40'
-                      : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
-                  }`}
-                >
-                  <span>{t.label}</span>
-                  <span className="opacity-75">({t.count})</span>
-                </button>
-              ))}
-            </div>
-          </div>
+              {/* Filter Collapse Toggle */}
+              {(() => {
+                const activeCount = [
+                  filterTipePesanan !== 'ALL',
+                  filterBatasWaktu !== 'ALL',
+                  selectedOpsiPengiriman !== 'ALL'
+                ].filter(Boolean).length;
 
-          {/* LEVEL 2: BATAS PENGIRIMAN FILTER */}
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 w-28 shrink-0">
-              Batas Pengiriman
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: 'ALL', label: 'Semua', count: tabOrdersOnly.length },
-                { id: 'TERLAMBAT', label: 'Terlambat', count: countBatasTerlambat, alert: countBatasTerlambat > 0 },
-                { id: 'KURANG_24_JAM', label: 'Kurang dari 24 jam', count: countBatasKurang24 },
-                { id: 'LEBIH_24_JAM', label: 'Lebih dari 24 jam', count: countBatasLebih24 },
-              ].map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => setFilterBatasWaktu(b.id as BatasWaktuFilter)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    filterBatasWaktu === b.id
-                      ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40'
-                      : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
-                  } ${b.alert ? 'text-rose-600 border-rose-300' : ''}`}
-                >
-                  <span>{b.label}</span>
-                  <span className="opacity-75">({b.count})</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* LEVEL 3: JASA KIRIM (OPSI PENGIRIMAN NORMALISASI) */}
-          <div className="flex flex-wrap items-start gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 w-28 shrink-0 pt-1">
-              Jasa Kirim
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5 flex-1">
-              <button
-                type="button"
-                onClick={() => setSelectedOpsiPengiriman('ALL')}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                  selectedOpsiPengiriman === 'ALL'
-                    ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40'
-                    : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
-                }`}
-              >
-                Semua Jasa Kirim ({tabOrdersOnly.length})
-              </button>
-
-              {uniqueOpsiPengiriman.map((courier) => {
-                const count = tabOrdersOnly.filter((o) => (o.opsiPengiriman || '').trim() === courier).length;
                 return (
                   <button
-                    key={courier}
                     type="button"
-                    onClick={() => setSelectedOpsiPengiriman(courier)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      selectedOpsiPengiriman === courier
-                        ? 'border-2 border-orange-500 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 font-black'
-                        : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 bg-white dark:bg-slate-800'
+                    onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+                    className={`px-2.5 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                      isFilterExpanded || activeCount > 0
+                        ? 'bg-orange-50 dark:bg-orange-950/40 border-orange-300 dark:border-orange-800 text-orange-600 dark:text-orange-400'
+                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
                     }`}
+                    title="Buka / Tutup Filter"
                   >
-                    <span>{courier}</span>
-                    <span className="opacity-75">({count})</span>
+                    <Filter className="w-3.5 h-3.5 text-orange-500" />
+                    <span>Filter</span>
+                    {activeCount > 0 && (
+                      <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[10px] flex items-center justify-center font-black">
+                        {activeCount}
+                      </span>
+                    )}
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`} />
                   </button>
                 );
-              })}
+              })()}
+
+              {/* Reset Filter Button */}
+              {(filterTipePesanan !== 'ALL' || filterBatasWaktu !== 'ALL' || selectedOpsiPengiriman !== 'ALL' || searchTerm) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterTipePesanan('ALL');
+                    setFilterBatasWaktu('ALL');
+                    setSelectedOpsiPengiriman('ALL');
+                    setSearchTerm('');
+                  }}
+                  className="p-2 text-rose-600 hover:text-rose-700 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs font-bold flex items-center justify-center cursor-pointer shrink-0"
+                  title="Reset Filter"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
+
+          {/* COMPACT FILTER DROPDOWNS (Collapsible on Mobile) */}
+          {isFilterExpanded && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-800 animate-in fade-in duration-150">
+              {/* 1. Tipe Pesanan Filter */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Tipe Pesanan:</label>
+                <select
+                  value={filterTipePesanan}
+                  onChange={(e) => setFilterTipePesanan(e.target.value as TipePesananFilter)}
+                  className={`py-1.5 px-2 text-xs rounded-lg font-bold border transition-colors cursor-pointer w-full ${
+                    filterTipePesanan !== 'ALL'
+                      ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300'
+                      : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                  }`}
+                >
+                  <option value="ALL">Semua Tipe ({tabOrdersOnly.length})</option>
+                  <option value="Reguler">Reguler ({countTipeReguler})</option>
+                  <option value="Instant">Instant ({countTipeInstant})</option>
+                  <option value="Same Day">Same Day ({countTipeSameDay})</option>
+                  <option value="Hemat">Hemat ({countTipeHemat})</option>
+                  <option value="Cargo">Cargo ({countTipeCargo})</option>
+                </select>
+              </div>
+
+              {/* 2. Batas Pengiriman Filter */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Batas Pengiriman:</label>
+                <select
+                  value={filterBatasWaktu}
+                  onChange={(e) => setFilterBatasWaktu(e.target.value as BatasWaktuFilter)}
+                  className={`py-1.5 px-2 text-xs rounded-lg font-bold border transition-colors cursor-pointer w-full ${
+                    filterBatasWaktu === 'TERLAMBAT'
+                      ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
+                      : filterBatasWaktu !== 'ALL'
+                      ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300'
+                      : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                  }`}
+                >
+                  <option value="ALL">Semua Batas Waktu ({tabOrdersOnly.length})</option>
+                  <option value="TERLAMBAT">⚠️ Terlambat ({countBatasTerlambat})</option>
+                  <option value="KURANG_24_JAM">⏱️ Kurang dari 24 jam ({countBatasKurang24})</option>
+                  <option value="LEBIH_24_JAM">🟢 Lebih dari 24 jam ({countBatasLebih24})</option>
+                </select>
+              </div>
+
+              {/* 3. Jasa Kirim Filter */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Jasa Kirim / Kurir:</label>
+                <select
+                  value={selectedOpsiPengiriman}
+                  onChange={(e) => setSelectedOpsiPengiriman(e.target.value)}
+                  className={`py-1.5 px-2 text-xs rounded-lg font-bold border transition-colors cursor-pointer w-full truncate ${
+                    selectedOpsiPengiriman !== 'ALL'
+                      ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300'
+                      : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                  }`}
+                >
+                  <option value="ALL">Semua Jasa Kirim ({tabOrdersOnly.length})</option>
+                  {uniqueOpsiPengiriman.map((courier) => {
+                    const count = tabOrdersOnly.filter((o) => (o.opsiPengiriman || '').trim() === courier).length;
+                    return (
+                      <option key={courier} value={courier}>
+                        {courier} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ========================================================================= */}
@@ -1696,6 +1715,9 @@ export const ShopeeTab: React.FC<ShopeeTabProps> = ({ onShowToast }) => {
             </table>
           </div>
         </div>
+
+        {/* Bottom Safe Area Spacing on Mobile to avoid FAB Menu overlap */}
+        <div className="h-14 sm:h-6 print:hidden" />
       </div>
 
       {/* ========================================================================= */}

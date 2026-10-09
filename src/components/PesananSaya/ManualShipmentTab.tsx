@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -125,7 +125,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     sendWaToStore: boolean;
   } | null>(null);
 
-  // Status Filter: Tambahkan filter opsi status barang sold
+  const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(false);
   const [filterSoldStatus, setFilterSoldStatus] = useState<'all' | 'has_sold'>('all');
   const [filterJasaKirim, setFilterJasaKirim] = useState<string>('all');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
@@ -3551,13 +3551,13 @@ _WMS Warehouse System_`;
           </div>
         </div>
 
-        {/* Filter & Pencarian Toolbar (Refactored) */}
-        <div className="flex flex-col gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+        {/* Filter & Pencarian Toolbar (Hemat Ruang Layar & Collapsible) */}
+        <div className="flex flex-col gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
           
-          {/* Baris 1: Search Bar & Reset Filter */}
-          <div className="flex items-center gap-2 w-full">
+          {/* Baris Utama: Search Bar + Toggle Filter + Reset */}
+          <div className="flex items-center gap-1.5 sm:gap-2 w-full">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchTerm}
@@ -3576,7 +3576,43 @@ _WMS Warehouse System_`;
               )}
             </div>
 
-            {/* Reset Filter Pindah ke Atas */}
+            {/* Tombol Toggle Filter Lanjutan */}
+            {(() => {
+              const activeFilterCount = [
+                filterStore !== 'all',
+                filterJasaKirim !== 'all',
+                filterStatus !== 'all',
+                filterAlterStatus !== 'all',
+                filterDealposSj !== 'all',
+                filterSoldStatus !== 'all',
+                filterStartDate !== '',
+                filterEndDate !== ''
+              ].filter(Boolean).length;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+                  className={`px-2.5 py-1.5 flex items-center gap-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                    isFilterExpanded || activeFilterCount > 0
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                  title="Tampilkan / Sembunyikan Opsi Filter"
+                >
+                  <Filter className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span className="hidden sm:inline">Filter</span>
+                  {activeFilterCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-black">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isFilterExpanded ? 'rotate-180' : ''}`} />
+                </button>
+              );
+            })()}
+
+            {/* Reset Filter Button */}
             {(searchTerm || filterStore !== 'all' || filterJasaKirim !== 'all' || filterStatus !== 'all' || filterAlterStatus !== 'all' || filterDealposSj !== 'all' || filterSoldStatus !== 'all' || filterStartDate !== '' || filterEndDate !== '') && (
               <button
                 type="button"
@@ -3592,119 +3628,158 @@ _WMS Warehouse System_`;
                   setFilterStartDate('');
                   setFilterEndDate('');
                 }}
-                className="px-3 py-1.5 flex items-center justify-center gap-1.5 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800/60 rounded-lg shadow-xs transition-colors cursor-pointer text-xs font-bold whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 flex items-center justify-center gap-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800/60 rounded-lg shadow-xs transition-colors cursor-pointer text-xs font-bold whitespace-nowrap shrink-0"
+                title="Reset Semua Filter"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Reset Filter</span>
-                <span className="sm:hidden">Reset</span>
+                <span className="hidden sm:inline">Reset</span>
               </button>
             )}
           </div>
           
-          {/* Baris 2: Grid Filter Dropdowns */}
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={filterStore}
-              onChange={(e) => setFilterStore(e.target.value)}
-              className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate"
-            >
-              <option value="all">Semua Store</option>
-              {outlets.map((o, idx) => (
-                <option key={idx} value={o.nama}>{o.nama}</option>
-              ))}
-            </select>
+          {/* Baris Dropdown Filter (Hanya tampil jika tombol Filter dibuka / expanded) */}
+          {isFilterExpanded && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-700/80 animate-in fade-in duration-150">
+              {/* 1. Store */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Store:</label>
+                <select
+                  value={filterStore}
+                  onChange={(e) => setFilterStore(e.target.value)}
+                  className={`py-1 px-2 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate ${
+                    filterStore !== 'all'
+                      ? 'border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40 font-bold text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Store</option>
+                  {outlets.map((o, idx) => (
+                    <option key={idx} value={o.nama}>{o.nama}</option>
+                  ))}
+                </select>
+              </div>
 
-            <select
-              value={filterJasaKirim}
-              onChange={(e) => setFilterJasaKirim(e.target.value)}
-              className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate"
-            >
-              <option value="all">Semua Jasa Kirim</option>
-              {jasaKirimList.map((jk, idx) => (
-                <option key={idx} value={jk}>{jk}</option>
-              ))}
-            </select>
+              {/* 2. Jasa Kirim */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Jasa Kirim:</label>
+                <select
+                  value={filterJasaKirim}
+                  onChange={(e) => setFilterJasaKirim(e.target.value)}
+                  className={`py-1 px-2 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate ${
+                    filterJasaKirim !== 'all'
+                      ? 'border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40 font-bold text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Jasa Kirim</option>
+                  {jasaKirimList.map((jk, idx) => (
+                    <option key={idx} value={jk}>{jk}</option>
+                  ))}
+                </select>
+              </div>
 
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="all">Semua Status</option>
-              <option value="pending">Pending</option>
-              <option value="diterima">Diterima</option>
-              <option value="diproses">Diproses</option>
-              <option value="dikirim">Dikirim</option>
-              <option value="batal">Batal</option>
-            </select>
+              {/* 3. Status Pesanan */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Status Pesanan:</label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className={`py-1 px-2 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+                    filterStatus !== 'all'
+                      ? 'border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40 font-bold text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="diterima">Diterima</option>
+                  <option value="diproses">Diproses</option>
+                  <option value="dikirim">Dikirim</option>
+                  <option value="batal">Batal</option>
+                </select>
+              </div>
 
-            {/* Filter Alteration */}
-            <select
-              value={filterAlterStatus}
-              onChange={(e) => setFilterAlterStatus(e.target.value as any)}
-              className={`py-1.5 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium ${
-                filterAlterStatus === 'manual_with_alter'
-                  ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 font-bold'
-                  : filterAlterStatus === 'all_alter'
-                  ? 'bg-purple-50 dark:bg-purple-950/70 border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-200 font-bold'
-                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
-              }`}
-            >
-              <option value="all">Semua Kondisi Alter</option>
-              <option value="manual_with_alter">✂️ Manual Shipment + Alter ({totalManualWithAlterCount})</option>
-              <option value="all_alter">✂️ Semua Disertai Alter ({totalManualWithAlterCount + totalArCount})</option>
-              <option value="no_alter">📦 Tanpa Alteration</option>
-            </select>
+              {/* 4. Filter Alteration */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Kondisi Alteration:</label>
+                <select
+                  value={filterAlterStatus}
+                  onChange={(e) => setFilterAlterStatus(e.target.value as any)}
+                  className={`py-1 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 ${
+                    filterAlterStatus === 'manual_with_alter'
+                      ? 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 font-bold'
+                      : filterAlterStatus === 'all_alter'
+                      ? 'bg-purple-50 dark:bg-purple-950/70 border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-200 font-bold'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Kondisi Alter</option>
+                  <option value="manual_with_alter">✂️ Manual + Alter ({totalManualWithAlterCount})</option>
+                  <option value="all_alter">✂️ Semua Disertai Alter ({totalManualWithAlterCount + totalArCount})</option>
+                  <option value="no_alter">📦 Tanpa Alteration</option>
+                </select>
+              </div>
 
-            {/* Filter Khusus Surat Jalan DealPOS untuk Fulfilment Marketplace */}
-            <select
-              value={filterDealposSj}
-              onChange={(e) => setFilterDealposSj(e.target.value as any)}
-              className={`py-1.5 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium ${
-                filterDealposSj === 'need_sj'
-                  ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200'
-                  : filterDealposSj === 'has_sj'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200'
-                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
-              }`}
-            >
-              <option value="all">Semua Fulfilment</option>
-              <option value="need_sj">
-                ⚡ Butuh SJ DealPOS {pendingSjCount > 0 ? `(${pendingSjCount})` : ''}
-              </option>
-              <option value="has_sj">✅ Ada SJ DealPOS</option>
-            </select>
+              {/* 5. Fulfilment DealPOS SJ */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">SJ DealPOS:</label>
+                <select
+                  value={filterDealposSj}
+                  onChange={(e) => setFilterDealposSj(e.target.value as any)}
+                  className={`py-1 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                    filterDealposSj === 'need_sj'
+                      ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-bold'
+                      : filterDealposSj === 'has_sj'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 font-bold'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Fulfilment</option>
+                  <option value="need_sj">
+                    ⚡ Butuh SJ {pendingSjCount > 0 ? `(${pendingSjCount})` : ''}
+                  </option>
+                  <option value="has_sj">✅ Ada SJ</option>
+                </select>
+              </div>
 
-            {/* Filter Status Stok: Item Sold Out */}
-            <select
-              value={filterSoldStatus}
-              onChange={(e) => setFilterSoldStatus(e.target.value as any)}
-              className={`py-1.5 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500 font-medium ${
-                filterSoldStatus === 'has_sold'
-                  ? 'bg-red-50 dark:bg-red-950/70 border-red-300 dark:border-red-700 text-red-900 dark:text-red-200'
-                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
-              }`}
-            >
-              <option value="all">Semua Kondisi Stok</option>
-              <option value="has_sold">🔴 Ada Item Sold Out</option>
-            </select>
-            
-            <div className="flex items-center gap-1 col-span-2 sm:col-span-1">
-              <input
-                type="date"
-                value={filterStartDate}
-                onChange={(e) => setFilterStartDate(e.target.value)}
-                className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
-              />
-              <span className="text-xs text-slate-500 dark:text-slate-400">-</span>
-              <input
-                type="date"
-                value={filterEndDate}
-                onChange={(e) => setFilterEndDate(e.target.value)}
-                className="py-1.5 px-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
-              />
+              {/* 6. Stok Sold Out */}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Status Stok:</label>
+                <select
+                  value={filterSoldStatus}
+                  onChange={(e) => setFilterSoldStatus(e.target.value as any)}
+                  className={`py-1 px-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                    filterSoldStatus === 'has_sold'
+                      ? 'bg-red-50 dark:bg-red-950/70 border-red-300 dark:border-red-700 text-red-900 dark:text-red-200 font-bold'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                  }`}
+                >
+                  <option value="all">Semua Kondisi Stok</option>
+                  <option value="has_sold">🔴 Ada Item Sold Out</option>
+                </select>
+              </div>
+              
+              {/* 7. Rentang Tanggal */}
+              <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Rentang Tanggal:</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="py-1 px-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400">-</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="py-1 px-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {canAction && selectedOrders.size > 0 && (
