@@ -124,7 +124,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   const [formAlamat, setFormAlamat] = useState<string>('');
   const [formKota, setFormKota] = useState<string>('');
   const [formEkspedisi, setFormEkspedisi] = useState<string>('JNE');
-  const [formLayanan, setFormLayanan] = useState<string>('Reguler');
+  const [formLayanan, setFormLayanan] = useState<string>('REG');
   const [formNoResi, setFormNoResi] = useState<string>('');
   const [formStatus, setFormStatus] = useState<IGLiveOrderStatus>('siap_diproses');
   const [formCatatan, setFormCatatan] = useState<string>('');
@@ -269,7 +269,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     setFormAlamat('');
     setFormKota('');
     setFormEkspedisi('JNE');
-    setFormLayanan('Reguler');
+    setFormLayanan('REG');
     setFormNoResi('');
     setFormStatus('siap_diproses');
     setFormCatatan('');
@@ -302,8 +302,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     setFormNoTelp(order.no_telp);
     setFormAlamat(order.alamat_lengkap);
     setFormKota(order.kota_kabupaten || '');
-    setFormEkspedisi(order.ekspedisi);
-    setFormLayanan(order.layanan || 'Reguler');
+    setFormEkspedisi(order.ekspedisi || 'JNE');
+    setFormLayanan(order.layanan || 'REG');
     setFormNoResi(order.no_resi);
     setFormStatus(order.status);
     setFormCatatan(order.catatan || '');
@@ -1432,12 +1432,13 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                     onChange={(e) => setFormEkspedisi(e.target.value)}
                     className="w-full p-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold"
                   >
+                    <option value="JNE">JNE</option>
                     <option value="J&T Express">J&T Express</option>
                     <option value="SiCepat">SiCepat</option>
-                    <option value="JNE Express">JNE Express</option>
                     <option value="SPX Express">SPX Express</option>
                     <option value="GoSend">GoSend</option>
                     <option value="GrabExpress">GrabExpress</option>
+                    <option value="Lainnya">Lainnya</option>
                   </select>
                 </div>
                 <div>
