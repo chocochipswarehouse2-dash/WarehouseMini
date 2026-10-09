@@ -409,49 +409,86 @@ export function getInitialDummyOrders(catalog: ProductItem[]): IGLiveOrder[] {
 }
 
 /**
- * Load Orders from LocalStorage (or initial dummy)
+ * Load Orders from Supabase
  */
-export function getStoredIgLiveOrders(catalog: ProductItem[]): IGLiveOrder[] {
+export async function fetchIgLiveOrdersFromSupabase(): Promise<IGLiveOrder[]> {
+  try {
+    const { data, error } = await getSupabaseClient()
+      .from('ig_live_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    
+    // Parse jsonb items
+    return (data || []).map(row => ({
+      ...row,
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items
+    }));
+  } catch (err) {
+    console.error('[IGLIVE] Gagal fetch dari Supabase:', err);
+    return [];
+  }
+}
+
+/**
+ * Upsert Orders to Supabase
+ */
+export async function upsertIgLiveOrdersToSupabase(orders: IGLiveOrder[]): Promise<boolean> {
+  if (!orders || orders.length === 0) return true;
+  try {
+    const { error } = await getSupabaseClient()
+      .from('ig_live_orders')
+      .upsert(orders.map(o => ({
+        ...o,
+        items: o.items // Supabase handles jsonb automatically
+      })), { onConflict: 'no_pesanan' });
+      
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[IGLIVE] Gagal upsert ke Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Sync LocalStorage to Supabase (Run once)
+ */
+export async function syncLocalIgLiveToSupabase(): Promise<void> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_ORDERS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Enforce SKU master catalog lookup on load
-        return parsed.map((order: IGLiveOrder) => ({
-          ...order,
-          items: (order.items || []).map((it) => {
-            const master = lookupMasterProduct(it.sku, catalog);
-            return {
-              ...it,
-              nama_produk: master.nama_produk || it.nama_produk,
-              size: master.size !== '-' ? master.size : it.size,
-              lokasi: master.lokasi !== '-' ? master.lokasi : (it.lokasi || '-'),
-              area: master.area,
-              priority: master.priority,
-            };
-          }),
-        }));
+        console.log('[IGLIVE] Menemukan data lokal, migrasi ke Supabase...');
+        const success = await upsertIgLiveOrdersToSupabase(parsed);
+        if (success) {
+          localStorage.removeItem(STORAGE_KEY_ORDERS);
+          console.log('[IGLIVE] Migrasi lokal berhasil diselesaikan.');
+        }
+      } else {
+        localStorage.removeItem(STORAGE_KEY_ORDERS);
       }
     }
   } catch (err) {
-    console.warn('[IGLIVE] Error reading localStorage orders:', err);
+    console.warn('[IGLIVE] Error migrasi data lokal:', err);
   }
-
-  const initial = getInitialDummyOrders(catalog);
-  saveStoredIgLiveOrders(initial);
-  return initial;
 }
 
 /**
- * Save Orders to LocalStorage
+ * Old Save for compatibility (Bypass to Supabase Async - not ideal but keeps old signatures happy if any)
+ * Note: Components should be updated to use async upsertIgLiveOrdersToSupabase instead.
  */
 export function saveStoredIgLiveOrders(orders: IGLiveOrder[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
-  } catch (err) {
-    console.error('[IGLIVE] Gagal menyimpan orders ke localStorage:', err);
-  }
+  upsertIgLiveOrdersToSupabase(orders);
+}
+
+/**
+ * Old Get for compatibility (Returns empty, components must be refactored)
+ */
+export function getStoredIgLiveOrders(catalog: ProductItem[]): IGLiveOrder[] {
+  return [];
 }
 
 /**
