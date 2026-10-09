@@ -39,6 +39,11 @@ function doGet(e) {
       return handleGetDataAlamat();
     }
 
+    // ── TRANSAKSI / IG LIVE ──────────────────────────────────────────────
+    if (action === 'getTransaksi' || action === 'getIgLive') {
+      return handleGetSheet('transaksi', e.parameter);
+    }
+
     // ── OUTLETS & JASA KIRIM ─────────────────────────────────────────────
     if (action === 'getOutlets') {
       return handleGetOutlets();
@@ -80,7 +85,19 @@ function doGet(e) {
  */
 function handleGetSheet(sheetName, params) {
   var ss    = getSpreadsheet();
+  if (!ss) return jsonResponse({ success: false, error: 'Spreadsheet tidak ditemukan atau tidak dapat diakses' });
+
   var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    // Coba pencarian nama sheet case-insensitive (misal: 'transaksi' vs 'Transaksi')
+    var allSheets = ss.getSheets();
+    for (var s = 0; s < allSheets.length; s++) {
+      if (allSheets[s].getName().trim().toLowerCase() === String(sheetName).trim().toLowerCase()) {
+        sheet = allSheets[s];
+        break;
+      }
+    }
+  }
 
   if (!sheet || sheet.getLastRow() <= 1) {
     return jsonResponse({ success: true, data: [], count: 0, sheet: sheetName });
@@ -262,4 +279,55 @@ function handleGetDataAlamat() {
   }
 
   return jsonResponse({ success: true, data: data });
+}
+
+/**
+ * Helper untuk mendapatkan objek Spreadsheet
+ */
+function getSpreadsheet() {
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Helper untuk membaca seluruh baris data dari sheet ke bentuk Array of Objects
+ */
+function readAllRows(sheet) {
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return [];
+
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  if (values.length <= 1) return [];
+
+  var headers = values[0].map(function(h) {
+    return String(h || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '');
+  });
+
+  var results = [];
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    var obj = {};
+    var hasContent = false;
+    for (var c = 0; c < headers.length; c++) {
+      var val = row[c];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        hasContent = true;
+      }
+      var key = headers[c] || ('col_' + c);
+      obj[key] = val;
+    }
+    if (hasContent) {
+      results.push(obj);
+    }
+  }
+  return results;
 }

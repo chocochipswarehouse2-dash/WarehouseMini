@@ -112,7 +112,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     hasPermission(session, 'tab_ops_loading_produksi');
   const canLoadingDock = userIsAdmin || hasPermission(session, 'menu_ops_loading_dock') ||
     hasPermission(session, 'tab_ops_loading_penerimaan') ||
-    hasPermission(session, 'tab_ops_loading_pengiriman');
+    hasPermission(session, 'tab_ops_loading_pengiriman') ||
+    hasPermission(session, 'tab_ops_loading_transfer_order') ||
+    hasPermission(session, 'tab_ops_pesanan_transfer_order');
   const canMutasi = userIsAdmin || hasPermission(session, 'menu_ops_mutasi') ||
     hasPermission(session, 'tab_ops_mutasi_scanner') ||
     hasPermission(session, 'tab_ops_mutasi_log') ||

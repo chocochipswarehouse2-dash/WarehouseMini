@@ -55,6 +55,7 @@ import {
 import { savePengirimanStoreBatch } from '../../services/pengirimanStore';
 import { CameraWatermarkModal } from './CameraWatermarkModal';
 import { SearchableSelect } from '../common/SearchableSelect';
+import { LoadingDockImageLightbox } from '../common/LoadingDockImageLightbox';
 
 export interface DraftMutasiItem {
   id: string;
@@ -124,6 +125,45 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
 
   // Camera & Watermark Modal
   const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(false);
+
+  // Lightbox Photo Modal (Preview Gaya Katalog Produk)
+  const [lightboxPhoto, setLightboxPhoto] = useState<{
+    url: string;
+    title?: string;
+    subtitle?: string;
+    badge?: string;
+  } | null>(null);
+  const [lightboxAllPhotos, setLightboxAllPhotos] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+
+  const handleOpenPhotoLightbox = (
+    url: string,
+    all: string[] = [url],
+    idx: number = 0,
+    title = 'Dokumentasi Foto Penerimaan',
+    badge = 'Penerimaan Store'
+  ) => {
+    setLightboxAllPhotos(all);
+    setLightboxIndex(idx);
+    setLightboxPhoto({
+      url,
+      title,
+      badge,
+      subtitle: `Foto ${idx + 1} dari ${all.length}`,
+    });
+  };
+
+  const handleLightboxSelectIndex = (newIdx: number) => {
+    if (newIdx >= 0 && newIdx < lightboxAllPhotos.length) {
+      setLightboxIndex(newIdx);
+      setLightboxPhoto((prev) => ({
+        url: lightboxAllPhotos[newIdx],
+        title: prev?.title || 'Dokumentasi Foto Penerimaan',
+        badge: prev?.badge || 'Penerimaan Store',
+        subtitle: `Foto ${newIdx + 1} dari ${lightboxAllPhotos.length}`,
+      }));
+    }
+  };
 
   // Riwayat State
   const [riwayatList, setRiwayatList] = useState<PenerimaanMutasiStoreItem[]>([]);
@@ -1100,22 +1140,27 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                   {fotoUrls.map((url, idx) => (
                     <div
                       key={idx}
-                      className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 aspect-video bg-slate-900 shadow-xs"
+                      className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 aspect-video bg-slate-900 shadow-xs cursor-pointer"
+                      onClick={() => handleOpenPhotoLightbox(url, fotoUrls, idx, `Foto Dokumentasi #${idx + 1} (Form Input)`)}
                     >
                       <img
                         src={url}
                         alt={`Dokumentasi ${idx + 1}`}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                         referrerPolicy="no-referrer"
                       />
                       <button
                         type="button"
-                        onClick={() => removePhoto(idx)}
-                        className="absolute top-1 right-1 p-1 bg-rose-600/90 text-white rounded-lg opacity-90 hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removePhoto(idx);
+                        }}
+                        className="absolute top-1 right-1 p-1 bg-rose-600/90 text-white rounded-lg opacity-90 hover:opacity-100 transition-opacity z-10"
+                        title="Hapus foto ini"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                      <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-slate-900/90 text-[9px] text-white rounded font-mono font-bold">
+                      <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-slate-900/90 text-[9px] text-white rounded font-mono font-bold pointer-events-none">
                         Foto #{idx + 1}
                       </div>
                     </div>
@@ -1461,21 +1506,23 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                         {item.foto_urls.slice(0, 3).map((url, i) => (
                           <div
                             key={i}
-                            onClick={() => setSelectedItemDetail(item)}
-                            className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-900"
+                            onClick={() => handleOpenPhotoLightbox(url, item.foto_urls, i, item.deskripsi || 'Dokumentasi Penerimaan', item.nama_store_pengirim || 'Store')}
+                            className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-900 group relative"
+                            title="Klik untuk perbesar foto (Full Preview)"
                           >
                             <img
                               src={url}
                               alt="Foto"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                               referrerPolicy="no-referrer"
                             />
                           </div>
                         ))}
                         {item.foto_urls.length > 3 && (
                           <div
-                            onClick={() => setSelectedItemDetail(item)}
-                            className="w-14 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0 cursor-pointer"
+                            onClick={() => handleOpenPhotoLightbox(item.foto_urls[3], item.foto_urls, 3, item.deskripsi || 'Dokumentasi Penerimaan', item.nama_store_pengirim || 'Store')}
+                            className="w-14 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            title="Lihat semua foto"
                           >
                             +{item.foto_urls.length - 3}
                           </div>
@@ -1597,22 +1644,27 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                     {selectedItemDetail.foto_urls.map((url, i) => (
                       <div
                         key={i}
-                        className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 group relative aspect-video"
+                        onClick={() => handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, i, selectedItemDetail.deskripsi || 'Dokumentasi Penerimaan', selectedItemDetail.nama_store_pengirim || 'Store')}
+                        className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 group relative aspect-video cursor-pointer hover:border-emerald-500 transition-colors"
+                        title="Klik untuk melihat foto ukuran penuh (Zoom/Fullscreen)"
                       >
                         <img
                           src={url}
                           alt={`Dokumentasi ${i + 1}`}
-                          className="w-full h-full object-contain"
+                          className="w-full h-full object-contain group-hover:scale-105 transition-transform"
                           referrerPolicy="no-referrer"
                         />
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/80 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, i, selectedItemDetail.deskripsi || 'Dokumentasi Penerimaan', selectedItemDetail.nama_store_pengirim || 'Store');
+                          }}
+                          className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/85 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
                         >
-                          <ExternalLink className="w-3 h-3" /> Buka Foto HD
-                        </a>
+                          <ZoomIn className="w-3 h-3" />
+                          <span>Perbesar Foto</span>
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1857,6 +1909,16 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
           </div>
         </div>
       )}
+
+      {/* LIGHTBOX PREVIEW MODAL (GAYA KATALOG PRODUK) */}
+      <LoadingDockImageLightbox
+        isOpen={Boolean(lightboxPhoto)}
+        onClose={() => setLightboxPhoto(null)}
+        photo={lightboxPhoto}
+        allPhotos={lightboxAllPhotos}
+        currentIndex={lightboxIndex}
+        onSelectIndex={handleLightboxSelectIndex}
+      />
     </div>
   );
 };

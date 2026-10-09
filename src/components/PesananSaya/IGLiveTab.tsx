@@ -37,11 +37,14 @@ import {
   saveStoredIgLiveOrders,
   getStoredIgLiveGasUrl,
   saveStoredIgLiveGasUrl,
+  getStoredIgLiveSheetName,
+  saveStoredIgLiveSheetName,
   fetchOrdersFromGas,
   lookupMasterProduct,
   syncLocalIgLiveToSupabase,
   fetchIgLiveOrdersFromSupabase,
-  upsertIgLiveOrdersToSupabase
+  upsertIgLiveOrdersToSupabase,
+  generateUUID,
 } from '../../services/igLiveService';
 import { getFormalStoreBrandName } from '../../services/emailService';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
@@ -74,6 +77,8 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // State Data
   const [orders, setOrders] = useState<IGLiveOrder[]>([]);
   const [gasUrl, setGasUrl] = useState<string>('');
+  const [sheetName, setSheetName] = useState<string>('transaksi');
+  const [tempSheetName, setTempSheetName] = useState<string>('transaksi');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const userIsAdmin = isSuperadmin(session);
 
@@ -144,6 +149,10 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     setGasUrl(loadedGasUrl);
     setTempGasUrl(loadedGasUrl);
 
+    const loadedSheetName = getStoredIgLiveSheetName();
+    setSheetName(loadedSheetName);
+    setTempSheetName(loadedSheetName);
+
     // Sync from local first, then fetch from Supabase
     syncLocalIgLiveToSupabase().then(() => {
       fetchIgLiveOrdersFromSupabase().then(res => {
@@ -154,33 +163,35 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     return () => window.removeEventListener('afterprint', handleAfterPrint);
   }, [productCatalog]);
 
-  // Sync / Refresh from GAS
+  // Sync / Refresh from GAS / Google Sheets
   const handleSyncGas = async () => {
     if (!gasUrl.trim()) {
       setIsGasModalOpen(true);
-      onShowToast('Masukkan URL Web App GAS terlebih dahulu untuk sinkronisasi otomatis', 'info');
+      onShowToast('Masukkan URL Web App GAS atau link Google Sheets terlebih dahulu', 'info');
       return;
     }
 
     setIsSyncing(true);
-    onShowToast('Menghubungkan ke Google Apps Script...', 'info');
+    onShowToast(`Menghubungkan & menarik data dari sheet "${sheetName}"...`, 'info');
 
-    const result = await fetchOrdersFromGas(gasUrl, productCatalog);
+    const result = await fetchOrdersFromGas(gasUrl, productCatalog, sheetName);
     setIsSyncing(false);
 
     if (result.success && result.orders) {
       setOrders(result.orders);
-      onShowToast(result.message, 'success');
+      onShowToast(result.message || `Berhasil sinkronisasi ${result.orders.length} pesanan dari sheet "${sheetName}"!`, 'success');
     } else {
-      onShowToast(result.message || 'Gagal mengambil data dari GAS', 'error');
+      onShowToast(result.message || 'Gagal mengambil data pesanan', 'error');
     }
   };
 
   const handleSaveGasUrl = () => {
     saveStoredIgLiveGasUrl(tempGasUrl);
     setGasUrl(tempGasUrl);
+    saveStoredIgLiveSheetName(tempSheetName);
+    setSheetName(tempSheetName);
     setIsGasModalOpen(false);
-    onShowToast('URL Google Apps Script berhasil disimpan', 'success');
+    onShowToast(`Pengaturan koneksi (Sheet: "${tempSheetName}") berhasil disimpan`, 'success');
   };
 
   // Status Styling Helper
@@ -390,7 +401,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     } else {
       // Create New
       const newOrder: IGLiveOrder = {
-        id: formNoPesanan.trim(),
+        id: generateUUID(),
         no_pesanan: formNoPesanan.trim(),
         tanggal: new Date().toISOString().substring(0, 19).replace('T', ' '),
         session_live: 'Live Flash Session',
@@ -1296,8 +1307,35 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                 />
               </div>
 
-              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-[11px] text-amber-800 dark:text-amber-300">
-                <strong>Catatan:</strong> Jika URL belum diisi, halaman akan tetap berfungsi penuh menggunakan data pesanan lokal (dummy/input manual).
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Nama Sheet Tab di Spreadsheet:
+                  </label>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                    Default: transaksi
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="transaksi"
+                  value={tempSheetName}
+                  onChange={(e) => setTempSheetName(e.target.value)}
+                  className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-pink-500 text-slate-900 dark:text-white font-mono"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  Sistem otomatis menembak sheet/tab <strong>"transaksi"</strong> secara langsung, bukan tab ringkasan atau gid=0 default.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-800/40 text-[11px] text-pink-900 dark:text-pink-200 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
+                  <span>Format Kolom Sheet Transaksi</span>
+                </div>
+                <p className="text-slate-600 dark:text-slate-300">
+                  Header yang didukung: <em>NAMA PEMESAN, NO HP, ALAMAT, PRODUCT NAME, SIZE, SKU, HARGA LIVE, QTY, SHIPPING, TOTAL, STATUS, KET, RESI</em>. Kolom terdeteksi otomatis tanpa terpengaruh urutan kolom.
+                </p>
               </div>
             </div>
 

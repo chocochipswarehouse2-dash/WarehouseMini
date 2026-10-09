@@ -93,6 +93,7 @@ export const PERMISSION_GROUPS = [
       { key: 'menu_ops_loading_dock', label: 'Menu Loading Dock', description: 'Akses halaman Loading Dock', isSuperadminOnly: false },
       { key: 'tab_ops_loading_penerimaan', label: 'Tab Penerimaan', description: 'Penerimaan Store & Paket', isSuperadminOnly: false },
       { key: 'tab_ops_loading_pengiriman', label: 'Tab Pengiriman', description: 'Pengiriman Store & Paket', isSuperadminOnly: false },
+      { key: 'tab_ops_loading_transfer_order', label: 'Tab Transfer Order', description: 'Transfer Order Distribusi Store', isSuperadminOnly: false },
     ]
   },
   {
@@ -258,7 +259,7 @@ export const canAccessPage = (session: UserSession | null, page: ActivePage): bo
   switch (page) {
     case 'dashboard': return hasPermission(session, 'menu_ops_dashboard');
     case 'produksi': return hasPermission(session, 'menu_ops_produksi') || hasPermission(session, 'tab_ops_loading_produksi');
-    case 'loading_dock': return hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman');
+    case 'loading_dock': return hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order');
     case 'penerimaan_barang': return hasPermission(session, 'tab_ops_loading_penerimaan');
     case 'packing': return hasPermission(session, 'tab_ops_loading_pengiriman');
     case 'pengiriman': return hasPermission(session, 'tab_ops_loading_pengiriman');
@@ -303,7 +304,7 @@ export const getDefaultPageForSession = (session: UserSession | null): ActivePag
   
   if (hasPermission(session, 'menu_ops_pesanan_saya') || hasPermission(session, 'tab_ops_pesanan_dashboard') || hasPermission(session, 'tab_ops_pesanan_manual_shipment') || hasPermission(session, 'tab_ops_pesanan_transfer_order') || hasPermission(session, 'tab_ops_pesanan_shopee') || hasPermission(session, 'tab_ops_pesanan_tiktok') || hasPermission(session, 'tab_ops_pesanan_website') || hasPermission(session, 'tab_ops_pesanan_woocommerce') || hasPermission(session, 'tab_ops_pesanan_lazada')) return 'pesanan_saya';
   
-  if (hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_produksi') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman')) return 'loading_dock';
+  if (hasPermission(session, 'menu_ops_loading_dock') || hasPermission(session, 'tab_ops_loading_produksi') || hasPermission(session, 'tab_ops_loading_penerimaan') || hasPermission(session, 'tab_ops_loading_pengiriman') || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order')) return 'loading_dock';
   
   if (hasPermission(session, 'menu_ops_mutasi') || hasPermission(session, 'tab_ops_mutasi_scanner') || hasPermission(session, 'tab_ops_mutasi_log') || hasPermission(session, 'tab_ops_mutasi_so')) return 'operasi_stok';
   

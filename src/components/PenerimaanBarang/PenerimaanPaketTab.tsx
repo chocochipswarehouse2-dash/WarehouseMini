@@ -23,6 +23,7 @@ import {
   Layers,
   FileText,
   Barcode,
+  ZoomIn,
 } from 'lucide-react';
 import {
   UserSession,
@@ -39,6 +40,7 @@ import {
 } from '../../services/penerimaanBarang';
 import { CameraWatermarkModal } from './CameraWatermarkModal';
 import { SearchableSelect } from '../common/SearchableSelect';
+import { LoadingDockImageLightbox } from '../common/LoadingDockImageLightbox';
 
 interface PenerimaanPaketTabProps {
   session: UserSession | null;
@@ -71,6 +73,45 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
 
   // Camera & Watermark Modal
   const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(false);
+
+  // Lightbox Photo Modal (Preview Gaya Katalog Produk)
+  const [lightboxPhoto, setLightboxPhoto] = useState<{
+    url: string;
+    title?: string;
+    subtitle?: string;
+    badge?: string;
+  } | null>(null);
+  const [lightboxAllPhotos, setLightboxAllPhotos] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+
+  const handleOpenPhotoLightbox = (
+    url: string,
+    all: string[] = [url],
+    idx: number = 0,
+    title = 'Dokumentasi Foto Paket',
+    badge = 'Penerimaan Paket'
+  ) => {
+    setLightboxAllPhotos(all);
+    setLightboxIndex(idx);
+    setLightboxPhoto({
+      url,
+      title,
+      badge,
+      subtitle: `Foto ${idx + 1} dari ${all.length}`,
+    });
+  };
+
+  const handleLightboxSelectIndex = (newIdx: number) => {
+    if (newIdx >= 0 && newIdx < lightboxAllPhotos.length) {
+      setLightboxIndex(newIdx);
+      setLightboxPhoto((prev) => ({
+        url: lightboxAllPhotos[newIdx],
+        title: prev?.title || 'Dokumentasi Foto Paket',
+        badge: prev?.badge || 'Penerimaan Paket',
+        subtitle: `Foto ${newIdx + 1} dari ${lightboxAllPhotos.length}`,
+      }));
+    }
+  };
 
   // Riwayat State
   const [riwayatList, setRiwayatList] = useState<PenerimaanPaketItem[]>([]);
@@ -446,22 +487,27 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                 {fotoUrls.map((url, idx) => (
                   <div
                     key={idx}
-                    className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 aspect-video bg-slate-900 shadow-xs"
+                    className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 aspect-video bg-slate-900 shadow-xs cursor-pointer"
+                    onClick={() => handleOpenPhotoLightbox(url, fotoUrls, idx, `Foto Dokumentasi Paket #${idx + 1} (Form Input)`)}
                   >
                     <img
                       src={url}
                       alt={`Dokumentasi ${idx + 1}`}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                       referrerPolicy="no-referrer"
                     />
                     <button
                       type="button"
-                      onClick={() => removePhoto(idx)}
-                      className="absolute top-1 right-1 p-1 bg-rose-600/90 text-white rounded-lg opacity-90 hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removePhoto(idx);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-rose-600/90 text-white rounded-lg opacity-90 hover:opacity-100 transition-opacity z-10"
+                      title="Hapus foto ini"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-slate-900/80 text-[9px] text-white rounded font-mono">
+                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-slate-900/80 text-[9px] text-white rounded font-mono pointer-events-none">
                       Foto #{idx + 1}
                     </div>
                   </div>
@@ -659,21 +705,23 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                         {item.foto_urls.slice(0, 3).map((url, i) => (
                           <div
                             key={i}
-                            onClick={() => setSelectedItemDetail(item)}
-                            className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-900"
+                            onClick={() => handleOpenPhotoLightbox(url, item.foto_urls, i, `Paket ${item.nama_ekspedisi} (Resi: ${item.no_resi})`, 'Penerimaan Paket')}
+                            className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-900 group relative"
+                            title="Klik untuk perbesar foto (Full Preview)"
                           >
                             <img
                               src={url}
                               alt="Foto"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                               referrerPolicy="no-referrer"
                             />
                           </div>
                         ))}
                         {item.foto_urls.length > 3 && (
                           <div
-                            onClick={() => setSelectedItemDetail(item)}
-                            className="w-14 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0 cursor-pointer"
+                            onClick={() => handleOpenPhotoLightbox(item.foto_urls[3], item.foto_urls, 3, `Paket ${item.nama_ekspedisi} (Resi: ${item.no_resi})`, 'Penerimaan Paket')}
+                            className="w-14 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            title="Lihat semua foto"
                           >
                             +{item.foto_urls.length - 3}
                           </div>
@@ -781,24 +829,32 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                     {selectedItemDetail.foto_urls.map((url, idx) => (
                       <div
                         key={idx}
-                        className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 shadow-sm"
+                        onClick={() => handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, idx, `Paket ${selectedItemDetail.nama_ekspedisi} (Resi: ${selectedItemDetail.no_resi})`, 'Penerimaan Paket')}
+                        className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 shadow-sm group cursor-pointer hover:border-blue-500 transition-colors"
+                        title="Klik untuk melihat foto ukuran penuh (Zoom/Fullscreen)"
                       >
-                        <img
-                          src={url}
-                          alt={`Dokumentasi #${idx + 1}`}
-                          className="w-full object-contain max-h-80 mx-auto"
-                          referrerPolicy="no-referrer"
-                        />
+                        <div className="relative">
+                          <img
+                            src={url}
+                            alt={`Dokumentasi #${idx + 1}`}
+                            className="w-full object-contain max-h-80 mx-auto group-hover:scale-105 transition-transform"
+                            referrerPolicy="no-referrer"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, idx, `Paket ${selectedItemDetail.nama_ekspedisi} (Resi: ${selectedItemDetail.no_resi})`, 'Penerimaan Paket');
+                            }}
+                            className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/85 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                          >
+                            <ZoomIn className="w-3 h-3" />
+                            <span>Perbesar Foto</span>
+                          </button>
+                        </div>
                         <div className="p-2 bg-slate-900/90 text-white flex items-center justify-between text-[11px]">
                           <span>Foto #{idx + 1}</span>
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-sky-400 hover:underline flex items-center gap-1 font-bold"
-                          >
-                            <ExternalLink className="w-3 h-3" /> Buka Full di GDrive
-                          </a>
+                          <span className="text-slate-400">Klik gambar untuk zoom penuh</span>
                         </div>
                       </div>
                     ))}
@@ -883,6 +939,16 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
         picName={picNama}
         picUsername={picUsername}
         qtyInfo={qtyPaket ? `${qtyPaket} Paket` : undefined}
+      />
+
+      {/* LIGHTBOX PREVIEW MODAL (GAYA KATALOG PRODUK) */}
+      <LoadingDockImageLightbox
+        isOpen={Boolean(lightboxPhoto)}
+        onClose={() => setLightboxPhoto(null)}
+        photo={lightboxPhoto}
+        allPhotos={lightboxAllPhotos}
+        currentIndex={lightboxIndex}
+        onSelectIndex={handleLightboxSelectIndex}
       />
     </div>
   );

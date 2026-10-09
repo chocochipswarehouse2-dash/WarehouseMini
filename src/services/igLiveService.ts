@@ -1,5 +1,7 @@
 import { ProductItem } from '../types';
-import { getSupabaseClient, getAreaFromLokasi, getPickingPriority } from './supabase';
+import { getSupabaseClient, getAreaFromLokasi, getPickingPriority, generateUUID } from './supabase';
+
+export { generateUUID };
 
 export type IGLiveOrderStatus =
   | 'menunggu_pembayaran'
@@ -61,6 +63,7 @@ export interface IGLiveOrder {
 
 const STORAGE_KEY_ORDERS = 'chocochips_iglive_orders_v1';
 const STORAGE_KEY_GAS_URL = 'chocochips_iglive_gas_url_v1';
+const STORAGE_KEY_SHEET_NAME = 'chocochips_iglive_sheet_name_v1';
 
 /**
  * Standard SKU Lookup dari Master Product Catalog
@@ -409,6 +412,14 @@ export function getInitialDummyOrders(catalog: ProductItem[]): IGLiveOrder[] {
 }
 
 /**
+ * Validasi apakah sebuah string memiliki format UUID yang valid (8-4-4-4-12 hex)
+ */
+export function isValidUuid(str?: string | null): boolean {
+  if (!str || typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+}
+
+/**
  * Load Orders from Supabase
  */
 export async function fetchIgLiveOrdersFromSupabase(): Promise<IGLiveOrder[]> {
@@ -433,21 +444,79 @@ export async function fetchIgLiveOrdersFromSupabase(): Promise<IGLiveOrder[]> {
 
 /**
  * Upsert Orders to Supabase
+ * Memastikan kolom 'id' tidak dikirim jika bukan format UUID valid (mencegah error Postgres 22P02)
  */
 export async function upsertIgLiveOrdersToSupabase(orders: IGLiveOrder[]): Promise<boolean> {
   if (!orders || orders.length === 0) return true;
   try {
+    const payload = orders.map((o) => {
+      const row: any = {
+        no_pesanan: o.no_pesanan,
+        tanggal: o.tanggal || new Date().toISOString(),
+        session_live: o.session_live || 'IG Live Session',
+        username_ig: o.username_ig || '@customer',
+        nama_pembeli: o.nama_pembeli || 'Customer IG',
+        no_telp: o.no_telp || '',
+        alamat_lengkap: o.alamat_lengkap || '',
+        kota_kabupaten: o.kota_kabupaten || '',
+        provinsi: o.provinsi || '',
+        kode_pos: o.kode_pos || '',
+        ekspedisi: o.ekspedisi || 'JNE',
+        layanan: o.layanan || 'REG',
+        no_resi: o.no_resi || '-',
+        biaya_ongkir: Number(o.biaya_ongkir || 0),
+        total_bayar: Number(o.total_bayar || 0),
+        status: o.status || 'siap_diproses',
+        alasan_batal: o.alasan_batal || '',
+        catatan: o.catatan || '',
+        items: o.items, // Supabase handles jsonb automatically
+        is_picked: !!o.is_picked,
+        waktu_picking: o.waktu_picking || null,
+        petugas_picking: o.petugas_picking || null,
+        waktu_packing: o.waktu_packing || null,
+        petugas_packing: o.petugas_packing || null,
+        waktu_kirim: o.waktu_kirim || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      // HANYA sertakan kolom 'id' jika string tersebut adalah UUID valid
+      // Jika bernilai custom string seperti "IGL-GS-...", id TIDAK dikirim agar default gen_random_uuid() di Supabase aktif
+      if (o.id && isValidUuid(o.id)) {
+        row.id = o.id;
+      }
+
+      return row;
+    });
+
     const { error } = await getSupabaseClient()
       .from('ig_live_orders')
-      .upsert(orders.map(o => ({
-        ...o,
-        items: o.items // Supabase handles jsonb automatically
-      })), { onConflict: 'no_pesanan' });
+      .upsert(payload, { onConflict: 'no_pesanan' });
       
     if (error) throw error;
     return true;
   } catch (err) {
     console.error('[IGLIVE] Gagal upsert ke Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Hapus Pesanan dari Supabase
+ */
+export async function deleteIgLiveOrderFromSupabase(noPesanan: string, id?: string): Promise<boolean> {
+  if (!noPesanan) return true;
+  try {
+    let query = getSupabaseClient().from('ig_live_orders').delete();
+    if (id && isValidUuid(id)) {
+      query = query.or(`no_pesanan.eq.${noPesanan},id.eq.${id}`);
+    } else {
+      query = query.eq('no_pesanan', noPesanan);
+    }
+    const { error } = await query;
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[IGLIVE] Gagal delete dari Supabase:', err);
     return false;
   }
 }
@@ -513,19 +582,45 @@ export function saveStoredIgLiveGasUrl(url: string): void {
   }
 }
 
+/**
+ * Get Target Sheet Name (Default: 'transaksi')
+ */
+export function getStoredIgLiveSheetName(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEY_SHEET_NAME) || 'transaksi';
+  } catch {
+    return 'transaksi';
+  }
+}
+
+/**
+ * Save Target Sheet Name
+ */
+export function saveStoredIgLiveSheetName(sheetName: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_SHEET_NAME, sheetName.trim() || 'transaksi');
+  } catch {
+    // noop
+  }
+}
+
 import Papa from 'papaparse';
 
 /**
  * Tarik / Sinkronisasi Data Pesanan dari URL GAS atau Google Sheets langsung
+ * Standar: Target utama sheet/tab adalah "transaksi".
  */
 export async function fetchOrdersFromGas(
   gasUrl: string,
-  catalog: ProductItem[]
+  catalog: ProductItem[],
+  customSheetName?: string
 ): Promise<{ success: boolean; orders?: IGLiveOrder[]; message: string }> {
   let url = (gasUrl || '').trim();
   if (!url) {
     return { success: false, message: 'URL GAS / Google Sheets belum diatur' };
   }
+
+  const targetSheet = (customSheetName || getStoredIgLiveSheetName() || 'transaksi').trim();
 
   // Deteksi apakah ini link Google Sheets
   const isGoogleSheets = url.includes('docs.google.com/spreadsheets') || url.includes('spreadsheets.google.com');
@@ -539,24 +634,67 @@ export async function fetchOrdersFromGas(
       const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
       
       if (!idMatch) {
-        throw new Error('Link Google Sheets tidak valid (ID tidak ditemukan)');
+        throw new Error('Link Google Sheets tidak valid (ID dokumen tidak ditemukan)');
       }
       
       const sheetId = idMatch[1];
-      const gid = gidMatch ? gidMatch[1] : '0';
-      
-      // 2. Ubah menjadi link export CSV
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-      
-      // 3. Fetch CSV data
-      const response = await fetch(csvUrl);
-      if (!response.ok) {
-        throw new Error(`Gagal mengunduh CSV (HTTP ${response.status}). Pastikan akses sheet adalah "Anyone with the link".`);
+      let csvText = '';
+      let fetchSuccess = false;
+
+      // 2. Prioritas 1: Ambil langsung tab sheet "transaksi" via Google Visualization API
+      // Ini menjamin sheet yang ditarik adalah sheet transaksi, bukan gid=0 (sheet default/rekap)
+      const gvizCandidateUrls = [
+        `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(targetSheet)}`,
+        `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=transaksi`,
+        `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Transaksi`,
+        `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=TRANSAKSI`,
+      ];
+
+      for (const testUrl of gvizCandidateUrls) {
+        try {
+          const resp = await fetch(testUrl);
+          if (resp.ok) {
+            const txt = await resp.text();
+            // Validasi apakah bukan halaman HTML login/error
+            if (txt && !txt.includes('<!DOCTYPE html>') && !txt.includes('<html')) {
+              csvText = txt;
+              fetchSuccess = true;
+              break;
+            }
+          }
+        } catch {
+          // Lanjut ke kandidat berikutnya
+        }
+      }
+
+      // 3. Prioritas 2 (Fallback): Gunakan gid dari URL jika user mencantumkan GID eksplisit
+      if (!fetchSuccess && gidMatch && gidMatch[1] && gidMatch[1] !== '0') {
+        try {
+          const gidUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gidMatch[1]}`;
+          const resp = await fetch(gidUrl);
+          if (resp.ok) {
+            const txt = await resp.text();
+            if (txt && !txt.includes('<!DOCTYPE html>') && !txt.includes('<html')) {
+              csvText = txt;
+              fetchSuccess = true;
+            }
+          }
+        } catch {
+          // noop
+        }
+      }
+
+      // 4. Prioritas 3 (Fallback terakhir): Export standard gid=0
+      if (!fetchSuccess) {
+        const fallbackUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`;
+        const resp = await fetch(fallbackUrl);
+        if (!resp.ok) {
+          throw new Error(`Gagal mengunduh data dari Google Sheets (HTTP ${resp.status}). Pastikan akses file adalah "Anyone with the link / Siapa saja yang memiliki link" sebagai Viewer.`);
+        }
+        csvText = await resp.text();
       }
       
-      const csvText = await response.text();
-      
-      // 4. Parsing menggunakan PapaParse
+      // 5. Parsing CSV menggunakan PapaParse
       const parsed = Papa.parse(csvText, {
         header: false,
         skipEmptyLines: true,
@@ -566,47 +704,101 @@ export async function fetchOrdersFromGas(
         console.warn('[IGLIVE] PapaParse errors:', parsed.errors);
       }
       
-      const rows = parsed.data as string[][];
+      const rows = (parsed.data || []) as string[][];
+      if (rows.length === 0) {
+        return { success: false, message: `Sheet "${targetSheet}" kosong atau tidak memiliki baris data.` };
+      }
       
-      // Asumsi format kolom sesuai sheet "transaksi":
-      // Baris 0: Instruksi
-      // Baris 1: Header (NAMA PEMESAN, NO HP, ALAMAT, KODE, PRODUCT NAME, SIZE, SKU, HARGA LIVE, QTY, PRICE, SHIPPING, TOTAL, STATUS, KET, RESI)
-      // Baris 2 dst: Data
-      
-      let dataStartRow = 1;
-      // Cari baris header secara dinamis jika format agak bergeser
-      for (let i = 0; i < Math.min(5, rows.length); i++) {
-        if (rows[i].length > 5 && String(rows[i][0]).toUpperCase().includes('NAMA PEMESAN')) {
-          dataStartRow = i + 1;
+      // 6. Deteksi baris header dan pemetaan kolom secara dinamis
+      // Format baku sheet "transaksi":
+      // NAMA PEMESAN | NO HP | ALAMAT | KODE | PRODUCT NAME | SIZE | SKU | HARGA LIVE | QTY | PRICE | SHIPPING | TOTAL | STATUS | KET | RESI
+      let headerRowIndex = -1;
+      const colMap: Record<string, number> = {};
+
+      for (let r = 0; r < Math.min(10, rows.length); r++) {
+        const rowCells = rows[r].map((c) => String(c || '').toUpperCase().trim());
+        const hasNama = rowCells.some((c) => c.includes('NAMA') || c.includes('PEMESAN') || c.includes('CUSTOMER'));
+        const hasItem = rowCells.some((c) => c.includes('SKU') || c.includes('PRODUCT') || c.includes('PRODUK') || c.includes('KODE') || c.includes('BARANG'));
+        
+        if (hasNama || hasItem) {
+          headerRowIndex = r;
+          rowCells.forEach((c, idx) => {
+            if ((c.includes('NAMA') && c.includes('PEMESAN')) || c === 'PEMESAN' || c === 'CUSTOMER' || c === 'BUYER' || c === 'NAMA') {
+              if (colMap['nama'] === undefined) colMap['nama'] = idx;
+            }
+            if (c.includes('HP') || c.includes('TELP') || c.includes('WHATSAPP') || c.includes('PHONE') || c.includes('WA')) {
+              if (colMap['hp'] === undefined) colMap['hp'] = idx;
+            }
+            if (c.includes('ALAMAT') || c.includes('ADDRESS')) {
+              if (colMap['alamat'] === undefined) colMap['alamat'] = idx;
+            }
+            if (c.includes('PRODUCT') || c.includes('NAMA PRODUK') || c.includes('NAMA BARANG') || c.includes('ITEM NAME')) {
+              if (colMap['produk'] === undefined) colMap['produk'] = idx;
+            }
+            if (c === 'SIZE' || c === 'UKURAN') {
+              if (colMap['size'] === undefined) colMap['size'] = idx;
+            }
+            if (c === 'SKU' || c.includes('KODE BARANG') || c.includes('BARCODE') || (c === 'KODE' && colMap['sku'] === undefined)) {
+              if (colMap['sku'] === undefined) colMap['sku'] = idx;
+            }
+            if (c.includes('HARGA LIVE') || (c.includes('HARGA') && !c.includes('TOTAL')) || (c === 'PRICE' && colMap['harga'] === undefined)) {
+              if (colMap['harga'] === undefined) colMap['harga'] = idx;
+            }
+            if (c === 'QTY' || c.includes('JUMLAH') || c.includes('QUANTITY') || c.includes('PCS')) {
+              if (colMap['qty'] === undefined) colMap['qty'] = idx;
+            }
+            if (c.includes('SHIPPING') || c.includes('ONGKIR') || c.includes('BIAYA ONGKIR')) {
+              if (colMap['ongkir'] === undefined) colMap['ongkir'] = idx;
+            }
+            if (c === 'TOTAL' || c.includes('TOTAL BAYAR') || c.includes('GRAND TOTAL')) {
+              if (colMap['total'] === undefined) colMap['total'] = idx;
+            }
+            if (c === 'STATUS' || c.includes('STATUS PESANAN')) {
+              if (colMap['status'] === undefined) colMap['status'] = idx;
+            }
+            if (c === 'KET' || c.includes('CATATAN') || c.includes('KETERANGAN') || c.includes('NOTES')) {
+              if (colMap['ket'] === undefined) colMap['ket'] = idx;
+            }
+            if (c === 'RESI' || c.includes('NO RESI') || c.includes('AWB') || c.includes('TRACKING')) {
+              if (colMap['resi'] === undefined) colMap['resi'] = idx;
+            }
+            if (c.includes('NO PESANAN') || c.includes('ORDER ID') || c.includes('INVOICE') || c.includes('NO TRANSAKSI')) {
+              if (colMap['no_pesanan'] === undefined) colMap['no_pesanan'] = idx;
+            }
+          });
           break;
         }
       }
+
+      const dataStartRow = headerRowIndex !== -1 ? headerRowIndex + 1 : 1;
       
-      const cleanNumber = (str: string) => {
+      const cleanNumber = (str: any) => {
         if (!str) return 0;
         return Number(String(str).replace(/[^0-9.-]+/g, '')) || 0;
       };
 
       for (let i = dataStartRow; i < rows.length; i++) {
         const r = rows[i];
-        if (!r[0] && !r[1] && !r[6]) continue; // Skip baris kosong
+        if (!r || r.length === 0) continue;
         
-        // Pemetaan kolom berdasarkan struktur CSV
-        const namaPembeli = r[0] || 'Customer IG';
-        const noHp = r[1] || '';
-        const alamat = r[2] || '';
-        // const kode = r[3] || ''; // Tidak wajib
-        const productName = r[4] || '';
-        const size = r[5] || '';
-        const sku = r[6] || '';
-        const hargaLive = cleanNumber(r[7]);
-        const qty = cleanNumber(r[8]) || 1;
-        // const price = cleanNumber(r[9]); // Sama dengan harga * qty
-        const shipping = cleanNumber(r[10]);
-        const total = cleanNumber(r[11]);
-        const rawStatus = String(r[12] || '').toLowerCase().trim();
-        const catatan = r[13] || '';
-        const resi = r[14] || '';
+        // Ambil data berdasarkan deteksi kolom dinamis, fallback ke indeks standar
+        const namaPembeli = (colMap['nama'] !== undefined ? r[colMap['nama']] : r[0]) || '';
+        const noHp = (colMap['hp'] !== undefined ? r[colMap['hp']] : r[1]) || '';
+        const alamat = (colMap['alamat'] !== undefined ? r[colMap['alamat']] : r[2]) || '';
+        const productName = (colMap['produk'] !== undefined ? r[colMap['produk']] : r[4]) || '';
+        const size = (colMap['size'] !== undefined ? r[colMap['size']] : r[5]) || '-';
+        const sku = (colMap['sku'] !== undefined ? r[colMap['sku']] : r[6]) || '';
+        const hargaLive = cleanNumber(colMap['harga'] !== undefined ? r[colMap['harga']] : r[7]);
+        const qty = cleanNumber(colMap['qty'] !== undefined ? r[colMap['qty']] : r[8]) || 1;
+        const shipping = cleanNumber(colMap['ongkir'] !== undefined ? r[colMap['ongkir']] : r[10]);
+        const total = cleanNumber(colMap['total'] !== undefined ? r[colMap['total']] : r[11]);
+        const rawStatus = String((colMap['status'] !== undefined ? r[colMap['status']] : r[12]) || '').toLowerCase().trim();
+        const catatan = (colMap['ket'] !== undefined ? r[colMap['ket']] : r[13]) || '';
+        const resi = (colMap['resi'] !== undefined ? r[colMap['resi']] : r[14]) || '';
+        const explicitOrderNo = (colMap['no_pesanan'] !== undefined ? String(r[colMap['no_pesanan']] || '').trim() : '');
+
+        // Skip baris yang tidak memiliki informasi pembeli dan SKU
+        if (!namaPembeli && !noHp && !sku && !productName) continue;
         
         let status: IGLiveOrderStatus = 'siap_diproses';
         if (rawStatus.includes('cancel') || rawStatus.includes('batal')) status = 'batal';
@@ -615,15 +807,17 @@ export async function fetchOrdersFromGas(
         else if (rawStatus.includes('proses') || rawStatus.includes('packing')) status = 'diproses';
         else if (rawStatus.includes('tunggu') || rawStatus.includes('belum bayar')) status = 'menunggu_pembayaran';
         
+        const finalOrderNo = explicitOrderNo || `IGL-GS-${Date.now()}-${i}`;
+
         rawList.push({
-          id: `IGL-GS-${Date.now()}-${i}`,
-          no_pesanan: `IGL-GS-${Date.now()}-${i}`,
-          nama_pembeli: namaPembeli,
-          username_ig: namaPembeli.replace(/\s+/g, '_').toLowerCase(),
+          id: finalOrderNo,
+          no_pesanan: finalOrderNo,
+          nama_pembeli: namaPembeli || 'Customer IG',
+          username_ig: (namaPembeli || 'customer_ig').replace(/\s+/g, '_').toLowerCase(),
           no_telp: noHp,
           alamat_lengkap: alamat,
           biaya_ongkir: shipping,
-          total_bayar: total,
+          total_bayar: total || (hargaLive * qty + shipping),
           status,
           catatan,
           no_resi: resi,
@@ -633,15 +827,22 @@ export async function fetchOrdersFromGas(
               nama_produk: productName,
               size,
               qty,
-              harga: hargaLive
-            }
-          ]
+              harga: hargaLive,
+            },
+          ],
         });
       }
 
     } else {
       // Logic untuk GAS JSON API
-      const response = await fetch(url, {
+      // Jika URL adalah endpoint GAS dan belum memiliki parameter table, otomatis arahkan ke table=transaksi
+      let fetchUrl = url;
+      if (fetchUrl.includes('script.google.com') && !fetchUrl.includes('table=') && !fetchUrl.includes('action=')) {
+        const separator = fetchUrl.includes('?') ? '&' : '?';
+        fetchUrl = `${fetchUrl}${separator}table=${encodeURIComponent(targetSheet)}&action=getTransaksi`;
+      }
+
+      const response = await fetch(fetchUrl, {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });
@@ -666,14 +867,18 @@ export async function fetchOrdersFromGas(
     }
 
     
-    // Fetch existing records from Supabase to preserve manual changes (Resi & Status)
+    // Fetch existing records from Supabase to preserve manual changes (Resi & Status & UUID)
     const { data: existingData } = await getSupabaseClient().from('ig_live_orders')
-      .select('no_pesanan, no_resi, status');
+      .select('id, no_pesanan, no_resi, status');
       
     const existingMap = new Map();
     if (existingData) {
       existingData.forEach((row: any) => {
-        existingMap.set(row.no_pesanan, { no_resi: row.no_resi, status: row.status });
+        existingMap.set(row.no_pesanan, { 
+          id: row.id,
+          no_resi: row.no_resi, 
+          status: row.status 
+        });
       });
     }
 
@@ -720,8 +925,10 @@ export async function fetchOrdersFromGas(
         ? existing.status
         : ((row.status as IGLiveOrderStatus) || 'siap_diproses');
 
+      const existingId = existing && existing.id && isValidUuid(existing.id) ? existing.id : undefined;
+
       return {
-        id: orderNo,
+        id: existingId || orderNo,
         no_pesanan: orderNo,
         tanggal: row.tanggal || row.created_at || new Date().toISOString().substring(0, 19).replace('T', ' '),
         session_live: row.session_live || row.live_session || 'IG Live Session',
@@ -750,9 +957,12 @@ export async function fetchOrdersFromGas(
     // Save and return
     await upsertIgLiveOrdersToSupabase(mapped);
 
+    const refreshed = await fetchIgLiveOrdersFromSupabase();
+    const finalOrders = refreshed && refreshed.length > 0 ? refreshed : mapped;
+
     return {
       success: true,
-      orders: mapped,
+      orders: finalOrders,
       message: `Berhasil menarik ${mapped.length} pesanan dari sumber data`,
     };
   } catch (err: any) {

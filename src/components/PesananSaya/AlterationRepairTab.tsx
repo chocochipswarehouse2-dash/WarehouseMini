@@ -39,7 +39,8 @@ import {
   Copy,
   Phone,
   Mail,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import {
   ProductItem,
@@ -71,6 +72,10 @@ import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 import { AlterationRepairReceiptModal } from './AlterationRepairReceiptModal';
 import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
+import { AlterationCameraModal } from './AlterationCameraModal';
+import { PhotoLightboxModal } from './PhotoLightboxModal';
+import { compressImage } from '../../utils/imageCompressor';
+import { uploadImageToGdrive } from '../../services/gdriveUpload';
 
 interface AlterationRepairTabProps {
   session: UserSession | null;
@@ -82,9 +87,23 @@ interface AlterationRepairTabProps {
   onGoToRekap?: () => void;
 }
 
-// Customer Courier Options
+// Store Courier Options (Kembali ke Store Asal)
+const STORE_COURIER_OPTIONS = [
+  'Kurir Internal',
+  'JNE Reguler',
+  'JNE YES',
+  'JNE Trucking (JTR)',
+  'SiCepat Cargo',
+  'SiCepat REG',
+  'Lion Parcel',
+  'Paxel',
+  'Lalamove',
+  'Custom / Ekspedisi Lainnya',
+];
+
+// Customer Courier Options (Langsung ke Customer)
 const CUSTOMER_COURIER_OPTIONS = [
-  'JNE REG',
+  'JNE Reguler',
   'JNE YES',
   'JNE OKE',
   'SiCepat REG',
@@ -99,7 +118,7 @@ const CUSTOMER_COURIER_OPTIONS = [
   'GrabExpress Instant',
   'GrabExpress Sameday',
   'Lalamove',
-  'Kurir Internal Store / Gudang',
+  'Kurir Internal',
   'Custom / Ekspedisi Lainnya',
 ];
 
@@ -116,6 +135,8 @@ interface FormAlterationItemState {
   repair_detail: string;
   catalogSearch: string;
   showDropdown: boolean;
+  foto_urls?: string[];
+  isUploadingFoto?: boolean;
 }
 
 const createDefaultItem = (): FormAlterationItemState => ({
@@ -130,6 +151,8 @@ const createDefaultItem = (): FormAlterationItemState => ({
   repair_detail: '',
   catalogSearch: '',
   showDropdown: false,
+  foto_urls: [],
+  isUploadingFoto: false,
 });
 
 export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
@@ -154,13 +177,13 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     actionType: AlterationActionType;
   } | null>(null);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const [cameraModalItemIndex, setCameraModalItemIndex] = useState<number | null>(null);
   const [submittedSummaryOrder, setSubmittedSummaryOrder] = useState<ManualShipmentOrder | null>(null);
 
   // Form Creation State
   const [formSource, setFormSource] = useState<AlterationSourceType>('store');
   const [formIdFormAlter, setFormIdFormAlter] = useState<string>('');
   const [formOutlet, setFormOutlet] = useState<string>('');
-  const [formWarehouseRak, setFormWarehouseRak] = useState<string>('');
   const [formPicPemohon, setFormPicPemohon] = useState<string>('');
   const [formPicStorePhone, setFormPicStorePhone] = useState<string>('');
   const [formPicStoreEmail, setFormPicStoreEmail] = useState<string>('');
@@ -169,7 +192,9 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [formCustomerHp, setFormCustomerHp] = useState<string>('');
   const [formCustomerAlamat, setFormCustomerAlamat] = useState<string>('');
   const [formTujuanPengembalian, setFormTujuanPengembalian] = useState<'customer' | 'store'>('store');
-  const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE REG');
+  const [formJasaKirimStore, setFormJasaKirimStore] = useState<string>('Kurir Internal');
+  const [formCustomJasaKirimStore, setFormCustomJasaKirimStore] = useState<string>('');
+  const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE Reguler');
   const [formCustomJasaKirim, setFormCustomJasaKirim] = useState<string>('');
   const [formNotesPaket, setFormNotesPaket] = useState<string>('');
   const [formPerkiraanSelesai, setFormPerkiraanSelesai] = useState<string>('');
@@ -426,7 +451,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     'Jahit rapi sobekan sambungan samping',
   ];
 
-  // Photo upload
+  // Photo upload umum
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -436,20 +461,78 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
       const urls: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const reader = new FileReader();
-        const base64 = await new Promise<string>((resolve) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-        urls.push(base64);
+        const compressed = await compressImage(file, 1024, 0.7);
+        const cleanName = `Alter_Doc_${(formOutlet || 'Store').replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${i + 1}.jpg`;
+        const res = await uploadImageToGdrive(compressed.dataUrl, cleanName);
+
+        if (res.success && res.url) {
+          urls.push(res.url);
+        } else {
+          urls.push(compressed.dataUrl);
+        }
       }
       setFormFotoUrls((prev) => [...prev, ...urls]);
-      onShowToast(`${files.length} foto berhasil ditambahkan`, 'success');
+      onShowToast(`${files.length} foto berhasil diunggah ke Google Drive`, 'success');
     } catch (err) {
       onShowToast('Gagal memuat foto', 'error');
     } finally {
       setIsUploadingPhoto(false);
     }
+  };
+
+  // Upload foto per-item dari galeri / file ke Google Drive
+  const handleItemGalleryUpload = async (index: number, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    handleUpdateItem(index, { isUploadingFoto: true });
+    try {
+      const uploadedUrls: string[] = [];
+      const itemSku = formItems[index]?.sku || `item_${index + 1}`;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        // 1. Kompresi gambar via HTML5 Canvas (WebP/JPEG, ~40-60KB)
+        const compressed = await compressImage(file, 1024, 0.7);
+
+        // 2. Upload langsung ke Google Drive
+        const cleanName = `Alter_${(formOutlet || 'Store').replace(/[^a-zA-Z0-9]/g, '_')}_${itemSku.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${i + 1}.jpg`;
+        const res = await uploadImageToGdrive(compressed.dataUrl, cleanName);
+
+        if (res.success && res.url) {
+          uploadedUrls.push(res.url);
+        } else {
+          console.warn('Gagal upload 1 foto ke GDrive, fallback lokal:', res.error);
+          uploadedUrls.push(compressed.dataUrl);
+        }
+      }
+
+      const currentPhotos = formItems[index]?.foto_urls || [];
+      handleUpdateItem(index, {
+        foto_urls: [...currentPhotos, ...uploadedUrls],
+        isUploadingFoto: false,
+      });
+      onShowToast(`${uploadedUrls.length} foto pakaian berhasil diunggah ke Google Drive!`, 'success');
+    } catch (err) {
+      console.error('Error uploading item photos:', err);
+      handleUpdateItem(index, { isUploadingFoto: false });
+      onShowToast('Gagal memproses foto pakaian', 'error');
+    }
+  };
+
+  // Callback saat foto selesai dijepret & diupload via modal kamera
+  const handleAddItemCameraPhoto = (url: string) => {
+    if (cameraModalItemIndex === null) return;
+    const currentPhotos = formItems[cameraModalItemIndex]?.foto_urls || [];
+    handleUpdateItem(cameraModalItemIndex, {
+      foto_urls: [...currentPhotos, url],
+    });
+    setCameraModalItemIndex(null);
+    onShowToast('Foto kamera berhasil diunggah ke Google Drive!', 'success');
+  };
+
+  // Hapus foto spesifik pada item
+  const handleRemoveItemPhoto = (itemIndex: number, photoIndex: number) => {
+    const currentPhotos = formItems[itemIndex]?.foto_urls || [];
+    const updatedPhotos = currentPhotos.filter((_, i) => i !== photoIndex);
+    handleUpdateItem(itemIndex, { foto_urls: updatedPhotos });
   };
 
   // Reset form
@@ -508,7 +591,12 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
       return;
     }
 
-    if (formTujuanPengembalian === 'customer') {
+    if (formTujuanPengembalian === 'store') {
+      if (formJasaKirimStore === 'Custom / Ekspedisi Lainnya' && !formCustomJasaKirimStore.trim()) {
+        onShowToast('Nama ekspedisi custom untuk store wajib diisi jika memilih opsi Custom', 'error');
+        return;
+      }
+    } else if (formTujuanPengembalian === 'customer') {
       if (!formCustomerNama.trim() || !formCustomerHp.trim() || !formCustomerAlamat.trim()) {
         onShowToast('Nama, No. WhatsApp, dan Alamat Customer wajib diisi lengkap jika memilih kirim ke Customer', 'error');
         return;
@@ -529,9 +617,13 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         : formIdFormAlter.trim();
       const asalDisplayName = formOutlet || (session?.divisi || 'Store');
 
-      const effectiveCourierCustomer = formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya'
-        ? (formCustomJasaKirim.trim() || 'Custom Courier')
-        : formJasaKirimCustomer;
+      const effectiveCourier = formTujuanPengembalian === 'customer'
+        ? (formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya'
+            ? (formCustomJasaKirim.trim() || 'Custom Ekspedisi')
+            : formJasaKirimCustomer)
+        : (formJasaKirimStore === 'Custom / Ekspedisi Lainnya'
+            ? (formCustomJasaKirimStore.trim() || 'Kurir Internal')
+            : formJasaKirimStore);
 
       const initialLog: AlterationFlowLog = {
         id: `flow-${Date.now()}`,
@@ -556,6 +648,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         kondisi: it.kondisi.trim(),
         alteration_detail: it.alteration_detail.trim(),
         repair_detail: it.repair_detail.trim(),
+        foto_urls: it.foto_urls || [],
       }));
 
       // Dominant / Overall Layanan Type
@@ -582,6 +675,11 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 
       const combinedKondisi = formItems.map((it, idx) => `${formItems.length > 1 ? `#${idx + 1}: ` : ''}${it.kondisi}`).join(', ');
 
+      const allFotoUrls = [
+        ...formFotoUrls,
+        ...formItems.flatMap((it) => it.foto_urls || []),
+      ];
+
       const arData: AlterationRepairData = {
         layanan_type: overallLayanan,
         id_form_alter: finalIdFormAlter,
@@ -590,7 +688,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         pic_pemohon: formPicPemohon.trim() || 'PIC Pemohon',
         pic_store_phone: formPicStorePhone.trim(),
         pic_store_email: formPicStoreEmail.trim() || undefined,
-        lokasi_rak: isWarehouseStock ? formWarehouseRak.trim() : '',
+        lokasi_rak: '',
         nama_customer: formCustomerNama.trim(),
         nama_sa: formPicPemohon.trim(),
         no_hp: formCustomerHp.trim() || formPicStorePhone.trim(),
@@ -606,12 +704,12 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         pic_warehouse: '',
         status_flow: initialStage,
         flow_logs: [initialLog],
-        foto_urls: formFotoUrls,
+        foto_urls: allFotoUrls,
         tujuan_pengembalian: formTujuanPengembalian,
         nama_penerima_kembali: formTujuanPengembalian === 'customer' ? (formCustomerNama.trim() || 'Customer') : asalDisplayName,
         no_telp_penerima_kembali: formTujuanPengembalian === 'customer' ? formCustomerHp.trim() : formPicStorePhone.trim(),
         alamat_penerima_kembali: formTujuanPengembalian === 'customer' ? formCustomerAlamat.trim() : `Outlet Store (${asalDisplayName})`,
-        jasa_kirim_customer: formTujuanPengembalian === 'customer' ? effectiveCourierCustomer : undefined,
+        jasa_kirim_customer: formTujuanPengembalian === 'customer' ? effectiveCourier : undefined,
         notes_pengiriman_customer: formNotesPaket.trim() || undefined,
       };
 
@@ -627,7 +725,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         alamat_tujuan: formCustomerAlamat.trim() || (formTujuanPengembalian === 'customer' ? 'Alamat Pengiriman Customer' : `Outlet Store (${asalDisplayName})`),
         notes_paket: `[ALTER & REPAIR - ${finalIdFormAlter}] ${primaryProductName} ${isWarehouseStock ? '(Stok Warehouse)' : '(Fisik Store)'}${formNotesPaket ? ` [Notes: ${formNotesPaket.trim()}]` : ''}`,
         no_transaksi_customer: formRefNo.trim() || finalIdFormAlter || regNo,
-        jasa_kirim: formTujuanPengembalian === 'customer' ? effectiveCourierCustomer : (isWarehouseStock ? 'Warehouse Courier / Ekspedisi' : 'Store Courier / Ekspedisi'),
+        jasa_kirim: effectiveCourier,
         items: orderItems,
         alteration_repair_data: arData,
         layanan_type: overallLayanan,
@@ -635,7 +733,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         perkiraan_selesai: formPerkiraanSelesai.trim(),
         alteration_detail: combinedAlterDetails,
         repair_detail: combinedRepairDetails,
-        foto_urls: formFotoUrls,
+        foto_urls: allFotoUrls,
         status: 'diterima',
         created_at: new Date().toISOString(),
         submitted_by: formPicPemohon.trim() || session?.name || session?.username || 'Staff',
@@ -661,16 +759,45 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
    • Layanan: *${it.layanan_type || 'Alteration'}*
    • Instruksi: _${it.alteration_detail || it.repair_detail || 'Sesuai standar'}_`).join('\n\n');
 
-          const alterWaMsg = `✂️ *PERMINTAAN ALTER & REPAIR MASUK [${regNo}]*
+          // Pesan BUKTI PENDAFTARAN untuk PIC Store
+          const picStoreWaMsg = `✂️ *BUKTI PENDAFTARAN TIKET ALTERASI & REPAIR [${regNo}]*
 --------------------------------------------------
-Halo Tim Gudang & Penjahit, terdapat pendaftaran tiket alterasi/repair baru:
+Halo Kak *${formPicPemohon.trim() || 'PIC Store'}* (${asalDisplayName}),
+
+Pengajuan tiket Alterasi & Repair Anda telah *BERHASIL didaftarkan* ke dalam sistem WMS!
 
 📋 *Detail Tiket:*
 • *No. Tiket / Registrasi:* ${regNo}
 • *ID Form Alter:* *${finalIdFormAlter}*
-• *Sumber Barang:* ${isWarehouseStock ? 'Warehouse / Gudang' : `Store (${asalDisplayName})`}
+• *Sumber Barang:* ${isWarehouseStock ? 'Stok Gudang (Warehouse)' : `Fisik dari Store (${asalDisplayName})`}
 • *PIC Pemohon:* ${formPicPemohon.trim()} (WA: ${formPicStorePhone.trim() || '-'})
-• *Penerima Selesai:* ${formTujuanPengembalian === 'customer' ? `Customer (${formCustomerNama})` : `Outlet Store (${asalDisplayName})`}
+• *Tujuan Setelah Selesai:* ${formTujuanPengembalian === 'customer' ? `Langsung ke Customer (${formCustomerNama.trim()})` : `Kembali ke Store Asal (${asalDisplayName})`}
+• *Ekspedisi Pengiriman Balik:* *${effectiveCourier}*
+• *Estimasi Selesai:* ${formPerkiraanSelesai || '7 Hari'}
+
+✂️ *Rincian Produk (${formItems.length} Item):*
+${itemsText}${photoText}
+
+📝 *Catatan:* ${formNotesPaket.trim() || '-'}
+
+📌 *Informasi Selanjutnya:*
+Status tiket saat ini: *${isWarehouseStock ? 'Menunggu Penyiapan Stok & Pengerjaan di Gudang' : 'Menunggu Fisik Pakaian Dikirim & Tiba di Gudang'}*. Tim Gudang & Penjahit telah menerima notifikasi tiket ini dan akan memprosesnya sesuai instruksi di atas.
+
+Terima kasih atas kerja samanya!
+_WMS Warehouse & Alteration System_`;
+
+          // Pesan SPK / NOTIFIKASI TIKET MASUK untuk Grup Tim Gudang & Penjahit
+          const grupGudangWaMsg = `✂️ *PERMINTAAN ALTER & REPAIR MASUK [${regNo}]*
+--------------------------------------------------
+Halo Tim Gudang & Penjahit, terdapat pendaftaran tiket alterasi/repair baru dari store:
+
+📋 *Detail Tiket:*
+• *No. Tiket / Registrasi:* ${regNo}
+• *ID Form Alter:* *${finalIdFormAlter}*
+• *Sumber Barang:* ${isWarehouseStock ? 'Warehouse / Gudang (Ambil Stok Gudang)' : `Store (${asalDisplayName}) - Fisik dari Toko`}
+• *PIC Pemohon:* ${formPicPemohon.trim()} (WA: ${formPicStorePhone.trim() || '-'})
+• *Penerima Selesai:* ${formTujuanPengembalian === 'customer' ? `Langsung ke Customer (${formCustomerNama.trim()})` : `Kembali ke Store Asal (${asalDisplayName})`}
+• *Jasa Kirim / Ekspedisi:* *${effectiveCourier}*
 • *Estimasi Selesai:* ${formPerkiraanSelesai || '7 Hari'}
 
 ✂️ *Daftar Produk (${formItems.length} Item):*
@@ -678,16 +805,23 @@ ${itemsText}${photoText}
 
 📝 *Catatan:* ${formNotesPaket.trim() || '-'}
 
-Mohon tim penjahit segera memeriksa detail instruksi & foto panduan di atas.
+Mohon tim penjahit & gudang segera memeriksa detail instruksi, kebutuhan bahan/aksesoris, dan foto panduan di atas.
 _WMS Warehouse & Alteration System_`;
 
+          // Kirim bukti pendaftaran ke nomor PIC Store
           if (formPicStorePhone.trim()) {
-            sendFonnteMessage(formPicStorePhone.trim(), alterWaMsg, fonnteCfg.token).catch(() => {});
+            sendFonnteMessage(formPicStorePhone.trim(), picStoreWaMsg, fonnteCfg.token)
+              .then((resP) => {
+                if (resP.success) onShowToast('✅ Bukti pendaftaran alterasi terkirim ke WA PIC Store!', 'success');
+              })
+              .catch(() => {});
           }
+
+          // Kirim SPK masuk ke Grup WA Gudang & Penjahit
           if (fonnteCfg.groupTarget) {
-            sendFonnteMessage(fonnteCfg.groupTarget, alterWaMsg, fonnteCfg.token)
+            sendFonnteMessage(fonnteCfg.groupTarget, grupGudangWaMsg, fonnteCfg.token)
               .then((resF) => {
-                if (resF.success) onShowToast('✅ Notif SPK Alterasi berhasil dikirim ke Grup WA via Fonnte!', 'success');
+                if (resF.success) onShowToast('✅ Notif SPK Alterasi berhasil dikirim ke Grup WA Gudang via Fonnte!', 'success');
               })
               .catch(() => {});
           }
@@ -701,6 +835,9 @@ _WMS Warehouse & Alteration System_`;
         setFormCustomerHp('');
         setFormCustomerAlamat('');
         setFormNotesPaket('');
+        setFormJasaKirimStore('Kurir Internal');
+        setFormCustomJasaKirimStore('');
+        setFormJasaKirimCustomer('JNE Reguler');
         setFormCustomJasaKirim('');
         setFormFotoUrls([]);
 
@@ -846,7 +983,7 @@ _WMS Warehouse & Alteration System_`;
             </button>
           </div>
 
-          {/* Form ID & Lokasi Rak */}
+          {/* Form ID & Referensi */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             {formSource === 'store' ? (
               <div>
@@ -890,33 +1027,18 @@ _WMS Warehouse & Alteration System_`;
               </div>
             )}
 
-            {formSource === 'warehouse' ? (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Lokasi Rak / Bin Gudang (Opsional):
-                </label>
-                <input
-                  type="text"
-                  value={formWarehouseRak || ''}
-                  onChange={(e) => setFormWarehouseRak(e.target.value)}
-                  placeholder="Misal: A012, B005, X..."
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs uppercase"
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  No. Referensi / Kasir Store (Opsional):
-                </label>
-                <input
-                  type="text"
-                  value={formRefNo || ''}
-                  onChange={(e) => setFormRefNo(e.target.value)}
-                  placeholder="No. Transaksi Kasir POS..."
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs"
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {formSource === 'store' ? 'No. Referensi / Kasir Store (Opsional):' : 'No. Referensi Order / Invoice (Opsional):'}
+              </label>
+              <input
+                type="text"
+                value={formRefNo || ''}
+                onChange={(e) => setFormRefNo(e.target.value)}
+                placeholder={formSource === 'store' ? "No. Transaksi Kasir POS / DealPOS..." : "No. PO / Invoice..."}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-xs"
+              />
+            </div>
           </div>
 
           {/* Store & PIC Name */}
@@ -1014,6 +1136,72 @@ _WMS Warehouse & Alteration System_`;
                 <span>Langsung ke Customer</span>
               </button>
             </div>
+
+            {/* Pilihan Ekspedisi Pengembalian ke Store Asal */}
+            {formTujuanPengembalian === 'store' && (
+              <div className="p-3.5 sm:p-4 bg-rose-50/70 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-800 space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-rose-950 dark:text-rose-200 text-xs flex items-center gap-1.5">
+                    <Truck className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Ekspedisi Pengiriman Balik ke Store Asal</span>
+                  </span>
+                  <span className="text-[10px] bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200 px-2 py-0.5 rounded-full font-bold">
+                    Store Dalam / Luar Kota
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-rose-900 dark:text-rose-300 mb-1">
+                      Pilihan Ekspedisi / Jasa Kirim ke Store:
+                    </label>
+                    <select
+                      value={formJasaKirimStore}
+                      onChange={(e) => setFormJasaKirimStore(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 rounded-lg text-slate-900 dark:text-white font-semibold text-xs shadow-2xs"
+                    >
+                      {STORE_COURIER_OPTIONS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                      Default <b>Kurir Internal</b> untuk store Jabodetabek. Store luar kota (Surabaya, Medan, Bandung, Pontianak) dapat memilih <b>JNE Reguler / Cargo / Lion Parcel</b>.
+                    </p>
+                  </div>
+
+                  {formJasaKirimStore === 'Custom / Ekspedisi Lainnya' ? (
+                    <div>
+                      <label className="block text-[11px] font-bold text-rose-900 dark:text-rose-300 mb-1">
+                        Nama Ekspedisi Custom *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formCustomJasaKirimStore || ''}
+                        onChange={(e) => setFormCustomJasaKirimStore(e.target.value)}
+                        placeholder="Ketik nama ekspedisi / kurir..."
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 rounded-lg text-slate-900 dark:text-white text-xs font-bold shadow-2xs"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[11px] font-bold text-rose-900 dark:text-rose-300 mb-1">
+                        Catatan Pengiriman ke Store (Opsional):
+                      </label>
+                      <input
+                        type="text"
+                        value={formNotesPaket || ''}
+                        onChange={(e) => setFormNotesPaket(e.target.value)}
+                        placeholder="Instruksi pengiriman balik ke toko..."
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 rounded-lg text-slate-900 dark:text-white text-xs shadow-2xs"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Form Data Customer (Wajib jika kirim ke Customer) */}
             {formTujuanPengembalian === 'customer' && (
@@ -1490,6 +1678,75 @@ _WMS Warehouse & Alteration System_`;
                     />
                   </div>
                 )}
+
+                {/* Foto Dokumentasi Produk (Kamera / Galeri HP) */}
+                <div className="pt-2.5 border-t border-slate-200/70 dark:border-slate-800/70 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-rose-500" />
+                      <span>
+                        Dokumentasi Foto Pakaian #{idx + 1} {formSource === 'store' ? '(Opsional / Rekomendasi Store):' : '(Opsional):'}
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-medium">Tersimpan ke Google Drive</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Tombol Kamera */}
+                    <button
+                      type="button"
+                      onClick={() => setCameraModalItemIndex(idx)}
+                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 rounded-xl border border-rose-200 dark:border-rose-800 flex items-center gap-1.5 cursor-pointer font-bold text-xs transition-colors shadow-2xs"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Ambil Foto (Kamera)</span>
+                    </button>
+
+                    {/* Tombol Galeri / File */}
+                    <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer font-bold text-xs transition-colors shadow-2xs">
+                      <Upload className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Pilih dari Galeri / File</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleItemGalleryUpload(idx, e.target.files)}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {item.isUploadingFoto && (
+                      <span className="text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1 animate-pulse">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Mengunggah ke GDrive...</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Thumbnail List */}
+                  {item.foto_urls && item.foto_urls.length > 0 && (
+                    <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-1">
+                      {item.foto_urls.map((fUrl, fIdx) => (
+                        <div key={fIdx} className="relative group shrink-0">
+                          <img
+                            src={fUrl}
+                            alt={`Foto Pakaian ${idx + 1}`}
+                            onClick={() => setPreviewPhotoUrl(fUrl)}
+                            className="w-14 h-14 object-cover rounded-xl border border-slate-300 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity shadow-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemPhoto(idx, fIdx)}
+                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 cursor-pointer shadow-xs hover:bg-red-600 transition-colors"
+                            title="Hapus foto"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -1866,26 +2123,25 @@ Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! �
         </div>
       )}
 
-      {/* ==================================================== */}
-      {/* MODAL: PREVIEW FOTO */}
-      {/* ==================================================== */}
-      {previewPhotoUrl && (
-        <div 
-          onClick={() => setPreviewPhotoUrl(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs cursor-pointer animate-in fade-in"
-        >
-          <div className="max-w-xl max-h-[85vh] relative" onClick={(e) => e.stopPropagation()}>
-            <img src={previewPhotoUrl} alt="" className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl" />
-            <button
-              type="button"
-              onClick={() => setPreviewPhotoUrl(null)}
-              className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full hover:bg-black cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Modal Kamera Alterasi Store */}
+      <AlterationCameraModal
+        isOpen={cameraModalItemIndex !== null}
+        onClose={() => setCameraModalItemIndex(null)}
+        itemTitle={
+          cameraModalItemIndex !== null
+            ? `Pakaian #${cameraModalItemIndex + 1}: ${formItems[cameraModalItemIndex]?.nama_produk || 'Store Item'}`
+            : 'Pakaian Alterasi'
+        }
+        idFormAlter={formIdFormAlter}
+        onPhotoUploaded={handleAddItemCameraPhoto}
+      />
+
+      {/* Modal Lightbox Foto Full Resolution */}
+      <PhotoLightboxModal
+        photoUrl={previewPhotoUrl}
+        onClose={() => setPreviewPhotoUrl(null)}
+        title="Dokumentasi Foto Fisik Alterasi & Repair"
+      />
     </div>
   );
 };

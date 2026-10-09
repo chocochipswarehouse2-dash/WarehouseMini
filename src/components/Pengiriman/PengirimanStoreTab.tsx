@@ -68,6 +68,7 @@ import {
 import { fetchOutlets, DEFAULT_OUTLETS, getFullStoreName } from '../../services/gasManualShipment';
 import { uploadMultipleImagesToGdrive } from '../../services/gdriveUpload';
 import { compressImage } from '../../utils/imageCompressor';
+import { LoadingDockImageLightbox } from '../common/LoadingDockImageLightbox';
 import { KoliMarkingPrintModal } from './KoliMarkingPrintModal';
 import { SuratJalanPrintModal } from './SuratJalanPrintModal';
 import { SearchableSelect } from '../common/SearchableSelect';
@@ -3264,67 +3265,17 @@ export const PengirimanStoreTab: React.FC<PengirimanStoreTabProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* MODAL: PREVIEW DOKUMENTASI FOTO (ZOOM / FULL VIEW)                   */}
+      {/* MODAL: PREVIEW DOKUMENTASI FOTO (ZOOM & FULL VIEW SEPERTI KATALOG)   */}
       {/* ==================================================================== */}
-      {previewPhotoUrl && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setPreviewPhotoUrl(null)}
-        >
-          <div
-            className="bg-white dark:bg-[#131d31] rounded-2xl border border-slate-200 dark:border-slate-800 max-w-2xl w-full overflow-hidden shadow-2xl space-y-3 p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
-              <h3 className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-indigo-500" />
-                <span>{previewPhotoTitle}</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setPreviewPhotoUrl(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="relative rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center max-h-[70vh]">
-              <img
-                src={previewPhotoUrl}
-                alt="Preview"
-                className="max-h-[68vh] w-auto object-contain"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-1 text-xs">
-              <span className="text-[11px] text-slate-400">
-                Tersimpan di cloud / Google Drive
-              </span>
-              <div className="flex items-center gap-2">
-                {previewPhotoUrl.startsWith('http') && (
-                  <a
-                    href={previewPhotoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
-                  >
-                    Buka di Tab Baru
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPreviewPhotoUrl(null)}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 cursor-pointer"
-                >
-                  Tutup
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <LoadingDockImageLightbox
+        isOpen={Boolean(previewPhotoUrl)}
+        onClose={() => setPreviewPhotoUrl(null)}
+        photo={previewPhotoUrl ? {
+          url: previewPhotoUrl,
+          title: previewPhotoTitle || 'Foto Pengiriman Barang',
+          badge: 'Pengiriman Store',
+        } : null}
+      />
 
       {/* ==================================================================== */}
       {/* MODAL: CETAK BARCODE MARKING KOLI (50x20 & A6)                       */}

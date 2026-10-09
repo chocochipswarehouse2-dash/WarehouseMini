@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { UserSession, ProductItem } from '../../types';
 import { ManualShipmentTab } from './ManualShipmentTab';
-import { DistribusiStoreTab } from './DistribusiStoreTab';
 import { IGLiveTab } from './IGLiveTab';
 
 interface PesananSayaViewProps {
@@ -14,7 +13,7 @@ interface PesananSayaViewProps {
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type TabType = 'dashboard' | 'manual_shipment' | 'distribusi' | 'shopee' | 'iglive' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
+type TabType = 'dashboard' | 'manual_shipment' | 'shopee' | 'iglive' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
 
 import { hasPermission, isSuperadmin } from '../../services/permissions';
 import { ShopeeTab } from './ShopeeTab';
@@ -41,7 +40,6 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   const allTabs: TabConfig[] = [
     { id: 'dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard, color: 'bg-blue-600 shadow-blue-600/25 ring-blue-500/50', permissionKey: 'tab_ops_pesanan_dashboard' },
     { id: 'manual_shipment', label: 'Store', shortLabel: 'Store', icon: Store, color: 'bg-indigo-600 shadow-indigo-600/25 ring-indigo-500/50', permissionKey: 'tab_ops_pesanan_manual_shipment' },
-    { id: 'distribusi', label: 'Transfer Order', shortLabel: 'Transfer', icon: Truck, color: 'bg-emerald-600 shadow-emerald-600/25 ring-emerald-500/50', permissionKey: 'tab_ops_pesanan_transfer_order' },
     { id: 'shopee', label: 'Shopee', shortLabel: 'Shopee', icon: ShoppingBag, color: 'bg-orange-600 shadow-orange-600/25 ring-orange-500/50', permissionKey: 'tab_ops_pesanan_shopee' },
     { id: 'website', label: 'Website', shortLabel: 'Website', icon: Globe, color: 'bg-cyan-600 shadow-cyan-600/25 ring-cyan-500/50', permissionKey: 'tab_ops_pesanan_website' },
     { id: 'iglive', label: 'IG Live', shortLabel: 'IG Live', icon: Radio, color: 'bg-gradient-to-r from-pink-600 to-rose-600 shadow-pink-600/25 ring-pink-500/50', permissionKey: 'tab_ops_pesanan_iglive' },
@@ -150,16 +148,16 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
                   </div>
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1.5">
-                      <span className="text-slate-600 dark:text-slate-300">Transfer Order</span>
-                      <span className="text-emerald-600 dark:text-emerald-400">Loading...</span>
+                      <span className="text-slate-600 dark:text-slate-300">Shopee</span>
+                      <span className="text-orange-600 dark:text-orange-400">Loading...</span>
                     </div>
                     <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 w-1/3"></div>
+                      <div className="h-full bg-orange-500 w-1/3"></div>
                     </div>
                   </div>
                   <div className="pt-4 mt-2 border-t border-slate-100 dark:border-slate-800">
                     <p className="text-xs text-slate-500 text-center">
-                      Dashboard utama ini nantinya akan menampilkan progress gabungan dari Manual Shipment dan Transfer Order secara real-time.
+                      Dashboard utama ini nantinya akan menampilkan progress gabungan pesanan Store, Shopee, Website, dan channel lainnya secara real-time.
                     </p>
                   </div>
                 </div>
@@ -171,12 +169,6 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
         {activeTab === 'manual_shipment' && (
           <div>
              <ManualShipmentTab session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
-          </div>
-        )}
-
-        {activeTab === 'distribusi' && (
-          <div>
-             <DistribusiStoreTab session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
           </div>
         )}
 

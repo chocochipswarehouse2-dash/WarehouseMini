@@ -255,7 +255,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   onShowToast,
 }) => {
   const userIsAdmin = isSuperadmin(session);
-  const canAction = userIsAdmin || hasPermission(session, 'tab_ops_pesanan_transfer_order');
+  const canAction = userIsAdmin || hasPermission(session, 'tab_ops_loading_transfer_order') || hasPermission(session, 'tab_ops_pesanan_transfer_order');
 
   // ---- TABS ----
   const [activeTab, setActiveTab] = useState<'pengecekan' | 'riwayat'>('pengecekan');

@@ -109,6 +109,7 @@ export type UserPermissionKey =
   | 'tab_ops_loading_produksi'
   | 'tab_ops_loading_penerimaan'
   | 'tab_ops_loading_pengiriman'
+  | 'tab_ops_loading_transfer_order'
   | 'menu_ops_mutasi'
   | 'tab_ops_mutasi_scanner'
   | 'tab_ops_mutasi_log'
