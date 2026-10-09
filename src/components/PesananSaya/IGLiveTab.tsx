@@ -90,6 +90,15 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
   // Modals
   const [isGasModalOpen, setIsGasModalOpen] = useState<boolean>(false);
   const [tempGasUrl, setTempGasUrl] = useState<string>('');
+
+  const saveAndSetOrders = (updatedOrders: IGLiveOrder[]) => {
+    setOrders(updatedOrders);
+    upsertIgLiveOrdersToSupabase(updatedOrders).catch(err => {
+      console.error('Failed to sync to Supabase', err);
+      onShowToast('Gagal sinkronisasi ke server!', 'error');
+    });
+  };
+
   const [isAddEditModalOpen, setIsAddEditModalOpen] = useState<boolean>(false);
   const [editingOrder, setEditingOrder] = useState<IGLiveOrder | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
@@ -132,8 +141,12 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
     setGasUrl(loadedGasUrl);
     setTempGasUrl(loadedGasUrl);
 
-    const loadedOrders = getStoredIgLiveOrders(productCatalog);
-    setOrders(loadedOrders);
+    // Sync from local first, then fetch from Supabase
+    syncLocalIgLiveToSupabase().then(() => {
+      fetchIgLiveOrdersFromSupabase().then(res => {
+        setOrders(res);
+      });
+    });
 
     return () => window.removeEventListener('afterprint', handleAfterPrint);
   }, [productCatalog]);
@@ -227,8 +240,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       }
       return o;
     });
-    setOrders(updated);
-    saveStoredIgLiveOrders(updated);
+    saveAndSetOrders(updated);
     onShowToast(`Status pesanan diperbarui menjadi ${newStatus}`, 'success');
   };
 
@@ -240,8 +252,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       }
       return o;
     });
-    setOrders(updated);
-    saveStoredIgLiveOrders(updated);
+    saveAndSetOrders(updated);
   };
 
   // Open Add Modal
@@ -371,8 +382,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         }
         return o;
       });
-      setOrders(updated);
-      saveStoredIgLiveOrders(updated);
+      saveAndSetOrders(updated);
       onShowToast('Pesanan berhasil diperbarui', 'success');
     } else {
       // Create New
@@ -395,8 +405,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
         created_at: new Date().toISOString(),
       };
       const updated = [newOrder, ...orders];
-      setOrders(updated);
-      saveStoredIgLiveOrders(updated);
+      saveAndSetOrders(updated);
       onShowToast('Pesanan baru berhasil ditambahkan', 'success');
     }
 
@@ -411,22 +420,19 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       }
       return o;
     });
-    setOrders(updated);
-    saveStoredIgLiveOrders(updated);
+    saveAndSetOrders(updated);
   };
 
   const handleImportOrders = (newOrders: IGLiveOrder[]) => {
     const combined = [...newOrders, ...orders];
-    setOrders(combined);
-    saveStoredIgLiveOrders(combined);
+    saveAndSetOrders(combined);
   };
 
   // Delete Order
   const handleConfirmDelete = () => {
     if (!orderToDelete) return;
     const updated = orders.filter((o) => o.id !== orderToDelete.id);
-    setOrders(updated);
-    saveStoredIgLiveOrders(updated);
+    saveAndSetOrders(updated);
     setSelectedOrderIds((prev) => prev.filter((id) => id !== orderToDelete.id));
     setIsDeleteModalOpen(false);
     setOrderToDelete(null);
@@ -447,8 +453,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       }
       return o;
     });
-    setOrders(updated);
-    saveStoredIgLiveOrders(updated);
+    saveAndSetOrders(updated);
     setIsCancelModalOpen(false);
     setOrderToCancel(null);
     setCancelReason('');
@@ -604,8 +609,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
       return o;
     });
 
-    setOrders(updated);
-    saveStoredIgLiveOrders(updated);
+    saveAndSetOrders(updated);
     onShowToast(`Berhasil menandai ${targetIds.length} pesanan selesai picking! Status diubah menjadi Sedang Dipacking`, 'success');
   };
 
@@ -890,8 +894,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                     const updated = orders.map((o) =>
                       selectedOrderIds.includes(o.id) ? { ...o, status: 'diproses' as IGLiveOrderStatus } : o
                     );
-                    setOrders(updated);
-                    saveStoredIgLiveOrders(updated);
+                    saveAndSetOrders(updated);
                     onShowToast(`${selectedOrderIds.length} pesanan diubah ke Sedang Dipacking`, 'success');
                   }}
                   className="px-2 py-1 text-[11px] font-bold bg-white text-indigo-700 rounded border border-indigo-200 shadow-2xs hover:bg-indigo-50"
@@ -904,8 +907,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                     const updated = orders.map((o) =>
                       selectedOrderIds.includes(o.id) ? { ...o, status: 'dikirim' as IGLiveOrderStatus } : o
                     );
-                    setOrders(updated);
-                    saveStoredIgLiveOrders(updated);
+                    saveAndSetOrders(updated);
                     onShowToast(`${selectedOrderIds.length} pesanan diubah ke Dikirim`, 'success');
                   }}
                   className="px-2 py-1 text-[11px] font-bold bg-white text-emerald-700 rounded border border-emerald-200 shadow-2xs hover:bg-emerald-50"
@@ -1046,8 +1048,7 @@ export const IGLiveTab: React.FC<IGLiveTabProps> = ({
                                   onChange={(e) => {
                                     const val = e.target.value.toUpperCase();
                                     const updated = orders.map(o => o.id === order.id ? { ...o, no_resi: val, updated_at: new Date().toISOString() } : o);
-                                    setOrders(updated);
-                                    saveStoredIgLiveOrders(updated);
+                                    saveAndSetOrders(updated);
                                   }}
                                   className="w-full text-xs py-1 px-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-1 focus:ring-pink-500 font-mono font-bold"
                                 />

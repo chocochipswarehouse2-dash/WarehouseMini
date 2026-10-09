@@ -1,5 +1,5 @@
 import { ProductItem } from '../types';
-import { getAreaFromLokasi, getPickingPriority } from './supabase';
+import { getSupabaseClient, getAreaFromLokasi, getPickingPriority } from './supabase';
 
 export type IGLiveOrderStatus =
   | 'menunggu_pembayaran'
@@ -628,11 +628,25 @@ export async function fetchOrdersFromGas(
       }
     }
 
+    
+    // Fetch existing records from Supabase to preserve manual changes (Resi & Status)
+    const { data: existingData } = await getSupabaseClient().from('ig_live_orders')
+      .select('no_pesanan, no_resi, status');
+      
+    const existingMap = new Map();
+    if (existingData) {
+      existingData.forEach((row: any) => {
+        existingMap.set(row.no_pesanan, { no_resi: row.no_resi, status: row.status });
+      });
+    }
+
     // Mapping raw data into standardized IGLiveOrder
     const mapped: IGLiveOrder[] = rawList.map((row, idx) => {
       const orderNo = String(
         row.no_pesanan || row.order_id || row.id || `IGL-${Date.now()}-${idx + 1}`
       ).trim();
+
+      const existing = existingMap.get(orderNo);
 
       // Normalize items
       const rawItems = Array.isArray(row.items)
@@ -660,6 +674,15 @@ export async function fetchOrdersFromGas(
         };
       });
 
+      // Preserve status & resi if it was already updated in Supabase
+      const finalResi = existing && existing.no_resi && existing.no_resi !== '-' 
+        ? existing.no_resi 
+        : (row.no_resi || row.resi || row.tracking_no || '-');
+        
+      const finalStatus = existing && existing.status && existing.status !== 'siap_diproses'
+        ? existing.status
+        : ((row.status as IGLiveOrderStatus) || 'siap_diproses');
+
       return {
         id: orderNo,
         no_pesanan: orderNo,
@@ -674,10 +697,10 @@ export async function fetchOrdersFromGas(
         kode_pos: row.kode_pos || '',
         ekspedisi: row.ekspedisi || row.courier || row.kurir || 'J&T Express',
         layanan: row.layanan || row.service || 'Reguler',
-        no_resi: row.no_resi || row.resi || row.tracking_no || '-',
+        no_resi: finalResi,
         biaya_ongkir: Number(row.biaya_ongkir || row.ongkir || 0),
         total_bayar: Number(row.total_bayar || row.total || 0),
-        status: (row.status as IGLiveOrderStatus) || 'siap_diproses',
+        status: finalStatus as IGLiveOrderStatus,
         alasan_batal: row.alasan_batal || '',
         catatan: row.catatan || row.notes || '',
         items,
@@ -688,7 +711,8 @@ export async function fetchOrdersFromGas(
     });
 
     // Save and return
-    saveStoredIgLiveOrders(mapped);
+    await upsertIgLiveOrdersToSupabase(mapped);
+
     return {
       success: true,
       orders: mapped,
