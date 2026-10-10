@@ -705,7 +705,7 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                         {item.foto_urls.slice(0, 3).map((url, i) => (
                           <div
                             key={i}
-                            onClick={() => handleOpenPhotoLightbox(url, item.foto_urls, i, `Paket ${item.nama_ekspedisi} (Resi: ${item.no_resi})`, 'Penerimaan Paket')}
+                            onClick={() => handleOpenPhotoLightbox(url, item.foto_urls, i, `Paket ${item.ekspedisi} (Resi: ${item.no_resi})`, 'Penerimaan Paket')}
                             className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-900 group relative"
                             title="Klik untuk perbesar foto (Full Preview)"
                           >
@@ -719,7 +719,7 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                         ))}
                         {item.foto_urls.length > 3 && (
                           <div
-                            onClick={() => handleOpenPhotoLightbox(item.foto_urls[3], item.foto_urls, 3, `Paket ${item.nama_ekspedisi} (Resi: ${item.no_resi})`, 'Penerimaan Paket')}
+                            onClick={() => handleOpenPhotoLightbox(item.foto_urls[3], item.foto_urls, 3, `Paket ${item.ekspedisi} (Resi: ${item.no_resi})`, 'Penerimaan Paket')}
                             className="w-14 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                             title="Lihat semua foto"
                           >
@@ -829,7 +829,7 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                     {selectedItemDetail.foto_urls.map((url, idx) => (
                       <div
                         key={idx}
-                        onClick={() => handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, idx, `Paket ${selectedItemDetail.nama_ekspedisi} (Resi: ${selectedItemDetail.no_resi})`, 'Penerimaan Paket')}
+                        onClick={() => handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, idx, `Paket ${selectedItemDetail.ekspedisi} (Resi: ${selectedItemDetail.no_resi})`, 'Penerimaan Paket')}
                         className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 shadow-sm group cursor-pointer hover:border-blue-500 transition-colors"
                         title="Klik untuk melihat foto ukuran penuh (Zoom/Fullscreen)"
                       >
@@ -844,7 +844,7 @@ export const PenerimaanPaketTab: React.FC<PenerimaanPaketTabProps> = ({ session,
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, idx, `Paket ${selectedItemDetail.nama_ekspedisi} (Resi: ${selectedItemDetail.no_resi})`, 'Penerimaan Paket');
+                              handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, idx, `Paket ${selectedItemDetail.ekspedisi} (Resi: ${selectedItemDetail.no_resi})`, 'Penerimaan Paket');
                             }}
                             className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/85 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
                           >

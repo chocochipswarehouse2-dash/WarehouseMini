@@ -302,19 +302,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleDeleteOutlet = async (id?: string) => {
-    if (!id) return;
-    if (!confirm('Yakin ingin menghapus store ini?')) return;
-    
-    setIsLoadingOutlets(true);
-    const res = await deleteOutlet(id);
-    if (res.success) {
-      onNotify('Store dihapus', 'success');
-      loadOutlets();
-    } else {
-      onNotify(res.message, 'error');
-    }
-    setIsLoadingOutlets(false);
+  const handleDeleteOutlet = (outlet: { id?: string; nama: string }) => {
+    if (!outlet || (!outlet.id && !outlet.nama)) return;
+    setSettingsConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Store / Outlet',
+      message: `Yakin ingin menghapus store "${outlet.nama}" dari daftar?`,
+      onConfirm: async () => {
+        setSettingsConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        setIsLoadingOutlets(true);
+        const res = await deleteOutlet(outlet.id || outlet.nama, outlet.nama);
+        if (res.success) {
+          onNotify(res.message || 'Store berhasil dihapus', 'success');
+          await loadOutlets();
+        } else {
+          onNotify(res.message, 'error');
+        }
+        setIsLoadingOutlets(false);
+      },
+    });
   };
 
   const handleSaveOutlet = async (e: React.FormEvent) => {
@@ -389,6 +395,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setRoleList(mappedRoles);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (activeTab === 'outlets' && isOpen) {
+      loadOutlets();
+    }
+  }, [activeTab, isOpen]);
 
   if (!isOpen) return null;
 
@@ -2950,8 +2962,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteOutlet(outlet.id)}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                              onClick={() => handleDeleteOutlet(outlet)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
                               title="Hapus Store"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

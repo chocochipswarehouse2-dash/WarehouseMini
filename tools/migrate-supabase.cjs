@@ -136,6 +136,7 @@ const ALL_TABLES = [
   'wms_system_docs',
   'wms_settings',
   'wms_katalog',
+  'ig_live_orders',
 ];
 
 // Filter tabel berdasarkan flag --tables dan --skip

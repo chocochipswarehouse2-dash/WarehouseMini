@@ -31,6 +31,7 @@ import {
   ArrowRight,
   ListPlus,
   Check,
+  ZoomIn,
 } from 'lucide-react';
 import {
   UserSession,
@@ -261,6 +262,20 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
     }
   };
 
+  useEffect(() => {
+    if (isStoreModalOpen) {
+      loadStores();
+    }
+  }, [isStoreModalOpen]);
+
+  useEffect(() => {
+    const handleOutletsUpdated = () => {
+      loadStores();
+    };
+    window.addEventListener('wms_outlets_updated', handleOutletsUpdated);
+    return () => window.removeEventListener('wms_outlets_updated', handleOutletsUpdated);
+  }, []);
+
   const loadKategori = () => {
     const list = fetchKategoriMutasiList();
     // Pastikan 'Lainnya (Manual)' selalu ada di list
@@ -311,14 +326,18 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
   };
 
   // Delete store
-  const handleDeleteStore = async (id?: string) => {
-    if (!id) return;
-    if (!window.confirm('Yakin ingin menghapus store ini dari daftar?')) return;
+  const handleDeleteStore = async (store: { id?: string; nama: string }) => {
+    if (!store || (!store.id && !store.nama)) return;
     try {
-      const res = await deleteOutlet(id);
+      const res = await deleteOutlet(store.id || store.nama, store.nama);
       if (res.success) {
-        onShowToast('Store berhasil dihapus', 'success');
+        onShowToast(res.message || 'Store berhasil dihapus', 'success');
         await loadStores();
+        if (selectedStore === store.nama) {
+          setSelectedStore('');
+        }
+      } else {
+        onShowToast(res.message, 'error');
       }
     } catch (e: any) {
       onShowToast(e.message || 'Gagal menghapus store', 'error');
@@ -1506,7 +1525,7 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                         {item.foto_urls.slice(0, 3).map((url, i) => (
                           <div
                             key={i}
-                            onClick={() => handleOpenPhotoLightbox(url, item.foto_urls, i, item.deskripsi || 'Dokumentasi Penerimaan', item.nama_store_pengirim || 'Store')}
+                            onClick={() => handleOpenPhotoLightbox(url, item.foto_urls, i, item.deskripsi || 'Dokumentasi Penerimaan', item.asal_store_nama || 'Store')}
                             className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-slate-900 group relative"
                             title="Klik untuk perbesar foto (Full Preview)"
                           >
@@ -1520,7 +1539,7 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                         ))}
                         {item.foto_urls.length > 3 && (
                           <div
-                            onClick={() => handleOpenPhotoLightbox(item.foto_urls[3], item.foto_urls, 3, item.deskripsi || 'Dokumentasi Penerimaan', item.nama_store_pengirim || 'Store')}
+                            onClick={() => handleOpenPhotoLightbox(item.foto_urls[3], item.foto_urls, 3, item.deskripsi || 'Dokumentasi Penerimaan', item.asal_store_nama || 'Store')}
                             className="w-14 h-14 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                             title="Lihat semua foto"
                           >
@@ -1644,7 +1663,7 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                     {selectedItemDetail.foto_urls.map((url, i) => (
                       <div
                         key={i}
-                        onClick={() => handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, i, selectedItemDetail.deskripsi || 'Dokumentasi Penerimaan', selectedItemDetail.nama_store_pengirim || 'Store')}
+                        onClick={() => handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, i, selectedItemDetail.deskripsi || 'Dokumentasi Penerimaan', selectedItemDetail.asal_store_nama || 'Store')}
                         className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 group relative aspect-video cursor-pointer hover:border-emerald-500 transition-colors"
                         title="Klik untuk melihat foto ukuran penuh (Zoom/Fullscreen)"
                       >
@@ -1658,7 +1677,7 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, i, selectedItemDetail.deskripsi || 'Dokumentasi Penerimaan', selectedItemDetail.nama_store_pengirim || 'Store');
+                            handleOpenPhotoLightbox(url, selectedItemDetail.foto_urls, i, selectedItemDetail.deskripsi || 'Dokumentasi Penerimaan', selectedItemDetail.asal_store_nama || 'Store');
                           }}
                           className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/85 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
                         >
@@ -1837,15 +1856,14 @@ export const MutasiStoreTab: React.FC<MutasiStoreTabProps> = ({ session, onShowT
                     className="p-2.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 text-xs font-medium text-slate-700 dark:text-slate-200"
                   >
                     <span>{s.nama}</span>
-                    {s.id && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteStore(s.id)}
-                        className="p-1 text-slate-400 hover:text-rose-500 rounded"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteStore(s)}
+                      className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors cursor-pointer"
+                      title={`Hapus ${s.nama}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>

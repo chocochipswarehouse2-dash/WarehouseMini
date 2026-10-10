@@ -619,6 +619,44 @@ CREATE TABLE IF NOT EXISTS public.ekspedisi_config (
 );
 
 -- ──────────────────────────────────────────────────────────────────────────────
+-- 18B. TABEL PESANAN IG LIVE
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.ig_live_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  no_pesanan TEXT UNIQUE NOT NULL,
+  tanggal TIMESTAMPTZ DEFAULT now(),
+  session_live TEXT DEFAULT 'IG Live Session',
+  username_ig TEXT DEFAULT '@customer',
+  nama_pembeli TEXT DEFAULT 'Customer IG',
+  no_telp TEXT DEFAULT '',
+  alamat_lengkap TEXT DEFAULT '',
+  kota_kabupaten TEXT DEFAULT '',
+  provinsi TEXT DEFAULT '',
+  kode_pos TEXT DEFAULT '',
+  ekspedisi TEXT DEFAULT 'JNE',
+  layanan TEXT DEFAULT 'REG',
+  no_resi TEXT DEFAULT '-',
+  biaya_ongkir NUMERIC DEFAULT 0,
+  total_bayar NUMERIC DEFAULT 0,
+  status TEXT DEFAULT 'siap_diproses',
+  alasan_batal TEXT DEFAULT '',
+  catatan TEXT DEFAULT '',
+  items JSONB DEFAULT '[]'::jsonb,
+  is_picked BOOLEAN DEFAULT false,
+  waktu_picking TIMESTAMPTZ,
+  petugas_picking TEXT,
+  waktu_packing TIMESTAMPTZ,
+  petugas_packing TEXT,
+  waktu_kirim TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ig_live_orders_no ON public.ig_live_orders(no_pesanan);
+CREATE INDEX IF NOT EXISTS idx_ig_live_orders_status ON public.ig_live_orders(status);
+CREATE INDEX IF NOT EXISTS idx_ig_live_orders_created_at ON public.ig_live_orders(created_at DESC);
+
+-- ──────────────────────────────────────────────────────────────────────────────
 -- 19. VIEWS OTOMATIS (STOK REAL FISIK & STOK REALTIME)
 -- ──────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW public.stok_real_fisik AS
@@ -716,13 +754,14 @@ DECLARE
     'penerimaan_produksi', 'penerimaan_mutasi_store', 'penerimaan_paket', 'picking_list', 'peminjaman', 'perbaikan_tickets',
     'qc_reports', 'manual_shipment', 'pengecekan_sj', 'pengiriman_store_reports', 'pengiriman_store_trips', 'pengiriman_paket_handover', 'ekspedisi_config', 'address_book',
     'karyawan', 'master_shift', 'roster_shift', 'presensi', 'lembur', 'perijinan_cuti',
-    'wms_projects', 'wms_agenda', 'wms_notes', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings', 'wms_katalog'
+    'wms_projects', 'wms_agenda', 'wms_notes', 'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings', 'wms_katalog',
+    'ig_live_orders'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Allow public all access" ON public.%I;', tbl);
-    EXECUTE format('CREATE POLICY "Allow public all access" ON public.%I FOR ALL USING (true) WITH CHECK (true);', tbl);
+    EXECUTE format('CREATE POLICY "Allow public all access" ON public.%I FOR ALL TO public USING (true) WITH CHECK (true);', tbl);
   END LOOP;
 END $$;
 
@@ -736,7 +775,7 @@ DECLARE
     'log_produk', 'stock_opname_queue', 'peminjaman', 'picking_list',
     'perbaikan_tickets', 'qc_reports', 'manual_shipment', 'pengecekan_sj',
     'karyawan', 'presensi', 'lembur', 'wms_projects', 'wms_agenda', 'wms_notes',
-    'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings'
+    'wms_roadmap', 'wms_system_docs', 'outlet_config', 'wms_settings', 'ig_live_orders'
   ];
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN

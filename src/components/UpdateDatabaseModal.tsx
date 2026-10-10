@@ -704,10 +704,46 @@ CREATE TABLE IF NOT EXISTS public.master_produk (
   dealpos_channels JSONB DEFAULT '{}'::jsonb
 );
 
+-- TABEL IG LIVE ORDERS
+CREATE TABLE IF NOT EXISTS public.ig_live_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  no_pesanan TEXT UNIQUE NOT NULL,
+  tanggal TIMESTAMPTZ DEFAULT now(),
+  session_live TEXT DEFAULT 'IG Live Session',
+  username_ig TEXT DEFAULT '@customer',
+  nama_pembeli TEXT DEFAULT 'Customer IG',
+  no_telp TEXT DEFAULT '',
+  alamat_lengkap TEXT DEFAULT '',
+  kota_kabupaten TEXT DEFAULT '',
+  provinsi TEXT DEFAULT '',
+  kode_pos TEXT DEFAULT '',
+  ekspedisi TEXT DEFAULT 'JNE',
+  layanan TEXT DEFAULT 'REG',
+  no_resi TEXT DEFAULT '-',
+  biaya_ongkir NUMERIC DEFAULT 0,
+  total_bayar NUMERIC DEFAULT 0,
+  status TEXT DEFAULT 'siap_diproses',
+  alasan_batal TEXT DEFAULT '',
+  catatan TEXT DEFAULT '',
+  items JSONB DEFAULT '[]'::jsonb,
+  is_picked BOOLEAN DEFAULT false,
+  waktu_picking TIMESTAMPTZ,
+  petugas_picking TEXT,
+  waktu_packing TIMESTAMPTZ,
+  petugas_packing TEXT,
+  waktu_kirim TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- RLS POLICY (Bebas Akses Anonim Applet)
 ALTER TABLE public.master_produk ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public all access" ON public.master_produk;
-CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (true);`;
+CREATE POLICY "Allow public all access" ON public.master_produk FOR ALL USING (true);
+
+ALTER TABLE public.ig_live_orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public all access" ON public.ig_live_orders;
+CREATE POLICY "Allow public all access" ON public.ig_live_orders FOR ALL TO public USING (true) WITH CHECK (true);`;
 
     navigator.clipboard.writeText(sql);
     setCopiedSql(true);

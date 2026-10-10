@@ -81,7 +81,24 @@ export async function fetchJasaKirimList(): Promise<string[]> {
   return DEFAULT_JASA_KIRIM;
 }
 
+function getDeletedOutletNames(): Set<string> {
+  const set = new Set<string>();
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem('wms_deleted_outlets');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          arr.forEach((n: string) => set.add(String(n).trim().toLowerCase()));
+        }
+      }
+    } catch {}
+  }
+  return set;
+}
+
 export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfillment: string; kode?: string }[]> {
+  const deletedSet = getDeletedOutletNames();
   try {
     const result: { id?: string; nama: string; fulfillment: string; kode?: string }[] = [];
     const seenNames = new Set<string>();
@@ -93,9 +110,13 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
         if (d.nama) {
           const rawName = d.nama.trim();
           const fullName = getFullStoreName(d.fulfillment || rawName);
-          const kode = d.kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === fullName.toLowerCase()) || rawName.toUpperCase();
-          if (!seenNames.has(fullName.toLowerCase())) {
-            seenNames.add(fullName.toLowerCase());
+          const nameLower = fullName.toLowerCase();
+          if (deletedSet.has(nameLower) || deletedSet.has(rawName.toLowerCase())) {
+            return; // Lewati jika sudah dihapus pengguna
+          }
+          const kode = d.kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === nameLower) || rawName.toUpperCase();
+          if (!seenNames.has(nameLower)) {
+            seenNames.add(nameLower);
             result.push({
               id: d.id,
               nama: fullName,
@@ -105,12 +126,14 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
           }
         }
       });
+      return result;
     }
 
-    // 2. Gabungkan dengan DEFAULT_OUTLETS (Master Produk & DealPOS)
+    // 2. Gabungkan dengan DEFAULT_OUTLETS jika database kosong dan belum pernah dihapus
     DEFAULT_OUTLETS.forEach(d => {
-      if (!seenNames.has(d.nama.toLowerCase())) {
-        seenNames.add(d.nama.toLowerCase());
+      const nameLower = d.nama.toLowerCase();
+      if (!seenNames.has(nameLower) && !deletedSet.has(nameLower)) {
+        seenNames.add(nameLower);
         result.push(d);
       }
     });
@@ -119,23 +142,38 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
   } catch (err) {
     console.warn('Error fetching outlets', err);
   }
-  return DEFAULT_OUTLETS;
+  return DEFAULT_OUTLETS.filter(d => !deletedSet.has(d.nama.toLowerCase()));
 }
 
 export async function saveOutlet(outlet: { id?: string, nama: string, fulfillment: string }): Promise<{ success: boolean; message: string }> {
   try {
-    if (outlet.id) {
+    const cleanName = outlet.nama.trim();
+    // Jika sebelumnya pernah dihapus, bersihkan dari daftar terhapus
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const raw = localStorage.getItem('wms_deleted_outlets');
+        if (raw) {
+          const arr = JSON.parse(raw);
+          const filtered = arr.filter((n: string) => n.toLowerCase() !== cleanName.toLowerCase());
+          localStorage.setItem('wms_deleted_outlets', JSON.stringify(filtered));
+        }
+      } catch {}
+    }
+
+    if (outlet.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(outlet.id)) {
       await supabaseFetch('outlet_config', 'PATCH', {
-        nama: outlet.nama,
-        fulfillment: outlet.fulfillment
-      }, `id=eq.${outlet.id}`);
+        nama: cleanName,
+        fulfillment: outlet.fulfillment.trim()
+      }, `id=eq.${encodeURIComponent(outlet.id)}`);
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('wms_outlets_updated'));
       return { success: true, message: 'Berhasil mengupdate store' };
     } else {
       await supabaseFetch('outlet_config', 'POST', [{
-        nama: outlet.nama,
-        fulfillment: outlet.fulfillment,
+        nama: cleanName,
+        fulfillment: outlet.fulfillment.trim(),
         created_at: new Date().toISOString()
       }]);
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('wms_outlets_updated'));
       return { success: true, message: 'Berhasil menambahkan store baru' };
     }
   } catch (err: any) {
@@ -143,11 +181,45 @@ export async function saveOutlet(outlet: { id?: string, nama: string, fulfillmen
   }
 }
 
-export async function deleteOutlet(id: string): Promise<{ success: boolean; message: string }> {
+export async function deleteOutlet(idOrName: string, nameFallback?: string): Promise<{ success: boolean; message: string }> {
   try {
-    await supabaseFetch('outlet_config', 'DELETE', null, `id=eq.${id}`);
-    return { success: true, message: 'Berhasil menghapus store' };
+    if (!idOrName) return { success: false, message: 'ID atau nama store tidak valid' };
+
+    const targetName = (nameFallback || idOrName).trim();
+    // 1. Simpan ke blacklist store terhapus agar tidak muncul lagi dari default list
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const raw = localStorage.getItem('wms_deleted_outlets');
+        const list: string[] = raw ? JSON.parse(raw) : [];
+        const cleanLower = targetName.toLowerCase();
+        if (!list.includes(cleanLower)) {
+          list.push(cleanLower);
+          localStorage.setItem('wms_deleted_outlets', JSON.stringify(list));
+        }
+      } catch {}
+    }
+
+    // 2. Hapus dari Supabase outlet_config
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName.trim());
+    if (isUuid) {
+      await supabaseFetch('outlet_config', 'DELETE', null, `id=eq.${encodeURIComponent(idOrName)}`);
+    } else {
+      await supabaseFetch('outlet_config', 'DELETE', null, `nama=eq.${encodeURIComponent(idOrName)}`);
+    }
+
+    if (nameFallback && nameFallback !== idOrName) {
+      try {
+        await supabaseFetch('outlet_config', 'DELETE', null, `nama=eq.${encodeURIComponent(nameFallback)}`);
+      } catch {}
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wms_outlets_updated'));
+    }
+
+    return { success: true, message: `Berhasil menghapus store "${targetName}"` };
   } catch (err: any) {
+    console.error('Error deleting outlet:', err);
     return { success: false, message: err.message || 'Gagal menghapus store' };
   }
 }
