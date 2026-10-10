@@ -475,7 +475,7 @@ export interface StockRealtimeItem {
 
 export interface LogProdukItem {
   id?: string;
-  type: 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT' | 'SO';
+  type: 'IN' | 'OUT' | 'ADJ_IN' | 'ADJ_OUT' | 'SO' | 'ANOMALI';
   invoice: string;
   sku: string;
   nama_produk: string;

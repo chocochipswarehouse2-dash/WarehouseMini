@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownLeft, ArrowUpRight, CheckSquare, MapPin, Tag, X } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckSquare, MapPin, Tag, X } from 'lucide-react';
 import { CategoryType } from '../types';
 
 interface QuickTagToolbarProps {
