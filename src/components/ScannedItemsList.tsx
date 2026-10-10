@@ -152,10 +152,10 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                       type="button"
                       onClick={() => {
                         if (!onUpdateCategory) return;
-                        const nextCat: CategoryType = cat === 'SO' ? 'IN' : cat === 'IN' ? 'OUT' : 'SO';
+                        const nextCat: CategoryType = cat === 'ANOMALI' ? 'IN' : cat === 'IN' ? 'OUT' : cat === 'OUT' ? 'SO' : 'ANOMALI';
                         onUpdateCategory(item.id, nextCat);
                       }}
-                      title="Klik untuk ubah mode (#IN / #OUT / #SO)"
+                      title="Klik untuk ubah mode (#IN / #OUT / #SO / #ANOMALI)"
                       className="cursor-pointer transition-transform active:scale-95 text-left select-none inline-flex items-center"
                     >
                       {cat === 'IN' && (
@@ -173,6 +173,12 @@ export const ScannedItemsList: React.FC<ScannedItemsListProps> = ({
                       {cat === 'SO' && (
                         <span className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
                           <CheckSquare className="w-3 h-3 text-emerald-500" /> #SO Opname
+                          <span className="text-[9px] opacity-60 ml-0.5">↻</span>
+                        </span>
+                      )}
+                      {cat === 'ANOMALI' && (
+                        <span className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-500" /> #ANOMALI
                           <span className="text-[9px] opacity-60 ml-0.5">↻</span>
                         </span>
                       )}

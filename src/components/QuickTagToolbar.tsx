@@ -79,6 +79,22 @@ export const QuickTagToolbar: React.FC<QuickTagToolbarProps> = ({
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectCategory('ANOMALI')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer ${
+                currentCategory === 'ANOMALI'
+                  ? 'bg-amber-600 text-white shadow-[0_0_10px_rgba(217,119,6,0.4)] ring-2 ring-amber-500/30'
+                  : 'bg-slate-100 dark:bg-[#09090B] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>#ANOMALI</span>
+              {currentCategory === 'ANOMALI' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              )}
+            </button>
           </div>
         </div>
 

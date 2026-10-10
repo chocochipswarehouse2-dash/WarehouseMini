@@ -551,8 +551,9 @@ export default function App() {
     } catch {}
     return [];
   });
-  const [currentCategory, setCurrentCategory] = useState<CategoryType>('SO');
+  const [currentCategory, setCurrentCategory] = useState<CategoryType>('ANOMALI');
   const [currentLocation, setCurrentLocation] = useState<string>('');
+  const [currentInvoice, setCurrentInvoice] = useState<string>('');
   const [keterangan, setKeterangan] = useState<string>('');
   const [productDatabase, setProductDatabase] = useState<ProductItem[]>([]);
   const [hasScannedSku, setHasScannedSku] = useState<boolean>(false);
@@ -587,6 +588,9 @@ export default function App() {
   // Synchronous refs to prevent stale closure during camera barcode callbacks
   const currentCategoryRef = useRef<CategoryType>(currentCategory);
   currentCategoryRef.current = currentCategory;
+
+  const currentInvoiceRef = useRef<string>(currentInvoice);
+  currentInvoiceRef.current = currentInvoice;
 
   const currentLocationRef = useRef<string>(currentLocation);
   currentLocationRef.current = currentLocation;
@@ -1106,17 +1110,43 @@ export default function App() {
     if (!text) return;
 
     // 1. Detect Category tag (#IN, #OUT, #SO) -> Just light up category indicator, do NOT add to scan list
-    if (['#IN', '#OUT', '#SO', 'IN', 'OUT', 'SO'].includes(text) && (text.startsWith('#') || ['IN', 'OUT', 'SO'].includes(text))) {
-      const cleanText = text.startsWith('#') ? text : `#${text}`;
-      if (['#IN', '#OUT', '#SO'].includes(cleanText)) {
-        const cat = cleanText.replace('#', '') as CategoryType;
-        setCurrentCategory(cat);
-        currentCategoryRef.current = cat;
-        playCategoryBeep();
-        vibrateDevice(60);
-        showToast(`Kategori aktif: #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})`, 'info');
-        return;
+    const isCatTag = /^#?(IN|OUT|SO|MASUK|KELUAR)(\s|:|$)/i.test(text);
+    if (isCatTag) {
+      let cat: CategoryType = 'ANOMALI';
+      let explicitInvoice = '';
+      
+      if (/^#?(IN|MASUK)(\s|:|$)/i.test(text)) {
+        cat = 'IN';
+        const restIn = text.replace(/^#?(IN|MASUK)[:\s]*/i, '').trim();
+        if (restIn && (restIn.startsWith('WA') || restIn.length > 5)) {
+          explicitInvoice = restIn;
+        } else if (restIn && !currentLocationRef.current && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
+          setCurrentLocation(restIn);
+          currentLocationRef.current = restIn;
+        }
+      } else if (/^#?(OUT|KELUAR)(\s|:|$)/i.test(text)) {
+        cat = 'OUT';
+        const restOut = text.replace(/^#?(OUT|KELUAR)[:\s]*/i, '').trim();
+        if (restOut && (restOut.startsWith('WA') || restOut.length > 5)) {
+          explicitInvoice = restOut;
+        } else if (restOut && !currentLocationRef.current && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
+          setCurrentLocation(restOut);
+          currentLocationRef.current = restOut;
+        }
+      } else if (/^#?(SO|STOCK OPNAME|OPNAME)(\s|:|$)/i.test(text)) {
+        cat = 'SO';
       }
+
+      setCurrentCategory(cat);
+      currentCategoryRef.current = cat;
+      if (explicitInvoice) {
+        setCurrentInvoice(explicitInvoice);
+        currentInvoiceRef.current = explicitInvoice;
+      }
+      playCategoryBeep();
+      vibrateDevice(60);
+      showToast(`Kategori aktif: #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})${explicitInvoice ? ` Invoice: ${explicitInvoice}` : ''}`, 'info');
+      return;
     }
 
     // 2. Detect Location tag (#LOK xxx, LOK xxx, #LOK:xxx) -> Just light up location indicator, do NOT add to scan list
@@ -1399,14 +1429,17 @@ export default function App() {
         const line = item.text.trim().toUpperCase();
         if (!line) continue;
 
-        const cType: CategoryType = item.category || currentCategory || 'SO';
+        const cType: CategoryType = item.category || currentCategory || 'ANOMALI';
         const cLokasi = item.location || currentLocation || 'DEFAULT';
 
-        if (cType === 'IN' || cType === 'OUT') {
+        // Fix invoice base to use extracted explicit invoice if available
+        const currentLineInvoice = currentInvoiceRef.current || `WEB-${waktuPesan.getTime()}`;
+
+        if (cType === 'IN' || cType === 'OUT' || cType === 'ANOMALI') {
           const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
           logsToInsert.push({
             type: cType,
-            invoice: invoiceBase,
+            invoice: currentLineInvoice,
             sku: line,
             nama_produk: pData ? pData.p : (item.productName || line),
             size: item.size || (pData ? pData.s : ''),
@@ -1414,7 +1447,7 @@ export default function App() {
             lokasi: cLokasi,
             qty: item.qty || 1,
             operator: operatorName,
-            keterangan: ketText || `${cType} Staging Scan`,
+            keterangan: ketText || (cType === 'ANOMALI' ? 'Scan Tanpa Tipe (Anomali)' : `${cType} Staging Scan`),
             created_at: waktuPesan.toISOString(),
           });
         } else if (cType === 'SO') {
@@ -1425,7 +1458,7 @@ export default function App() {
           const pData = productDatabase.find((p) => p.k.toUpperCase() === line);
           logsToInsert.push({
             type: 'SO',
-            invoice: invoiceBase,
+            invoice: currentLineInvoice,
             sku: line,
             nama_produk: pData ? pData.p : (item.productName || line),
             size: item.size || (pData ? pData.s : ''),
@@ -1518,7 +1551,8 @@ export default function App() {
 
       setScannedData([]);
       setKeterangan('');
-      setCurrentCategory('SO');
+      setCurrentCategory('ANOMALI');
+      setCurrentInvoice('');
       setCurrentLocation('');
       setHasScannedSku(false);
     } catch (err: unknown) {

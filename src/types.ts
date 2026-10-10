@@ -1,6 +1,6 @@
 export type ScanMode = 'fisik' | 'manual' | 'kamera';
 
-export type CategoryType = 'IN' | 'OUT' | 'SO';
+export type CategoryType = 'IN' | 'OUT' | 'SO' | 'ANOMALI' | '';
 
 export type ActivePage =
   | 'dashboard'

@@ -165,6 +165,7 @@ function handleWhatsAppScan(payload) {
     var currentType = '';
     var currentDeskripsi = '';
     var currentLokasi = '';
+    var explicitInvoice = '';
     var rawItems = [];
     var operator = name + ' | ' + (actualSender || sender || groupId);
     
@@ -192,7 +193,11 @@ function handleWhatsAppScan(payload) {
       if (/^#?(IN|MASUK)(\s|:|$)/i.test(line)) {
         currentType = TYPE_IN;
         var restIn = line.replace(/^#?(IN|MASUK)[:\s]*/i, '').trim();
-        if (restIn && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restIn)) currentLokasi = restIn;
+        if (restIn && (restIn.toUpperCase().startsWith('WA') || restIn.length > 5)) {
+           explicitInvoice = restIn.toUpperCase();
+        } else if (restIn && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
+           currentLokasi = restIn;
+        }
         currentDeskripsi = 'IN';
         continue;
       }
@@ -200,7 +205,11 @@ function handleWhatsAppScan(payload) {
       if (/^#?(OUT|KELUAR)(\s|:|$)/i.test(line)) {
         currentType = TYPE_OUT;
         var restOut = line.replace(/^#?(OUT|KELUAR)[:\s]*/i, '').trim();
-        if (restOut && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restOut)) currentLokasi = restOut;
+        if (restOut && (restOut.toUpperCase().startsWith('WA') || restOut.length > 5)) {
+           explicitInvoice = restOut.toUpperCase();
+        } else if (restOut && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
+           currentLokasi = restOut;
+        }
         currentDeskripsi = 'OUT';
         continue;
       }
@@ -270,8 +279,8 @@ function handleWhatsAppScan(payload) {
       }
       
       var itemLokasi = currentLokasi ? currentLokasi.trim() : 'Warehouse';
-      var itemType = currentType ? currentType : TYPE_SO;
-      var itemDeskripsi = currentDeskripsi || (itemType === TYPE_SO ? 'Stock Opname WA' : itemType);
+      var itemType = currentType ? currentType : 'ANOMALI';
+      var itemDeskripsi = currentDeskripsi || (itemType === 'ANOMALI' ? 'Scan Tanpa Tipe (Anomali)' : (itemType === TYPE_SO ? 'Stock Opname WA' : itemType));
       var itemArea = getArea(itemLokasi);
 
       // Cek apakah item dengan SKU, Lokasi, dan Tipe yang sama sudah ada di rawItems (Aggregasi Otomatis)
@@ -309,12 +318,12 @@ function handleWhatsAppScan(payload) {
     }
     
     var lokasiFinal = currentLokasi ? currentLokasi.trim() : 'Warehouse';
-    var typeFinal = currentType ? currentType : TYPE_SO;
-    var deskripsiFinal = currentDeskripsi || (typeFinal === TYPE_SO ? 'Stock Opname WA' : typeFinal);
+    var typeFinal = currentType ? currentType : 'ANOMALI';
+    var deskripsiFinal = currentDeskripsi || (typeFinal === 'ANOMALI' ? 'Scan Tanpa Tipe (Anomali)' : (typeFinal === TYPE_SO ? 'Stock Opname WA' : typeFinal));
     var areaFinal = getArea(lokasiFinal);
     
     // 1 PESAN WA = 1 INVOICE
-    var invoice = generateInvoice();
+    var invoice = explicitInvoice ? explicitInvoice : generateInvoice();
     var nowIso = new Date().toISOString();
     
     // Batch lookup metadata produk (1 request kilat jika <= 50 sku)
