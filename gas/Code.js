@@ -74,19 +74,20 @@ function doGet(e) {
  */
 function handleWhatsAppScan(payload) {
   try {
-    var sender = payload.participant || payload.sender || payload.pengirim || payload.from || payload.phone || '';
-    var name = payload.pushname || payload.name || sender || 'WhatsApp User';
+    var sender = payload.sender || payload.pengirim || payload.from || payload.phone || '';
+    var actualSender = payload.participant || sender;
+    var name = payload.pushname || payload.name || actualSender;
     var message = (payload.message || payload.pesan || payload.text || '').trim();
     
     if (!message) {
       return jsonResponse({ success: true, message: 'Empty message ignored.' });
     }
-    
+
     if (message === 'PING TEST WEBHOOK') {
       return jsonResponse({ success: true, message: 'PING OK - Webhook Standalone Aktif' });
     }
 
-    // 0. Filter Pesan Broadcast / Surat Jalan / Tugas Picking / Pesan Sistem
+    // Abaikan pesan informasi tugas picking, surat jalan, atau format broadcast pengiriman
     var upperMsg = message.toUpperCase();
     if (
       upperMsg.indexOf('TUGAS PICKING') > -1 ||
@@ -157,15 +158,13 @@ function handleWhatsAppScan(payload) {
       }
     } catch (eDedup) {}
     
-    var actualSender = payload.member || payload.participant || (sender.indexOf('@g.us') === -1 ? sender : '');
-    var operator = name + ' | ' + (actualSender || sender || groupId);
-    
     var lines = message.split('\n');
     var currentType = '';
     var currentDeskripsi = '';
     var currentLokasi = '';
     var explicitInvoice = '';
     var rawItems = [];
+    var operator = name + ' | ' + (actualSender || sender || groupId);
     
     var TYPE_IN = 'IN';
     var TYPE_OUT = 'OUT';
@@ -183,12 +182,7 @@ function handleWhatsAppScan(payload) {
       if (/^#?(SO|STOCK OPNAME|OPNAME)(\s|:|$)/i.test(line)) {
         currentType = TYPE_SO;
         var restSo = line.replace(/^#?(SO|STOCK OPNAME|OPNAME)[:\s]*/i, '').trim();
-        // Check if the rest is an explicit invoice
-        if (restSo && /^WA[0-9]{6}[A-Z0-9]{3,7}$/i.test(restSo)) {
-           explicitInvoice = restSo.toUpperCase();
-        } else if (restSo && !currentLokasi) {
-           currentLokasi = restSo;
-        }
+        if (restSo && !currentLokasi) currentLokasi = restSo;
         currentDeskripsi = 'Stock Opname WA';
         continue;
       }
@@ -196,7 +190,7 @@ function handleWhatsAppScan(payload) {
       if (/^#?(IN|MASUK)(\s|:|$)/i.test(line)) {
         currentType = TYPE_IN;
         var restIn = line.replace(/^#?(IN|MASUK)[:\s]*/i, '').trim();
-        if (restIn && /^WA[0-9]{6}[A-Z0-9]{3,7}$/i.test(restIn)) {
+        if (restIn && (restIn.toUpperCase().startsWith('WA') || restIn.length > 5)) {
            explicitInvoice = restIn.toUpperCase();
         } else if (restIn && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
            currentLokasi = restIn;
@@ -208,7 +202,7 @@ function handleWhatsAppScan(payload) {
       if (/^#?(OUT|KELUAR)(\s|:|$)/i.test(line)) {
         currentType = TYPE_OUT;
         var restOut = line.replace(/^#?(OUT|KELUAR)[:\s]*/i, '').trim();
-        if (restOut && /^WA[0-9]{6}[A-Z0-9]{3,7}$/i.test(restOut)) {
+        if (restOut && (restOut.toUpperCase().startsWith('WA') || restOut.length > 5)) {
            explicitInvoice = restOut.toUpperCase();
         } else if (restOut && !currentLokasi && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
            currentLokasi = restOut;
@@ -248,7 +242,7 @@ function handleWhatsAppScan(payload) {
       // 5. Abaikan baris obrolan, header broadcast, footer watermark, emoji, atau teks non-SKU
       if (
         /^[*_>•\-\[\]#]/.test(line) ||
-        /[📦🔢🚨🚚🛒🏷️]/.test(line) ||
+        /[📦🔢🚨🚚🛒🏷️📍🙏━]/.test(line) ||
         /\b(QTY|PCS|ORDER|EXPEDISI|EKSPEDISI|TOTAL|KURIR|REKAP|SURAT JALAN|SENT VIA|BARCODE)\b/i.test(line)
       ) {
         continue;
@@ -282,18 +276,31 @@ function handleWhatsAppScan(payload) {
       }
       
       var itemLokasi = currentLokasi ? currentLokasi.trim() : 'Warehouse';
-      var itemType = currentType ? currentType : TYPE_SO;
-      var itemDeskripsi = currentDeskripsi || (itemType === TYPE_SO ? 'Stock Opname WA' : itemType);
+      var itemType = currentType ? currentType : 'ANOMALI';
+      var itemDeskripsi = currentDeskripsi || (itemType === 'ANOMALI' ? 'Scan Tanpa Tipe (Anomali)' : (itemType === TYPE_SO ? 'Stock Opname WA' : itemType));
       var itemArea = getArea(itemLokasi);
 
-      rawItems.push({
-        sku: itemSku,
-        qty: itemQty,
-        lokasi: itemLokasi,
-        type: itemType,
-        deskripsi: itemDeskripsi,
-        area: itemArea
-      });
+      // Cek apakah item dengan SKU, Lokasi, dan Tipe yang sama sudah ada di rawItems (Aggregasi Otomatis)
+      var existingIdx = -1;
+      for (var r = 0; r < rawItems.length; r++) {
+        if (rawItems[r].sku === itemSku && rawItems[r].lokasi === itemLokasi && rawItems[r].type === itemType) {
+          existingIdx = r;
+          break;
+        }
+      }
+      
+      if (existingIdx > -1) {
+        rawItems[existingIdx].qty += itemQty; // Jumlahkan Qty
+      } else {
+        rawItems.push({
+          sku: itemSku,
+          qty: itemQty,
+          lokasi: itemLokasi,
+          type: itemType,
+          deskripsi: itemDeskripsi,
+          area: itemArea
+        });
+      }
     }
     
     // Jika tidak ada tipe transaksi maupun lokasi valid yang terdeteksi,
@@ -308,15 +315,15 @@ function handleWhatsAppScan(payload) {
     }
     
     var lokasiFinal = currentLokasi ? currentLokasi.trim() : 'Warehouse';
-    var typeFinal = currentType ? currentType : TYPE_SO;
-    var deskripsiFinal = currentDeskripsi || (typeFinal === TYPE_SO ? 'Stock Opname WA' : typeFinal);
+    var typeFinal = currentType ? currentType : 'ANOMALI';
+    var deskripsiFinal = currentDeskripsi || (typeFinal === 'ANOMALI' ? 'Scan Tanpa Tipe (Anomali)' : (typeFinal === TYPE_SO ? 'Stock Opname WA' : typeFinal));
     var areaFinal = getArea(lokasiFinal);
     
     // 1 PESAN WA = 1 INVOICE
     var invoice = explicitInvoice ? explicitInvoice : generateInvoice();
     var nowIso = new Date().toISOString();
     
-    // Batch lookup metadata produk (1 request kilat)
+    // Batch lookup metadata produk (1 request kilat jika <= 50 sku)
     var uniqueSkus = [];
     var skuSeen = {};
     for (var k = 0; k < rawItems.length; k++) {
@@ -347,7 +354,6 @@ function handleWhatsAppScan(payload) {
       }
     }
     
-    // Siapkan baris log_produk
     var logEntries = [];
     for (var j = 0; j < rawItems.length; j++) {
       var it = rawItems[j];
@@ -370,9 +376,7 @@ function handleWhatsAppScan(payload) {
       });
     }
     
-    // TULIS KE log_produk SUPABASE (1 Batch POST < 150ms)
-    // Seluruh kalkulasi stok fisik maupun stock opname didelegasikan ke Supabase.
-    // GAS murni bertindak sebagai webhook pesan yang cepat tanpa kalkulasi.
+    // Tulis ke log_produk Supabase (NOL KALKULASI DI GAS)
     supabaseApiFetch('log_produk', 'POST', logEntries);
     Logger.log('Insert log_produk success. Invoice=' + invoice + ', Items=' + logEntries.length);
     
@@ -389,6 +393,7 @@ function handleWhatsAppScan(payload) {
     return jsonResponse({ success: false, error: err.toString() });
   }
 }
+
 
 /**
  * Fetch helper ke Supabase REST API
@@ -422,13 +427,14 @@ function supabaseApiFetch(endpoint, method, payload) {
 }
 
 function getArea(lokasi) {
-  var lok = String(lokasi || '').trim().toUpperCase();
-  if (!lok) return 'Warehouse';
-  if (lok.indexOf('BLOK F') > -1 || lok.indexOf('SHOPEE') > -1 || lok.indexOf('TIKTOK') > -1) return 'Blok F';
-  if (lok.indexOf('STUDIO') > -1 || lok.indexOf('FOTO') > -1 || lok.indexOf('DISPLAY') > -1 || lok.indexOf('STD') === 0) return 'Studio';
-  if (lok.indexOf('T-') === 0 || lok.indexOf('TK-') === 0 || lok.indexOf('TOKO') > -1 || lok.indexOf('STORE') > -1) return 'Toko';
-  if (lok.indexOf('CC') === 0 || lok.indexOf('CUCI') > -1 || lok.indexOf('WASH') > -1 || lok.indexOf('PERBAIKAN') > -1 || lok.indexOf('REPAIR') > -1 || lok.indexOf('DEFECT') > -1 || lok.indexOf('BS') > -1 || lok.indexOf('REJECT') > -1) return 'Perbaikan';
-  return 'Warehouse';
+  var l = String(lokasi || '').trim().toUpperCase();
+  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
+  if (/^(CC|PMK|DF)\d{3}$/.test(l)) return 'Perbaikan';
+  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l)) return 'Blok F';
+  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
+  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
+  if (/^X\d{3}$/.test(l)) return 'Transit';
+  return 'Anomali';
 }
 
 function generateInvoice() {
