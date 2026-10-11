@@ -107,3 +107,13 @@ Agents modifying UI sorting or task allocation MUST strictly enforce the followi
 5. **DO NOT PICK**: `Perbaikan` (Cuci, Permak, Defect) and `Anomali` areas are strictly excluded from automated picking recommendations.
 
 *Note: The frontend UI must display ALL valid picking locations simultaneously (grouped/sorted by priority) so that pickers have full visibility if Priority 1 stock is insufficient.*
+
+### C. Standar Resolusi Anomali Area vs Anomali Lokasi
+1. **Kasus 1: Lokasi Valid, Area Salah/Anomali (Area Mismatch)**:
+   - Contoh: Lokasi `R024` tercatat area `Warehouse`, `DF010` tercatat area `Warehouse`, atau `BELT001` tercatat `Anomali`.
+   - **Tindakan**: Sistem/script hanya boleh mengoreksi label `area`-nya secara langsung (`UPDATE area = getAreaFromLokasi(lokasi)`).
+   - **HARD CONSTRAINT**: DILARANG KERAS menyuntikkan `ADJ_OUT` / `ADJ_IN` atau menolkan stok fisik hanya karena salah nama area. Kuantitas fisik barang tidak boleh berkurang 1 pcs pun.
+2. **Kasus 2: Lokasi Tidak Valid / Tidak Ada di Denah (Anomali Lokasi)**:
+   - Contoh: Lokasi berupa salah ketik operator, tanda strip `-`, nama non-rak, atau string acak.
+   - **Tindakan**: DILARANG melakukan pembersihan (*cleanup*) otomatis oleh script tanpa izin.
+   - **Wajib Verifikasi & Persetujuan Manusia**: Wajib melalui audit fisik di lapangan dan memerlukan konfirmasi/persetujuan eksplisit (*approval*) dari user/admin sebelum tindakan penyesuaian stok dilakukan.
