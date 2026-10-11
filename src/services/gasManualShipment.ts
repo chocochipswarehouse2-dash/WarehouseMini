@@ -283,6 +283,25 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
       } catch {}
     }
 
+    // 3. Format JSON notes_paket jika ada store_metadata (jadwal kirim store & status cetak)
+    const storeMeta: any = {};
+    if (payload.tgl_jadwal_kirim_store) storeMeta.tgl_jadwal_kirim_store = payload.tgl_jadwal_kirim_store;
+    if (payload.catatan_jadwal_store) storeMeta.catatan_jadwal_store = payload.catatan_jadwal_store;
+    if (payload.tujuan_pengiriman) storeMeta.tujuan_pengiriman = payload.tujuan_pengiriman;
+    if (payload.is_picking_printed) storeMeta.is_picking_printed = payload.is_picking_printed;
+    if (payload.is_label_printed) storeMeta.is_label_printed = payload.is_label_printed;
+    if (payload.tgl_cetak_picking) storeMeta.tgl_cetak_picking = payload.tgl_cetak_picking;
+    if (payload.tgl_cetak_label) storeMeta.tgl_cetak_label = payload.tgl_cetak_label;
+
+    if (Object.keys(storeMeta).length > 0) {
+      try {
+        const metaTag = `\n[STORE_METADATA]:${JSON.stringify(storeMeta)}`;
+        if (!notes.includes('[STORE_METADATA]:')) {
+          notes = notes ? `${notes}${metaTag}` : metaTag.trim();
+        }
+      } catch {}
+    }
+
     const submitPayload: any = {
       ...rest,
       notes_paket: notes,
@@ -311,6 +330,13 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
     delete submitPayload.email_customer;
     delete submitPayload.email_store;
     delete submitPayload.pic_store;
+    delete submitPayload.tujuan_pengiriman;
+    delete submitPayload.tgl_jadwal_kirim_store;
+    delete submitPayload.catatan_jadwal_store;
+    delete submitPayload.is_picking_printed;
+    delete submitPayload.is_label_printed;
+    delete submitPayload.tgl_cetak_picking;
+    delete submitPayload.tgl_cetak_label;
 
     await supabaseFetch('manual_shipment', 'POST', [submitPayload]);
     return { success: true, message: 'Berhasil menyimpan data ke Supabase' };
@@ -327,32 +353,45 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
     return data.map(item => {
       let history_logs: ManualShipmentHistoryLog[] = [];
       let alteration_repair_data: any = undefined;
+      let store_metadata: any = undefined;
       let notes = item.notes_paket || '';
       
+      // 1. Ekstrak [ALTERATION_REPAIR]
       if (notes.includes('[ALTERATION_REPAIR]:')) {
         const parts = notes.split('[ALTERATION_REPAIR]:');
         notes = parts[0].trim();
-        const remain = parts[1];
-        if (remain) {
-          if (remain.includes('[HISTORI_LOGS]:')) {
-            const subParts = remain.split('[HISTORI_LOGS]:');
-            try {
-              alteration_repair_data = JSON.parse(subParts[0].trim());
-            } catch {}
-            try {
-              history_logs = JSON.parse(subParts[1].trim());
-            } catch {}
-          } else {
-            try {
-              alteration_repair_data = JSON.parse(remain.trim());
-            } catch {}
-          }
+        const remain = parts[1] || '';
+        const nextIdx = remain.search(/\[(HISTORI_LOGS|STORE_METADATA)\]:/);
+        const jsonStr = nextIdx !== -1 ? remain.substring(0, nextIdx) : remain;
+        try {
+          alteration_repair_data = JSON.parse(jsonStr.trim());
+        } catch {}
+        if (nextIdx !== -1) {
+          notes += '\n' + remain.substring(nextIdx);
         }
-      } else if (notes.includes('[HISTORI_LOGS]:')) {
+      }
+
+      // 2. Ekstrak [HISTORI_LOGS]
+      if (notes.includes('[HISTORI_LOGS]:')) {
         const parts = notes.split('[HISTORI_LOGS]:');
         notes = parts[0].trim();
+        const remain = parts[1] || '';
+        const nextIdx = remain.search(/\[STORE_METADATA\]:/);
+        const jsonStr = nextIdx !== -1 ? remain.substring(0, nextIdx) : remain;
         try {
-          history_logs = JSON.parse(parts[1].trim());
+          history_logs = JSON.parse(jsonStr.trim());
+        } catch {}
+        if (nextIdx !== -1) {
+          notes += '\n' + remain.substring(nextIdx);
+        }
+      }
+
+      // 3. Ekstrak [STORE_METADATA]
+      if (notes.includes('[STORE_METADATA]:')) {
+        const parts = notes.split('[STORE_METADATA]:');
+        notes = parts[0].trim();
+        try {
+          store_metadata = JSON.parse(parts[1].trim());
         } catch {}
       }
 
@@ -381,7 +420,15 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
         is_agreed_terms: alteration_repair_data?.is_agreed_terms ?? item.is_agreed_terms,
         is_condition_confirmed: alteration_repair_data?.is_condition_confirmed ?? item.is_condition_confirmed,
         foto_urls: alteration_repair_data?.foto_urls || item.foto_urls || [],
-        history_logs: history_logs.length > 0 ? history_logs : (item.history_logs || [])
+        history_logs: history_logs.length > 0 ? history_logs : (item.history_logs || []),
+        // Metadata jadwal kirim ke store & status cetak
+        tgl_jadwal_kirim_store: store_metadata?.tgl_jadwal_kirim_store || item.tgl_jadwal_kirim_store || alteration_repair_data?.tgl_kirim_kembali || (item as any).tgl_kirim_store || '',
+        catatan_jadwal_store: store_metadata?.catatan_jadwal_store || (item as any).catatan_jadwal_store || '',
+        tujuan_pengiriman: store_metadata?.tujuan_pengiriman || (item as any).tujuan_pengiriman || alteration_repair_data?.tujuan_pengembalian || undefined,
+        is_picking_printed: !!(store_metadata?.is_picking_printed || (item as any).is_picking_printed),
+        is_label_printed: !!(store_metadata?.is_label_printed || (item as any).is_label_printed),
+        tgl_cetak_picking: store_metadata?.tgl_cetak_picking || (item as any).tgl_cetak_picking || '',
+        tgl_cetak_label: store_metadata?.tgl_cetak_label || (item as any).tgl_cetak_label || '',
       } as ManualShipmentOrder;
     });
   } catch (err) {
@@ -539,6 +586,28 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
       } catch {}
     }
 
+    // 3. Format JSON notes_paket jika ada store_metadata (jadwal kirim store & status cetak)
+    const storeMeta: any = {};
+    if (payload.tgl_jadwal_kirim_store) storeMeta.tgl_jadwal_kirim_store = payload.tgl_jadwal_kirim_store;
+    if (payload.catatan_jadwal_store) storeMeta.catatan_jadwal_store = payload.catatan_jadwal_store;
+    if (payload.tujuan_pengiriman) storeMeta.tujuan_pengiriman = payload.tujuan_pengiriman;
+    if (payload.is_picking_printed !== undefined) storeMeta.is_picking_printed = payload.is_picking_printed;
+    if (payload.is_label_printed !== undefined) storeMeta.is_label_printed = payload.is_label_printed;
+    if (payload.tgl_cetak_picking) storeMeta.tgl_cetak_picking = payload.tgl_cetak_picking;
+    if (payload.tgl_cetak_label) storeMeta.tgl_cetak_label = payload.tgl_cetak_label;
+
+    if (Object.keys(storeMeta).length > 0) {
+      try {
+        const metaTag = `\n[STORE_METADATA]:${JSON.stringify(storeMeta)}`;
+        // Hapus tag lama jika ada agar tidak duplikat
+        if (notes.includes('[STORE_METADATA]:')) {
+          const p = notes.split('[STORE_METADATA]:');
+          notes = p[0].trim();
+        }
+        notes = notes ? `${notes}${metaTag}` : metaTag.trim();
+      } catch {}
+    }
+
     const patchPayload: any = {
       ...rest,
       notes_paket: notes,
@@ -566,11 +635,97 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     delete patchPayload.email_customer;
     delete patchPayload.email_store;
     delete patchPayload.pic_store;
+    delete patchPayload.tujuan_pengiriman;
+    delete patchPayload.tgl_jadwal_kirim_store;
+    delete patchPayload.catatan_jadwal_store;
+    delete patchPayload.is_picking_printed;
+    delete patchPayload.is_label_printed;
+    delete patchPayload.tgl_cetak_picking;
+    delete patchPayload.tgl_cetak_label;
 
     await supabaseFetch('manual_shipment', 'PATCH', patchPayload, `id=eq.${payload.id}`);
     return { success: true, message: 'Berhasil mengupdate data' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal mengupdate data' };
+  }
+}
+
+/**
+ * Update tanggal jadwal pengiriman pesanan kembali/ke Store (Opsi Kirim ke Store)
+ */
+export async function updateJadwalKirimStore(
+  orderId: string,
+  tglJadwal: string,
+  catatan?: string,
+  actor?: string
+): Promise<{ success: boolean; message: string; updatedOrder?: ManualShipmentOrder }> {
+  try {
+    const orders = await fetchManualShipments();
+    const order = orders.find(o => o.id === orderId || o.no_pesanan === orderId);
+    if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
+
+    const now = new Date().toISOString();
+    const logs: ManualShipmentHistoryLog[] = Array.isArray(order.history_logs) ? [...order.history_logs] : [];
+    
+    logs.unshift({
+      id: 'log-' + Date.now(),
+      timestamp: now,
+      actor: actor || 'Admin',
+      action: 'edited',
+      note: `Jadwal kirim ke store ditetapkan: ${tglJadwal}${catatan ? ` (Catatan: ${catatan})` : ''}`,
+    });
+
+    const updatedArData = order.alteration_repair_data ? {
+      ...order.alteration_repair_data,
+      tgl_kirim_kembali: tglJadwal,
+      status_flow: 'siap_dikirim' as import('../types').AlterationFlowStage
+    } : undefined;
+
+    const updatedOrder: ManualShipmentOrder = {
+      ...order,
+      tgl_jadwal_kirim_store: tglJadwal,
+      catatan_jadwal_store: catatan || order.catatan_jadwal_store || '',
+      status: 'selesai',
+      alteration_repair_data: updatedArData,
+      history_logs: logs
+    };
+
+    const res = await editManualShipment(updatedOrder);
+    return { success: res.success, message: res.message, updatedOrder };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal menyimpan jadwal kirim ke store' };
+  }
+}
+
+/**
+ * Update status cetak picking list atau label paket pesanan
+ */
+export async function updateOrderPrintStatus(
+  orderIds: string[],
+  type: 'picking' | 'label'
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const orders = await fetchManualShipments();
+    const now = new Date().toISOString();
+
+    for (const id of orderIds) {
+      const order = orders.find(o => o.id === id || o.no_pesanan === id);
+      if (!order) continue;
+
+      const updatedOrder: ManualShipmentOrder = {
+        ...order,
+        status: order.status === 'diterima' ? 'diproses' : order.status,
+        is_picking_printed: type === 'picking' ? true : order.is_picking_printed,
+        is_label_printed: type === 'label' ? true : order.is_label_printed,
+        tgl_cetak_picking: type === 'picking' ? now : order.tgl_cetak_picking,
+        tgl_cetak_label: type === 'label' ? now : order.tgl_cetak_label,
+      };
+
+      await editManualShipment(updatedOrder);
+    }
+    return { success: true, message: 'Status cetak berhasil diperbarui' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal memperbarui status cetak' };
   }
 }
 

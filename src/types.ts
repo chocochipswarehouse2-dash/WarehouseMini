@@ -679,6 +679,14 @@ export interface ManualShipmentOrder {
   no_resi?: string;
   created_at?: string;
   submitted_by?: string;
+  // Pengiriman ke Store / Jadwal
+  tujuan_pengiriman?: 'customer' | 'store';
+  tgl_jadwal_kirim_store?: string;
+  catatan_jadwal_store?: string;
+  is_picking_printed?: boolean;
+  is_label_printed?: boolean;
+  tgl_cetak_picking?: string;
+  tgl_cetak_label?: string;
   // Audit trail histori perubahan, pembatalan & pembaruan stok sold
   history_logs?: ManualShipmentHistoryLog[];
 }

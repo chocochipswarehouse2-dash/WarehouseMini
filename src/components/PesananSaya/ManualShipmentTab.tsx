@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -29,6 +29,8 @@ import {
   bulkUpdateOrderSjDealpos,
   markItemSoldAndProcess,
   restoreSoldItem,
+  updateJadwalKirimStore,
+  updateOrderPrintStatus,
   getFullStoreName,
   DEFAULT_OUTLETS,
 } from '../../services/gasManualShipment';
@@ -104,6 +106,15 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [orders, setOrders] = useState<ManualShipmentOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // 3 Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'semua'
+  const [stageTab, setStageTab] = useState<'baru' | 'diproses' | 'selesai' | 'semua'>('baru');
+
+  // Modal Input Jadwal Kirim ke Store
+  const [jadwalModalOrder, setJadwalModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [inputJadwalDate, setInputJadwalDate] = useState<string>('');
+  const [inputJadwalCatatan, setInputJadwalCatatan] = useState<string>('');
+  const [isSavingJadwal, setIsSavingJadwal] = useState<boolean>(false);
+
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterStore, setFilterStore] = useState<string>('all');
   const [filterDealposSj, setFilterDealposSj] = useState<'all' | 'need_sj' | 'has_sj'>('all');
@@ -1905,11 +1916,10 @@ _WMS Warehouse System_`;
     const itemsToPrint = orders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
     if (itemsToPrint.length === 0) return;
     
-    // Update status to diproses
+    // Update status to diproses dan tandai picking list sudah dicetak
     setLoading(true);
-    for (const id of selectedOrders) {
-      await updateShipmentStatus(id, 'diproses');
-    }
+    const orderIds = itemsToPrint.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
+    await updateOrderPrintStatus(orderIds, 'picking');
     loadOrders();
     setLoading(false);
 
@@ -2455,6 +2465,121 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     );
   };
 
+  const renderJadwalKirimStoreModal = () => {
+    if (!jadwalModalOrder) return null;
+    const order = jadwalModalOrder;
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+          <div className="flex justify-between items-center px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-white text-base">Atur Jadwal Kirim ke Store</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Order ID: #{order.no_pesanan}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setJadwalModalOrder(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-4">
+            {/* Info Pesanan */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Store / Tujuan:</span>
+                <span className="font-bold text-slate-800 dark:text-white">{order.nama_tujuan || order.nama_pengirim}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Produk:</span>
+                <span className="font-semibold text-slate-800 dark:text-white">{order.items?.length || 0} item</span>
+              </div>
+              {order.jasa_kirim && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Jasa Kirim / Kurir:</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">{order.jasa_kirim}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Input Tanggal Jadwal Kirim */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Tanggal Jadwal Kirim ke Store: <span className="text-red-500">*</span></span>
+              </label>
+              <input
+                type="date"
+                value={inputJadwalDate}
+                onChange={(e) => setInputJadwalDate(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border-2 border-indigo-300 dark:border-indigo-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-900 dark:text-white"
+              />
+            </div>
+
+            {/* Input Catatan / Keterangan Kirim */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Catatan Pengiriman (Opsional):
+              </label>
+              <textarea
+                value={inputJadwalCatatan}
+                onChange={(e) => setInputJadwalCatatan(e.target.value)}
+                placeholder="Contoh: Dibawa kurir internal rute sore / titip delivery toko"
+                rows={2}
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white resize-none"
+              />
+            </div>
+
+            {/* Info Status Otomatis Selesai */}
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed">
+                Menyimpan jadwal kirim ini akan otomatis memperbarui status pesanan menjadi <strong>Selesai</strong> dalam rekap pesanan.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2.5 px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+            <button
+              type="button"
+              disabled={isSavingJadwal}
+              onClick={() => setJadwalModalOrder(null)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={isSavingJadwal || !inputJadwalDate}
+              onClick={handleSaveJadwalKirimStore}
+              className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isSavingJadwal ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Simpan Jadwal Store</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderOrderDetailsModal = () => {
     if (!selectedOrderDetails) return null;
     const order = selectedOrderDetails;
@@ -2472,7 +2597,10 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white tracking-tight">ORDER ID #{order.no_pesanan}</h2>
+              <div>
+                <h2 className="text-xl font-bold text-slate-800 dark:text-white tracking-tight">ORDER ID #{order.no_pesanan}</h2>
+                {renderOrderBadges(order)}
+              </div>
             </div>
             <button 
               onClick={() => setSelectedOrderDetails(null)} 
@@ -2599,6 +2727,47 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                     </>
                   )}
                 </div>
+
+                {/* Section Jadwal Pengiriman ke Store (Khusus Kirim ke Store) */}
+                {isKirimKeStore(order) && (
+                  <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wider block">
+                          Jadwal Pengiriman ke Store
+                        </span>
+                        <div className="text-base font-bold text-indigo-950 dark:text-indigo-200 mt-0.5">
+                          {order.tgl_jadwal_kirim_store ? (
+                            <span className="bg-indigo-100 dark:bg-indigo-900/60 px-2.5 py-0.5 rounded border border-indigo-300 dark:border-indigo-700 inline-flex items-center gap-1.5">
+                              <Calendar className="w-4 h-4 text-indigo-600" />
+                              {new Date(order.tgl_jadwal_kirim_store).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                            </span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400 font-sans font-semibold text-xs flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" />
+                              Belum ada jadwal kirim ke store
+                            </span>
+                          )}
+                        </div>
+                        {order.catatan_jadwal_store && (
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
+                            Catatan: {order.catatan_jadwal_store}
+                          </p>
+                        )}
+                      </div>
+                      {userIsAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenJadwalModal(order)}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{order.tgl_jadwal_kirim_store ? 'Ubah Jadwal Store' : '+ Atur Jadwal Store'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Section No. Resi & Template WA Customer (Khusus PIC Store & Admin) */}
                 <div className="bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl p-4 space-y-3">
@@ -2870,6 +3039,10 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     }
 
     setLoading(true);
+    const orderIds = itemsToPrint.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
+    await updateOrderPrintStatus(orderIds, 'label');
+    loadOrders();
+
     const qrMap: Record<string, string> = {};
     for (const order of itemsToPrint) {
       try {
@@ -3100,6 +3273,203 @@ _WMS Warehouse System_`;
     }
   };
 
+  // Helper: Deteksi apakah pesanan ditujukan kirim ke Store atau ke Customer
+  const isKirimKeStore = (order: ManualShipmentOrder): boolean => {
+    if (order.tujuan_pengiriman === 'store') return true;
+    if (order.alteration_repair_data?.tujuan_pengembalian === 'store') return true;
+    const tujuan = (order.nama_tujuan || '').toLowerCase();
+    const alamat = (order.alamat_tujuan || '').toLowerCase();
+    const jasa = (order.jasa_kirim || '').toLowerCase();
+    if (tujuan.includes('store') || tujuan.startsWith('toko')) return true;
+    if (alamat.includes('store') || alamat.includes('toko chocochips')) return true;
+    if (jasa.includes('internal') || jasa.includes('ambil di store') || jasa.includes('pickup store')) return true;
+    const allOutlets = outlets.length > 0 ? outlets : DEFAULT_OUTLETS;
+    if (allOutlets.some(o => o.nama.toLowerCase().trim() === tujuan.trim())) return true;
+    return false;
+  };
+
+  // Helper: Tahap Selesai
+  // Selesai = Sudah terisi resi paket untuk paket yang opsi kirim ke customer | untuk yang dikirim ke store perlu masukkan tanggal jadwal kirim ke store
+  const isOrderSelesai = (order: ManualShipmentOrder): boolean => {
+    if (order.status === 'batal') return false;
+    if (order.status === 'selesai') return true;
+
+    if (isKirimKeStore(order)) {
+      return !!(order.tgl_jadwal_kirim_store && order.tgl_jadwal_kirim_store.trim());
+    } else {
+      // Kirim ke Customer
+      return !!(order.no_resi && order.no_resi.trim()) || order.status === 'dikirim';
+    }
+  };
+
+  // Helper: Tahap Sedang Diproses
+  // Sedang diproses = sudah dicetak picking dan label paket (atau dalam pengerjaan admin/workshop)
+  const isOrderSedangDiproses = (order: ManualShipmentOrder): boolean => {
+    if (order.status === 'batal') return false;
+    if (isOrderSelesai(order)) return false;
+
+    const hasPrinted = !!(order.is_picking_printed || order.is_label_printed);
+    const statusStr = (order.status || '').toLowerCase().trim();
+    const isStatusDiproses = statusStr === 'diproses' || statusStr === 'proses' || statusStr === 'proses_packing' || statusStr === 'sedang_diproses';
+    const flowStr = (order.alteration_repair_data?.status_flow || '').toLowerCase();
+    const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+
+    return hasPrinted || isStatusDiproses || isFlowAktif;
+  };
+
+  // Helper: Tahap Pesanan Baru
+  // Pesanan baru = baru disubmit belum pernah di proses atau dikerjakan oleh admin
+  const isOrderPesananBaru = (order: ManualShipmentOrder): boolean => {
+    if (order.status === 'batal') return false;
+    if (isOrderSelesai(order)) return false;
+    if (isOrderSedangDiproses(order)) return false;
+    return true;
+  };
+
+  // Hitung jumlah pesanan per tahap untuk badges pada Tab Rekap
+  const { countBaru, countDiproses, countSelesai } = useMemo(() => {
+    let baru = 0;
+    let diproses = 0;
+    let selesai = 0;
+
+    let baseOrders = orders;
+    if (!userIsAdmin && userAssignedStore) {
+      baseOrders = baseOrders.filter(o =>
+        (o.nama_pengirim || '').toLowerCase().trim() === userAssignedStore.toLowerCase().trim()
+      );
+    }
+
+    baseOrders.forEach(o => {
+      if (o.status === 'batal') return;
+      if (isOrderSelesai(o)) selesai++;
+      else if (isOrderSedangDiproses(o)) diproses++;
+      else if (isOrderPesananBaru(o)) baru++;
+    });
+
+    return { countBaru: baru, countDiproses: diproses, countSelesai: selesai };
+  }, [orders, userIsAdmin, userAssignedStore, outlets]);
+
+  const handleOpenJadwalModal = (order: ManualShipmentOrder) => {
+    setJadwalModalOrder(order);
+    setInputJadwalDate(order.tgl_jadwal_kirim_store || new Date().toISOString().split('T')[0]);
+    setInputJadwalCatatan(order.catatan_jadwal_store || '');
+  };
+
+  const handleSaveJadwalKirimStore = async () => {
+    if (!jadwalModalOrder) return;
+    if (!inputJadwalDate) {
+      onShowToast('Silakan pilih tanggal jadwal kirim ke store', 'warning');
+      return;
+    }
+
+    setIsSavingJadwal(true);
+    try {
+      const orderId = jadwalModalOrder.no_pesanan || (jadwalModalOrder as any).id;
+      const actorName = session?.name || getUserPersonName(session?.username) || session?.role || 'Admin';
+      const res = await updateJadwalKirimStore(orderId, inputJadwalDate, inputJadwalCatatan, actorName);
+
+      if (res.success) {
+        onShowToast('Tanggal jadwal kirim ke store berhasil disimpan & status pesanan ditandai Selesai!', 'success');
+        setOrders(prev => prev.map(o => {
+          if (o.no_pesanan === jadwalModalOrder.no_pesanan || (o as any).id === orderId) {
+            return {
+              ...o,
+              tgl_jadwal_kirim_store: inputJadwalDate,
+              catatan_jadwal_store: inputJadwalCatatan,
+              status: 'selesai',
+            };
+          }
+          return o;
+        }));
+        if (selectedOrderDetails && (selectedOrderDetails.no_pesanan === jadwalModalOrder.no_pesanan || (selectedOrderDetails as any).id === orderId)) {
+          setSelectedOrderDetails(prev => prev ? {
+            ...prev,
+            tgl_jadwal_kirim_store: inputJadwalDate,
+            catatan_jadwal_store: inputJadwalCatatan,
+            status: 'selesai',
+          } : null);
+        }
+        setJadwalModalOrder(null);
+      } else {
+        onShowToast(`Gagal menyimpan jadwal: ${res.message}`, 'error');
+      }
+    } catch (err: any) {
+      onShowToast(`Error: ${err?.message || 'Gagal menyimpan jadwal'}`, 'error');
+    } finally {
+      setIsSavingJadwal(false);
+    }
+  };
+
+  /**
+   * Helper Component: Render Badges Penanda
+   * Badge 1: Reminder SJ DealPOS (Marketplace / Ambil dari Gudang ke Store)
+   * Badge 2: Penanda Perlu Alter / Repair
+   * Jika keduanya terpenuhi, kedua badge akan dirender berdampingan!
+   */
+  const renderOrderBadges = (order: ManualShipmentOrder) => {
+    const mktOrGudangItems = (order.items || []).filter(it => {
+      const ful = (it.fulfillment || '').toLowerCase();
+      return ful.includes('marketplace') || ful.includes('gudang');
+    });
+    const isWarehouseAr = order.alteration_repair_data?.sumber_barang === 'warehouse';
+    const hasMarketplaceOrWarehouse = mktOrGudangItems.length > 0 || isWarehouseAr;
+
+    const missingSj = mktOrGudangItems.some(it => !it.no_sj_dealpos || !it.no_sj_dealpos.trim());
+    const existingSj = mktOrGudangItems.find(it => it.no_sj_dealpos && it.no_sj_dealpos.trim())?.no_sj_dealpos;
+
+    const hasAlterFeature = order.order_type === 'alteration_repair' ||
+      (order.no_pesanan || '').toUpperCase().startsWith('AR-') ||
+      !!order.alteration_repair_data ||
+      (order.items || []).some(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
+
+    if (!hasMarketplaceOrWarehouse && !hasAlterFeature) return null;
+
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+        {/* BADGE 1: Reminder SJ DealPOS (Marketplace/Gudang to Store) */}
+        {hasMarketplaceOrWarehouse && (
+          missingSj ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSjModalData({
+                  order,
+                  noSj: '',
+                  applyToAllMarketplace: true,
+                });
+              }}
+              className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/60 shadow-2xs transition-colors cursor-pointer"
+              title="Perlu Buat Dokumen SJ DealPOS (Marketplace / Gudang to Store). Klik untuk input No. SJ"
+            >
+              <AlertTriangle className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
+              <span>Perlu Buat SJ DealPOS (MKT ➔ Store)</span>
+            </button>
+          ) : (
+            <span 
+              className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-2xs"
+              title={`Dokumen SJ DealPOS: ${existingSj || 'Lengkap'}`}
+            >
+              <FileCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+              <span>SJ DealPOS: {existingSj || 'Lengkap'}</span>
+            </span>
+          )
+        )}
+
+        {/* BADGE 2: Penanda Perlu Alter / Repair */}
+        {hasAlterFeature && (
+          <span 
+            className="inline-flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700 shadow-2xs"
+            title="Pesanan ini menyertakan fitur alter / perbaikan pakaian"
+          >
+            <Scissors className="w-2.5 h-2.5 text-rose-600 dark:text-rose-400 shrink-0" />
+            <span>Perlu Alter/Repair</span>
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const filteredOrders = useMemo(() => {
     let result = orders;
 
@@ -3108,6 +3478,15 @@ _WMS Warehouse System_`;
       result = result.filter(o => 
         (o.nama_pengirim || '').toLowerCase().trim() === userAssignedStore.toLowerCase().trim()
       );
+    }
+
+    // 3 Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'semua'
+    if (stageTab === 'baru') {
+      result = result.filter(o => isOrderPesananBaru(o));
+    } else if (stageTab === 'diproses') {
+      result = result.filter(o => isOrderSedangDiproses(o));
+    } else if (stageTab === 'selesai') {
+      result = result.filter(o => isOrderSelesai(o));
     }
 
     // Filter Jenis Pesanan (Manual Shipment vs Alteration & Repair vs Manual With Alter)
@@ -3240,6 +3619,7 @@ _WMS Warehouse System_`;
     return result;
   }, [
     orders,
+    stageTab,
     searchTerm,
     filterStore,
     filterJasaKirim,
@@ -3414,72 +3794,8 @@ _WMS Warehouse System_`;
               Rekap Pesanan Toko
             </h2>
             <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-700/80 px-2.5 py-0.5 rounded-full">
-              {filteredOrders.length} Pesanan
+              {filteredOrders.length} Pesanan Ditampilkan
             </span>
-
-            {/* Quick Filter Jenis Pesanan */}
-            <div className="inline-flex p-0.5 bg-slate-200/70 dark:bg-slate-700/60 rounded-lg text-xs font-bold flex-wrap">
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterOrderType('all');
-                  setFilterAlterStatus('all');
-                }}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                  filterOrderType === 'all' && filterAlterStatus === 'all'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                }`}
-              >
-                Semua ({orders.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterOrderType('manual_shipment');
-                  setFilterAlterStatus('all');
-                }}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                  filterOrderType === 'manual_shipment' && filterAlterStatus === 'all'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600'
-                }`}
-              >
-                <Package className="w-3 h-3" />
-                <span>Manual Shipment ({totalManualPureCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterOrderType('manual_with_alter');
-                  setFilterAlterStatus('all');
-                }}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                  filterOrderType === 'manual_with_alter'
-                    ? 'bg-rose-600 text-white shadow-xs'
-                    : 'text-rose-700 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-300 bg-rose-50/70 dark:bg-rose-950/40'
-                }`}
-                title="Filter hanya pesanan Manual Shipment yang memiliki item permintaan alteration"
-              >
-                <Scissors className="w-3 h-3" />
-                <span>Manual + Alter ({totalManualWithAlterCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterOrderType('alteration_repair');
-                  setFilterAlterStatus('all');
-                }}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                  filterOrderType === 'alteration_repair'
-                    ? 'bg-purple-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-purple-600'
-                }`}
-              >
-                <Scissors className="w-3 h-3" />
-                <span>Alter & Repair Standalone ({totalArCount})</span>
-              </button>
-            </div>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
@@ -3549,6 +3865,177 @@ _WMS Warehouse System_`;
               </button>
             </div>
           </div>
+        </div>
+
+        {/* 3 TAHAP UTAMA REKAP PESANAN: PESANAN BARU | SEDANG DIPROSES | SELESAI */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2 bg-slate-100/90 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700/80">
+          <div className="inline-flex p-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-lg shadow-2xs text-xs font-bold gap-1 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setStageTab('baru')}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
+                stageTab === 'baru'
+                  ? 'bg-amber-500 text-white shadow-xs font-extrabold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Pesanan Baru</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                stageTab === 'baru' ? 'bg-amber-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}>
+                {countBaru}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStageTab('diproses')}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
+                stageTab === 'diproses'
+                  ? 'bg-blue-600 text-white shadow-xs font-extrabold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>Sedang Diproses</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                stageTab === 'diproses' ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}>
+                {countDiproses}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStageTab('selesai')}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
+                stageTab === 'selesai'
+                  ? 'bg-emerald-600 text-white shadow-xs font-extrabold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Selesai</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                stageTab === 'selesai' ? 'bg-emerald-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}>
+                {countSelesai}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStageTab('semua')}
+              className={`px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                stageTab === 'semua'
+                  ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-xs font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span>Semua ({orders.length})</span>
+            </button>
+          </div>
+
+          {/* Quick Filter Sub-Tipe (Manual Shipment vs Alter) */}
+          <div className="inline-flex p-0.5 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-lg text-xs font-semibold flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterOrderType('all');
+                setFilterAlterStatus('all');
+              }}
+              className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                filterOrderType === 'all' && filterAlterStatus === 'all'
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              }`}
+            >
+              Semua Jenis
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterOrderType('manual_shipment');
+                setFilterAlterStatus('all');
+              }}
+              className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                filterOrderType === 'manual_shipment' && filterAlterStatus === 'all'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-bold'
+                  : 'text-slate-500 hover:text-indigo-600 dark:text-slate-400'
+              }`}
+            >
+              <Package className="w-3 h-3" />
+              <span>Manual ({totalManualPureCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterOrderType('manual_with_alter');
+                setFilterAlterStatus('all');
+              }}
+              className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                filterOrderType === 'manual_with_alter'
+                  ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 font-bold'
+                  : 'text-rose-600 dark:text-rose-400 hover:text-rose-800'
+              }`}
+              title="Manual Shipment yang memiliki item alterasi"
+            >
+              <Scissors className="w-3 h-3" />
+              <span>+ Alter ({totalManualWithAlterCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterOrderType('alteration_repair');
+                setFilterAlterStatus('all');
+              }}
+              className={`px-2 py-1 rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                filterOrderType === 'alteration_repair'
+                  ? 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-bold'
+                  : 'text-slate-500 hover:text-purple-600 dark:text-slate-400'
+              }`}
+            >
+              <Scissors className="w-3 h-3" />
+              <span>AR Standalone ({totalArCount})</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Banner Penjelasan Tahap Aktif */}
+        <div className={`px-3 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-2 border ${
+          stageTab === 'baru'
+            ? 'bg-amber-50/80 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800/50'
+            : stageTab === 'diproses'
+            ? 'bg-blue-50/80 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 border-blue-200 dark:border-blue-800/50'
+            : stageTab === 'selesai'
+            ? 'bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800/50'
+            : 'bg-slate-100/80 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+        }`}>
+          {stageTab === 'baru' && (
+            <>
+              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span><strong>Pesanan Baru:</strong> Baru disubmit dari Store dan belum pernah diproses atau dicetak picking/label oleh admin gudang.</span>
+            </>
+          )}
+          {stageTab === 'diproses' && (
+            <>
+              <Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span><strong>Sedang Diproses:</strong> Sudah dicetak picking list dan label paketnya, atau sedang dikerjakan oleh admin gudang/workshop.</span>
+            </>
+          )}
+          {stageTab === 'selesai' && (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span><strong>Selesai:</strong> Paket sudah terisi nomor resi (kirim ke customer) atau sudah ditentukan tanggal jadwal kirim ke store.</span>
+            </>
+          )}
+          {stageTab === 'semua' && (
+            <>
+              <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span>Menampilkan seluruh pesanan (termasuk dibatalkan dan belum diproses).</span>
+            </>
+          )}
         </div>
 
         {/* Filter & Pencarian Toolbar (Hemat Ruang Layar & Collapsible) */}
@@ -3836,7 +4323,7 @@ _WMS Warehouse System_`;
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Store / Pengirim</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Customer</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Ekspedisi</th>
-                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">No. Resi</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Resi / Jadwal Store</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Status</th>
                 <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Total Items</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">SJ DealPOS (MKT)</th>
@@ -3872,6 +4359,8 @@ _WMS Warehouse System_`;
                     >
                       {order.no_pesanan}
                     </div>
+                    {/* BADGES: Reminder SJ DealPOS (MKT to Store) & Penanda Perlu Alter/Repair */}
+                    {renderOrderBadges(order)}
                     {(() => {
                       const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
                       if (isAr) {
@@ -3967,7 +4456,47 @@ _WMS Warehouse System_`;
                     <div className="text-[11px] text-slate-700 dark:text-slate-300 mt-0.5 font-medium">{order.jasa_kirim || '-'}</div>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap align-top">
-                    {order.no_resi ? (
+                    {isKirimKeStore(order) ? (
+                      order.tgl_jadwal_kirim_store ? (
+                        <div className="flex flex-col gap-1 items-start">
+                          <div className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-md px-2 py-0.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                            <Calendar className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Kirim Store: {new Date(order.tgl_jadwal_kirim_store).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          </div>
+                          {order.catatan_jadwal_store && (
+                            <span className="text-[10px] text-slate-500 italic max-w-[150px] truncate" title={order.catatan_jadwal_store}>
+                              {order.catatan_jadwal_store}
+                            </span>
+                          )}
+                          {userIsAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenJadwalModal(order)}
+                              className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                            >
+                              Ubah Jadwal
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1 items-start">
+                          <div className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/50 font-medium">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>Belum Ada Jadwal Store</span>
+                          </div>
+                          {userIsAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenJadwalModal(order)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Calendar className="w-2.5 h-2.5" />
+                              <span>+ Atur Jadwal Store</span>
+                            </button>
+                          )}
+                        </div>
+                      )
+                    ) : order.no_resi ? (
                       <div className="flex flex-col gap-1 items-start">
                         <div className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/70 rounded-md px-2 py-0.5 text-[11px] font-mono font-bold text-emerald-800 dark:text-emerald-300">
                           <Truck className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -4000,9 +4529,20 @@ _WMS Warehouse System_`;
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/50 font-medium">
-                        <Clock className="w-3 h-3 shrink-0" />
-                        <span>Menunggu Resi</span>
+                      <div className="flex flex-col gap-1 items-start">
+                        <div className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/50 font-medium">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          <span>Menunggu Resi</span>
+                        </div>
+                        {userIsAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateResi(order.no_pesanan!)}
+                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                          >
+                            + Input Resi
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -4200,6 +4740,15 @@ _WMS Warehouse System_`;
                           if (action === 'mark_sent') setAlterActionData({ order, actionType: 'mark_sent_store' });
                           if (action === 'mark_received') setAlterActionData({ order, actionType: 'mark_received_warehouse' });
                           if (action === 'complete_ship') setAlterActionData({ order, actionType: 'complete_and_ship' });
+                          if (action === 'jadwal_store') handleOpenJadwalModal(order);
+                          if (action === 'mark_diproses') {
+                            updateShipmentStatus(order.no_pesanan!, 'diproses').then(res => {
+                              if (res.success) {
+                                onShowToast('Status pesanan diubah ke Sedang Diproses', 'success');
+                                loadOrders();
+                              }
+                            });
+                          }
                           if (action === 'edit') {
                             handleEdit(order);
                             setActiveTab('form');
@@ -4221,6 +4770,10 @@ _WMS Warehouse System_`;
                       >
                         <option value="" disabled>Aksi</option>
                         <option value="print">Print Label</option>
+                        <option value="jadwal_store">📅 Atur Jadwal Kirim Store</option>
+                        {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
+                          <option value="mark_diproses">▶️ Mulai Proses (Diproses)</option>
+                        )}
                         {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
                           <>
                             <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
@@ -4283,6 +4836,8 @@ _WMS Warehouse System_`;
                         >
                           {order.no_pesanan}
                         </div>
+                        {/* BADGES: Reminder SJ DealPOS & Alter/Repair */}
+                        {renderOrderBadges(order)}
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
                           <Calendar className="w-3 h-3" /> {new Date(order.created_at || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </div>
@@ -4472,11 +5027,13 @@ _WMS Warehouse System_`;
                       );
                     })()}
 
-                    {/* No. Resi Box (Khusus agar PIC Store bisa copas langsung) */}
+                    {/* Resi / Jadwal Store Box */}
                     <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">No. Resi Pengiriman</span>
-                        {order.no_resi && (
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          {isKirimKeStore(order) ? 'Jadwal Kirim ke Store' : 'No. Resi Pengiriman'}
+                        </span>
+                        {!isKirimKeStore(order) && order.no_resi && (
                           <button
                             type="button"
                             onClick={() => {
@@ -4490,8 +5047,49 @@ _WMS Warehouse System_`;
                             <span>Salin</span>
                           </button>
                         )}
+                        {isKirimKeStore(order) && userIsAdmin && order.tgl_jadwal_kirim_store && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenJadwalModal(order)}
+                            className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                          >
+                            Ubah Jadwal
+                          </button>
+                        )}
                       </div>
-                      {order.no_resi ? (
+
+                      {isKirimKeStore(order) ? (
+                        order.tgl_jadwal_kirim_store ? (
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{new Date(order.tgl_jadwal_kirim_store).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            </span>
+                            {order.catatan_jadwal_store && (
+                              <span className="text-[10px] text-slate-500 italic truncate max-w-[140px]" title={order.catatan_jadwal_store}>
+                                {order.catatan_jadwal_store}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-800/40 font-medium">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              <span>Belum Ada Jadwal Store</span>
+                            </div>
+                            {userIsAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenJadwalModal(order)}
+                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                              >
+                                <Calendar className="w-3 h-3" />
+                                <span>+ Atur Jadwal</span>
+                              </button>
+                            )}
+                          </div>
+                        )
+                      ) : order.no_resi ? (
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <span className="text-xs font-mono font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
                             {order.no_resi}
@@ -4506,9 +5104,20 @@ _WMS Warehouse System_`;
                           </button>
                         </div>
                       ) : (
-                        <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-800/40 font-medium">
-                          <Clock className="w-3 h-3 shrink-0" />
-                          <span>Menunggu resi dari Admin</span>
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-800/40 font-medium">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>Menunggu resi dari Admin</span>
+                          </div>
+                          {userIsAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateResi(order.no_pesanan!)}
+                              className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                            >
+                              + Input Resi
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4551,6 +5160,15 @@ _WMS Warehouse System_`;
                             if (action === 'print') handlePrintLabel(order);
                             if (action === 'spk_penjahit') handlePrintAlterWorkOrder(order);
                             if (action === 'spk') setArReceiptOrder(order);
+                            if (action === 'jadwal_store') handleOpenJadwalModal(order);
+                            if (action === 'mark_diproses') {
+                              updateShipmentStatus(order.no_pesanan!, 'diproses').then(res => {
+                                if (res.success) {
+                                  onShowToast('Status pesanan diubah ke Sedang Diproses', 'success');
+                                  loadOrders();
+                                }
+                              });
+                            }
                             if (action === 'edit') {
                               handleEdit(order);
                               setActiveTab('form');
@@ -4572,6 +5190,10 @@ _WMS Warehouse System_`;
                         >
                           <option value="" disabled>Aksi</option>
                           <option value="print">Print Label</option>
+                          <option value="jadwal_store">📅 Atur Jadwal Store</option>
+                          {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
+                            <option value="mark_diproses">▶️ Mulai Proses</option>
+                          )}
                           {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
                             <>
                               <option value="spk_penjahit">✂️ SPK Penjahit</option>
@@ -4705,8 +5327,9 @@ _WMS Warehouse System_`;
         />
       )}
       {renderSjDealposModal()}
-        {renderSoldOutModal()}
-        {renderOrderDetailsModal()}
+      {renderSoldOutModal()}
+      {renderOrderDetailsModal()}
+      {renderJadwalKirimStoreModal()}
 
       {/* Modal WhatsApp Template Customer */}
       {waModalOrder && (
