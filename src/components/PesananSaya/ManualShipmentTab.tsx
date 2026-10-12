@@ -59,14 +59,14 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   onShowToast,
 }) => {
   const userIsAdmin = isSuperadmin(session);
-  const canAction = userIsAdmin || hasPermission(session, 'tab_ops_pesanan_manual_shipment');
+  const canAction = true; // Selalu aktifkan pemilihan & multi-choice untuk semua pengguna
 
   const [activeTab, setActiveTab] = useState<'form' | 'alteration_repair' | 'rekap'>('form');
   const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'manual_with_alter' | 'alteration_repair'>('all');
   const [filterAlterStatus, setFilterAlterStatus] = useState<'all' | 'manual_with_alter' | 'all_alter' | 'no_alter'>('all');
   const [isBulkResiModalOpen, setIsBulkResiModalOpen] = useState(false);
   const [arReceiptOrder, setArReceiptOrder] = useState<ManualShipmentOrder | null>(null);
-  const [sjAlterModalOrder, setSjAlterModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [sjAlterModalOrders, setSjAlterModalOrders] = useState<ManualShipmentOrder[] | null>(null);
   const [alterActionData, setAlterActionData] = useState<{
     order: ManualShipmentOrder;
     actionType: AlterationActionType;
@@ -102,6 +102,15 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
 
     return match ? match.nama : '';
   }, [session, outlets, userIsAdmin]);
+
+  const isStoreUser = useMemo(() => {
+    if (userIsAdmin) return false;
+    if (userAssignedStore) return true;
+    const uname = (session?.username || '').toLowerCase();
+    const role = (session?.role || '').toLowerCase();
+    const div = (session?.divisi || '').toLowerCase();
+    return (uname.startsWith('choco') && uname !== 'chocoadm') || div === 'store' || role === 'store';
+  }, [userIsAdmin, userAssignedStore, session]);
   const [jasaKirimList, setJasaKirimList] = useState<string[]>([]);
   const [orders, setOrders] = useState<ManualShipmentOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1903,7 +1912,10 @@ _WMS Warehouse System_`;
 
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
 
+  const getOrderKey = (o: ManualShipmentOrder) => o.no_pesanan || (o as any).id || '';
+
   const toggleSelectOrder = (no_pesanan: string) => {
+    if (!no_pesanan) return;
     const newSet = new Set(selectedOrders);
     if (newSet.has(no_pesanan)) newSet.delete(no_pesanan);
     else newSet.add(no_pesanan);
@@ -1915,7 +1927,10 @@ _WMS Warehouse System_`;
       onShowToast('Pilih setidaknya satu pesanan untuk mencetak picking list', 'info');
       return;
     }
-    const itemsToPrint = orders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
+    const itemsToPrint = orders.filter(o => {
+      const k = getOrderKey(o);
+      return k && selectedOrders.has(k);
+    });
     if (itemsToPrint.length === 0) return;
     
     // Update status to diproses dan tandai picking list sudah dicetak
@@ -2679,14 +2694,27 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
               {/* Right Column */}
               <div className="space-y-8">
                 <div className="flex gap-2 flex-wrap items-center">
+                  {/* Opsi Cetak Utama: Surat Jalan Struk Rangkap 2 */}
                   <button 
-                    onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
-                    className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-xs border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
+                    type="button"
+                    onClick={() => { setSelectedOrderDetails(null); setSjAlterModalOrders([order]); }}
+                    className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/60 font-bold rounded-lg text-xs border border-amber-300 dark:border-amber-700 flex items-center transition-colors cursor-pointer shadow-2xs"
+                    title="Cetak Surat Jalan Pengiriman (Struk Rangkap 2)"
                   >
-                    <Printer className="w-3.5 h-3.5 mr-1.5" />
-                    Print Label
+                    <Printer className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                    Cetak SJ Struk (Rangkap 2)
                   </button>
-                  {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+
+                  {!isStoreUser && (
+                    <button 
+                      onClick={() => { setSelectedOrderDetails(null); handlePrintLabel(order); }}
+                      className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold rounded-lg text-xs border border-slate-300 dark:border-slate-700 flex items-center transition-colors cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5 mr-1.5" />
+                      Print Label
+                    </button>
+                  )}
+                  {!isStoreUser && ((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
                     <>
                       <button 
                         onClick={() => { setSelectedOrderDetails(null); handlePrintAlterWorkOrder(order); }}
@@ -3369,20 +3397,31 @@ _WMS Warehouse System_`;
     return true;
   };
 
-  // Hitung jumlah pesanan per tahap untuk badges pada Tab Rekap
+  // Scope pesanan berdasarkan otorisasi Store pengguna atau Filter Store yang dipilih
+  const scopedOrders = useMemo(() => {
+    let result = orders;
+    // Proteksi Keamanan: Akun Store hanya boleh melihat pesanan tokonya sendiri
+    if (!userIsAdmin && userAssignedStore) {
+      result = result.filter(o => 
+        (o.nama_pengirim || '').toLowerCase().trim() === userAssignedStore.toLowerCase().trim()
+      );
+    } else if (filterStore && filterStore !== 'all') {
+      const targetStore = filterStore.toLowerCase().trim();
+      result = result.filter(o => {
+        const sender = (o.nama_pengirim || '').toLowerCase().trim();
+        return sender === targetStore || sender.includes(targetStore) || targetStore.includes(sender);
+      });
+    }
+    return result;
+  }, [orders, userIsAdmin, userAssignedStore, filterStore]);
+
+  // Hitung jumlah pesanan per tahap untuk badges pada Tab Rekap (konsisten dengan scopedOrders)
   const { countBaru, countDiproses, countSelesai } = useMemo(() => {
     let baru = 0;
     let diproses = 0;
     let selesai = 0;
 
-    let baseOrders = orders;
-    if (!userIsAdmin && userAssignedStore) {
-      baseOrders = baseOrders.filter(o =>
-        (o.nama_pengirim || '').toLowerCase().trim() === userAssignedStore.toLowerCase().trim()
-      );
-    }
-
-    baseOrders.forEach(o => {
+    scopedOrders.forEach(o => {
       if (o.status === 'batal') return;
       if (isOrderSelesai(o)) selesai++;
       else if (isOrderSedangDiproses(o)) diproses++;
@@ -3390,7 +3429,7 @@ _WMS Warehouse System_`;
     });
 
     return { countBaru: baru, countDiproses: diproses, countSelesai: selesai };
-  }, [orders, userIsAdmin, userAssignedStore, outlets]);
+  }, [scopedOrders]);
 
   const handleOpenJadwalModal = (order: ManualShipmentOrder) => {
     setJadwalModalOrder(order);
@@ -3514,14 +3553,7 @@ _WMS Warehouse System_`;
   };
 
   const filteredOrders = useMemo(() => {
-    let result = orders;
-
-    // Proteksi Keamanan: Akun Store hanya boleh melihat pesanan tokonya sendiri
-    if (!userIsAdmin && userAssignedStore) {
-      result = result.filter(o => 
-        (o.nama_pengirim || '').toLowerCase().trim() === userAssignedStore.toLowerCase().trim()
-      );
-    }
+    let result = scopedOrders;
 
     // 3 Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'semua'
     if (stageTab === 'baru') {
@@ -3581,15 +3613,6 @@ _WMS Warehouse System_`;
           return s === 'batal' || s === 'cancelled' || s === 'canceled';
         }
         return s === targetStatus;
-      });
-    }
-    
-    // Store filter
-    if (filterStore !== 'all') {
-      const targetStore = filterStore.toLowerCase().trim();
-      result = result.filter(o => {
-        const sender = (o.nama_pengirim || '').toLowerCase().trim();
-        return sender === targetStore || sender.includes(targetStore) || targetStore.includes(sender);
       });
     }
 
@@ -3661,10 +3684,9 @@ _WMS Warehouse System_`;
     
     return result;
   }, [
-    orders,
+    scopedOrders,
     stageTab,
     searchTerm,
-    filterStore,
     filterJasaKirim,
     filterStatus,
     filterStartDate,
@@ -3673,13 +3695,14 @@ _WMS Warehouse System_`;
     filterSoldStatus,
     filterOrderType,
     filterAlterStatus,
-    userIsAdmin,
-    userAssignedStore,
   ]);
 
   // Multi-choice Helper: Hitung pesanan terpilih dalam filter saat ini
   const selectedInFilteredCount = useMemo(() => {
-    return filteredOrders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan)).length;
+    return filteredOrders.filter(o => {
+      const k = getOrderKey(o);
+      return k && selectedOrders.has(k);
+    }).length;
   }, [filteredOrders, selectedOrders]);
 
   const isAllFilteredSelected = filteredOrders.length > 0 && selectedInFilteredCount === filteredOrders.length;
@@ -3689,7 +3712,8 @@ _WMS Warehouse System_`;
     if (filteredOrders.length === 0) return;
     const newSet = new Set(selectedOrders);
     filteredOrders.forEach((o) => {
-      if (o.no_pesanan) newSet.add(o.no_pesanan);
+      const k = getOrderKey(o);
+      if (k) newSet.add(k);
     });
     setSelectedOrders(newSet);
     onShowToast(`${filteredOrders.length} pesanan berhasil dipilih`, 'info');
@@ -3702,30 +3726,48 @@ _WMS Warehouse System_`;
 
   const handleToggleSelectAllFiltered = () => {
     if (filteredOrders.length === 0) return;
-    const allSelected = filteredOrders.every(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
     const newSet = new Set(selectedOrders);
-    if (allSelected) {
+    if (isAllFilteredSelected) {
       filteredOrders.forEach((o) => {
-        if (o.no_pesanan) newSet.delete(o.no_pesanan);
+        const k = getOrderKey(o);
+        if (k) newSet.delete(k);
       });
       onShowToast('Pilihan pesanan di halaman ini dibatalkan', 'info');
     } else {
       filteredOrders.forEach((o) => {
-        if (o.no_pesanan) newSet.add(o.no_pesanan);
+        const k = getOrderKey(o);
+        if (k) newSet.add(k);
       });
       onShowToast(`${filteredOrders.length} pesanan berhasil dipilih`, 'info');
     }
     setSelectedOrders(newSet);
   };
 
-    // Hitung jumlah order yang memiliki produk Marketplace yang butuh No SJ DealPOS
+  const handlePrintBatchSjStruk = (targetOrder?: ManualShipmentOrder) => {
+    if (targetOrder) {
+      setSjAlterModalOrders([targetOrder]);
+      return;
+    }
+    const selectedList = scopedOrders.filter(o => {
+      const k = getOrderKey(o);
+      return k && selectedOrders.has(k);
+    });
+    if (selectedList.length === 0) {
+      onShowToast('Pilih setidaknya satu pesanan untuk dicetak Surat Jalan Struk', 'info');
+      return;
+    }
+    setSjAlterModalOrders(selectedList);
+    onShowToast(`Membuka Surat Jalan Struk Rangkap 2 untuk ${selectedList.length} pesanan`, 'success');
+  };
+
+  // Hitung jumlah order yang memiliki produk Marketplace yang butuh No SJ DealPOS
   const pendingSjCount = useMemo(() => {
-    return orders.filter(o => 
+    return scopedOrders.filter(o => 
       (o.items || []).some(it => 
         (it.fulfillment || '').toLowerCase().includes('marketplace') && !it.no_sj_dealpos
       )
     ).length;
-  }, [orders]);
+  }, [scopedOrders]);
 
   const handleExportCSV = () => {
     if (filteredOrders.length === 0) {
@@ -3846,24 +3888,25 @@ _WMS Warehouse System_`;
   };
 
   const renderRekap = () => {
-    const totalArCount = orders.filter(o => o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data).length;
-    const totalManualWithAlterCount = orders.filter(o => {
+    const totalArCount = scopedOrders.filter(o => o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data).length;
+    const totalManualWithAlterCount = scopedOrders.filter(o => {
       const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
       return !isAr && (o.items || []).some(
         (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
       );
     }).length;
-    const totalManualPureCount = orders.filter(o => {
+    const totalManualPureCount = scopedOrders.filter(o => {
       const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
       const hasAlter = (o.items || []).some(
         (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
       );
       return !isAr && !hasAlter;
     }).length;
-    const unassignedResiCount = orders.filter(o => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
+    const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
 
-    const selectedAlterOrders = orders.filter(o => {
-      if (!selectedOrders.has(o.no_pesanan)) return false;
+    const selectedAlterOrders = scopedOrders.filter(o => {
+      const k = getOrderKey(o);
+      if (!selectedOrders.has(k)) return false;
       const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
       return isAr || (o.items || []).some(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
     });
@@ -4017,7 +4060,7 @@ _WMS Warehouse System_`;
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <span>Semua ({orders.length})</span>
+              <span>Semua ({scopedOrders.length})</span>
             </button>
           </div>
 
@@ -4397,32 +4440,51 @@ _WMS Warehouse System_`;
             )}
           </div>
 
-          {canAction && selectedOrders.size > 0 && (
+          {selectedOrders.size > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Opsi Cetak Utama untuk Store: Surat Jalan Struk Rangkap 2 */}
               <button
-                onClick={handlePrintPickingList}
-                className="px-3 py-1 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900/60 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
-              >
-                <FileText className="w-3.5 h-3.5 mr-1" />
-                Cetak Picking ({selectedOrders.size})
-              </button>
-              <button
-                onClick={() => handlePrintLabel()}
-                className="px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
-                title="Cetak Label Paket A6 untuk pesanan yang dipilih"
+                type="button"
+                onClick={() => handlePrintBatchSjStruk()}
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
+                title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm) untuk pesanan terpilih"
               >
                 <Printer className="w-3.5 h-3.5 mr-1" />
-                Cetak Label A6 ({selectedOrders.size})
+                Cetak SJ Struk Rangkap 2 ({selectedOrders.size})
               </button>
-              {selectedAlterOrders.length > 0 && (
-                <button
-                  onClick={() => handlePrintAlterWorkOrder(selectedAlterOrders)}
-                  className="px-3 py-1 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs animate-in fade-in"
-                  title="Cetak Surat Perintah Kerja (SPK) Penjahit & Rincian Alterasi"
-                >
-                  <Scissors className="w-3.5 h-3.5 mr-1" />
-                  Cetak SPK Penjahit ({selectedAlterOrders.length})
-                </button>
+
+              {/* Opsi Cetak Internal Gudang (hanya untuk Admin & Tim Gudang) */}
+              {!isStoreUser && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePrintPickingList}
+                    className="px-3 py-1 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900/60 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1" />
+                    Cetak Picking ({selectedOrders.size})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintLabel()}
+                    className="px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
+                    title="Cetak Label Paket A6 untuk pesanan yang dipilih"
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-1" />
+                    Cetak Label A6 ({selectedOrders.size})
+                  </button>
+                  {selectedAlterOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handlePrintAlterWorkOrder(selectedAlterOrders)}
+                      className="px-3 py-1 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs animate-in fade-in"
+                      title="Cetak Surat Perintah Kerja (SPK) Penjahit & Rincian Alterasi"
+                    >
+                      <Scissors className="w-3.5 h-3.5 mr-1" />
+                      Cetak SPK Penjahit ({selectedAlterOrders.length})
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -4457,31 +4519,27 @@ _WMS Warehouse System_`;
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Status</th>
                 <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Total Items</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">SJ DealPOS (MKT)</th>
-                {userIsAdmin && (
-                  <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Aksi</th>
-                )}
+                <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Aksi</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={canAction ? (userIsAdmin ? 11 : 10) : (userIsAdmin ? 10 : 9)} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                  <td colSpan={11} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
                     {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
                   </td>
                 </tr>
               ) : (
               filteredOrders.map((order) => (
-                <tr key={order.no_pesanan} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                  {canAction && (
-                    <td className="px-3 py-2.5 whitespace-nowrap align-top">
-                      <input
-                        type="checkbox"
-                        className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer mt-0.5"
-                        checked={selectedOrders.has(order.no_pesanan)}
-                        onChange={() => toggleSelectOrder(order.no_pesanan)}
-                      />
-                    </td>
-                  )}
+                <tr key={order.no_pesanan || (order as any).id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                    <input
+                      type="checkbox"
+                      className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer mt-0.5"
+                      checked={selectedOrders.has(getOrderKey(order))}
+                      onChange={() => toggleSelectOrder(getOrderKey(order))}
+                    />
+                  </td>
                   <td className="px-3 py-2.5 whitespace-nowrap align-top">
                     <div 
                       className="text-[11px] font-semibold text-[#00a8e8] dark:text-sky-400 hover:underline cursor-pointer"
@@ -4857,8 +4915,18 @@ _WMS Warehouse System_`;
                       );
                     })()}
                   </td>
-                  {userIsAdmin && (
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
+                  <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
+                    {isStoreUser ? (
+                      <button
+                        type="button"
+                        onClick={() => setSjAlterModalOrders([order])}
+                        className="px-2.5 py-1 text-[11px] font-bold text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                        title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
+                      >
+                        <Printer className="w-3 h-3 text-amber-600" />
+                        <span>Cetak SJ Struk</span>
+                      </button>
+                    ) : (
                       <select
                         className="text-[10px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium"
                         onChange={(e) => {
@@ -4866,7 +4934,7 @@ _WMS Warehouse System_`;
                           if (action === 'print') handlePrintLabel(order);
                           if (action === 'spk_penjahit') handlePrintAlterWorkOrder(order);
                           if (action === 'spk') setArReceiptOrder(order);
-                          if (action === 'sj_struk') setSjAlterModalOrder(order);
+                          if (action === 'sj_struk') setSjAlterModalOrders([order]);
                           if (action === 'mark_sent') setAlterActionData({ order, actionType: 'mark_sent_store' });
                           if (action === 'mark_received') setAlterActionData({ order, actionType: 'mark_received_warehouse' });
                           if (action === 'complete_ship') setAlterActionData({ order, actionType: 'complete_and_ship' });
@@ -4933,8 +5001,8 @@ _WMS Warehouse System_`;
                         )}
                         <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
                       </select>
-                    </td>
-                  )}
+                    )}
+                  </td>
                 </tr>
               ))
             )}
@@ -4951,14 +5019,12 @@ _WMS Warehouse System_`;
                 <div key={order.no_pesanan} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col transition-shadow hover:shadow-md">
                   <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start">
                     <div className="flex gap-2 items-start">
-                      {canAction && (
-                        <input
-                          type="checkbox"
-                          className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer mt-0.5"
-                          checked={selectedOrders.has(order.no_pesanan)}
-                          onChange={() => toggleSelectOrder(order.no_pesanan)}
-                        />
-                      )}
+                      <input
+                        type="checkbox"
+                        className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer mt-0.5"
+                        checked={selectedOrders.has(getOrderKey(order))}
+                        onChange={() => toggleSelectOrder(getOrderKey(order))}
+                      />
                       <div>
                         <div 
                           className="font-bold text-[#00a8e8] dark:text-sky-400 hover:underline cursor-pointer text-sm"
@@ -5263,7 +5329,18 @@ _WMS Warehouse System_`;
                       {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
                     </button>
                     
-                    {userIsAdmin && (
+                    {/* Aksi footer card view */}
+                    {isStoreUser ? (
+                      <button
+                        type="button"
+                        onClick={() => setSjAlterModalOrders([order])}
+                        className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                        title="Cetak Surat Jalan Pengiriman Struk Rangkap 2 (80mm)"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Cetak SJ Struk</span>
+                      </button>
+                    ) : userIsAdmin ? (
                       <div className="flex items-center gap-1.5">
                         {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
                           <button
@@ -5341,7 +5418,7 @@ _WMS Warehouse System_`;
                           <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
                         </select>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               ))
@@ -5453,6 +5530,14 @@ _WMS Warehouse System_`;
         <AlterationRepairReceiptModal
           order={arReceiptOrder}
           onClose={() => setArReceiptOrder(null)}
+          onShowToast={onShowToast}
+        />
+      )}
+      {sjAlterModalOrders && sjAlterModalOrders.length > 0 && (
+        <SuratJalanAlterReceiptModal
+          orders={sjAlterModalOrders}
+          order={sjAlterModalOrders[0]}
+          onClose={() => setSjAlterModalOrders(null)}
           onShowToast={onShowToast}
         />
       )}

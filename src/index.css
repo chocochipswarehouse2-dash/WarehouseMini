@@ -420,15 +420,36 @@ html.dark {
     display: none !important;
   }
 
-  /* Isolasi area cetak Manual Shipment */
-  body:has(#manual-shipment-print-area) * {
+  /* Isolasi area cetak Surat Jalan Struk Kasir (80mm) Rangkap 2 */
+  body:has(#printableSuratJalanKasir) * {
     visibility: hidden;
   }
-  body:has(#manual-shipment-print-area) #manual-shipment-print-area,
-  body:has(#manual-shipment-print-area) #manual-shipment-print-area * {
+  body:has(#printableSuratJalanKasir) #printableSuratJalanKasir,
+  body:has(#printableSuratJalanKasir) #printableSuratJalanKasir * {
     visibility: visible;
   }
-  body:has(#manual-shipment-print-area) #manual-shipment-print-area {
+  body:has(#printableSuratJalanKasir) #printableSuratJalanKasir {
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 2mm !important;
+    background: #ffffff !important;
+    z-index: 999999 !important;
+  }
+
+  /* Isolasi area cetak Manual Shipment */
+  body:has(#manual-shipment-print-area:not(.hidden)) * {
+    visibility: hidden;
+  }
+  body:has(#manual-shipment-print-area:not(.hidden)) #manual-shipment-print-area,
+  body:has(#manual-shipment-print-area:not(.hidden)) #manual-shipment-print-area * {
+    visibility: visible;
+  }
+  body:has(#manual-shipment-print-area:not(.hidden)) #manual-shipment-print-area {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
