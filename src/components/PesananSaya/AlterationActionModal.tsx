@@ -68,7 +68,9 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   const [noTelpPenerima, setNoTelpPenerima] = useState(
     tujuanPengembalian === 'customer' ? (order.no_telp_tujuan || '') : (order.no_telp_store || '')
   );
-  const [ekspedisiKembali, setEkspedisiKembali] = useState(order.jasa_kirim || 'JNE / SiCepat / Kurir Internal');
+  const [ekspedisiKembali, setEkspedisiKembali] = useState(order.jasa_kirim || 'JNE Regular (free)');
+  const [isCustomEkspedisi, setIsCustomEkspedisi] = useState(false);
+  const [customEkspedisi, setCustomEkspedisi] = useState('');
   const [resiKembali, setResiKembali] = useState(order.no_resi || '');
   const [noDeliveryDealpos, setNoDeliveryDealpos] = useState(arData.no_delivery_dealpos || '');
   const [catatanKirimKembali, setCatatanKirimKembali] = useState('');
@@ -531,14 +533,40 @@ ${catatanKirimKembali ? `📝 *Catatan:* ${catatanKirimKembali}\n` : ''}Produk s
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">
                     Ekspedisi / Kurir:
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={ekspedisiKembali || ''}
-                    onChange={(e) => setEkspedisiKembali(e.target.value)}
-                    placeholder="JNE / SiCepat / Gosend / Kurir Internal..."
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium"
-                  />
+                  <select
+                    value={isCustomEkspedisi ? '__custom__' : ekspedisiKembali}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__custom__') {
+                        setIsCustomEkspedisi(true);
+                        setEkspedisiKembali(customEkspedisi);
+                      } else {
+                        setIsCustomEkspedisi(false);
+                        setEkspedisiKembali(val);
+                      }
+                    }}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs"
+                  >
+                    <option value="JNE Regular (free)">JNE Regular (free)</option>
+                    <option value="JNE YES (ditanggung cust)">JNE YES (ditanggung cust)</option>
+                    <option value="GOSEND (ditanggung cust)">GOSEND (ditanggung cust)</option>
+                    <option value="Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)">Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)</option>
+                    <option value="Drop ke Store Terkait (Pick Up / Handover Store)">Drop ke Store Terkait (Pick Up / Handover Store)</option>
+                    <option value="__custom__">+ Ketik Jasa Kirim Lainnya (Manual)</option>
+                  </select>
+                  {isCustomEkspedisi && (
+                    <input
+                      type="text"
+                      required
+                      value={customEkspedisi}
+                      onChange={(e) => {
+                        setCustomEkspedisi(e.target.value);
+                        setEkspedisiKembali(e.target.value);
+                      }}
+                      placeholder="Ketik nama ekspedisi..."
+                      className="w-full mt-1.5 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs"
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-0.5">

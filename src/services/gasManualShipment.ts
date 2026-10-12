@@ -70,28 +70,41 @@ export interface OutletContactInfo {
   nama: string;
   kode: string;
   no_wa: string;
+  alamat_store?: string;
+  email_store?: string;
   pic_default?: string;
 }
 
 export const DEFAULT_STORE_CONTACTS: Record<string, OutletContactInfo> = {
-  'Central Park Jakarta': { nama: 'Central Park Jakarta', kode: 'CPJ', no_wa: '081288990011', pic_default: 'Tim Store Central Park' },
-  'Gading Serpong Tangerang': { nama: 'Gading Serpong Tangerang', kode: 'GST', no_wa: '081288990022', pic_default: 'Tim Store Gading Serpong' },
-  'By The Sea PIK': { nama: 'By The Sea PIK', kode: 'BTS', no_wa: '081288990033', pic_default: 'Tim Store By The Sea' },
-  'Lippo Mall Puri': { nama: 'Lippo Mall Puri', kode: 'LMP', no_wa: '081288990044', pic_default: 'Tim Store Lippo Mall Puri' },
-  'Mall Kelapa Gading': { nama: 'Mall Kelapa Gading', kode: 'MKG', no_wa: '081288990055', pic_default: 'Tim Store Kelapa Gading' },
-  'Neo Soho Jakarta': { nama: 'Neo Soho Jakarta', kode: 'NSJ', no_wa: '081288990066', pic_default: 'Tim Store Neo Soho' },
-  'Pondok Indah Mall': { nama: 'Pondok Indah Mall', kode: 'PIM', no_wa: '081288990077', pic_default: 'Tim Store Pondok Indah Mall' },
-  'La Vela Tangerang': { nama: 'La Vela Tangerang', kode: 'LVL', no_wa: '081288990088', pic_default: 'Tim Store La Vela' },
-  'Living World Tangerang': { nama: 'Living World Tangerang', kode: 'LWS', no_wa: '081288990099', pic_default: 'Tim Store Living World' },
-  'Gaia Pontianak': { nama: 'Gaia Pontianak', kode: 'GAIA', no_wa: '081288990100', pic_default: 'Tim Store Gaia Pontianak' },
-  'Ciputra World Surabaya': { nama: 'Ciputra World Surabaya', kode: 'CWS', no_wa: '081288990111', pic_default: 'Tim Store Ciputra World' },
-  'Pakuwon Mall Surabaya': { nama: 'Pakuwon Mall Surabaya', kode: 'PMS', no_wa: '081288990122', pic_default: 'Tim Store Pakuwon Mall' },
-  'Tunjungan Plaza Surabaya': { nama: 'Tunjungan Plaza Surabaya', kode: 'TP', no_wa: '081288990133', pic_default: 'Tim Store Tunjungan Plaza' },
-  'Deli Park Medan': { nama: 'Deli Park Medan', kode: 'DPM', no_wa: '081288990144', pic_default: 'Tim Store Deli Park' },
-  'Sun Plaza Medan': { nama: 'Sun Plaza Medan', kode: 'SPM', no_wa: '081288990155', pic_default: 'Tim Store Sun Plaza' },
-  'Paskal Hyper Square Bandung': { nama: 'Paskal Hyper Square Bandung', kode: 'PHB', no_wa: '081288990166', pic_default: 'Tim Store Paskal Bandung' },
-  'Kyte': { nama: 'Kyte', kode: 'KYTE', no_wa: '081288990177', pic_default: 'Tim Store Kyte' },
+  'Central Park Jakarta': { nama: 'Central Park Jakarta', kode: 'CPJ', no_wa: '081288990011', alamat_store: 'Mall Central Park Lt. 1 No. 102, Jakarta Barat', email_store: 'cpj.store@chocochips.id' },
+  'Gading Serpong Tangerang': { nama: 'Gading Serpong Tangerang', kode: 'GST', no_wa: '081288990022', alamat_store: 'Ruko Gading Serpong Blok AA3 No. 12, Tangerang', email_store: 'gst.store@chocochips.id' },
+  'By The Sea PIK': { nama: 'By The Sea PIK', kode: 'BTS', no_wa: '081288990033', alamat_store: 'By The Sea Shopping District PIK Unit 18, Jakarta Utara', email_store: 'bts.store@chocochips.id' },
+  'Lippo Mall Puri': { nama: 'Lippo Mall Puri', kode: 'LMP', no_wa: '081288990044', alamat_store: 'Lippo Mall Puri Lt. LG Unit 45, Jakarta Barat', email_store: 'lmp.store@chocochips.id' },
+  'Mall Kelapa Gading': { nama: 'Mall Kelapa Gading', kode: 'MKG', no_wa: '081288990055', alamat_store: 'Mall Kelapa Gading 3 Lt. 2 No. 201, Jakarta Utara', email_store: 'mkg.store@chocochips.id' },
+  'Neo Soho Jakarta': { nama: 'Neo Soho Jakarta', kode: 'NSJ', no_wa: '081288990066', alamat_store: 'Neo Soho Mall Lt. UG Unit 210, Jakarta Barat', email_store: 'nsj.store@chocochips.id' },
+  'Pondok Indah Mall': { nama: 'Pondok Indah Mall', kode: 'PIM', no_wa: '081288990077', alamat_store: 'Pondok Indah Mall 2 Lt. 1 No. 115, Jakarta Selatan', email_store: 'pim.store@chocochips.id' },
+  'La Vela Tangerang': { nama: 'La Vela Tangerang', kode: 'LVL', no_wa: '081288990088', alamat_store: 'Ruko La Vela No. 8 Gading Serpong, Tangerang', email_store: 'lvl.store@chocochips.id' },
+  'Living World Tangerang': { nama: 'Living World Tangerang', kode: 'LWS', no_wa: '081288990099', alamat_store: 'Living World Alam Sutera Lt. 1 No. 108, Tangerang', email_store: 'lws.store@chocochips.id' },
+  'Gaia Pontianak': { nama: 'Gaia Pontianak', kode: 'GAIA', no_wa: '081288990100', alamat_store: 'Gaia Bumi Raya City Lt. Ground No. 22, Pontianak', email_store: 'gaia.store@chocochips.id' },
+  'Ciputra World Surabaya': { nama: 'Ciputra World Surabaya', kode: 'CWS', no_wa: '081288990111', alamat_store: 'Ciputra World Surabaya Lt. 2 Unit 214, Surabaya', email_store: 'cws.store@chocochips.id' },
+  'Pakuwon Mall Surabaya': { nama: 'Pakuwon Mall Surabaya', kode: 'PMS', no_wa: '081288990122', alamat_store: 'Pakuwon Mall Lt. 1 No. 152, Surabaya', email_store: 'pms.store@chocochips.id' },
+  'Tunjungan Plaza Surabaya': { nama: 'Tunjungan Plaza Surabaya', kode: 'TP', no_wa: '081288990133', alamat_store: 'Tunjungan Plaza 3 Lt. 3 No. 308, Surabaya', email_store: 'tp.store@chocochips.id' },
+  'Deli Park Medan': { nama: 'Deli Park Medan', kode: 'DPM', no_wa: '081288990144', alamat_store: 'Deli Park Mall Lt. LG Unit 12, Medan', email_store: 'dpm.store@chocochips.id' },
+  'Sun Plaza Medan': { nama: 'Sun Plaza Medan', kode: 'SPM', no_wa: '081288990155', alamat_store: 'Sun Plaza Lt. 1 No. 118, Medan', email_store: 'spm.store@chocochips.id' },
+  'Paskal Hyper Square Bandung': { nama: 'Paskal Hyper Square Bandung', kode: 'PHB', no_wa: '081288990166', alamat_store: '23 Paskal Shopping Center Lt. 1 No. 122, Bandung', email_store: 'phb.store@chocochips.id' },
+  'Kyte': { nama: 'Kyte', kode: 'KYTE', no_wa: '081288990177', alamat_store: 'Kyte Flagship Store No. 5, Jakarta', email_store: 'kyte.store@chocochips.id' },
 };
+
+export function getAllStoreContacts(): Record<string, OutletContactInfo> {
+  let savedContacts: Record<string, OutletContactInfo> = {};
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem('wms_store_contacts_directory');
+      if (raw) savedContacts = JSON.parse(raw);
+    } catch {}
+  }
+  return { ...DEFAULT_STORE_CONTACTS, ...savedContacts };
+}
 
 /**
  * Mengambil informasi kontak store resmi (termasuk override localStorage)
@@ -127,7 +140,7 @@ export function getStoreContact(storeNameOrCode?: string): OutletContactInfo {
 /**
  * Menyimpan / memperbarui nomor telepon WhatsApp resmi store
  */
-export function saveStoreContact(storeName: string, noWa: string, pic?: string): void {
+export function saveStoreContact(storeName: string, noWa: string, alamat?: string, email?: string, pic?: string, kode?: string): void {
   const fullName = getFullStoreName(storeName);
   if (!fullName) return;
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -137,16 +150,30 @@ export function saveStoreContact(storeName: string, noWa: string, pic?: string):
       if (raw) savedContacts = JSON.parse(raw);
       const existing = savedContacts[fullName] || DEFAULT_STORE_CONTACTS[fullName] || {
         nama: fullName,
-        kode: Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k] === fullName) || 'STORE',
+        kode: kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k] === fullName) || 'STORE',
         no_wa: '',
-        pic_default: 'PIC Store'
+        alamat_store: '',
+        email_store: '',
+        pic_default: 'Tim Store'
       };
       savedContacts[fullName] = {
         ...existing,
-        no_wa: noWa.trim(),
-        pic_default: pic ? pic.trim() : existing.pic_default
+        nama: fullName,
+        kode: kode ? kode.trim().toUpperCase() : existing.kode,
+        no_wa: noWa ? noWa.trim() : existing.no_wa,
+        alamat_store: alamat !== undefined ? alamat.trim() : existing.alamat_store,
+        email_store: email !== undefined ? email.trim() : existing.email_store,
+        pic_default: pic !== undefined ? pic.trim() : existing.pic_default
       };
       localStorage.setItem('wms_store_contacts_directory', JSON.stringify(savedContacts));
+      window.dispatchEvent(new CustomEvent('wms_store_contacts_updated', { detail: savedContacts }));
+      // Background sync to Cloud Supabase wms_system_docs
+      supabaseFetch('wms_system_docs', 'POST', [{
+        section_id: 'store_contacts_directory',
+        content: JSON.stringify(savedContacts),
+        updated_by: 'Master Pengaturan Toko',
+        updated_at: new Date().toISOString()
+      }], 'resolution=merge-duplicates').catch(() => {});
     } catch {}
   }
 }
@@ -207,10 +234,11 @@ export function resolveOrderSourceStore(order: ManualShipmentOrder): {
 }
 
 export const DEFAULT_JASA_KIRIM: string[] = [
-  'JNE Regular', 'JNE YES', 'J&T Express', 'SiCepat REG', 'SiCepat BEST',
-  'Anteraja Regular', 'Anteraja Same Day', 'GoSend Instant', 'GoSend Same Day',
-  'GrabExpress Instant', 'GrabExpress Same Day', 'Paxel', 'SPX Standard',
-  'SPX Instant', 'Lion Parcel', 'Wahana', 'Kurir Toko / Internal',
+  'JNE Regular (free)',
+  'JNE YES (ditanggung cust)',
+  'GOSEND (ditanggung cust)',
+  'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)',
+  'Drop ke Store Terkait (Pick Up / Handover Store)',
 ];
 
 export async function fetchJasaKirimList(): Promise<string[]> {
@@ -218,9 +246,16 @@ export async function fetchJasaKirimList(): Promise<string[]> {
     const raw = localStorage.getItem('wms_cached_jasa_kirim');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Check if cached list has legacy options (like SiCepat, Anteraja, etc.)
+        const hasLegacy = parsed.some(p => 
+          p === 'SiCepat REG' || p === 'Anteraja Regular' || p === 'J&T Express' || p === 'JNE Regular' || p === 'JNE Reguler' || p === 'Paxel'
+        );
+        if (!hasLegacy && parsed.length <= 10) return parsed;
+      }
     }
   } catch {}
+  localStorage.setItem('wms_cached_jasa_kirim', JSON.stringify(DEFAULT_JASA_KIRIM));
   return DEFAULT_JASA_KIRIM;
 }
 
@@ -240,10 +275,38 @@ function getDeletedOutletNames(): Set<string> {
   return set;
 }
 
-export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfillment: string; kode?: string }[]> {
+export interface OutletItem {
+  id?: string;
+  nama: string;
+  fulfillment?: string;
+  kode?: string;
+  no_wa?: string;
+  alamat_store?: string;
+  email_store?: string;
+  pic_default?: string;
+}
+
+export async function fetchOutlets(): Promise<OutletItem[]> {
   const deletedSet = getDeletedOutletNames();
+  // Sync kontak dari cloud wms_system_docs jika tersedia
+  if (typeof window !== 'undefined') {
+    try {
+      supabaseFetch<any[]>('wms_system_docs', 'GET', null, 'section_id=eq.store_contacts_directory&limit=1').then(docData => {
+        if (docData && docData.length > 0 && docData[0].content) {
+          try {
+            const parsed = JSON.parse(docData[0].content);
+            const localRaw = localStorage.getItem('wms_store_contacts_directory');
+            const localContacts = localRaw ? JSON.parse(localRaw) : {};
+            const merged = { ...parsed, ...localContacts };
+            localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
+          } catch {}
+        }
+      }).catch(() => {});
+    } catch {}
+  }
+
   try {
-    const result: { id?: string; nama: string; fulfillment: string; kode?: string }[] = [];
+    const result: OutletItem[] = [];
     const seenNames = new Set<string>();
 
     // 1. Ambil dari outlet_config jika ada
@@ -257,14 +320,19 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
           if (deletedSet.has(nameLower) || deletedSet.has(rawName.toLowerCase())) {
             return; // Lewati jika sudah dihapus pengguna
           }
-          const kode = d.kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === nameLower) || rawName.toUpperCase();
+          const contact = getStoreContact(fullName);
+          const kode = d.kode || contact.kode || Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k].toLowerCase() === nameLower) || rawName.toUpperCase();
           if (!seenNames.has(nameLower)) {
             seenNames.add(nameLower);
             result.push({
               id: d.id,
               nama: fullName,
-              fulfillment: fullName,
+              fulfillment: d.fulfillment || fullName,
               kode: kode,
+              no_wa: contact.no_wa || '',
+              alamat_store: contact.alamat_store || '',
+              email_store: contact.email_store || '',
+              pic_default: contact.pic_default || '',
             });
           }
         }
@@ -277,7 +345,16 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
       const nameLower = d.nama.toLowerCase();
       if (!seenNames.has(nameLower) && !deletedSet.has(nameLower)) {
         seenNames.add(nameLower);
-        result.push(d);
+        const contact = getStoreContact(d.nama);
+        result.push({
+          nama: d.nama,
+          fulfillment: d.fulfillment,
+          kode: d.kode,
+          no_wa: contact.no_wa || '',
+          alamat_store: contact.alamat_store || '',
+          email_store: contact.email_store || '',
+          pic_default: contact.pic_default || '',
+        });
       }
     });
 
@@ -285,12 +362,26 @@ export async function fetchOutlets(): Promise<{ id?: string, nama: string; fulfi
   } catch (err) {
     console.warn('Error fetching outlets', err);
   }
-  return DEFAULT_OUTLETS.filter(d => !deletedSet.has(d.nama.toLowerCase()));
+  return DEFAULT_OUTLETS.filter(d => !deletedSet.has(d.nama.toLowerCase())).map(d => {
+    const contact = getStoreContact(d.nama);
+    return {
+      nama: d.nama,
+      fulfillment: d.fulfillment,
+      kode: d.kode,
+      no_wa: contact.no_wa || '',
+      alamat_store: contact.alamat_store || '',
+      email_store: contact.email_store || '',
+      pic_default: contact.pic_default || '',
+    };
+  });
 }
 
-export async function saveOutlet(outlet: { id?: string, nama: string, fulfillment: string }): Promise<{ success: boolean; message: string }> {
+export async function saveOutlet(outlet: { id?: string; nama: string; fulfillment?: string; kode?: string; no_wa?: string; alamat_store?: string; email_store?: string; pic_default?: string }): Promise<{ success: boolean; message: string }> {
   try {
     const cleanName = outlet.nama.trim();
+    // Simpan kontak WA, Alamat, & Email ke direktori lokal & sinkronisasi
+    saveStoreContact(cleanName, outlet.no_wa || '', outlet.alamat_store, outlet.email_store, outlet.pic_default, outlet.kode || '');
+
     // Jika sebelumnya pernah dihapus, bersihkan dari daftar terhapus
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
@@ -306,18 +397,18 @@ export async function saveOutlet(outlet: { id?: string, nama: string, fulfillmen
     if (outlet.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(outlet.id)) {
       await supabaseFetch('outlet_config', 'PATCH', {
         nama: cleanName,
-        fulfillment: outlet.fulfillment.trim()
+        fulfillment: (outlet.fulfillment || cleanName).trim()
       }, `id=eq.${encodeURIComponent(outlet.id)}`);
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('wms_outlets_updated'));
-      return { success: true, message: 'Berhasil mengupdate store' };
+      return { success: true, message: 'Berhasil mengupdate store dan kontak WhatsApp' };
     } else {
       await supabaseFetch('outlet_config', 'POST', [{
         nama: cleanName,
-        fulfillment: outlet.fulfillment.trim(),
+        fulfillment: (outlet.fulfillment || cleanName).trim(),
         created_at: new Date().toISOString()
       }]);
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('wms_outlets_updated'));
-      return { success: true, message: 'Berhasil menambahkan store baru' };
+      return { success: true, message: 'Berhasil menambahkan store dan kontak WhatsApp baru' };
     }
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal menyimpan data store' };

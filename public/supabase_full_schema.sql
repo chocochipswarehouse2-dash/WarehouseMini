@@ -19,9 +19,18 @@ CREATE TABLE IF NOT EXISTS public.wms_users (
   role TEXT NOT NULL DEFAULT 'Operator',
   permissions JSONB DEFAULT '{}'::jsonb,
   nik VARCHAR(50),
+  no_hp VARCHAR(50),
+  email VARCHAR(150),
+  store_code VARCHAR(50),
+  store_name VARCHAR(150),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE public.wms_users ADD COLUMN IF NOT EXISTS no_hp VARCHAR(50);
+ALTER TABLE public.wms_users ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+ALTER TABLE public.wms_users ADD COLUMN IF NOT EXISTS store_code VARCHAR(50);
+ALTER TABLE public.wms_users ADD COLUMN IF NOT EXISTS store_name VARCHAR(150);
 
 -- Seed user default awal (bisa login langsung)
 INSERT INTO public.wms_users (username, name, password, role)

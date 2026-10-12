@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -34,6 +34,8 @@ import {
   updateOrderPrintStatus,
   getFullStoreName,
   DEFAULT_OUTLETS,
+  OutletItem,
+  getStoreContact,
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
@@ -76,7 +78,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   } | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'card'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
   const [loading, setLoading] = useState(false);
-  const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string }[]>([]);
+  const [outlets, setOutlets] = useState<OutletItem[]>([]);
 
   // Deteksi Store pengguna berdasarkan session login (Central Park, La Vela, dll.)
   const userAssignedStore = useMemo(() => {
@@ -714,7 +716,9 @@ _WMS Warehouse System_`;
   const [emailStore, setEmailStore] = useState('');
   const [transPengirim, setTransPengirim] = useState('');
   
-  // Pilihan Jasa Kirim (Database outlet kolom C row 2)
+  // Pilihan Jasa Kirim & Mode Penyerahan (Database outlet)
+  const [deliveryMethod, setDeliveryMethod] = useState<'expedition' | 'drop_store'>('expedition');
+  const [dropStoreTarget, setDropStoreTarget] = useState<string>('');
   const [jasaKirim, setJasaKirim] = useState('');
   const [customJasaKirim, setCustomJasaKirim] = useState('');
   const [isCustomJasaKirim, setIsCustomJasaKirim] = useState(false);
@@ -1528,12 +1532,108 @@ _WMS Warehouse System_`;
             </div>
           </div>
 
-          {/* Section 2: Data Customer */}
+          {/* Section 2: Data Customer & Opsi Penyerahan */}
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 border-b border-slate-200 dark:border-slate-700/80 pb-2 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              Data Customer (Penerima)
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700/80 pb-2 mb-3 flex-wrap gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Data Customer & Opsi Penyerahan</span>
+              </h3>
+
+              {/* Toggle Opsi Pengiriman: Ekspedisi vs Drop ke Store Terkait */}
+              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryMethod('expedition');
+                    if (jasaKirim.startsWith('Drop ke Store')) {
+                      setJasaKirim('');
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    deliveryMethod === 'expedition'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  <Truck className="w-3 h-3" />
+                  <span>Kirim via Ekspedisi</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryMethod('drop_store');
+                    setJasaKirim('Drop ke Store Terkait (Pick Up / Handover Store)');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    deliveryMethod === 'drop_store'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                  title="Pilih opsi ini jika barang diserahkan/di-drop ke toko terkait untuk diambil customer"
+                >
+                  <Building2 className="w-3 h-3" />
+                  <span>Drop ke Store Terkait</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Opsi Drop ke Store Terkait Banner & Selection */}
+            {deliveryMethod === 'drop_store' && (
+              <div className="mb-3.5 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-xl space-y-2.5 animate-in fade-in">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                    <Building2 className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Opsi Penyerahan: Drop Off ke Store Terkait</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full">
+                    Pick Up / Handover Store
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-950 dark:text-amber-200 mb-1">
+                      Pilih Store Tujuan Drop Off: *
+                    </label>
+                    <select
+                      value={dropStoreTarget}
+                      onChange={(e) => {
+                        const targetStore = e.target.value;
+                        setDropStoreTarget(targetStore);
+                        if (targetStore) {
+                          const contact = getStoreContact(targetStore);
+                          setAlamatTujuan(
+                            `[DROP OFF STORE]: ${targetStore} - ${contact.alamat_store || 'Outlet Store Chocochips'}`
+                          );
+                          if (contact.no_wa && !telpTujuan) {
+                            setTelpTujuan(contact.no_wa);
+                          }
+                          setJasaKirim('Drop ke Store Terkait (Pick Up / Handover Store)');
+                        }
+                      }}
+                      className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 rounded-lg text-slate-900 dark:text-white font-bold text-xs shadow-2xs"
+                      required={deliveryMethod === 'drop_store'}
+                    >
+                      <option value="">-- Pilih Outlet / Store Tujuan --</option>
+                      {outlets.map((o, idx) => (
+                        <option key={idx} value={o.nama}>
+                          {o.nama}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                      Alamat &amp; ekspedisi pengiriman otomatis disesuaikan ke lokasi outlet store tujuan drop off.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -1573,7 +1673,7 @@ _WMS Warehouse System_`;
                   placeholder="customer@email.com (opsional)"
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 py-2 px-3 font-sans"
                 />
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Email formal & tabel rincian ber-kop Chocochips</p>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Email formal &amp; tabel rincian ber-kop Chocochips</p>
               </div>
               <div className="md:col-span-3">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">

@@ -27,8 +27,12 @@ CREATE TABLE IF NOT EXISTS karyawan (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tambahkan link NIK ke tabel wms_users yang sudah ada
+-- Tambahkan link NIK dan Store/Outlet ke tabel wms_users yang sudah ada
 ALTER TABLE wms_users ADD COLUMN IF NOT EXISTS nik VARCHAR(50);
+ALTER TABLE wms_users ADD COLUMN IF NOT EXISTS no_hp VARCHAR(50);
+ALTER TABLE wms_users ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+ALTER TABLE wms_users ADD COLUMN IF NOT EXISTS store_code VARCHAR(50);
+ALTER TABLE wms_users ADD COLUMN IF NOT EXISTS store_name VARCHAR(150);
 
 -- 2. TABEL MASTER SHIFT
 CREATE TABLE IF NOT EXISTS master_shift (

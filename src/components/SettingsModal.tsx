@@ -55,9 +55,16 @@ import {
   ShieldAlert,
   Pencil,
   Store,
-  Palette
+  Palette,
+  MessageCircle,
+  Phone,
+  Search,
+  User,
+  Info,
+  MapPin,
+  Mail
 } from 'lucide-react';
-import { fetchOutlets, saveOutlet, deleteOutlet } from '../services/gasManualShipment';
+import { fetchOutlets, saveOutlet, deleteOutlet, OutletItem, getStoreContact } from '../services/gasManualShipment';
 import { UserSession, UserRole, UserPermissions, UserPermissionKey, LocalUserRecord, KaryawanRecord } from '../types';
 import { getLocalUsers, saveLocalUsersList } from '../utils/localStore';
 import {
@@ -199,9 +206,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [waWebhookStatusMsg, setWaWebhookStatusMsg] = useState<string>('');
 
   // Outlets Management State
-  const [outletList, setOutletList] = useState<{ id?: string; nama: string; fulfillment: string }[]>([]);
+  const [outletList, setOutletList] = useState<OutletItem[]>([]);
   const [isLoadingOutlets, setIsLoadingOutlets] = useState<boolean>(false);
-  const [editingOutlet, setEditingOutlet] = useState<{ id?: string; nama: string; fulfillment: string } | null>(null);
+  const [editingOutlet, setEditingOutlet] = useState<OutletItem | null>(null);
+  const [outletSearch, setOutletSearch] = useState<string>('');
 
   // Users Management State
   const [userList, setUserList] = useState<LocalUserRecord[]>([]);
@@ -214,6 +222,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newNik, setNewNik] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
   const [newEmail, setNewEmail] = useState<string>('');
+  const [newStoreCode, setNewStoreCode] = useState<string>('');
+  const [newStoreName, setNewStoreName] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('Operator');
   const [newPermissions, setNewPermissions] = useState<Partial<UserPermissions>>({
     ...ROLE_DEFAULT_PERMISSIONS['Operator'],
@@ -254,8 +264,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
 
       if (dbUsers && dbUsers.length > 0) {
-        setUserList(dbUsers as LocalUserRecord[]);
-        saveLocalUsersList(dbUsers as LocalUserRecord[]);
+        const mappedUsers: LocalUserRecord[] = dbUsers.map((u: any) => ({
+          ...u,
+          phone: u.phone || u.no_hp || '',
+          no_hp: u.no_hp || u.phone || '',
+        }));
+        setUserList(mappedUsers);
+        saveLocalUsersList(mappedUsers);
       } else {
         const local = getLocalUsers();
         setUserList(local);
@@ -667,6 +682,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       nik: newNik.trim() || undefined,
       phone: newPhone.trim() || undefined,
       email: newEmail.trim() || undefined,
+      store_code: newStoreCode.trim() || undefined,
+      store_name: newStoreName.trim() || undefined,
     };
 
     let updated: LocalUserRecord[];
@@ -706,6 +723,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       nik: newNik.trim() || undefined,
       no_hp: newPhone.trim() || undefined,
       email: newEmail.trim() || undefined,
+      store_code: newStoreCode.trim() || undefined,
+      store_name: newStoreName.trim() || undefined,
     }, originalTarget?.username);
     setIsLoadingUsers(false);
 
@@ -730,6 +749,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         role: newRole,
         permissions: newPermissions,
         nik: newNik.trim() || undefined,
+        no_hp: newPhone.trim() || undefined,
+        email: newEmail.trim() || undefined,
+        store_code: newStoreCode.trim() || undefined,
+        store_name: newStoreName.trim() || undefined,
       });
     }
 
@@ -740,6 +763,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewNik('');
     setNewPhone('');
     setNewEmail('');
+    setNewStoreCode('');
+    setNewStoreName('');
     setNewRole('Operator');
     setNewPermissions({ ...ROLE_DEFAULT_PERMISSIONS['Operator'] });
     setIsPermissionFormOpen(false);
@@ -753,8 +778,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewName(u.name || u.username);
     setNewPassword('');
     setNewNik(u.nik || '');
-    setNewPhone(u.phone || '');
+    setNewPhone(u.phone || (u as any).no_hp || '');
     setNewEmail(u.email || '');
+    setNewStoreCode(u.store_code || '');
+    setNewStoreName(u.store_name || '');
     setNewRole(u.role || 'Operator');
     setNewPermissions(
       u.permissions
@@ -1456,6 +1483,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tautkan Store / Outlet
+                        </label>
+                        <select
+                          value={newStoreCode}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewStoreCode(val);
+                            const match = outletList.find(
+                              (o) => (o.kode && o.kode.toLowerCase() === val.toLowerCase()) || o.nama.toLowerCase() === val.toLowerCase()
+                            );
+                            if (match) {
+                              const contact = getStoreContact(match.nama);
+                              setNewStoreName(match.nama);
+                              setNewName(match.nama);
+                              const phone = match.no_wa || contact.no_wa || '';
+                              if (phone) setNewPhone(phone);
+                              const email = match.email_store || contact.email_store || `${match.kode ? match.kode.toLowerCase() : 'store'}.store@chocochips.id`;
+                              if (email) setNewEmail(email);
+                              if (newRole === 'Operator' || !newRole) {
+                                handleRolePresetSelect('Store');
+                              }
+                            } else {
+                              setNewStoreName('');
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        >
+                          <option value="">-- Tanpa Store (Staff Internal) --</option>
+                          {outletList.map((o) => {
+                            const codeKey = o.kode || o.nama;
+                            return (
+                              <option key={o.id || codeKey} value={codeKey}>
+                                {o.kode ? `[${o.kode}] ` : ''}{o.nama} {o.no_wa ? `(${o.no_wa})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                           Password
                         </label>
                         <input
@@ -1718,6 +1786,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                           />
                         )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tautkan Store / Outlet
+                        </label>
+                        <select
+                          value={newStoreCode}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewStoreCode(val);
+                            const match = outletList.find(
+                              (o) => (o.kode && o.kode.toLowerCase() === val.toLowerCase()) || o.nama.toLowerCase() === val.toLowerCase()
+                            );
+                            if (match) {
+                              const contact = getStoreContact(match.nama);
+                              setNewStoreName(match.nama);
+                              setNewName(match.nama);
+                              const phone = match.no_wa || contact.no_wa || '';
+                              if (phone) setNewPhone(phone);
+                              const email = match.email_store || contact.email_store || `${match.kode ? match.kode.toLowerCase() : 'store'}.store@chocochips.id`;
+                              if (email) setNewEmail(email);
+                              if (newRole === 'Operator' || !newRole) {
+                                handleRolePresetSelect('Store');
+                              }
+                            } else {
+                              setNewStoreName('');
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                        >
+                          <option value="">-- Tanpa Store (Staff Internal) --</option>
+                          {outletList.map((o) => {
+                            const codeKey = o.kode || o.nama;
+                            return (
+                              <option key={o.id || codeKey} value={codeKey}>
+                                {o.kode ? `[${o.kode}] ` : ''}{o.nama} {o.no_wa ? `(${o.no_wa})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
                       </div>
 
                       <div>
@@ -1985,6 +2094,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               {usr.nik && (
                                 <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 rounded font-bold border border-cyan-200 dark:border-cyan-800">
                                   NIK: {usr.nik}
+                                </span>
+                              )}
+                              {(usr.store_code || usr.store_name) && (
+                                <span className="text-[9px] px-1.5 py-0.2 bg-pink-100 dark:bg-pink-950/80 text-pink-800 dark:text-pink-300 rounded font-bold border border-pink-200 dark:border-pink-800 flex items-center gap-1">
+                                  <span>🏪 Store: {usr.store_name || usr.store_code}</span>
+                                  {usr.store_code && <span className="font-mono text-[8px] bg-pink-200 dark:bg-pink-900 px-1 rounded">[{usr.store_code}]</span>}
                                 </span>
                               )}
                             </div>
@@ -2857,120 +2972,279 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB: OUTLETS CONFIGURATION */}
           {/* ========================================================================= */}
           {activeTab === 'outlets' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
+            <div className="space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
                     <Store className="w-4 h-4 text-primary-500" />
-                    Manajemen Store & Outlet
+                    Manajemen Store & Master Kontak Resmi Toko
                   </h3>
-                  <p className="text-xs text-slate-500 mt-1">Atur daftar nama store/outlet untuk Manual Shipment.</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Kelola direktori store/outlet resmi, kode singkatan, nomor WhatsApp toko, alamat store lengkap, serta email resmi toko.
+                  </p>
                 </div>
                 <button
-                  onClick={() => setEditingOutlet({ nama: '', fulfillment: '1 - 2 Hari' })}
-                  className="px-3 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-primary-600 transition-colors"
+                  onClick={() => setEditingOutlet({ nama: '', kode: '', no_wa: '', alamat_store: '', email_store: '' })}
+                  className="px-3.5 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-primary-600 transition-colors shrink-0 shadow-sm"
                 >
-                  <Plus className="w-4 h-4" /> Tambah Store
+                  <Plus className="w-4 h-4" /> Tambah Store Baru
                 </button>
               </div>
 
+              {/* Informative Callout Card */}
+              <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 text-xs text-blue-900 dark:text-blue-200 space-y-1.5 shadow-sm">
+                <div className="flex items-center gap-2 font-bold text-blue-950 dark:text-blue-100">
+                  <div className="p-1 rounded bg-emerald-500 text-white shrink-0">
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  </div>
+                  <span>Master Kontak Resmi Toko (DEFAULT_STORE_CONTACTS &amp; Database Direktori)</span>
+                </div>
+                <p className="leading-relaxed text-[11.5px] text-slate-700 dark:text-slate-300">
+                  Nomor WhatsApp, Alamat Store, dan Email yang tercantum di sini digunakan secara otomatis saat menerbitkan <strong>Surat Jalan (SJ) Struk Rangkap 2</strong>, notifikasi WA Fonnte saat terjadi <strong>Fulfillment Antar-Store</strong>, dan koordinasi pengiriman resmi toko.
+                </p>
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-900/50">
+                  <Info className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Bila nomor / alamat / email toko belum diisi, silakan klik tombol <strong>Edit (Pensil)</strong> pada baris toko terkait untuk melengkapi data resmi toko tersebut.
+                  </span>
+                </div>
+              </div>
+
+              {/* Search Bar & Stats */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={outletSearch}
+                    onChange={(e) => setOutletSearch(e.target.value)}
+                    placeholder="Cari nama toko, kode, no WA..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-primary-500"
+                  />
+                  {outletSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setOutletSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <div className="text-[11px] font-semibold text-slate-500">
+                  Total Terdaftar: <span className="font-bold text-slate-800 dark:text-slate-200">{outletList.length} Store</span>
+                </div>
+              </div>
+
+              {/* Form Tambah / Edit Store */}
               {editingOutlet && (
-                <form onSubmit={handleSaveOutlet} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
-                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 pb-2">
-                    {editingOutlet.id ? 'Edit Store' : 'Tambah Store Baru'}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <form onSubmit={handleSaveOutlet} className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-primary-200 dark:border-primary-900/40 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2.5">
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <Store className="w-4 h-4 text-primary-500" />
+                      {editingOutlet.id || editingOutlet.nama ? `Edit Toko: ${editingOutlet.nama}` : 'Tambah Store / Outlet Baru'}
+                    </h4>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Form Master Toko</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Store</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Nama Lengkap Store <span className="text-red-500">*</span>
+                      </label>
                       <input
                         type="text"
                         required
                         value={editingOutlet.nama}
                         onChange={e => setEditingOutlet({...editingOutlet, nama: e.target.value})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
-                        placeholder="Misal: Shopee Chocochips"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-medium"
+                        placeholder="Misal: Gading Serpong Tangerang"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estimasi Fulfillment</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Kode Singkatan Store
+                      </label>
                       <input
                         type="text"
-                        required
-                        value={editingOutlet.fulfillment}
-                        onChange={e => setEditingOutlet({...editingOutlet, fulfillment: e.target.value})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
-                        placeholder="Misal: 1 - 2 Hari"
+                        value={editingOutlet.kode || ''}
+                        onChange={e => setEditingOutlet({...editingOutlet, kode: e.target.value.toUpperCase()})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-mono font-bold uppercase"
+                        placeholder="Misal: GST"
                       />
                     </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3 text-emerald-500" />
+                        No. WhatsApp Resmi Toko
+                      </label>
+                      <input
+                        type="text"
+                        value={editingOutlet.no_wa || ''}
+                        onChange={e => setEditingOutlet({...editingOutlet, no_wa: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 font-mono"
+                        placeholder="Misal: 081288990022"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Digunakan untuk notifikasi WA Surat Jalan &amp; Pengiriman</span>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-red-500" />
+                        Alamat Lengkap Store
+                      </label>
+                      <input
+                        type="text"
+                        value={editingOutlet.alamat_store || ''}
+                        onChange={e => setEditingOutlet({...editingOutlet, alamat_store: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-medium"
+                        placeholder="Misal: Mall Central Park Lt. 1 No. 102, Jakarta Barat"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Alamat fisik operasional outlet / toko</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-blue-500" />
+                        Alamat Email Store
+                      </label>
+                      <input
+                        type="email"
+                        value={editingOutlet.email_store || ''}
+                        onChange={e => setEditingOutlet({...editingOutlet, email_store: e.target.value})}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-medium"
+                        placeholder="Misal: cpj.store@chocochips.id"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Email resmi korespondensi store</span>
+                    </div>
                   </div>
-                  <div className="flex gap-2 justify-end pt-2">
+
+                  <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                     <button
                       type="button"
                       onClick={() => setEditingOutlet(null)}
-                      className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold"
+                      className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
                     >
                       Batal
                     </button>
                     <button
                       type="submit"
                       disabled={isLoadingOutlets}
-                      className="px-4 py-2 bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-2"
+                      className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
                     >
                       {isLoadingOutlets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      Simpan
+                      Simpan Store & Kontak
                     </button>
                   </div>
                 </form>
               )}
 
-              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
+              {/* Tabel Daftar Store & Master Kontak */}
+              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-x-auto shadow-sm max-w-full">
+                <table className="w-full text-left border-collapse min-w-[720px]">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-500">
-                      <th className="px-4 py-3">Nama Store</th>
-                      <th className="px-4 py-3">Estimasi Fulfillment</th>
-                      <th className="px-4 py-3 w-20 text-center">Aksi</th>
+                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                      <th className="px-4 py-3 min-w-[180px]">Nama Store & Kode</th>
+                      <th className="px-4 py-3 min-w-[140px]">No. WhatsApp Resmi</th>
+                      <th className="px-4 py-3 min-w-[200px]">Alamat Store</th>
+                      <th className="px-4 py-3 min-w-[160px]">Alamat Email</th>
+                      <th className="px-4 py-3 min-w-[120px] text-center sticky right-0 bg-slate-50 dark:bg-slate-800 z-10 border-l border-slate-200/60 dark:border-slate-700/60">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
                     {isLoadingOutlets && outletList.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+                        <td colSpan={5} className="px-4 py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
                           <Loader2 className="w-6 h-6 animate-spin text-primary-500 mb-2" />
-                          Memuat data store...
+                          Memuat data master kontak store...
                         </td>
                       </tr>
                     ) : outletList.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500 text-xs">Belum ada data store.</td>
+                        <td colSpan={5} className="px-4 py-8 text-center text-slate-500 text-xs">Belum ada data store.</td>
                       </tr>
                     ) : (
-                      outletList.map((outlet, idx) => (
-                        <tr key={outlet.id || idx} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                          <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
-                            {outlet.nama}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {outlet.fulfillment}
-                          </td>
-                          <td className="px-4 py-3 flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => setEditingOutlet(outlet)}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
-                              title="Edit Store"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteOutlet(outlet)}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
-                              title="Hapus Store"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      outletList
+                        .filter(o => {
+                          if (!outletSearch) return true;
+                          const q = outletSearch.toLowerCase();
+                          return (
+                            o.nama.toLowerCase().includes(q) ||
+                            (o.kode && o.kode.toLowerCase().includes(q)) ||
+                            (o.no_wa && o.no_wa.toLowerCase().includes(q)) ||
+                            (o.alamat_store && o.alamat_store.toLowerCase().includes(q)) ||
+                            (o.email_store && o.email_store.toLowerCase().includes(q))
+                          );
+                        })
+                        .map((outlet, idx) => (
+                          <tr key={outlet.id || idx} className="group border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                  {outlet.nama}
+                                </span>
+                                {outlet.kode && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700 font-bold">
+                                    {outlet.kode}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {outlet.no_wa ? (
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-md border border-emerald-200 dark:border-emerald-800 font-mono text-xs font-semibold">
+                                  <MessageCircle className="w-3 h-3 text-emerald-500" />
+                                  <span>{outlet.no_wa}</span>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded text-[11px] font-medium border border-amber-200 dark:border-amber-900/40">
+                                  Belum diatur
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-xs truncate" title={outlet.alamat_store || ''}>
+                              {outlet.alamat_store ? (
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                                  <span className="truncate">{outlet.alamat_store}</span>
+                                </div>
+                              ) : (
+                                <span className="italic text-slate-400">Belum diisi</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
+                              {outlet.email_store ? (
+                                <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                                  <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                  <span>{outlet.email_store}</span>
+                                </div>
+                              ) : (
+                                <span className="italic text-slate-400">Belum diisi</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 min-w-[120px] text-center sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/90 z-10 border-l border-slate-100 dark:border-slate-800/80 transition-colors">
+                              <div className="flex items-center justify-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => setEditingOutlet(outlet)}
+                                  className="px-2.5 py-1 flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-xs font-bold transition-colors shrink-0"
+                                  title="Edit Kontak & Info Store"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteOutlet(outlet)}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors cursor-pointer shrink-0"
+                                  title="Hapus Store"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
                     )}
                   </tbody>
                 </table>

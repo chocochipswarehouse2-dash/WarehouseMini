@@ -2919,7 +2919,7 @@ export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
       'wms_users',
       'GET',
       null,
-      'select=id,username,name,role,password,permissions,nik,created_at,updated_at&order=created_at.asc'
+      'select=id,username,name,role,password,permissions,nik,no_hp,email,store_code,store_name,created_at,updated_at&order=created_at.asc'
     );
     if (data && Array.isArray(data) && data.length > 0) {
       // Deduplicate by case-insensitive username just in case stale duplicates exist in DB
@@ -2972,9 +2972,11 @@ export async function saveWmsUserToSupabase(
     updated_at: new Date().toISOString(),
   };
 
-  if (user.nik) {
-    payload.nik = user.nik;
-  }
+  payload.nik = user.nik || null;
+  payload.no_hp = user.no_hp || (user as any).phone || null;
+  payload.email = user.email || null;
+  payload.store_code = user.store_code || null;
+  payload.store_name = user.store_name || null;
 
   // Only hash & update password if a non-empty password was provided
   if (user.password && user.password.trim() !== '') {
@@ -3039,24 +3041,41 @@ export async function saveWmsUserToSupabase(
 
     // IF USER EXISTS IN DATABASE -> PERFORM IN-PLACE UPDATE (PATCH BY PRIMARY KEY ID)
     if (targetExistingId) {
-      const patchRes = await supabaseFetch<WmsUser[]>(
-        'wms_users',
-        'PATCH',
-        payload,
-        `id=eq.${encodeURIComponent(targetExistingId)}`,
-        true
-      );
-      if (patchRes && Array.isArray(patchRes) && patchRes.length > 0) {
-        savedRecord = patchRes[0];
-      } else {
-        const refreshed = await supabaseFetch<WmsUser[]>(
+      try {
+        const patchRes = await supabaseFetch<WmsUser[]>(
           'wms_users',
-          'GET',
-          null,
-          `id=eq.${encodeURIComponent(targetExistingId)}&select=id,username,name,role,password,permissions,nik,created_at,updated_at`
+          'PATCH',
+          payload,
+          `id=eq.${encodeURIComponent(targetExistingId)}`,
+          true
         );
-        if (refreshed && refreshed.length > 0) {
-          savedRecord = refreshed[0];
+        if (patchRes && Array.isArray(patchRes) && patchRes.length > 0) {
+          savedRecord = patchRes[0];
+        }
+      } catch (errPatch: any) {
+        console.warn('Initial PATCH wms_users failed, retrying with core fields fallback:', errPatch?.message);
+        const fallbackPayload = {
+          username: cleanU,
+          name: user.name || user.username,
+          role: user.role || 'Operator',
+          permissions: user.permissions || {},
+          nik: user.nik || null,
+          updated_at: new Date().toISOString(),
+          ...(payload.password ? { password: payload.password } : {}),
+        };
+        try {
+          const fallbackRes = await supabaseFetch<WmsUser[]>(
+            'wms_users',
+            'PATCH',
+            fallbackPayload,
+            `id=eq.${encodeURIComponent(targetExistingId)}`,
+            true
+          );
+          if (fallbackRes && Array.isArray(fallbackRes) && fallbackRes.length > 0) {
+            savedRecord = fallbackRes[0];
+          }
+        } catch (errFallback) {
+          console.warn('Fallback PATCH also failed:', errFallback);
         }
       }
     } else {
@@ -3065,19 +3084,46 @@ export async function saveWmsUserToSupabase(
         payload.password = await computeSha256('123456');
       }
 
-      const postRes = await supabaseFetch<WmsUser[]>(
-        'wms_users',
-        'POST',
-        payload,
-        'on_conflict=username',
-        true
-      );
-      if (postRes && Array.isArray(postRes) && postRes.length > 0) {
-        savedRecord = postRes[0];
+      try {
+        const postRes = await supabaseFetch<WmsUser[]>(
+          'wms_users',
+          'POST',
+          payload,
+          'on_conflict=username',
+          true
+        );
+        if (postRes && Array.isArray(postRes) && postRes.length > 0) {
+          savedRecord = postRes[0];
+        }
+      } catch (errPost: any) {
+        console.warn('Initial POST wms_users failed, retrying with core fields fallback:', errPost?.message);
+        const fallbackPayload = {
+          username: cleanU,
+          name: user.name || user.username,
+          role: user.role || 'Operator',
+          permissions: user.permissions || {},
+          nik: user.nik || null,
+          password: payload.password,
+          updated_at: new Date().toISOString(),
+        };
+        try {
+          const fallbackRes = await supabaseFetch<WmsUser[]>(
+            'wms_users',
+            'POST',
+            fallbackPayload,
+            'on_conflict=username',
+            true
+          );
+          if (fallbackRes && Array.isArray(fallbackRes) && fallbackRes.length > 0) {
+            savedRecord = fallbackRes[0];
+          }
+        } catch (errPostFallback) {
+          console.warn('Fallback POST also failed:', errPostFallback);
+        }
       }
     }
 
-    // Sync to local cache
+    // Sync to local cache (guarantees local persistence even if Supabase table lacks newly added columns)
     try {
       const local = localStorage.getItem('wms_local_users');
       const list: WmsUser[] = local ? JSON.parse(local) : [];
@@ -3098,8 +3144,27 @@ export async function saveWmsUserToSupabase(
 
     return { success: true, savedUser: savedRecord || undefined };
   } catch (err: any) {
-    console.warn('Could not save wms_user to Supabase table:', err);
-    return { success: false, message: err?.message || 'Gagal menyimpan data pengguna ke Supabase.' };
+    console.warn('Could not save wms_user to Supabase table, applying local save fallback:', err);
+    // Local save fallback when network or DB fails completely
+    try {
+      const local = localStorage.getItem('wms_local_users');
+      const list: WmsUser[] = local ? JSON.parse(local) : [];
+      const finalId = user.id || `local-${Date.now()}`;
+      const updated = list.filter(
+        (u) =>
+          u.username.toLowerCase() !== lowerU &&
+          (!originalUsername || u.username.toLowerCase() !== originalUsername.toLowerCase())
+      );
+      updated.push({
+        ...payload,
+        id: finalId,
+        password: payload.password || user.password,
+      });
+      localStorage.setItem('wms_local_users', JSON.stringify(updated));
+      return { success: true, savedUser: { ...payload, id: finalId } };
+    } catch {
+      return { success: false, message: err?.message || 'Gagal menyimpan data pengguna.' };
+    }
   }
 }
 

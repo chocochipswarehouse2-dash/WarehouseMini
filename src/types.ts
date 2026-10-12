@@ -156,6 +156,8 @@ export interface WmsUser {
   nik?: string;
   no_hp?: string;
   email?: string;
+  store_code?: string;
+  store_name?: string;
 }
 
 export interface UserSession {
@@ -171,6 +173,8 @@ export interface UserSession {
   divisi?: string;
   no_hp?: string;
   email?: string;
+  store_code?: string;
+  store_name?: string;
 }
 
 export interface KaryawanRecord {
@@ -339,6 +343,8 @@ export interface LocalUserRecord {
   nik?: string;
   phone?: string;
   email?: string;
+  store_code?: string;
+  store_name?: string;
 }
 
 export interface ProductItem {

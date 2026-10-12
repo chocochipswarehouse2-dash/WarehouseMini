@@ -65,7 +65,8 @@ import {
   fetchManualShipments,
   fetchOutlets,
   DEFAULT_OUTLETS,
-  getFullStoreName
+  getFullStoreName,
+  OutletItem
 } from '../../services/gasManualShipment';
 import { formatProductNameWithSize } from '../../utils/sortUtils';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
@@ -89,37 +90,22 @@ interface AlterationRepairTabProps {
 
 // Store Courier Options (Kembali ke Store Asal)
 const STORE_COURIER_OPTIONS = [
-  'Kurir Internal',
-  'JNE Reguler',
-  'JNE YES',
-  'JNE Trucking (JTR)',
-  'SiCepat Cargo',
-  'SiCepat REG',
-  'Lion Parcel',
-  'Paxel',
-  'Lalamove',
-  'Custom / Ekspedisi Lainnya',
+  'JNE Regular (free)',
+  'JNE YES (ditanggung cust)',
+  'GOSEND (ditanggung cust)',
+  'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)',
+  'Drop ke Store Terkait (Pick Up / Handover Store)',
+  '+ Ketik Jasa Kirim Lainnya (Manual)',
 ];
 
 // Customer Courier Options (Langsung ke Customer)
 const CUSTOMER_COURIER_OPTIONS = [
-  'JNE Reguler',
-  'JNE YES',
-  'JNE OKE',
-  'SiCepat REG',
-  'SiCepat BEST',
-  'SiCepat Cargo',
-  'J&T Express',
-  'Shopee Xpress (SPX)',
-  'Lion Parcel',
-  'Paxel (Same Day / Next Day)',
-  'GoSend Instant',
-  'GoSend Sameday',
-  'GrabExpress Instant',
-  'GrabExpress Sameday',
-  'Lalamove',
-  'Kurir Internal',
-  'Custom / Ekspedisi Lainnya',
+  'JNE Regular (free)',
+  'JNE YES (ditanggung cust)',
+  'GOSEND (ditanggung cust)',
+  'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)',
+  'Drop ke Store Terkait (Pick Up / Handover Store)',
+  '+ Ketik Jasa Kirim Lainnya (Manual)',
 ];
 
 // Multi-Item Structure Interface
@@ -137,6 +123,7 @@ interface FormAlterationItemState {
   showDropdown: boolean;
   foto_urls?: string[];
   isUploadingFoto?: boolean;
+  isManualProduct?: boolean;
 }
 
 const createDefaultItem = (): FormAlterationItemState => ({
@@ -153,6 +140,7 @@ const createDefaultItem = (): FormAlterationItemState => ({
   showDropdown: false,
   foto_urls: [],
   isUploadingFoto: false,
+  isManualProduct: false,
 });
 
 export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
@@ -166,7 +154,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 }) => {
   const [internalOrders, setInternalOrders] = useState<ManualShipmentOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
-  const [outlets, setOutlets] = useState<{ nama: string; fulfillment: string; kode?: string }[]>([]);
+  const [outlets, setOutlets] = useState<OutletItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Modals state
@@ -192,9 +180,9 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [formCustomerHp, setFormCustomerHp] = useState<string>('');
   const [formCustomerAlamat, setFormCustomerAlamat] = useState<string>('');
   const [formTujuanPengembalian, setFormTujuanPengembalian] = useState<'customer' | 'store'>('store');
-  const [formJasaKirimStore, setFormJasaKirimStore] = useState<string>('Kurir Internal');
+  const [formJasaKirimStore, setFormJasaKirimStore] = useState<string>('Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)');
   const [formCustomJasaKirimStore, setFormCustomJasaKirimStore] = useState<string>('');
-  const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE Reguler');
+  const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE Regular (free)');
   const [formCustomJasaKirim, setFormCustomJasaKirim] = useState<string>('');
   const [formNotesPaket, setFormNotesPaket] = useState<string>('');
   const [formPerkiraanSelesai, setFormPerkiraanSelesai] = useState<string>('');
@@ -592,7 +580,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
     }
 
     if (formTujuanPengembalian === 'store') {
-      if (formJasaKirimStore === 'Custom / Ekspedisi Lainnya' && !formCustomJasaKirimStore.trim()) {
+      if ((formJasaKirimStore === 'Custom / Ekspedisi Lainnya' || formJasaKirimStore === '+ Ketik Jasa Kirim Lainnya (Manual)') && !formCustomJasaKirimStore.trim()) {
         onShowToast('Nama ekspedisi custom untuk store wajib diisi jika memilih opsi Custom', 'error');
         return;
       }
@@ -601,7 +589,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
         onShowToast('Nama, No. WhatsApp, dan Alamat Customer wajib diisi lengkap jika memilih kirim ke Customer', 'error');
         return;
       }
-      if (formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' && !formCustomJasaKirim.trim()) {
+      if ((formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' || formJasaKirimCustomer === '+ Ketik Jasa Kirim Lainnya (Manual)') && !formCustomJasaKirim.trim()) {
         onShowToast('Nama ekspedisi custom wajib diisi jika memilih opsi Custom', 'error');
         return;
       }
@@ -618,11 +606,11 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
       const asalDisplayName = formOutlet || (session?.divisi || 'Store');
 
       const effectiveCourier = formTujuanPengembalian === 'customer'
-        ? (formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya'
+        ? ((formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' || formJasaKirimCustomer === '+ Ketik Jasa Kirim Lainnya (Manual)')
             ? (formCustomJasaKirim.trim() || 'Custom Ekspedisi')
             : formJasaKirimCustomer)
-        : (formJasaKirimStore === 'Custom / Ekspedisi Lainnya'
-            ? (formCustomJasaKirimStore.trim() || 'Kurir Internal')
+        : ((formJasaKirimStore === 'Custom / Ekspedisi Lainnya' || formJasaKirimStore === '+ Ketik Jasa Kirim Lainnya (Manual)')
+            ? (formCustomJasaKirimStore.trim() || 'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)')
             : formJasaKirimStore);
 
       const initialLog: AlterationFlowLog = {
@@ -1171,7 +1159,7 @@ _WMS Warehouse & Alteration System_`;
                     </p>
                   </div>
 
-                  {formJasaKirimStore === 'Custom / Ekspedisi Lainnya' ? (
+                  {formJasaKirimStore === 'Custom / Ekspedisi Lainnya' || formJasaKirimStore === '+ Ketik Jasa Kirim Lainnya (Manual)' ? (
                     <div>
                       <label className="block text-[11px] font-bold text-rose-900 dark:text-rose-300 mb-1">
                         Nama Ekspedisi Custom *
@@ -1277,7 +1265,7 @@ _WMS Warehouse & Alteration System_`;
                     </select>
                   </div>
 
-                  {formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' ? (
+                  {formJasaKirimCustomer === 'Custom / Ekspedisi Lainnya' || formJasaKirimCustomer === '+ Ketik Jasa Kirim Lainnya (Manual)' ? (
                     <div>
                       <label className="block text-[11px] font-bold text-purple-900 dark:text-purple-300 mb-1">
                         Nama Ekspedisi Custom *
@@ -1373,113 +1361,162 @@ _WMS Warehouse & Alteration System_`;
                   )}
                 </div>
 
-                {/* Dropsearch Katalog per Item */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
+                {/* Selection Mode: Katalog Search vs Produk Seri Lama / Manual */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                      <Search className="w-3 h-3 text-rose-500" />
-                      <span>Cari dari Katalog (Dropsearch):</span>
+                      <Tag className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Metode Identifikasi Produk:</span>
                     </label>
-                    <span className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
-                      {allCatalogProducts.length} Produk Tersedia
-                    </span>
-                  </div>
-
-                  <div className="relative">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={item.catalogSearch || ''}
-                        onChange={(e) =>
+                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() =>
                           handleUpdateItem(idx, {
-                            catalogSearch: e.target.value,
-                            showDropdown: true,
+                            isManualProduct: false,
                           })
                         }
-                        onFocus={() => handleUpdateItem(idx, { showDropdown: true })}
-                        placeholder={`Ketik SKU / Nama produk #${idx + 1} untuk dropsearch...`}
-                        className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs focus:border-rose-500 focus:outline-none shadow-2xs"
-                      />
-                      {item.catalogSearch && (
-                        <button
-                          type="button"
-                          onClick={() =>
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                          !item.isManualProduct
+                            ? 'bg-rose-500 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        <Search className="w-3 h-3" />
+                        <span>Cari Katalog ({allCatalogProducts.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleUpdateItem(idx, {
+                            isManualProduct: true,
+                            sku: item.sku || 'PRODUK-LAMA',
+                            nama_produk: item.nama_produk || 'Produk Seri Lama (Deskripsi Manual)',
+                            showDropdown: false,
+                          })
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                          item.isManualProduct
+                            ? 'bg-amber-500 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                        title="Pilih jika produk merupakan stok/koleksi lama yang tidak diketahui nama resminya"
+                      >
+                        <HelpCircle className="w-3 h-3" />
+                        <span>Produk Seri Lama / Non-Katalog</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Callout Info untuk Produk Seri Lama */}
+                  {item.isManualProduct ? (
+                    <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-900 dark:text-amber-200 space-y-1 animate-in fade-in">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                        <HelpCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Opsi Produk Seri Lama / Tidak Terdaftar di Katalog</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                        Digunakan jika pakaian merupakan koleksi lama di mana nama resmi / artikel spesifik tidak diketahui PIC store. Silakan tulis deskripsi bebas ciri fisik pakaian (misal: <em>&quot;Atasan Merah Motif Bunga - Seri Lama 2021&quot;</em>), tentukan ukuran, dan wajib lampirkan foto pakaian agar tim penjahit &amp; gudang mudah mengenalinya.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={item.catalogSearch || ''}
+                          onChange={(e) =>
                             handleUpdateItem(idx, {
-                              catalogSearch: '',
-                              showDropdown: false,
+                              catalogSearch: e.target.value,
+                              showDropdown: true,
                             })
                           }
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+                          onFocus={() => handleUpdateItem(idx, { showDropdown: true })}
+                          placeholder={`Ketik SKU / Nama produk #${idx + 1} untuk dropsearch...`}
+                          className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs focus:border-rose-500 focus:outline-none shadow-2xs"
+                        />
+                        {item.catalogSearch && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleUpdateItem(idx, {
+                                catalogSearch: '',
+                                showDropdown: false,
+                              })
+                            }
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
 
-                    {/* Floating Dropdown */}
-                    {item.showDropdown && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
-                        <div className="sticky top-0 bg-slate-100 dark:bg-slate-950 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center select-none">
-                          <span>Pilih Produk ({allCatalogProducts.filter((p) => {
+                      {/* Floating Dropdown */}
+                      {item.showDropdown && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
+                          <div className="sticky top-0 bg-slate-100 dark:bg-slate-950 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center select-none">
+                            <span>Pilih Produk ({allCatalogProducts.filter((p) => {
+                              if (!item.catalogSearch) return true;
+                              const q = item.catalogSearch.toLowerCase();
+                              return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
+                            }).length})</span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateItem(idx, { showDropdown: false })}
+                              className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                            >
+                              Tutup [×]
+                            </button>
+                          </div>
+
+                          {allCatalogProducts
+                            .filter((p) => {
+                              if (!item.catalogSearch) return true;
+                              const q = item.catalogSearch.toLowerCase().trim();
+                              return (
+                                (p.n || p.p || '').toLowerCase().includes(q) ||
+                                (p.k || '').toLowerCase().includes(q) ||
+                                (p.category || '').toLowerCase().includes(q)
+                              );
+                            })
+                            .slice(0, 20)
+                            .map((p, pIdx) => (
+                              <div
+                                key={`${p.k}_${p.size || ''}_${pIdx}`}
+                                onClick={() => handleSelectItemCatalog(idx, p)}
+                                className="p-2.5 hover:bg-rose-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors"
+                              >
+                                <div className="space-y-0.5 pr-2">
+                                  <div className="font-bold text-slate-800 dark:text-white text-xs">
+                                    {p.n || p.p || 'Produk Pakaian'}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                    <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">{p.k}</span>
+                                    {p.size && p.size !== '-' && <span>• Size: <strong>{String(p.size)}</strong></span>}
+                                    {p.category && <span>• {String(p.category)}</span>}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950 px-2 py-1 rounded-lg shrink-0">
+                                  Pilih
+                                </span>
+                              </div>
+                            ))}
+
+                          {allCatalogProducts.filter((p) => {
                             if (!item.catalogSearch) return true;
                             const q = item.catalogSearch.toLowerCase();
                             return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
-                          }).length})</span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItem(idx, { showDropdown: false })}
-                            className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
-                          >
-                            Tutup [×]
-                          </button>
-                        </div>
-
-                        {allCatalogProducts
-                          .filter((p) => {
-                            if (!item.catalogSearch) return true;
-                            const q = item.catalogSearch.toLowerCase().trim();
-                            return (
-                              (p.n || p.p || '').toLowerCase().includes(q) ||
-                              (p.k || '').toLowerCase().includes(q) ||
-                              (p.category || '').toLowerCase().includes(q)
-                            );
-                          })
-                          .slice(0, 20)
-                          .map((p, pIdx) => (
-                            <div
-                              key={`${p.k}_${p.size || ''}_${pIdx}`}
-                              onClick={() => handleSelectItemCatalog(idx, p)}
-                              className="p-2.5 hover:bg-rose-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors"
-                            >
-                              <div className="space-y-0.5 pr-2">
-                                <div className="font-bold text-slate-800 dark:text-white text-xs">
-                                  {p.n || p.p || 'Produk Pakaian'}
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                                  <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">{p.k}</span>
-                                  {p.size && p.size !== '-' && <span>• Size: <strong>{String(p.size)}</strong></span>}
-                                  {p.category && <span>• {String(p.category)}</span>}
-                                </div>
-                              </div>
-                              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950 px-2 py-1 rounded-lg shrink-0">
-                                Pilih
-                              </span>
+                          }).length === 0 && (
+                            <div className="p-3 text-center text-slate-400 text-xs">
+                              Tidak ditemukan produk untuk &ldquo;{item.catalogSearch}&rdquo;. Silakan klik tombol <strong>Produk Seri Lama / Non-Katalog</strong> di atas untuk mengisi deskripsi produk secara manual.
                             </div>
-                          ))}
-
-                        {allCatalogProducts.filter((p) => {
-                          if (!item.catalogSearch) return true;
-                          const q = item.catalogSearch.toLowerCase();
-                          return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
-                        }).length === 0 && (
-                          <div className="p-3 text-center text-slate-400 text-xs">
-                            Tidak ditemukan produk untuk &ldquo;{item.catalogSearch}&rdquo;. Silakan ketik nama produk manual di bawah.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Detail Nama Produk, SKU, Size, Qty */}

@@ -480,6 +480,9 @@ _WMS Warehouse System_`;
               const picStore = sInfo.pic || arData?.pic_pemohon || arData?.pic_kirim_store || ord.pic_store || ord.submitted_by || 'PIC Store';
               const kurirStore = arData?.kurir_kirim_store || ord.jasa_kirim || 'Kurir Toko / Ekspedisi';
               const resiStore = arData?.resi_kirim_store || ord.no_resi || '-';
+              const targetSelesai = (arData as any)?.tanggal_target
+                ? new Date((arData as any).tanggal_target).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+                : ((ord as any).estimasi_selesai || '-');
               const ordQr = qrMap[ord.no_pesanan || (ord as any).id || ''] || '';
 
               const item = ord.items?.[0];

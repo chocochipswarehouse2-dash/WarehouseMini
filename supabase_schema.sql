@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS public.wms_users (
   role TEXT NOT NULL DEFAULT 'Operator',
   permissions JSONB DEFAULT '{}'::jsonb,
   nik VARCHAR(50),
+  no_hp VARCHAR(50),
+  email VARCHAR(150),
+  store_code VARCHAR(50),
+  store_name VARCHAR(150),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
