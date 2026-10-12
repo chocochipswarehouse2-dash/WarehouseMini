@@ -258,11 +258,11 @@ export function getSupabaseClient(): SupabaseClient {
 export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   const l = (lokasi || '').trim().toUpperCase();
   if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
-  if (/^(CC|PMK|DF)\d{3}$/.test(l)) return 'Perbaikan';
-  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l)) return 'Blok F';
+  if (/^(CC|PMK|DF)\d{3}$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI')) return 'Perbaikan';
+  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO')) return 'Blok F';
   if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
   if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
-  if (/^X\d{3}$/.test(l)) return 'Transit';
+  if (/^X\d{3}$/.test(l) || l === 'TRANSIT') return 'Transit';
   return 'Anomali';
 }
 
@@ -1603,7 +1603,18 @@ export async function syncPendingStockOpnameFromLogProduk(
             if (!locationStockMap.has(locKey)) {
               locationStockMap.set(locKey, new Map());
             }
-            locationStockMap.get(locKey)!.set(skuKey, s);
+            const existing = locationStockMap.get(locKey)!.get(skuKey);
+            const rowStock = Number(s.sisa_stok) || 0;
+            if (existing) {
+              existing.sisa_stok = (Number(existing.sisa_stok) || 0) + rowStock;
+              existing.area = getAreaFromLokasi(locKey);
+            } else {
+              locationStockMap.get(locKey)!.set(skuKey, {
+                ...s,
+                sisa_stok: rowStock,
+                area: getAreaFromLokasi(locKey),
+              });
+            }
           }
         }
       }
@@ -1916,7 +1927,19 @@ export async function processStockOpnameCsvImport(
       const sysMap = new Map<string, StockRealtimeItem>();
       if (Array.isArray(sysRows)) {
         for (const s of sysRows) {
-          sysMap.set((s.sku || '').trim().toUpperCase(), s);
+          const skuKey = (s.sku || '').trim().toUpperCase();
+          const existing = sysMap.get(skuKey);
+          const rowStock = Number(s.sisa_stok) || 0;
+          if (existing) {
+            existing.sisa_stok = (Number(existing.sisa_stok) || 0) + rowStock;
+            existing.area = getAreaFromLokasi(lokasi);
+          } else {
+            sysMap.set(skuKey, {
+              ...s,
+              sisa_stok: rowStock,
+              area: getAreaFromLokasi(lokasi),
+            });
+          }
         }
       }
 

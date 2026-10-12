@@ -663,7 +663,15 @@ CREATE OR REPLACE VIEW public.stok_real_fisik AS
 SELECT 
   lp.sku,
   lp.lokasi,
-  lp.area,
+  CASE 
+    WHEN UPPER(TRIM(lp.lokasi)) IN ('TIKTOK', 'SHOPEE', 'STUDIO') THEN 'Blok F'
+    WHEN UPPER(TRIM(lp.lokasi)) ~ '^[ABCD][0-9]{3}$' THEN 'Warehouse'
+    WHEN UPPER(TRIM(lp.lokasi)) ~ '^(CC|PMK|DF)[0-9]{3}$' THEN 'Perbaikan'
+    WHEN UPPER(TRIM(lp.lokasi)) ~ '^(BELT|CARD|GIFT|BOX)[0-9]{3}$' THEN 'Aksesoris'
+    WHEN UPPER(TRIM(lp.lokasi)) ~ '^[RVZ][0-9]{3}$' THEN 'Kolian'
+    WHEN UPPER(TRIM(lp.lokasi)) ~ '^X[0-9]{3}$' OR UPPER(TRIM(lp.lokasi)) = 'TRANSIT' THEN 'Transit'
+    ELSE COALESCE(MAX(lp.area), 'Warehouse')
+  END as area,
   MAX(lp.nama_produk) as nama_produk,
   MAX(lp.size) as size,
   SUM(
@@ -675,7 +683,7 @@ SELECT
   ) as sisa_stok,
   MAX(lp.created_at) as updated_at
 FROM public.log_produk lp
-GROUP BY lp.sku, lp.lokasi, lp.area
+GROUP BY lp.sku, lp.lokasi
 HAVING SUM(
   CASE 
     WHEN lp.type IN ('IN', 'ADJ_IN') THEN lp.qty

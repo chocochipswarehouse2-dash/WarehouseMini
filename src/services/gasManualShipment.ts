@@ -437,9 +437,11 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
   }
 }
 
-export async function updateShipmentStatus(id: string, status: string): Promise<boolean> {
+export async function updateShipmentStatus(idOrNoPesanan: string, status: string): Promise<boolean> {
   try {
-    await supabaseFetch('manual_shipment', 'PATCH', { status }, `id=eq.${id}`);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNoPesanan);
+    const filter = isUuid ? `id=eq.${idOrNoPesanan}` : `no_pesanan=eq.${encodeURIComponent(idOrNoPesanan)}`;
+    await supabaseFetch('manual_shipment', 'PATCH', { status }, filter);
     return true;
   } catch (err) {
     console.warn('Error updateShipmentStatus', err);
@@ -447,7 +449,7 @@ export async function updateShipmentStatus(id: string, status: string): Promise<
   }
 }
 
-export async function updateShipmentResi(id: string, resi: string, timestamp?: string): Promise<boolean> {
+export async function updateShipmentResi(idOrNoPesanan: string, resi: string, timestamp?: string): Promise<boolean> {
   try {
     const payload: any = { 
       no_resi: resi,
@@ -456,7 +458,9 @@ export async function updateShipmentResi(id: string, resi: string, timestamp?: s
     if (timestamp) {
       payload.tanggal_scan = timestamp;
     }
-    await supabaseFetch('manual_shipment', 'PATCH', payload, `id=eq.${id}`);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNoPesanan);
+    const filter = isUuid ? `id=eq.${idOrNoPesanan}` : `no_pesanan=eq.${encodeURIComponent(idOrNoPesanan)}`;
+    await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
     return true;
   } catch (err) {
     console.warn('Error updateShipmentResi', err);
@@ -643,7 +647,11 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     delete patchPayload.tgl_cetak_picking;
     delete patchPayload.tgl_cetak_label;
 
-    await supabaseFetch('manual_shipment', 'PATCH', patchPayload, `id=eq.${payload.id}`);
+    const idOrNo = payload.id || payload.no_pesanan;
+    const isUuid = idOrNo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
+    const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo || '')}`;
+
+    await supabaseFetch('manual_shipment', 'PATCH', patchPayload, filter);
     return { success: true, message: 'Berhasil mengupdate data' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal mengupdate data' };
@@ -702,27 +710,28 @@ export async function updateJadwalKirimStore(
  */
 export async function updateOrderPrintStatus(
   orderIds: string[],
-  type: 'picking' | 'label'
+  type: 'picking' | 'label' | 'spk'
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const orders = await fetchManualShipments();
     const now = new Date().toISOString();
+    await Promise.all(
+      orderIds.map(async (idOrNo) => {
+        try {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
+          const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo)}`;
 
-    for (const id of orderIds) {
-      const order = orders.find(o => o.id === id || o.no_pesanan === id);
-      if (!order) continue;
-
-      const updatedOrder: ManualShipmentOrder = {
-        ...order,
-        status: order.status === 'diterima' ? 'diproses' : order.status,
-        is_picking_printed: type === 'picking' ? true : order.is_picking_printed,
-        is_label_printed: type === 'label' ? true : order.is_label_printed,
-        tgl_cetak_picking: type === 'picking' ? now : order.tgl_cetak_picking,
-        tgl_cetak_label: type === 'label' ? now : order.tgl_cetak_label,
-      };
-
-      await editManualShipment(updatedOrder);
-    }
+          // Update status ke diproses jika saat ini statusnya masih diterima (atau kosong)
+          // Menggunakan conditional filter agar tidak menimpa status yang sudah dikirim / selesai
+          try {
+            await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=in.(diterima,pending)`);
+          } catch {
+            await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=eq.diterima`);
+          }
+        } catch (e) {
+          console.warn('Silent skip order print status patch for', idOrNo, e);
+        }
+      })
+    );
     return { success: true, message: 'Status cetak berhasil diperbarui' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal memperbarui status cetak' };

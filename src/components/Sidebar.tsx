@@ -609,7 +609,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* 1. MOBILE SLIDE-OVER DRAWER (HANDPHONE & TABLET) */}
       {/* ========================================================================= */}
       <div
-        className={`fixed inset-0 z-50 lg:hidden transition-all duration-300 ${
+        className={`fixed inset-0 z-50 lg:hidden print:hidden transition-all duration-300 ${
           isMobileOpen ? 'visible pointer-events-auto' : 'invisible pointer-events-none'
         }`}
       >
@@ -704,7 +704,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* 2. DESKTOP PERMANENT / COLLAPSIBLE SIDEBAR */}
       {/* ========================================================================= */}
       <aside
-        className={`hidden lg:flex flex-col justify-between bg-white dark:bg-[#131d31] border-r border-slate-200 dark:border-slate-800 sticky top-0 h-screen transition-all duration-300 z-30 shrink-0 select-none shadow-xs ${
+        className={`hidden lg:flex print:hidden flex-col justify-between bg-white dark:bg-[#131d31] border-r border-slate-200 dark:border-slate-800 sticky top-0 h-screen transition-all duration-300 z-30 shrink-0 select-none shadow-xs ${
           isCollapsed ? 'w-[70px]' : 'w-64'
         }`}
       >

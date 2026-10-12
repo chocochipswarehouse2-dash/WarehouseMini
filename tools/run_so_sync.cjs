@@ -4,16 +4,12 @@ const client = createClient('https://ilhqerecxbywqrhfpbbc.supabase.co', 'sb_publ
 function getAreaFromLokasi(lokasi) {
   if (!lokasi) return 'Warehouse';
   const l = lokasi.toUpperCase().trim();
-  if (l.startsWith('PMK') || l.startsWith('P-') || l.includes('PERBAIKAN')) return 'Perbaikan';
-  if (l.includes('STUDIO')) return 'Studio';
-  if (l.includes('LIVE')) return 'Barang Live';
-  if (l.startsWith('A')) return 'Blok A';
-  if (l.startsWith('B')) return 'Blok B';
-  if (l.startsWith('C')) return 'Blok C';
-  if (l.startsWith('D')) return 'Blok D';
-  if (l.startsWith('E')) return 'Blok E';
-  if (l.startsWith('F') || l.includes('SHOPEE') || l.includes('TIKTOK')) return 'Blok F';
-  if (l.startsWith('G')) return 'Blok G';
+  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
+  if (/^(CC|PMK|DF)\d{3}$/.test(l) || l.includes('PERBAIKAN')) return 'Perbaikan';
+  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO')) return 'Blok F';
+  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
+  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
+  if (/^X\d{3}$/.test(l) || l === 'TRANSIT') return 'Transit';
   return 'Warehouse';
 }
 
@@ -112,7 +108,18 @@ async function runSync() {
         const lKey = (s.lokasi || '').trim().toUpperCase();
         const skuKey = (s.sku || '').trim().toUpperCase();
         if (!locationStockMap.has(lKey)) locationStockMap.set(lKey, new Map());
-        locationStockMap.get(lKey).set(skuKey, s);
+        const existing = locationStockMap.get(lKey).get(skuKey);
+        const rowStock = Number(s.sisa_stok) || 0;
+        if (existing) {
+          existing.sisa_stok = (Number(existing.sisa_stok) || 0) + rowStock;
+          existing.area = getAreaFromLokasi(lKey);
+        } else {
+          locationStockMap.get(lKey).set(skuKey, {
+            ...s,
+            sisa_stok: rowStock,
+            area: getAreaFromLokasi(lKey),
+          });
+        }
       });
     }
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -613,11 +613,13 @@ ${order.notes_paket ? `\n📝 *Catatan Paket:* ${order.notes_paket}` : ''}
 
 _WMS Warehouse System_`;
   };
+  const [spkPaperSize, setSpkPaperSize] = useState<'100x150' | 'A4'>('100x150');
   const [printPayload, setPrintPayload] = useState<{
     mode: 'LABEL' | 'PICKING' | 'ALTER_WORK_ORDER';
     orders: ManualShipmentOrder[];
     qrMap: Record<string, string>;
     timestamp: number;
+    spkPaperSize?: '100x150' | 'A4';
   } | null>(null);
 
   // Auto-trigger window.print saat payload cetak siap
@@ -1917,11 +1919,22 @@ _WMS Warehouse System_`;
     if (itemsToPrint.length === 0) return;
     
     // Update status to diproses dan tandai picking list sudah dicetak
-    setLoading(true);
     const orderIds = itemsToPrint.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
-    await updateOrderPrintStatus(orderIds, 'picking');
-    loadOrders();
-    setLoading(false);
+    
+    // Update local state immediately for instant responsive UI
+    setOrders(prev => prev.map(o => {
+      const id = o.no_pesanan || (o as any).id;
+      if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
+        return {
+          ...o,
+          status: o.status === 'diterima' ? 'diproses' : o.status,
+          is_picking_printed: true,
+        };
+      }
+      return o;
+    }));
+
+    updateOrderPrintStatus(orderIds, 'picking').catch(err => console.warn('Async print status error:', err));
 
     // Set payload cetak in-page (100% didukung di HP dan desktop)
     setPrintPayload({
@@ -1941,6 +1954,22 @@ _WMS Warehouse System_`;
       onShowToast('Pilih setidaknya satu pesanan dengan kebutuhan alteration', 'warning');
       return;
     }
+
+    // Update status to diproses for alteration orders
+    const orderIds = targetList.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
+    setOrders(prev => prev.map(o => {
+      const id = o.no_pesanan || (o as any).id;
+      if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
+        return {
+          ...o,
+          status: o.status === 'diterima' ? 'diproses' : o.status,
+          is_picking_printed: true,
+        };
+      }
+      return o;
+    }));
+
+    updateOrderPrintStatus(orderIds, 'spk').catch(err => console.warn('Async print status error:', err));
 
     // Generate QR Map for fast scanning on physical ticket
     const qrMap: Record<string, string> = {};
@@ -1963,6 +1992,7 @@ _WMS Warehouse System_`;
       orders: targetList,
       qrMap,
       timestamp: Date.now(),
+      spkPaperSize,
     });
 
     onShowToast(`Menyiapkan cetak SPK Penjahit (${targetList.length} pesanan)`, 'success');
@@ -3038,10 +3068,22 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
       return;
     }
 
-    setLoading(true);
     const orderIds = itemsToPrint.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
-    await updateOrderPrintStatus(orderIds, 'label');
-    loadOrders();
+    
+    // Update local state immediately to 'diproses'
+    setOrders(prev => prev.map(o => {
+      const id = o.no_pesanan || (o as any).id;
+      if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
+        return {
+          ...o,
+          status: o.status === 'diterima' ? 'diproses' : o.status,
+          is_label_printed: true,
+        };
+      }
+      return o;
+    }));
+
+    updateOrderPrintStatus(orderIds, 'label').catch(err => console.warn('Async print status error:', err));
 
     const qrMap: Record<string, string> = {};
     for (const order of itemsToPrint) {
@@ -3081,7 +3123,8 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     const targetOrder = orders.find(o => o.no_pesanan === no_pesanan || (o as any).id === no_pesanan);
     const success = await updateShipmentResi(no_pesanan, cleanResi);
     if (success) {
-      onShowToast('Resi berhasil diupdate', 'success');
+      setOrders(prev => prev.map(o => (o.no_pesanan === no_pesanan || (o as any).id === no_pesanan) ? { ...o, no_resi: cleanResi, status: 'dikirim' } : o));
+      onShowToast('Resi berhasil diupdate & status otomatis berubah menjadi Dikirim', 'success');
 
       // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke Store
       const storePhone = targetOrder?.no_telp_store;
@@ -3633,6 +3676,47 @@ _WMS Warehouse System_`;
     userIsAdmin,
     userAssignedStore,
   ]);
+
+  // Multi-choice Helper: Hitung pesanan terpilih dalam filter saat ini
+  const selectedInFilteredCount = useMemo(() => {
+    return filteredOrders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan)).length;
+  }, [filteredOrders, selectedOrders]);
+
+  const isAllFilteredSelected = filteredOrders.length > 0 && selectedInFilteredCount === filteredOrders.length;
+  const isSomeFilteredSelected = selectedInFilteredCount > 0 && !isAllFilteredSelected;
+
+  const handleSelectAllFiltered = () => {
+    if (filteredOrders.length === 0) return;
+    const newSet = new Set(selectedOrders);
+    filteredOrders.forEach((o) => {
+      if (o.no_pesanan) newSet.add(o.no_pesanan);
+    });
+    setSelectedOrders(newSet);
+    onShowToast(`${filteredOrders.length} pesanan berhasil dipilih`, 'info');
+  };
+
+  const handleUnselectAll = () => {
+    setSelectedOrders(new Set());
+    onShowToast('Semua pilihan pesanan dibatalkan', 'info');
+  };
+
+  const handleToggleSelectAllFiltered = () => {
+    if (filteredOrders.length === 0) return;
+    const allSelected = filteredOrders.every(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
+    const newSet = new Set(selectedOrders);
+    if (allSelected) {
+      filteredOrders.forEach((o) => {
+        if (o.no_pesanan) newSet.delete(o.no_pesanan);
+      });
+      onShowToast('Pilihan pesanan di halaman ini dibatalkan', 'info');
+    } else {
+      filteredOrders.forEach((o) => {
+        if (o.no_pesanan) newSet.add(o.no_pesanan);
+      });
+      onShowToast(`${filteredOrders.length} pesanan berhasil dipilih`, 'info');
+    }
+    setSelectedOrders(newSet);
+  };
 
     // Hitung jumlah order yang memiliki produk Marketplace yang butuh No SJ DealPOS
   const pendingSjCount = useMemo(() => {
@@ -4269,35 +4353,80 @@ _WMS Warehouse System_`;
           )}
         </div>
 
-        {canAction && selectedOrders.size > 0 && (
-          <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-700/80 flex-wrap">
+        {/* Multi-Choice Toolbar: Select All, Unselect All, Live Count & Batch Actions */}
+        <div className="flex items-center justify-between gap-2 pt-2 pb-1 border-t border-slate-200 dark:border-slate-700/80 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                ref={(el) => {
+                  if (el) el.indeterminate = isSomeFilteredSelected;
+                }}
+                className="rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                checked={isAllFilteredSelected}
+                onChange={handleToggleSelectAllFiltered}
+              />
+              <span>
+                {isAllFilteredSelected
+                  ? 'Semua Dipilih'
+                  : isSomeFilteredSelected
+                  ? `${selectedInFilteredCount} Dipilih`
+                  : 'Pilih Semua'}
+              </span>
+            </label>
+
             <button
-              onClick={handlePrintPickingList}
-              className="px-3 py-1.5 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900/60 text-xs font-semibold flex items-center transition-colors cursor-pointer"
+              type="button"
+              onClick={handleSelectAllFiltered}
+              className="px-2.5 py-1 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors cursor-pointer"
+              title="Pilih semua pesanan dalam filter saat ini"
             >
-              <FileText className="w-3.5 h-3.5 mr-1.5" />
-              Cetak Picking ({selectedOrders.size})
+              Pilih Semua ({filteredOrders.length})
             </button>
-            <button
-              onClick={() => handlePrintLabel()}
-              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-semibold flex items-center transition-colors cursor-pointer shadow-xs"
-              title="Cetak Label Paket A6 untuk pesanan yang dipilih"
-            >
-              <Printer className="w-3.5 h-3.5 mr-1.5" />
-              Cetak Label A6 ({selectedOrders.size})
-            </button>
-            {selectedAlterOrders.length > 0 && (
+
+            {selectedOrders.size > 0 && (
               <button
-                onClick={() => handlePrintAlterWorkOrder(selectedAlterOrders)}
-                className="px-3 py-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-xs font-semibold flex items-center transition-colors cursor-pointer shadow-xs animate-in fade-in"
-                title="Cetak Surat Perintah Kerja (SPK) Penjahit & Rincian Alterasi"
+                type="button"
+                onClick={handleUnselectAll}
+                className="px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                title="Batalkan semua pilihan pesanan"
               >
-                <Scissors className="w-3.5 h-3.5 mr-1.5" />
-                Cetak SPK Penjahit ({selectedAlterOrders.length})
+                <X className="w-3 h-3" />
+                <span>Batal Pilih ({selectedOrders.size})</span>
               </button>
             )}
           </div>
-        )}
+
+          {canAction && selectedOrders.size > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={handlePrintPickingList}
+                className="px-3 py-1 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900/60 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1" />
+                Cetak Picking ({selectedOrders.size})
+              </button>
+              <button
+                onClick={() => handlePrintLabel()}
+                className="px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
+                title="Cetak Label Paket A6 untuk pesanan yang dipilih"
+              >
+                <Printer className="w-3.5 h-3.5 mr-1" />
+                Cetak Label A6 ({selectedOrders.size})
+              </button>
+              {selectedAlterOrders.length > 0 && (
+                <button
+                  onClick={() => handlePrintAlterWorkOrder(selectedAlterOrders)}
+                  className="px-3 py-1 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs animate-in fade-in"
+                  title="Cetak Surat Perintah Kerja (SPK) Penjahit & Rincian Alterasi"
+                >
+                  <Scissors className="w-3.5 h-3.5 mr-1" />
+                  Cetak SPK Penjahit ({selectedAlterOrders.length})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       
       <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-900/50">
@@ -4305,16 +4434,17 @@ _WMS Warehouse System_`;
           <table className="min-w-full">
             <thead className="bg-white dark:bg-slate-800/90 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 backdrop-blur-xs">
               <tr>
-                {userIsAdmin && (
+                {canAction && (
                   <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal w-10">
                     <input
                       type="checkbox"
-                      className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
-                      onChange={(e) => {
-                        if (e.target.checked) setSelectedOrders(new Set(filteredOrders.map(o => o.no_pesanan)));
-                        else setSelectedOrders(new Set());
+                      ref={(el) => {
+                        if (el) el.indeterminate = isSomeFilteredSelected;
                       }}
-                      checked={filteredOrders.length > 0 && selectedOrders.size === filteredOrders.length}
+                      className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                      onChange={handleToggleSelectAllFiltered}
+                      checked={isAllFilteredSelected}
+                      title={isAllFilteredSelected ? 'Batalkan semua pilihan' : 'Pilih semua'}
                     />
                   </th>
                 )}
@@ -4335,18 +4465,18 @@ _WMS Warehouse System_`;
             <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={userIsAdmin ? 11 : 9} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                  <td colSpan={canAction ? (userIsAdmin ? 11 : 10) : (userIsAdmin ? 10 : 9)} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
                     {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
                   </td>
                 </tr>
               ) : (
               filteredOrders.map((order) => (
                 <tr key={order.no_pesanan} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                  {userIsAdmin && (
+                  {canAction && (
                     <td className="px-3 py-2.5 whitespace-nowrap align-top">
                       <input
                         type="checkbox"
-                        className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer mt-0.5"
+                        className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer mt-0.5"
                         checked={selectedOrders.has(order.no_pesanan)}
                         onChange={() => toggleSelectOrder(order.no_pesanan)}
                       />
@@ -4742,8 +4872,8 @@ _WMS Warehouse System_`;
                           if (action === 'complete_ship') setAlterActionData({ order, actionType: 'complete_and_ship' });
                           if (action === 'jadwal_store') handleOpenJadwalModal(order);
                           if (action === 'mark_diproses') {
-                            updateShipmentStatus(order.no_pesanan!, 'diproses').then(res => {
-                              if (res.success) {
+                            updateShipmentStatus(order.no_pesanan!, 'diproses').then(ok => {
+                              if (ok) {
                                 onShowToast('Status pesanan diubah ke Sedang Diproses', 'success');
                                 loadOrders();
                               }
@@ -4821,10 +4951,10 @@ _WMS Warehouse System_`;
                 <div key={order.no_pesanan} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col transition-shadow hover:shadow-md">
                   <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start">
                     <div className="flex gap-2 items-start">
-                      {userIsAdmin && (
+                      {canAction && (
                         <input
                           type="checkbox"
-                          className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-blue-500 focus:ring-blue-500 w-4 h-4 cursor-pointer mt-0.5"
+                          className="rounded-sm border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer mt-0.5"
                           checked={selectedOrders.has(order.no_pesanan)}
                           onChange={() => toggleSelectOrder(order.no_pesanan)}
                         />
@@ -5162,8 +5292,8 @@ _WMS Warehouse System_`;
                             if (action === 'spk') setArReceiptOrder(order);
                             if (action === 'jadwal_store') handleOpenJadwalModal(order);
                             if (action === 'mark_diproses') {
-                              updateShipmentStatus(order.no_pesanan!, 'diproses').then(res => {
-                                if (res.success) {
+                              updateShipmentStatus(order.no_pesanan!, 'diproses').then(ok => {
+                                if (ok) {
                                   onShowToast('Status pesanan diubah ke Sedang Diproses', 'success');
                                   loadOrders();
                                 }
@@ -5580,6 +5710,8 @@ _WMS Warehouse System_`;
               <div className="text-xs font-bold truncate">
                 {printPayload.mode === 'LABEL'
                   ? `Siap Cetak Label A6 (${printPayload.orders.length} Paket)`
+                  : printPayload.mode === 'ALTER_WORK_ORDER'
+                  ? `Siap Cetak SPK Penjahit (${printPayload.orders.length} Pesanan)`
                   : `Siap Cetak Picking List (${printPayload.orders.length} Pesanan)`}
               </div>
               <div className="text-[10px] text-slate-300 truncate">
@@ -5588,6 +5720,41 @@ _WMS Warehouse System_`;
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Toggle Ukuran Kertas SPK Penjahit: 100x150 Thermal vs A4 */}
+            {printPayload.mode === 'ALTER_WORK_ORDER' && (
+              <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSpkPaperSize('100x150');
+                    setPrintPayload(prev => prev ? { ...prev, spkPaperSize: '100x150' } : null);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                    (printPayload.spkPaperSize ?? spkPaperSize) === '100x150'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Format Thermal Sticker 100 x 150 mm"
+                >
+                  100x150 (Thermal)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSpkPaperSize('A4');
+                    setPrintPayload(prev => prev ? { ...prev, spkPaperSize: 'A4' } : null);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                    (printPayload.spkPaperSize ?? spkPaperSize) === 'A4'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                  title="Format Kertas HVS A4 Standar"
+                >
+                  A4 (HVS)
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -5615,9 +5782,58 @@ _WMS Warehouse System_`;
         </div>
       )}
 
-      {/* Hidden In-Page Print Area (sama persis dengan arsitektur CetakLabelView yang terbukti bisa via HP) */}
+      {/* Hidden In-Page Print Area dengan Isolasi Total (Anti Bocor Tab / Navigasi) */}
       {printPayload && (
-        <div id="manual-shipment-print-area" className="hidden print:block bg-white w-full text-black">
+        <>
+          <style>{`
+            @media print {
+              body {
+                background: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #manual-shipment-print-area,
+              #manual-shipment-print-area * {
+                visibility: visible !important;
+              }
+              #manual-shipment-print-area {
+                display: block !important;
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                z-index: 999999 !important;
+              }
+              header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], [id^="tab-pesanan-"] {
+                display: none !important;
+                height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+              }
+              @page {
+                size: ${
+                  printPayload.mode === 'LABEL' ||
+                  (printPayload.mode === 'ALTER_WORK_ORDER' && (printPayload.spkPaperSize ?? spkPaperSize) === '100x150')
+                    ? '100mm 150mm'
+                    : 'A4 portrait'
+                };
+                margin: ${
+                  printPayload.mode === 'LABEL' ||
+                  (printPayload.mode === 'ALTER_WORK_ORDER' && (printPayload.spkPaperSize ?? spkPaperSize) === '100x150')
+                    ? '0mm'
+                    : '4mm 6mm'
+                };
+              }
+            }
+          `}</style>
+          <div id="manual-shipment-print-area" className="hidden print:block bg-white w-full text-black">
           {printPayload.mode === 'LABEL' ? (
             printPayload.orders.map((order, orderIdx) => {
               const qrDataUrl = printPayload.qrMap[order.no_pesanan || ''] || '';
@@ -5793,6 +6009,153 @@ _WMS Warehouse System_`;
                 hour: '2-digit',
                 minute: '2-digit'
               });
+
+              const isThermal = (printPayload.spkPaperSize ?? spkPaperSize) === '100x150';
+
+              if (isThermal) {
+                return (
+                  <div
+                    key={order.no_pesanan || oIdx}
+                    className="page-break w-[100mm] h-[148mm] max-h-[148mm] box-border bg-white text-black p-2.5 flex flex-col justify-between overflow-hidden relative border-[2px] border-black"
+                    style={{
+                      pageBreakAfter: oIdx < printPayload.orders.length - 1 ? 'always' : 'auto',
+                      breakAfter: oIdx < printPayload.orders.length - 1 ? 'page' : 'auto',
+                      pageBreakInside: 'avoid',
+                      breakInside: 'avoid',
+                    }}
+                  >
+                    {/* TOP SECTION: KOP, ORDER ID & QR */}
+                    <div className="flex flex-col shrink-0">
+                      <div className="flex justify-between items-center border-b-[2px] border-black pb-1 mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-black tracking-wider uppercase text-black">CHOCOCHIPS</span>
+                          <span className="text-[9px] font-black uppercase bg-black text-white px-1.5 py-0.5 rounded-xs">
+                            SPK PENJAHIT
+                          </span>
+                        </div>
+                        <div className="text-[8px] font-bold text-gray-700 font-mono">
+                          100x150 THERMAL
+                        </div>
+                      </div>
+
+                      {/* No. Pesanan / Tiket & QR Code */}
+                      <div className="flex justify-between items-center bg-gray-50 border border-black p-1.5 rounded-xs mb-1.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[8px] font-bold text-gray-600 uppercase">NO. PESANAN / TIKET</div>
+                          <div className="text-base font-black font-mono tracking-tight text-black truncate">
+                            {order.no_pesanan}
+                          </div>
+                          <div className="text-[8.5px] text-gray-800 mt-0.5 font-medium truncate">
+                            Store: <b>{order.nama_pengirim}</b> {order.pic_store ? `(PIC: ${order.pic_store})` : ''}
+                          </div>
+                          <div className="text-[7.5px] text-gray-600 font-mono">
+                            Tgl Cetak: {todayStr}
+                          </div>
+                        </div>
+                        {qrDataUrl && (
+                          <img
+                            src={qrDataUrl}
+                            alt="QR"
+                            className="w-13 h-13 object-contain shrink-0 ml-1 border border-black/40"
+                          />
+                        )}
+                      </div>
+
+                      {/* Customer & Destination Info */}
+                      <div className="border border-black p-1.5 rounded-xs text-[8.5px] mb-1.5 bg-white space-y-0.5">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Customer:</span>
+                          <span className="font-black text-black truncate max-w-[180px]">{order.nama_tujuan || '-'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">No. HP:</span>
+                          <span className="font-bold font-mono text-black">{order.no_telp_tujuan || '-'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Kirim / Tujuan:</span>
+                          <span className="font-bold text-black">{order.jasa_kirim || '-'}</span>
+                        </div>
+                        {order.notes_paket && (
+                          <div className="pt-0.5 border-t border-dashed border-gray-300 text-[8px] text-gray-800 truncate">
+                            <b>Catatan:</b> {order.notes_paket}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* MIDDLE SECTION: INSTRUKSI ALTERASI PENJAHIT */}
+                    <div className="flex-1 overflow-hidden flex flex-col justify-start my-0.5">
+                      <div className="text-[8.5px] font-black uppercase tracking-wider bg-black text-white px-1.5 py-0.5 mb-1 flex justify-between items-center">
+                        <span>✂️ INSTRUKSI PENJAHIT</span>
+                        <span className="text-[7.5px] font-normal">{alterItems.length} Produk</span>
+                      </div>
+
+                      <div className="space-y-1 overflow-hidden">
+                        {alterItems.slice(0, 3).map((item, itIdx) => {
+                          const alterId = item.id_form_alter || (isAr ? order.no_pesanan : 'ALT-AUTO');
+                          const instruction = item.alteration_detail || (isAr ? (arData?.alteration_detail || order.alteration_detail) : '-') || '-';
+
+                          return (
+                            <div key={itIdx} className="border border-black p-1 rounded-xs bg-white text-[8.5px]">
+                              <div className="flex justify-between items-start gap-1">
+                                <div className="font-black text-[9px] text-black truncate flex-1">
+                                  {item.nama_produk}
+                                </div>
+                                <div className="font-mono font-black text-[8px] bg-gray-100 px-1 border border-black/40 shrink-0">
+                                  {alterId}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 text-[8px] text-gray-700 mt-0.5 font-medium">
+                                <span>SKU: <b>{item.sku || '-'}</b></span>
+                                <span>Size: <b>{item.size || '-'}</b></span>
+                                <span>Qty: <b>{item.qty || 1} Pcs</b></span>
+                              </div>
+                              <div className="mt-0.5 p-1 bg-gray-50 border border-black font-black text-[8.5px] leading-tight text-black">
+                                👉 {instruction}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {alterItems.length > 3 && (
+                          <div className="text-[7.5px] italic text-center font-bold text-gray-600">
+                            + {alterItems.length - 3} produk lainnya
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* BOTTOM SECTION: TANDA TANGAN / QC */}
+                    <div className="shrink-0 border-t-[2px] border-black pt-1">
+                      <div className="grid grid-cols-3 gap-1 text-center text-[7.5px]">
+                        <div className="border border-black p-0.5 rounded-xs">
+                          <div className="font-bold text-gray-800">1. PENJAHIT</div>
+                          <div className="h-4"></div>
+                          <div className="border-t border-dotted border-gray-400 font-mono text-[7px] pt-0.5">
+                            Tgl: ___/___
+                          </div>
+                        </div>
+                        <div className="border border-black p-0.5 rounded-xs">
+                          <div className="font-bold text-gray-800">2. SELESAI</div>
+                          <div className="h-4"></div>
+                          <div className="border-t border-dotted border-gray-400 font-mono text-[7px] pt-0.5">
+                            Paraf: ( &nbsp; )
+                          </div>
+                        </div>
+                        <div className="border border-black p-0.5 rounded-xs">
+                          <div className="font-bold text-gray-800">3. QC FITTING</div>
+                          <div className="h-4"></div>
+                          <div className="border-t border-dotted border-gray-400 font-mono text-[7px] pt-0.5">
+                            Pass [ &nbsp; ]
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-[7px] text-center text-gray-600 mt-0.5 font-mono">
+                        WMS Chocochips • Tempelkan label ini pada fisik pakaian
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div
@@ -6124,6 +6487,7 @@ _WMS Warehouse System_`;
             })()
           )}
         </div>
+        </>
       )}
 
 

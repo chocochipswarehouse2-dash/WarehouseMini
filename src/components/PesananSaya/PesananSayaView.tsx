@@ -72,7 +72,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   return (
     <div className="flex flex-col space-y-3 pb-8">
       {/* Header & Tabs Style Quality Control - Hemat Area Kerja & Rapi di HP */}
-      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0">
+      <div className="bg-slate-100/90 dark:bg-[#09090b]/90 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs shrink-0 print:hidden">
         <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
           {tabs.map((tab) => {
             const Icon = tab.icon;

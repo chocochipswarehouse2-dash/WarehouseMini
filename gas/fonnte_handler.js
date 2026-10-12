@@ -43,13 +43,14 @@ function supabaseApiFetch(endpoint, method, payload) {
 
 function getArea(lokasi) {
   var l = String(lokasi || '').trim().toUpperCase();
+  if (!l) return 'Warehouse';
   if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
-  if (/^(CC|PMK|DF)\d{3}$/.test(l)) return 'Perbaikan';
-  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l)) return 'Blok F';
+  if (/^(CC|PMK|DF)\d{3}$/.test(l) || l.indexOf('PERBAIKAN') > -1 || l.indexOf('CUCI') > -1) return 'Perbaikan';
+  if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.indexOf('BLOK F') > -1 || l.indexOf('SHOPEE') > -1 || l.indexOf('TIKTOK') > -1 || l.indexOf('STUDIO') > -1) return 'Blok F';
   if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
   if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
-  if (/^X\d{3}$/.test(l)) return 'Transit';
-  return 'Anomali';
+  if (/^X\d{3}$/.test(l) || l === 'TRANSIT') return 'Transit';
+  return 'Warehouse';
 }
 
 function generateInvoice() {

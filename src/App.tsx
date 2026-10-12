@@ -1681,10 +1681,11 @@ export default function App() {
       {/* Main App Container (Page Content) */}
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Desktop PWA Hint Banner (Shown on PC when opened in regular browser tab) */}
-        <DesktopPwaBanner onOpenInstallModal={() => setIsApkModalOpen(true)} />
-
-        {/* Offline Connection & Work Protection Banner */}
-        <OfflineProtectionBar onNotify={(msg, type) => showToast(msg, type)} />
+        <div className="print:hidden">
+          <DesktopPwaBanner onOpenInstallModal={() => setIsApkModalOpen(true)} />
+          {/* Offline Connection & Work Protection Banner */}
+          <OfflineProtectionBar onNotify={(msg, type) => showToast(msg, type)} />
+        </div>
 
         {/* Floating Mobile Sidebar Toggle */}
         <button
