@@ -2,8 +2,14 @@ import { UserSession, UserPermissions, ActivePage } from '../types';
 
 export const isSuperadmin = (session: UserSession | null): boolean => {
   if (!session) return false;
-  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
   const user = String(session.username || '').trim().toLowerCase();
+  
+  // Akun outlet / store (seperti chococpj, chocogaia, chocobts, dll.) adalah akun toko, bukan superadmin gudang
+  if (user.startsWith('choco') && user !== 'chocoadm') return false;
+  const div = String(session.divisi || '').trim().toLowerCase();
+  if (div === 'store' || div === 'outlet') return false;
+
+  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
   const email = String(session.email || '').trim().toLowerCase();
   const nik = String(session.nik || '').trim().toLowerCase();
 

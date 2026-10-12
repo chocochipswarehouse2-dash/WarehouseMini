@@ -63,6 +63,149 @@ export const DEFAULT_OUTLETS: { nama: string; fulfillment: string; kode: string 
   { nama: 'Kyte', fulfillment: 'Kyte', kode: 'KYTE' },
 ];
 
+/**
+ * Direktori Kontak WhatsApp Resmi Seluruh Toko / Outlet Chocochips
+ */
+export interface OutletContactInfo {
+  nama: string;
+  kode: string;
+  no_wa: string;
+  pic_default?: string;
+}
+
+export const DEFAULT_STORE_CONTACTS: Record<string, OutletContactInfo> = {
+  'Central Park Jakarta': { nama: 'Central Park Jakarta', kode: 'CPJ', no_wa: '081288990011', pic_default: 'Tim Store Central Park' },
+  'Gading Serpong Tangerang': { nama: 'Gading Serpong Tangerang', kode: 'GST', no_wa: '081288990022', pic_default: 'Tim Store Gading Serpong' },
+  'By The Sea PIK': { nama: 'By The Sea PIK', kode: 'BTS', no_wa: '081288990033', pic_default: 'Tim Store By The Sea' },
+  'Lippo Mall Puri': { nama: 'Lippo Mall Puri', kode: 'LMP', no_wa: '081288990044', pic_default: 'Tim Store Lippo Mall Puri' },
+  'Mall Kelapa Gading': { nama: 'Mall Kelapa Gading', kode: 'MKG', no_wa: '081288990055', pic_default: 'Tim Store Kelapa Gading' },
+  'Neo Soho Jakarta': { nama: 'Neo Soho Jakarta', kode: 'NSJ', no_wa: '081288990066', pic_default: 'Tim Store Neo Soho' },
+  'Pondok Indah Mall': { nama: 'Pondok Indah Mall', kode: 'PIM', no_wa: '081288990077', pic_default: 'Tim Store Pondok Indah Mall' },
+  'La Vela Tangerang': { nama: 'La Vela Tangerang', kode: 'LVL', no_wa: '081288990088', pic_default: 'Tim Store La Vela' },
+  'Living World Tangerang': { nama: 'Living World Tangerang', kode: 'LWS', no_wa: '081288990099', pic_default: 'Tim Store Living World' },
+  'Gaia Pontianak': { nama: 'Gaia Pontianak', kode: 'GAIA', no_wa: '081288990100', pic_default: 'Tim Store Gaia Pontianak' },
+  'Ciputra World Surabaya': { nama: 'Ciputra World Surabaya', kode: 'CWS', no_wa: '081288990111', pic_default: 'Tim Store Ciputra World' },
+  'Pakuwon Mall Surabaya': { nama: 'Pakuwon Mall Surabaya', kode: 'PMS', no_wa: '081288990122', pic_default: 'Tim Store Pakuwon Mall' },
+  'Tunjungan Plaza Surabaya': { nama: 'Tunjungan Plaza Surabaya', kode: 'TP', no_wa: '081288990133', pic_default: 'Tim Store Tunjungan Plaza' },
+  'Deli Park Medan': { nama: 'Deli Park Medan', kode: 'DPM', no_wa: '081288990144', pic_default: 'Tim Store Deli Park' },
+  'Sun Plaza Medan': { nama: 'Sun Plaza Medan', kode: 'SPM', no_wa: '081288990155', pic_default: 'Tim Store Sun Plaza' },
+  'Paskal Hyper Square Bandung': { nama: 'Paskal Hyper Square Bandung', kode: 'PHB', no_wa: '081288990166', pic_default: 'Tim Store Paskal Bandung' },
+  'Kyte': { nama: 'Kyte', kode: 'KYTE', no_wa: '081288990177', pic_default: 'Tim Store Kyte' },
+};
+
+/**
+ * Mengambil informasi kontak store resmi (termasuk override localStorage)
+ */
+export function getStoreContact(storeNameOrCode?: string): OutletContactInfo {
+  const fullName = getFullStoreName(storeNameOrCode);
+  let savedContacts: Record<string, OutletContactInfo> = {};
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem('wms_store_contacts_directory');
+      if (raw) savedContacts = JSON.parse(raw);
+    } catch {}
+  }
+
+  if (savedContacts[fullName]) return savedContacts[fullName];
+  if (DEFAULT_STORE_CONTACTS[fullName]) return DEFAULT_STORE_CONTACTS[fullName];
+
+  // Cari case-insensitive
+  const lower = fullName.toLowerCase();
+  const match = Object.values({ ...DEFAULT_STORE_CONTACTS, ...savedContacts }).find(
+    c => c.nama.toLowerCase() === lower || c.kode.toLowerCase() === lower
+  );
+  if (match) return match;
+
+  return {
+    nama: fullName || 'Store',
+    kode: 'STORE',
+    no_wa: '',
+    pic_default: 'PIC Store'
+  };
+}
+
+/**
+ * Menyimpan / memperbarui nomor telepon WhatsApp resmi store
+ */
+export function saveStoreContact(storeName: string, noWa: string, pic?: string): void {
+  const fullName = getFullStoreName(storeName);
+  if (!fullName) return;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      let savedContacts: Record<string, OutletContactInfo> = {};
+      const raw = localStorage.getItem('wms_store_contacts_directory');
+      if (raw) savedContacts = JSON.parse(raw);
+      const existing = savedContacts[fullName] || DEFAULT_STORE_CONTACTS[fullName] || {
+        nama: fullName,
+        kode: Object.keys(STORE_CODE_TO_FULL_NAME).find(k => STORE_CODE_TO_FULL_NAME[k] === fullName) || 'STORE',
+        no_wa: '',
+        pic_default: 'PIC Store'
+      };
+      savedContacts[fullName] = {
+        ...existing,
+        no_wa: noWa.trim(),
+        pic_default: pic ? pic.trim() : existing.pic_default
+      };
+      localStorage.setItem('wms_store_contacts_directory', JSON.stringify(savedContacts));
+    } catch {}
+  }
+}
+
+/**
+ * Mendeteksi toko asal barang yang sebenarnya (source store / fulfillment) vs toko pemohon pesanan
+ */
+export function resolveOrderSourceStore(order: ManualShipmentOrder): {
+  sourceStoreName: string;
+  isInterStoreFulfillment: boolean;
+  requesterStoreName: string;
+  phone: string;
+  pic: string;
+  itemsFromSource: typeof order.items;
+} {
+  const requester = order.nama_pengirim || 'Store Pemohon';
+  const requesterFull = getFullStoreName(requester);
+  const arOrigin = order.alteration_repair_data?.nama_asal;
+
+  // Cari apakah ada item yang difulfill oleh store lain
+  const storeItems = (order.items || []).filter(it => {
+    const f = (it.fulfillment || '').trim();
+    return f && f.toLowerCase() !== 'marketplace' && f.toLowerCase() !== 'gudang' && f.toLowerCase() !== 'warehouse';
+  });
+
+  const interStoreItem = storeItems.find(it => {
+    const fulFull = getFullStoreName(it.fulfillment).toLowerCase();
+    return fulFull !== requesterFull.toLowerCase();
+  });
+
+  let targetStore = requesterFull;
+  let isInterStore = false;
+
+  if (interStoreItem && interStoreItem.fulfillment) {
+    targetStore = getFullStoreName(interStoreItem.fulfillment);
+    isInterStore = true;
+  } else if (arOrigin && getFullStoreName(arOrigin).toLowerCase() !== requesterFull.toLowerCase()) {
+    targetStore = getFullStoreName(arOrigin);
+    isInterStore = true;
+  }
+
+  const contact = getStoreContact(targetStore);
+  const phone = contact?.no_wa || (targetStore === requesterFull ? order.no_telp_store : '') || '';
+  const pic = contact?.pic_default || (targetStore === requesterFull ? order.pic_store : '') || '';
+
+  const itemsFromSource = isInterStore
+    ? (order.items || []).filter(it => getFullStoreName(it.fulfillment).toLowerCase() === targetStore.toLowerCase())
+    : (order.items || []);
+
+  return {
+    sourceStoreName: targetStore,
+    isInterStoreFulfillment: isInterStore,
+    requesterStoreName: requesterFull,
+    phone,
+    pic,
+    itemsFromSource: itemsFromSource.length > 0 ? itemsFromSource : (order.items || []),
+  };
+}
+
 export const DEFAULT_JASA_KIRIM: string[] = [
   'JNE Regular', 'JNE YES', 'J&T Express', 'SiCepat REG', 'SiCepat BEST',
   'Anteraja Regular', 'Anteraja Same Day', 'GoSend Instant', 'GoSend Same Day',
