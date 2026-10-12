@@ -15,7 +15,9 @@ import {
 import { ManualShipmentOrder } from '../../types';
 import {
   resolveOrderSourceStore,
+  resolveOrderFulfillmentStores,
   saveStoreContact,
+  getStoreContact,
   getFullStoreName
 } from '../../services/gasManualShipment';
 import { sendFonnteMessage, getFonnteConfig, normalizeWhatsAppNumber } from '../../services/whatsapp';
@@ -31,20 +33,32 @@ export const WaStoreNoticeModal: React.FC<WaStoreNoticeModalProps> = ({
   onClose,
   onShowToast,
 }) => {
-  const resolved = resolveOrderSourceStore(order);
+  const fulfillmentData = React.useMemo(() => {
+    return resolveOrderFulfillmentStores(order);
+  }, [order]);
 
-  const [targetStore, setTargetStore] = useState(resolved.sourceStoreName);
-  const [phoneNumber, setPhoneNumber] = useState(resolved.phone || '');
+  const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
+
+  const currentGroup = fulfillmentData.groups[selectedGroupIdx] || fulfillmentData.groups[0];
+
+  const targetStore = currentGroup?.storeName || 'Store Outlet';
+  const [phoneNumber, setPhoneNumber] = useState(currentGroup?.phone || '');
   const [isSending, setIsSending] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const requesterStore = resolved.requesterStoreName;
-  const isInterStore = resolved.isInterStoreFulfillment;
-  const items = resolved.itemsFromSource;
+  React.useEffect(() => {
+    if (currentGroup) {
+      setPhoneNumber(currentGroup.phone || '');
+    }
+  }, [currentGroup, selectedGroupIdx]);
+
+  const requesterStore = fulfillmentData.requesterStoreName;
+  const isInterStore = currentGroup?.isInterStore || false;
+  const items = currentGroup?.items || order.items || [];
 
   const itemsText = items.map((it, idx) => {
     const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
-    const fulText = it.fulfillment ? ` [Fulfillment: ${it.fulfillment}]` : '';
+    const fulText = it.fulfillment ? ` [Ambil dari: ${it.fulfillment}]` : '';
     const alterText = it.needs_alteration || it.id_form_alter || it.alteration_detail
       ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
       : '';
@@ -65,7 +79,7 @@ ${isInterStore
 • *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}
 • *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
 
-👕 *Daftar Produk yang Wajib Dikirim dari Store Anda:*
+👕 *Daftar Produk yang Wajib Dikirim dari Store ${targetStore}:*
 ${itemsText || '  1. Produk Pakaian Pesanan'}
 
 🚚 *Tujuan Pengiriman:* WAREHOUSE CHOCOCHIPS (Gudang Pusat)
@@ -110,8 +124,13 @@ _WMS Warehouse System_`;
     try {
       const res = await sendFonnteMessage(cleanPhone, waMessage, fonnteCfg.token);
       if (res.success) {
-        onShowToast(`✅ Notifikasi permintaan kirim berhasil dikirim ke WhatsApp ${targetStore} (${cleanPhone})!`, 'success');
-        onClose();
+        if (fulfillmentData.hasMultipleFulfillments && selectedGroupIdx < fulfillmentData.groups.length - 1) {
+          onShowToast(`✅ Notifikasi berhasil dikirim ke WhatsApp ${targetStore}! Melanjutkan ke store berikutnya...`, 'success');
+          setSelectedGroupIdx(prev => prev + 1);
+        } else {
+          onShowToast(`✅ Notifikasi permintaan kirim berhasil dikirim ke WhatsApp ${targetStore} (${cleanPhone})!`, 'success');
+          onClose();
+        }
       } else {
         onShowToast(`Gagal mengirim via Fonnte: ${res.message || 'Error koneksi'}. Teks telah disalin ke clipboard.`, 'warning');
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -122,6 +141,75 @@ _WMS Warehouse System_`;
       onShowToast(`Error kirim WA: ${e?.message || 'Gagal'}`, 'error');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  // Kirim otomatis ke SEMUA store fulfillment sekaligus (Multi-Store Fulfillment)
+  const handleSendAllFulfillments = async () => {
+    setIsSending(true);
+    const fonnteCfg = getFonnteConfig();
+    let totalSent = 0;
+
+    for (const group of fulfillmentData.groups) {
+      const contact = getStoreContact(group.storeName);
+      const phoneToUse = group.phone || contact?.no_wa || '';
+      const cleanPhone = normalizeWhatsAppNumber(phoneToUse);
+      if (!cleanPhone) continue;
+
+      const itemsTextGrp = (group.items || []).map((it, idx) => {
+        const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
+        const fulText = it.fulfillment ? ` [Ambil dari: ${it.fulfillment}]` : '';
+        const alterText = it.needs_alteration || it.id_form_alter || it.alteration_detail
+          ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
+          : '';
+        return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${fulText}${alterText}`;
+      }).join('\n');
+
+      const msg = `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
+--------------------------------------------------
+Halo Tim *${group.storeName}*,
+${group.isInterStore 
+  ? `Terdapat pesanan penarikan barang dari Store Anda yang diajukan oleh *${requesterStore}* untuk dikirimkan ke Gudang Pusat Chocochips:`
+  : `Terdapat pesanan manual shipment dari Store Anda yang wajib dikirimkan ke Gudang Pusat Chocochips:`}
+
+📋 *Rincian Pesanan:*
+• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Store Pemohon:* ${requesterStore} (PIC: ${order.pic_store || '-'})
+• *Store Penyedia Barang:* ${group.storeName}
+• *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}
+• *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
+
+👕 *Daftar Produk yang Wajib Dikirim dari Store ${group.storeName}:*
+${itemsTextGrp || '  1. Produk Pakaian Pesanan'}
+
+🚚 *Tujuan Pengiriman:* WAREHOUSE CHOCOCHIPS (Gudang Pusat)
+📄 *Dokumen Wajib:*
+Mohon buka sistem WMS, login akun toko *${group.storeName}*, dan cetak *Surat Jalan Kirim (Struk Rangkap 2)*:
+  - Lembar 1: Simpan sebagai arsip bukti pengiriman toko Anda
+  - Lembar 2: Lampirkan pada fisik pakaian / polybag yang dikirim ke gudang.
+
+Mohon segera diproses dan kirimkan fisik barang ke gudang. Terima kasih!
+_WMS Warehouse System_`;
+
+      if (fonnteCfg.token) {
+        try {
+          const res = await sendFonnteMessage(cleanPhone, msg, fonnteCfg.token);
+          if (res.success) {
+            totalSent++;
+            onShowToast(`✅ WA terkirim ke ${group.storeName} (${group.items.length} item)`, 'info');
+          }
+        } catch (e) {
+          console.warn('Batch send error:', e);
+        }
+      }
+    }
+
+    setIsSending(false);
+    if (totalSent > 0) {
+      onShowToast(`🎉 Berhasil mengirim notifikasi WA ke seluruh ${totalSent} Store Fulfillment!`, 'success');
+      onClose();
+    } else {
+      onShowToast('Gagal mengirim otomatis: Fonnte token belum dikonfigurasi atau nomor WA store kosong.', 'warning');
     }
   };
 
@@ -176,6 +264,35 @@ _WMS Warehouse System_`;
 
         {/* Body Modal */}
         <div className="p-5 overflow-y-auto space-y-4">
+          
+          {/* Multi-Fulfillment Selector jika order diambil dari > 1 store */}
+          {fulfillmentData.hasMultipleFulfillments && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Pesanan Diambil dari {fulfillmentData.groups.length} Store Berbeda:</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                {fulfillmentData.groups.map((grp, gIdx) => (
+                  <button
+                    key={grp.storeName}
+                    type="button"
+                    onClick={() => setSelectedGroupIdx(gIdx)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                      selectedGroupIdx === gIdx
+                        ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-400'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>{grp.storeName} ({grp.items.length} item)</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           
           {/* Info Banner Alur Penarikan Antar Store */}
           {isInterStore ? (
@@ -282,45 +399,59 @@ _WMS Warehouse System_`;
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
+        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-col gap-2">
+          {fulfillmentData.hasMultipleFulfillments && (
             <button
               type="button"
-              onClick={handleCopy}
-              className="px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+              disabled={isSending}
+              onClick={handleSendAllFulfillments}
+              className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50 text-xs"
             >
-              <Copy className="w-3.5 h-3.5" />
-              <span>Salin</span>
+              <Send className="w-4 h-4 text-amber-200" />
+              <span>🚀 Kirim WA Notif ke Semua Store Fulfillment ({fulfillmentData.groups.length} Store Sekaligus)</span>
             </button>
+          )}
+
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Salin</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenWaWeb}
+                className="px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Buka Chat WhatsApp langsung di Tab Baru"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Buka WA Web</span>
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={handleOpenWaWeb}
-              className="px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1.5 cursor-pointer"
-              title="Buka Chat WhatsApp langsung di Tab Baru"
+              disabled={isSending}
+              onClick={handleSendFonnte}
+              className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ml-auto"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Buka WA Web</span>
+              {isSending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Mengirim...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Kirim WA ke {targetStore}</span>
+                </>
+              )}
             </button>
           </div>
-
-          <button
-            type="button"
-            disabled={isSending}
-            onClick={handleSendFonnte}
-            className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ml-auto"
-          >
-            {isSending ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Mengirim...</span>
-              </>
-            ) : (
-              <>
-                <Send className="w-3.5 h-3.5" />
-                <span>Kirim WA (Fonnte API)</span>
-              </>
-            )}
-          </button>
         </div>
 
       </div>

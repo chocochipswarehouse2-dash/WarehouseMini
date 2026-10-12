@@ -33,6 +33,7 @@ import {
   updateJadwalKirimStore,
   updateOrderPrintStatus,
   getFullStoreName,
+  isSameStore,
   DEFAULT_OUTLETS,
   OutletItem,
   getStoreContact,
@@ -180,7 +181,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   
   // 3 Tahap Utama Rekap Pesanan: 'baru' | 'diproses' | 'selesai' | 'semua'
-  const [stageTab, setStageTab] = useState<'baru' | 'diproses' | 'selesai' | 'semua'>('baru');
+  const [stageTab, setStageTab] = useState<'baru' | 'diproses' | 'selesai' | 'semua'>('semua');
 
   // Modal Input Jadwal Kirim ke Store
   const [jadwalModalOrder, setJadwalModalOrder] = useState<ManualShipmentOrder | null>(null);
@@ -1565,6 +1566,17 @@ _WMS Warehouse System_`;
                   onClick={() => {
                     setDeliveryMethod('drop_store');
                     setJasaKirim('Drop ke Store Terkait (Pick Up / Handover Store)');
+                    const target = userAssignedStore || (pengirim && !pengirim.toLowerCase().includes('gudang') ? pengirim : '') || dropStoreTarget;
+                    if (target) {
+                      setDropStoreTarget(target);
+                      const contact = getStoreContact(target);
+                      setAlamatTujuan(
+                        `[DROP OFF STORE]: ${target} - ${contact.alamat_store || 'Outlet Store Chocochips'}`
+                      );
+                      if (contact.no_wa && !telpTujuan) {
+                        setTelpTujuan(contact.no_wa);
+                      }
+                    }
                   }}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
                     deliveryMethod === 'drop_store'
@@ -1592,47 +1604,71 @@ _WMS Warehouse System_`;
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-amber-950 dark:text-amber-200 mb-1">
-                      Pilih Store Tujuan Drop Off: *
-                    </label>
-                    <select
-                      value={dropStoreTarget}
-                      onChange={(e) => {
-                        const targetStore = e.target.value;
-                        setDropStoreTarget(targetStore);
-                        if (targetStore) {
-                          const contact = getStoreContact(targetStore);
-                          setAlamatTujuan(
-                            `[DROP OFF STORE]: ${targetStore} - ${contact.alamat_store || 'Outlet Store Chocochips'}`
-                          );
-                          if (contact.no_wa && !telpTujuan) {
-                            setTelpTujuan(contact.no_wa);
+                {(() => {
+                  const effectiveStore = userAssignedStore || (pengirim && !pengirim.toLowerCase().includes('gudang') ? pengirim : '');
+                  return effectiveStore ? (
+                    <div className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 rounded-xl shadow-2xs">
+                      <div className="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-amber-950 dark:text-amber-100">
+                            Store Penyerahan: {effectiveStore}
+                          </span>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 px-2 py-0.2 rounded-full font-bold">
+                            Otomatis Sesuai Akun Login Store
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Customer mengambil barang langsung di outlet {effectiveStore}. Alamat toko dan kontak otomatis terisi tanpa perlu dipilih manual.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-amber-950 dark:text-amber-200 mb-1">
+                        Pilih Store Tujuan Drop Off: *
+                      </label>
+                      <select
+                        value={dropStoreTarget}
+                        onChange={(e) => {
+                          const targetStore = e.target.value;
+                          setDropStoreTarget(targetStore);
+                          if (targetStore) {
+                            const contact = getStoreContact(targetStore);
+                            setAlamatTujuan(
+                              `[DROP OFF STORE]: ${targetStore} - ${contact.alamat_store || 'Outlet Store Chocochips'}`
+                            );
+                            if (contact.no_wa && !telpTujuan) {
+                              setTelpTujuan(contact.no_wa);
+                            }
+                            setJasaKirim('Drop ke Store Terkait (Pick Up / Handover Store)');
                           }
-                          setJasaKirim('Drop ke Store Terkait (Pick Up / Handover Store)');
-                        }
-                      }}
-                      className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 rounded-lg text-slate-900 dark:text-white font-bold text-xs shadow-2xs"
-                      required={deliveryMethod === 'drop_store'}
-                    >
-                      <option value="">-- Pilih Outlet / Store Tujuan --</option>
-                      {outlets.map((o, idx) => (
-                        <option key={idx} value={o.nama}>
-                          {o.nama}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                        }}
+                        className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 rounded-lg text-slate-900 dark:text-white font-bold text-xs shadow-2xs"
+                        required={deliveryMethod === 'drop_store'}
+                      >
+                        <option value="">-- Pilih Outlet / Store Tujuan --</option>
+                        {outlets.map((o, idx) => (
+                          <option key={idx} value={o.nama}>
+                            {o.nama}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div className="flex items-end">
-                    <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed">
-                      Alamat &amp; ekspedisi pengiriman otomatis disesuaikan ke lokasi outlet store tujuan drop off.
-                    </p>
+                    <div className="flex items-end">
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                        Alamat &amp; ekspedisi pengiriman otomatis disesuaikan ke lokasi outlet store tujuan drop off.
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
+                );
+              })()}
+            </div>
+          )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
@@ -3647,56 +3683,60 @@ _WMS Warehouse System_`;
     let result = orders;
     // Proteksi Keamanan: Akun Store hanya boleh melihat pesanan tokonya sendiri
     if (!userIsAdmin && userAssignedStore) {
-      const targetStore = userAssignedStore.toLowerCase().trim();
-      const targetFull = getFullStoreName(userAssignedStore).toLowerCase().trim();
       result = result.filter(o => {
-        const sender = (o.nama_pengirim || '').toLowerCase().trim();
-        const origin = (o.alteration_repair_data?.nama_asal || '').toLowerCase().trim();
-        const senderFull = getFullStoreName(o.nama_pengirim).toLowerCase().trim();
-        const originFull = getFullStoreName(o.alteration_repair_data?.nama_asal).toLowerCase().trim();
-        const hasStoreItem = (o.items || []).some(it => {
-          const ful = (it.fulfillment || '').toLowerCase().trim();
-          const fulFull = getFullStoreName(it.fulfillment).toLowerCase().trim();
-          return ful === targetStore || ful.includes(targetStore) || targetStore.includes(ful) ||
-                 fulFull === targetFull || fulFull.includes(targetFull) || targetFull.includes(fulFull);
-        });
-        return sender === targetStore || sender.includes(targetStore) || targetStore.includes(sender) ||
-               senderFull === targetFull || senderFull.includes(targetFull) || targetFull.includes(senderFull) ||
-               origin === targetStore || origin.includes(targetStore) || targetStore.includes(origin) ||
-               originFull === targetFull || originFull.includes(targetFull) || targetFull.includes(originFull) ||
-               hasStoreItem;
+        const isFromThisStore = isSameStore(o.nama_pengirim, userAssignedStore) ||
+                                isSameStore(o.alteration_repair_data?.nama_asal, userAssignedStore);
+        const hasStoreItem = (o.items || []).some(it => isSameStore(it.fulfillment, userAssignedStore));
+        return isFromThisStore || hasStoreItem;
       });
     } else if (filterStore && filterStore !== 'all') {
-      const targetStore = filterStore.toLowerCase().trim();
-      const targetFull = getFullStoreName(filterStore).toLowerCase().trim();
       result = result.filter(o => {
-        const sender = (o.nama_pengirim || '').toLowerCase().trim();
-        const origin = (o.alteration_repair_data?.nama_asal || '').toLowerCase().trim();
-        const senderFull = getFullStoreName(o.nama_pengirim).toLowerCase().trim();
-        const originFull = getFullStoreName(o.alteration_repair_data?.nama_asal).toLowerCase().trim();
-        const hasStoreItem = (o.items || []).some(it => {
-          const ful = (it.fulfillment || '').toLowerCase().trim();
-          const fulFull = getFullStoreName(it.fulfillment).toLowerCase().trim();
-          return ful === targetStore || ful.includes(targetStore) || targetStore.includes(ful) ||
-                 fulFull === targetFull || fulFull.includes(targetFull) || targetFull.includes(fulFull);
-        });
-        return sender === targetStore || sender.includes(targetStore) || targetStore.includes(sender) ||
-               senderFull === targetFull || senderFull.includes(targetFull) || targetFull.includes(senderFull) ||
-               origin === targetStore || origin.includes(targetStore) || targetStore.includes(origin) ||
-               originFull === targetFull || originFull.includes(targetFull) || targetFull.includes(originFull) ||
-               hasStoreItem;
+        const isFromFilterStore = isSameStore(o.nama_pengirim, filterStore) ||
+                                  isSameStore(o.alteration_repair_data?.nama_asal, filterStore);
+        const hasStoreItem = (o.items || []).some(it => isSameStore(it.fulfillment, filterStore));
+        return isFromFilterStore || hasStoreItem;
       });
     }
     return result;
   }, [orders, userIsAdmin, userAssignedStore, filterStore]);
 
-  // Hitung jumlah pesanan per tahap untuk badges pada Tab Rekap (konsisten dengan scopedOrders)
+  // Helper: Deteksi apakah pesanan dibuat sendiri oleh store yang sedang login
+  const isOrderOutgoingStore = (order: ManualShipmentOrder): boolean => {
+    if (!userAssignedStore) return true;
+    return isSameStore(order.nama_pengirim, userAssignedStore);
+  };
+
+  // Helper: Deteksi apakah pesanan diminta oleh toko lain dan barang difulfill dari store yang sedang login
+  const isOrderIncomingFulfillment = (order: ManualShipmentOrder): boolean => {
+    if (!userAssignedStore) return false;
+    // Jika pesanan dibuat sendiri oleh toko ini, bukan pesanan masuk
+    if (isSameStore(order.nama_pengirim, userAssignedStore)) return false;
+    
+    // Jika toko asal alterasi adalah toko ini
+    if (isSameStore(order.alteration_repair_data?.nama_asal, userAssignedStore)) return true;
+    
+    // Jika salah satu item difulfill dari toko ini
+    const itemsList = Array.isArray(order.items) ? order.items : [];
+    return itemsList.some(it => isSameStore(it.fulfillment, userAssignedStore));
+  };
+
+  const directionScopedOrders = useMemo(() => {
+    if (filterStoreDirection === 'outgoing') {
+      return scopedOrders.filter(o => isOrderOutgoingStore(o));
+    }
+    if (filterStoreDirection === 'incoming') {
+      return scopedOrders.filter(o => isOrderIncomingFulfillment(o));
+    }
+    return scopedOrders;
+  }, [scopedOrders, filterStoreDirection, userAssignedStore]);
+
+  // Hitung jumlah pesanan per tahap untuk badges pada Tab Rekap (konsisten dengan directionScopedOrders)
   const { countBaru, countDiproses, countSelesai } = useMemo(() => {
     let baru = 0;
     let diproses = 0;
     let selesai = 0;
 
-    scopedOrders.forEach(o => {
+    directionScopedOrders.forEach(o => {
       if (o.status === 'batal') return;
       if (isOrderSelesai(o)) selesai++;
       else if (isOrderSedangDiproses(o)) diproses++;
@@ -3704,32 +3744,12 @@ _WMS Warehouse System_`;
     });
 
     return { countBaru: baru, countDiproses: diproses, countSelesai: selesai };
-  }, [scopedOrders]);
+  }, [directionScopedOrders]);
 
-  // Helper: Deteksi apakah pesanan dibuat sendiri oleh store yang sedang login
-  const isOrderOutgoingStore = (order: ManualShipmentOrder): boolean => {
-    if (!userAssignedStore) return true;
-    const targetFull = getFullStoreName(userAssignedStore).toLowerCase().trim();
-    const senderFull = getFullStoreName(order.nama_pengirim).toLowerCase().trim();
-    return senderFull === targetFull;
-  };
-
-  // Helper: Deteksi apakah pesanan diminta oleh toko lain dan barang difulfill dari store yang sedang login
-  const isOrderIncomingFulfillment = (order: ManualShipmentOrder): boolean => {
-    if (!userAssignedStore) return false;
-    const targetFull = getFullStoreName(userAssignedStore).toLowerCase().trim();
-    const senderFull = getFullStoreName(order.nama_pengirim).toLowerCase().trim();
-    if (senderFull === targetFull) return false; // Bukan pesanan masuk karena dibuat sendiri oleh toko ini
-    
-    const originFull = getFullStoreName(order.alteration_repair_data?.nama_asal).toLowerCase().trim();
-    if (originFull === targetFull) return true;
-    
-    const itemsList = Array.isArray(order.items) ? order.items : [];
-    return itemsList.some(it => {
-      const ful = (it.fulfillment || '').toLowerCase().trim();
-      const fulFull = getFullStoreName(it.fulfillment).toLowerCase().trim();
-      return ful === targetFull || fulFull === targetFull;
-    });
+  // Switch filter arah toko sekaligus set stageTab ke 'semua' agar semua pesanan arah tersebut langsung tampil
+  const handleSelectStoreDirection = (dir: 'all' | 'outgoing' | 'incoming') => {
+    setFilterStoreDirection(dir);
+    setStageTab('semua');
   };
 
   // Hitung jumlah pesanan toko sendiri vs permintaan dari toko lain
@@ -4325,7 +4345,7 @@ _WMS Warehouse System_`;
               <div className="inline-flex p-0.5 bg-white dark:bg-slate-900 rounded-lg border border-amber-200 dark:border-amber-800 text-xs font-bold gap-1">
                 <button
                   type="button"
-                  onClick={() => setFilterStoreDirection('all')}
+                  onClick={() => handleSelectStoreDirection('all')}
                   className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                     filterStoreDirection === 'all'
                       ? 'bg-amber-500 text-white shadow-xs font-bold'
@@ -4336,7 +4356,7 @@ _WMS Warehouse System_`;
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFilterStoreDirection('outgoing')}
+                  onClick={() => handleSelectStoreDirection('outgoing')}
                   className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                     filterStoreDirection === 'outgoing'
                       ? 'bg-amber-500 text-white shadow-xs font-bold'
@@ -4347,7 +4367,7 @@ _WMS Warehouse System_`;
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFilterStoreDirection('incoming')}
+                  onClick={() => handleSelectStoreDirection('incoming')}
                   className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
                     filterStoreDirection === 'incoming'
                       ? 'bg-orange-600 text-white shadow-xs font-black'
@@ -4363,7 +4383,7 @@ _WMS Warehouse System_`;
             {countIncoming > 0 && filterStoreDirection !== 'incoming' && (
               <button
                 type="button"
-                onClick={() => setFilterStoreDirection('incoming')}
+                onClick={() => handleSelectStoreDirection('incoming')}
                 className="text-[11px] font-bold text-orange-700 dark:text-orange-300 hover:underline flex items-center gap-1 cursor-pointer bg-orange-100 dark:bg-orange-950/60 px-2 py-0.5 rounded-lg border border-orange-300 dark:border-orange-800"
               >
                 <AlertTriangle className="w-3 h-3 text-orange-600 animate-pulse" />
@@ -4439,7 +4459,7 @@ _WMS Warehouse System_`;
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <span>Semua ({scopedOrders.length})</span>
+              <span>Semua ({directionScopedOrders.length})</span>
             </button>
           </div>
 
@@ -4898,14 +4918,31 @@ _WMS Warehouse System_`;
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Status</th>
                 <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Total Items</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">SJ DealPOS (MKT)</th>
-                <th scope="col" className="px-3 py-2 text-right text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Aksi</th>
+                <th scope="col" className="sticky right-0 z-20 px-3 py-2 text-right text-[11px] font-bold text-slate-700 dark:text-slate-300 capitalize tracking-normal min-w-[270px] pr-4 bg-slate-100/90 dark:bg-slate-900 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.08)] backdrop-blur-xs whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800/80">
               {filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-slate-400">
-                    {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
+                    {searchTerm ? (
+                      'Tidak ada pesanan yang cocok dengan pencarian'
+                    ) : directionScopedOrders.length > 0 && stageTab !== 'semua' ? (
+                      <div className="space-y-2 py-2">
+                        <p className="text-slate-600 dark:text-slate-300 font-medium">
+                          Tidak ada pesanan pada tahap "{stageTab === 'baru' ? 'Pesanan Baru' : stageTab === 'diproses' ? 'Sedang Diproses' : 'Selesai'}". Terdapat <strong>{directionScopedOrders.length} pesanan</strong> di tahap lainnya.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setStageTab('semua')}
+                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                        >
+                          <span>Tampilkan Semua ({directionScopedOrders.length} Pesanan)</span>
+                        </button>
+                      </div>
+                    ) : (
+                      'Tidak ada data pesanan'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -5300,44 +5337,56 @@ _WMS Warehouse System_`;
                       );
                     })()}
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-right align-top">
-                    {isStoreUser ? (
-                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        {isEligibleForSjStruk(order) && (
-                          <button
-                            type="button"
-                            onClick={() => setSjAlterModalOrders([order])}
-                            className="px-2.5 py-1 text-[11px] font-bold text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                            title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
-                          >
-                            <Printer className="w-3 h-3 text-amber-600" />
-                            <span>Cetak SJ Struk</span>
-                          </button>
-                        )}
-                        {isOrderIncomingFulfillment(order) && (
-                          <button
-                            type="button"
-                            onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
-                            className="px-2 py-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-800 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                            title="Tandai pesanan telah dikirim dari store ke warehouse"
-                          >
-                            <Truck className="w-3 h-3 text-blue-600" />
-                            <span>Kirim ke Gudang</span>
-                          </button>
-                        )}
+                  <td className="sticky right-0 z-10 px-3 py-2 text-right align-middle min-w-[270px] pr-4 bg-white dark:bg-slate-900 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.08)] whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                      {isEligibleForSjStruk(order) && (
                         <button
                           type="button"
-                          onClick={() => handleSendWaStoreNoticeDirect(order)}
-                          className="px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
-                          title="Kirim Notifikasi WA Permintaan Kirim ke Store"
+                          onClick={() => setSjAlterModalOrders([order])}
+                          className="px-2 py-1 text-[11px] font-bold text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                          title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
                         >
-                          <MessageCircle className="w-3 h-3 text-emerald-600" />
-                          <span>Notif WA Store</span>
+                          <Printer className="w-3 h-3 text-amber-600" />
+                          <span>SJ Struk</span>
                         </button>
-                      </div>
-                    ) : (
+                      )}
+                      {isOrderIncomingFulfillment(order) && (
+                        <button
+                          type="button"
+                          onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
+                          className="px-2 py-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-800 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                          title="Tandai pesanan telah dikirim dari store ke warehouse"
+                        >
+                          <Truck className="w-3 h-3 text-blue-600" />
+                          <span>Kirim</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handlePrintLabel(order)}
+                        className="p-1.5 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                        title="Print Label Pengiriman (A6 / Resi)"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSendWaStoreNoticeDirect(order)}
+                        className="p-1.5 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                        title="Kirim Notifikasi WA Permintaan Kirim ke Store"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderDetails(order)}
+                        className="p-1.5 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                        title="Buka Detail & Tracking Pesanan"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
                       <select
-                        className="text-[10px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium"
+                        className="text-[10px] text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer w-20 shrink-0"
                         onChange={(e) => {
                           const action = e.target.value;
                           if (action === 'print') handlePrintLabel(order);
@@ -5376,20 +5425,16 @@ _WMS Warehouse System_`;
                         }}
                         defaultValue=""
                       >
-                        <option value="" disabled>Aksi</option>
-                        {isEligibleForSjStruk(order) && (
-                          <option value="sj_struk">🧾 Cetak SJ Struk (Rangkap 2)</option>
-                        )}
-                        <option value="notif_wa_store">📲 Notif WA Store (Kirim ke Gudang)</option>
-                        <option value="print">Print Label</option>
-                        <option value="jadwal_store">📅 Atur Jadwal Kirim Store</option>
+                        <option value="" disabled>Lainnya</option>
+                        <option value="edit">✏️ Edit Pesanan</option>
+                        <option value="jadwal_store">📅 Jadwal Kirim Store</option>
                         {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
-                          <option value="mark_diproses">▶️ Mulai Proses (Diproses)</option>
+                          <option value="mark_diproses">▶️ Mulai Proses</option>
                         )}
                         {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
                           <>
                             <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
-                            <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
+                            <option value="kirim_wa_alter">💬 Kirim WA Alter</option>
                           </>
                         )}
                         {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
@@ -5406,15 +5451,14 @@ _WMS Warehouse System_`;
                             )}
                           </>
                         )}
-                        <option value="edit">Edit</option>
                         <option value="sj_dealpos">Input SJ DealPOS</option>
                         {userIsAdmin && <option value="resi">Update Resi</option>}
                         {order.status !== 'batal' && (
-                          <option value="cancel">🚫 Batalkan Pesanan (Simpan Histori)</option>
+                          <option value="cancel">🚫 Batalkan Pesanan</option>
                         )}
-                        <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
+                        <option value="delete">🗑️ Hapus Pesanan</option>
                       </select>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -5425,7 +5469,24 @@ _WMS Warehouse System_`;
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredOrders.length === 0 ? (
               <div className="col-span-full py-8 text-center text-sm text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                {searchTerm ? 'Tidak ada pesanan yang cocok dengan pencarian' : 'Tidak ada data pesanan'}
+                {searchTerm ? (
+                  'Tidak ada pesanan yang cocok dengan pencarian'
+                ) : directionScopedOrders.length > 0 && stageTab !== 'semua' ? (
+                  <div className="space-y-2 py-2">
+                    <p className="text-slate-600 dark:text-slate-300 font-medium">
+                      Tidak ada pesanan pada tahap "{stageTab === 'baru' ? 'Pesanan Baru' : stageTab === 'diproses' ? 'Sedang Diproses' : 'Selesai'}". Terdapat <strong>{directionScopedOrders.length} pesanan</strong> di tahap lainnya.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setStageTab('semua')}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <span>Tampilkan Semua ({directionScopedOrders.length} Pesanan)</span>
+                    </button>
+                  </div>
+                ) : (
+                  'Tidak ada data pesanan'
+                )}
               </div>
             ) : (
               filteredOrders.map((order) => (
@@ -5749,71 +5810,57 @@ _WMS Warehouse System_`;
                     </button>
                     
                     {/* Aksi footer card view */}
-                    {isStoreUser ? (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {isEligibleForSjStruk(order) && (
-                          <button
-                            type="button"
-                            onClick={() => setSjAlterModalOrders([order])}
-                            className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                            title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>Cetak SJ Struk</span>
-                          </button>
-                        )}
-                        {isOrderIncomingFulfillment(order) && (
-                          <button
-                            type="button"
-                            onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
-                            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                            title="Tandai pesanan telah dikirim dari store ke warehouse"
-                          >
-                            <Truck className="w-3.5 h-3.5" />
-                            <span>Kirim ke Gudang</span>
-                          </button>
-                        )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {isEligibleForSjStruk(order) && (
                         <button
                           type="button"
-                          onClick={() => handleSendWaStoreNoticeDirect(order)}
-                          className="p-1.5 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
-                          title="Kirim Notifikasi WA Permintaan Kirim ke Store"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        {isEligibleForSjStruk(order) && (
-                          <button
-                            type="button"
-                            onClick={() => setSjAlterModalOrders([order])}
-                            title="Cetak Surat Jalan Struk Rangkap 2"
-                            className="p-1.5 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-amber-600" />
-                          </button>
-                        )}
-                        {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
-                          <button
-                            type="button"
-                            onClick={() => handlePrintAlterWorkOrder(order)}
-                            title="Cetak Surat Perintah Kerja (SPK) Penjahit"
-                            className="p-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Scissors className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handlePrintLabel(order)}
-                          title="Print Label A6"
-                          className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
+                          onClick={() => setSjAlterModalOrders([order])}
+                          className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                          title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
                         >
                           <Printer className="w-3.5 h-3.5" />
+                          <span>SJ Struk</span>
                         </button>
-                        <select
-                          className="text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium w-24"
+                      )}
+                      {isOrderIncomingFulfillment(order) && (
+                        <button
+                          type="button"
+                          onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
+                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                          title="Tandai pesanan telah dikirim dari store ke warehouse"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                          <span>Kirim ke Gudang</span>
+                        </button>
+                      )}
+                      {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                        <button
+                          type="button"
+                          onClick={() => handlePrintAlterWorkOrder(order)}
+                          title="Cetak Surat Perintah Kerja (SPK) Penjahit"
+                          className="p-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Scissors className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handlePrintLabel(order)}
+                        title="Print Label Pengiriman (A6 / Resi)"
+                        className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSendWaStoreNoticeDirect(order)}
+                        className="p-1.5 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-lg transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                        title="Kirim Notifikasi WA Permintaan Kirim ke Store"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      </button>
+                      <select
+                        className="text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium w-24 cursor-pointer"
                           onChange={(e) => {
                             const action = e.target.value;
                             if (action === 'print') handlePrintLabel(order);
@@ -5876,9 +5923,8 @@ _WMS Warehouse System_`;
                           <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
                         </select>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
               ))
             )}
           </div>

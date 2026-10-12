@@ -1,4 +1,4 @@
-import { ManualShipmentOrder, ManualShipmentHistoryLog } from '../types';
+import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem } from '../types';
 import { supabaseFetch } from './supabase';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
@@ -32,11 +32,93 @@ export const STORE_CODE_TO_FULL_NAME: Record<string, string> = {
 export function getFullStoreName(storeNameOrCode?: string): string {
   if (!storeNameOrCode) return '';
   const trimmed = storeNameOrCode.trim();
-  const upper = trimmed.toUpperCase();
+  const upper = trimmed.toUpperCase().replace(/\s+/g, '').replace(/[-_]/g, '');
+
   if (STORE_CODE_TO_FULL_NAME[upper]) {
     return STORE_CODE_TO_FULL_NAME[upper];
   }
+
+  // Jika menggunakan format username atau prefix "CHOCO" (misal CHOCOGST, CHOCOCPJ, dll)
+  if (upper.startsWith('CHOCO')) {
+    const code = upper.substring(5);
+    if (STORE_CODE_TO_FULL_NAME[code]) {
+      return STORE_CODE_TO_FULL_NAME[code];
+    }
+  }
+
+  // Cek alias nama toko / outlet
+  const lower = trimmed.toLowerCase().replace(/\s+/g, '').replace(/[-_]/g, '');
+  if (lower.includes('gadingserpong') || lower.includes('serpong') || lower === 'gst' || lower === 'chocogst' || lower === 'chocogs') {
+    return 'Gading Serpong Tangerang';
+  }
+  if (lower.includes('centralpark') || lower === 'cpj' || lower === 'chococpj') {
+    return 'Central Park Jakarta';
+  }
+  if (lower.includes('livingworld') || lower === 'lws' || lower === 'chocolws') {
+    return 'Living World Tangerang';
+  }
+  if (lower.includes('kelapagading') || lower === 'mkg' || lower === 'chocomkg') {
+    return 'Mall Kelapa Gading';
+  }
+  if (lower.includes('bythesea') || lower === 'bts' || lower === 'chocobts') {
+    return 'By The Sea PIK';
+  }
+  if (lower.includes('pontianak') || lower.includes('gaia') || lower === 'chocogaia') {
+    return 'Gaia Pontianak';
+  }
+  if (lower.includes('ciputra') || lower === 'cws' || lower === 'chococws') {
+    return 'Ciputra World Surabaya';
+  }
+  if (lower.includes('delipark') || lower === 'dpm' || lower === 'chocodpm') {
+    return 'Deli Park Medan';
+  }
+  if (lower.includes('lippomallpuri') || lower.includes('lippopuri') || lower === 'lmp' || lower === 'chocolmp') {
+    return 'Lippo Mall Puri';
+  }
+  if (lower.includes('lavela') || lower === 'lvl' || lower === 'chocolvl') {
+    return 'La Vela Tangerang';
+  }
+  if (lower.includes('neosoho') || lower === 'nsj' || lower === 'choconsj') {
+    return 'Neo Soho Jakarta';
+  }
+  if (lower.includes('paskal') || lower === 'phb' || lower === 'chocophb') {
+    return 'Paskal Hyper Square Bandung';
+  }
+  if (lower.includes('pondokindah') || lower === 'pim' || lower === 'chocopim') {
+    return 'Pondok Indah Mall';
+  }
+  if (lower.includes('pakuwon') || lower === 'pms' || lower === 'chocopms') {
+    return 'Pakuwon Mall Surabaya';
+  }
+  if (lower.includes('sunplaza') || lower === 'spm' || lower === 'chocospm') {
+    return 'Sun Plaza Medan';
+  }
+  if (lower.includes('tunjungan') || lower === 'tp' || lower === 'chocotp') {
+    return 'Tunjungan Plaza Surabaya';
+  }
+  if (lower.includes('kyte')) {
+    return 'Kyte';
+  }
+
+  // Cocokkan terhadap DEFAULT_OUTLETS
+  for (const o of DEFAULT_OUTLETS) {
+    if (o.nama.toLowerCase() === trimmed.toLowerCase() || o.kode.toLowerCase() === trimmed.toLowerCase()) {
+      return o.nama;
+    }
+  }
+
   return trimmed;
+}
+
+/**
+ * Helper untuk membandingkan apakah dua nama store/outlet merujuk ke toko yang sama
+ */
+export function isSameStore(storeA?: string, storeB?: string): boolean {
+  if (!storeA || !storeB) return false;
+  const fullA = getFullStoreName(storeA).toLowerCase().trim();
+  const fullB = getFullStoreName(storeB).toLowerCase().trim();
+  if (!fullA || !fullB) return false;
+  return fullA === fullB;
 }
 
 /**
@@ -178,6 +260,14 @@ export function saveStoreContact(storeName: string, noWa: string, alamat?: strin
   }
 }
 
+export interface StoreFulfillmentGroup {
+  storeName: string;
+  phone: string;
+  pic: string;
+  items: ManualShipmentItem[];
+  isInterStore: boolean;
+}
+
 /**
  * Mendeteksi toko asal barang yang sebenarnya (source store / fulfillment) vs toko pemohon pesanan
  */
@@ -200,8 +290,7 @@ export function resolveOrderSourceStore(order: ManualShipmentOrder): {
   });
 
   const interStoreItem = storeItems.find(it => {
-    const fulFull = getFullStoreName(it.fulfillment).toLowerCase();
-    return fulFull !== requesterFull.toLowerCase();
+    return !isSameStore(it.fulfillment, requesterFull);
   });
 
   let targetStore = requesterFull;
@@ -210,17 +299,17 @@ export function resolveOrderSourceStore(order: ManualShipmentOrder): {
   if (interStoreItem && interStoreItem.fulfillment) {
     targetStore = getFullStoreName(interStoreItem.fulfillment);
     isInterStore = true;
-  } else if (arOrigin && getFullStoreName(arOrigin).toLowerCase() !== requesterFull.toLowerCase()) {
+  } else if (arOrigin && !isSameStore(arOrigin, requesterFull)) {
     targetStore = getFullStoreName(arOrigin);
     isInterStore = true;
   }
 
   const contact = getStoreContact(targetStore);
-  const phone = contact?.no_wa || (targetStore === requesterFull ? order.no_telp_store : '') || '';
-  const pic = contact?.pic_default || (targetStore === requesterFull ? order.pic_store : '') || '';
+  const phone = contact?.no_wa || (isSameStore(targetStore, requesterFull) ? order.no_telp_store : '') || '';
+  const pic = contact?.pic_default || (isSameStore(targetStore, requesterFull) ? order.pic_store : '') || '';
 
   const itemsFromSource = isInterStore
-    ? (order.items || []).filter(it => getFullStoreName(it.fulfillment).toLowerCase() === targetStore.toLowerCase())
+    ? (order.items || []).filter(it => isSameStore(it.fulfillment, targetStore))
     : (order.items || []);
 
   return {
@@ -230,6 +319,68 @@ export function resolveOrderSourceStore(order: ManualShipmentOrder): {
     phone,
     pic,
     itemsFromSource: itemsFromSource.length > 0 ? itemsFromSource : (order.items || []),
+  };
+}
+
+/**
+ * Mendeteksi seluruh grup toko fulfillment yang menyediakan barang untuk suatu pesanan.
+ * Digunakan jika 1 pesanan diambil dari beberapa store berbeda (multi-store fulfillment).
+ */
+export function resolveOrderFulfillmentStores(order: ManualShipmentOrder): {
+  groups: StoreFulfillmentGroup[];
+  requesterStoreName: string;
+  hasMultipleFulfillments: boolean;
+} {
+  const requester = order.nama_pengirim || 'Store Pemohon';
+  const requesterFull = getFullStoreName(requester);
+  const items = order.items || [];
+
+  const groupsMap = new Map<string, ManualShipmentItem[]>();
+
+  items.forEach((it) => {
+    const rawFul = (it.fulfillment || '').trim();
+    let targetStore = requesterFull;
+    if (
+      rawFul &&
+      rawFul.toLowerCase() !== 'marketplace' &&
+      rawFul.toLowerCase() !== 'gudang' &&
+      rawFul.toLowerCase() !== 'warehouse'
+    ) {
+      targetStore = getFullStoreName(rawFul);
+    } else if (order.alteration_repair_data?.nama_asal) {
+      targetStore = getFullStoreName(order.alteration_repair_data.nama_asal);
+    }
+
+    if (!groupsMap.has(targetStore)) {
+      groupsMap.set(targetStore, []);
+    }
+    groupsMap.get(targetStore)!.push(it);
+  });
+
+  if (groupsMap.size === 0) {
+    groupsMap.set(requesterFull, items);
+  }
+
+  const groups: StoreFulfillmentGroup[] = [];
+  groupsMap.forEach((groupItems, storeName) => {
+    const contact = getStoreContact(storeName);
+    const phone = contact?.no_wa || (isSameStore(storeName, requesterFull) ? (order.no_telp_store || '') : '') || '';
+    const pic = contact?.pic_default || (isSameStore(storeName, requesterFull) ? (order.pic_store || '') : '') || '';
+    const isInterStore = !isSameStore(storeName, requesterFull);
+
+    groups.push({
+      storeName,
+      phone,
+      pic,
+      items: groupItems,
+      isInterStore,
+    });
+  });
+
+  return {
+    groups,
+    requesterStoreName: requesterFull,
+    hasMultipleFulfillments: groups.length > 1,
   };
 }
 

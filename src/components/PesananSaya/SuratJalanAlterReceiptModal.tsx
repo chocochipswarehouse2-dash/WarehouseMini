@@ -3,7 +3,7 @@ import { Printer, X, Scissors, Wrench, Building2, Warehouse, Calendar, User, Clo
 import { ManualShipmentOrder } from '../../types';
 import QRCode from 'qrcode';
 import { sendFonnteMessage, getFonnteConfig, normalizeWhatsAppNumber } from '../../services/whatsapp';
-import { resolveOrderSourceStore, getStoreContact, saveStoreContact, getFullStoreName } from '../../services/gasManualShipment';
+import { resolveOrderSourceStore, resolveOrderFulfillmentStores, StoreFulfillmentGroup, getStoreContact, saveStoreContact, getFullStoreName } from '../../services/gasManualShipment';
 
 interface SuratJalanAlterReceiptModalProps {
   order?: ManualShipmentOrder | null;
@@ -32,22 +32,34 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
   }, [order, orders]);
 
   const activeOrder = orderList[selectedOrderIdx] || orderList[0];
+
+  const fulfillmentData = React.useMemo(() => {
+    if (!activeOrder) return { groups: [], requesterStoreName: '', hasMultipleFulfillments: false };
+    return resolveOrderFulfillmentStores(activeOrder);
+  }, [activeOrder]);
+
+  const [selectedGroupIdx, setSelectedGroupIdx] = useState<number>(0);
+
+  const currentGroup = fulfillmentData.groups[selectedGroupIdx] || fulfillmentData.groups[0];
+
   const sourceInfo = React.useMemo(() => {
     if (!activeOrder) return null;
     return resolveOrderSourceStore(activeOrder);
   }, [activeOrder]);
 
-  const [editablePhone, setEditablePhone] = useState(sourceInfo?.phone || '');
-  const [editablePic, setEditablePic] = useState(sourceInfo?.pic || '');
+  const targetStoreName = currentGroup?.storeName || sourceInfo?.sourceStoreName || 'Store Outlet';
+
+  const [editablePhone, setEditablePhone] = useState(currentGroup?.phone || sourceInfo?.phone || '');
+  const [editablePic, setEditablePic] = useState(currentGroup?.pic || sourceInfo?.pic || '');
   const [phoneSaved, setPhoneSaved] = useState(false);
 
   React.useEffect(() => {
-    if (sourceInfo) {
-      setEditablePhone(sourceInfo.phone || '');
-      setEditablePic(sourceInfo.pic || '');
+    if (currentGroup) {
+      setEditablePhone(currentGroup.phone || '');
+      setEditablePic(currentGroup.pic || '');
       setPhoneSaved(false);
     }
-  }, [sourceInfo, selectedOrderIdx]);
+  }, [currentGroup, selectedGroupIdx, selectedOrderIdx]);
 
   React.useEffect(() => {
     const genQrs = async () => {
@@ -78,16 +90,22 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
 
   const firstOrder = orderList[0];
   const firstSourceInfo = resolveOrderSourceStore(firstOrder);
-  const firstStoreName = firstSourceInfo.sourceStoreName || firstOrder.nama_pengirim || 'Store Outlet';
+  const firstStoreName = targetStoreName || firstSourceInfo?.sourceStoreName || 'Store Outlet';
 
-  // Format pesan WhatsApp untuk order tertentu
-  const generateWaMessage = (ord: ManualShipmentOrder, targetPhone: string) => {
+  // Format pesan WhatsApp untuk store/group tertentu
+  const generateWaMessage = (
+    ord: ManualShipmentOrder,
+    targetStore?: string,
+    itemsSubset?: typeof ord.items
+  ) => {
     const sInfo = resolveOrderSourceStore(ord);
     const arData = ord.alteration_repair_data;
-    const targetStore = sInfo.sourceStoreName;
+    const storeName = targetStore || targetStoreName;
     const requesterStore = sInfo.requesterStoreName;
 
-    const itemsText = (ord.items || []).map((it, idx) => {
+    const itemsToDisplay = itemsSubset && itemsSubset.length > 0 ? itemsSubset : (ord.items || []);
+
+    const itemsText = itemsToDisplay.map((it, idx) => {
       const fulText = it.fulfillment ? ` (Ambil dari: ${it.fulfillment})` : '';
       const alterText = it.needs_alteration || it.id_form_alter || it.alteration_detail
         ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
@@ -97,16 +115,17 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
 
     return `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
 --------------------------------------------------
-Halo Tim *${targetStore}*,
+Halo Tim *${storeName}*,
 Terdapat pesanan di mana produk diambil dari Store Anda dan wajib dikirimkan ke Gudang Pusat Chocochips:
 
 📋 *Rincian Pesanan:*
 • *Order ID / No. Pesanan:* ${ord.no_transaksi_customer || ord.no_pesanan}
 • *Store Pemohon:* ${requesterStore} (PIC: ${ord.pic_store || arData?.pic_pemohon || '-'})
+• *Store Penyedia Barang:* ${storeName}
 • *Customer Tujuan Akhir:* ${ord.nama_tujuan || '-'}
 • *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
 
-👕 *Daftar Produk yang Wajib Dikirim ke Gudang:*
+👕 *Daftar Produk yang Wajib Dikirim dari Store ${storeName}:*
 ${itemsText || '  1. Produk Pakaian Pesanan'}
 
 🚚 *Tujuan Pengiriman:* WAREHOUSE CHOCOCHIPS (Gudang Pusat)
@@ -119,43 +138,41 @@ _WMS Warehouse System_`;
   };
 
   const handleSaveContact = () => {
-    if (!sourceInfo?.sourceStoreName || !editablePhone) return;
-    saveStoreContact(sourceInfo.sourceStoreName, editablePhone, editablePic);
+    if (!targetStoreName || !editablePhone) return;
+    saveStoreContact(targetStoreName, editablePhone, editablePic);
     setPhoneSaved(true);
     if (onShowToast) {
-      onShowToast(`Nomor WA resmi ${sourceInfo.sourceStoreName} berhasil disimpan ke Direktori Kontak Store!`, 'success');
+      onShowToast(`Nomor WA resmi ${targetStoreName} berhasil disimpan ke Direktori Kontak Store!`, 'success');
     }
     setTimeout(() => setPhoneSaved(false), 2500);
   };
 
   const handleOpenWaWeb = (ord: ManualShipmentOrder) => {
-    const sInfo = resolveOrderSourceStore(ord);
-    const phoneToUse = editablePhone || sInfo.phone;
+    const phoneToUse = editablePhone || currentGroup?.phone || sourceInfo?.phone;
     if (!phoneToUse) {
       if (onShowToast) onShowToast('Nomor WhatsApp store belum terisi!', 'warning');
       return;
     }
     const cleanPhone = normalizeWhatsAppNumber(phoneToUse);
-    const msg = generateWaMessage(ord, phoneToUse);
+    const msg = generateWaMessage(ord, targetStoreName, currentGroup?.items);
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
     window.open(url, '_blank');
     if (onShowToast) {
-      onShowToast(`Membuka WhatsApp ke Tim Store ${sInfo.sourceStoreName}...`, 'info');
+      onShowToast(`Membuka WhatsApp ke Tim Store ${targetStoreName}...`, 'info');
     }
   };
 
   const handleCopyWaText = (ord: ManualShipmentOrder) => {
-    const sInfo = resolveOrderSourceStore(ord);
-    const msg = generateWaMessage(ord, editablePhone || sInfo.phone);
+    const msg = generateWaMessage(ord, targetStoreName, currentGroup?.items);
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(msg);
       if (onShowToast) {
-        onShowToast('Format pesan notifikasi WA store berhasil disalin ke clipboard!', 'success');
+        onShowToast(`Format pesan notifikasi WA ${targetStoreName} berhasil disalin ke clipboard!`, 'success');
       }
     }
   };
 
-  // Kirim via Fonnte API
+  // Kirim via Fonnte API untuk store yang aktif disorot
   const handleSendWaFonnte = async () => {
     setIsSendingWa(true);
     const fonnteCfg = getFonnteConfig();
@@ -163,9 +180,8 @@ _WMS Warehouse System_`;
     let fallbackText = '';
 
     for (const ord of orderList) {
-      const sInfo = resolveOrderSourceStore(ord);
-      const phone = editablePhone || sInfo.phone;
-      const waMsg = generateWaMessage(ord, phone);
+      const phone = editablePhone || currentGroup?.phone || sourceInfo?.phone;
+      const waMsg = generateWaMessage(ord, targetStoreName, currentGroup?.items);
       fallbackText = waMsg;
 
       if (fonnteCfg.token && phone) {
@@ -182,7 +198,7 @@ _WMS Warehouse System_`;
 
     if (sentSuccess > 0) {
       if (onShowToast) {
-        onShowToast(`✅ Notifikasi permintaan kirim berhasil terkirim ke WA Store via Fonnte (${sentSuccess} pesan)!`, 'success');
+        onShowToast(`✅ Notifikasi permintaan kirim berhasil terkirim ke WA Store ${targetStoreName} via Fonnte!`, 'success');
       }
     } else {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -190,6 +206,44 @@ _WMS Warehouse System_`;
       }
       if (onShowToast) {
         onShowToast('📋 Format notifikasi disalin ke clipboard (Fonnte API token belum dikonfigurasi / nomor tidak aktif)', 'info');
+      }
+    }
+  };
+
+  // Kirim otomatis ke SEMUA store fulfillment sekaligus (Batch Send Multi-Store)
+  const handleSendAllFulfillmentsFonnte = async () => {
+    setIsSendingWa(true);
+    const fonnteCfg = getFonnteConfig();
+    let totalSent = 0;
+
+    for (const group of fulfillmentData.groups) {
+      const phoneToUse = group.phone || (getStoreContact(group.storeName)?.no_wa || '');
+      if (!phoneToUse) continue;
+      const msg = generateWaMessage(activeOrder, group.storeName, group.items);
+      if (fonnteCfg.token) {
+        try {
+          const res = await sendFonnteMessage(phoneToUse, msg, fonnteCfg.token);
+          if (res.success) {
+            totalSent++;
+            if (onShowToast) {
+              onShowToast(`✅ Notifikasi WA terkirim ke Store ${group.storeName} (${group.items.length} item)`, 'info');
+            }
+          }
+        } catch (e) {
+          console.warn('Batch Fonnte error:', e);
+        }
+      }
+    }
+
+    setIsSendingWa(false);
+
+    if (totalSent > 0) {
+      if (onShowToast) {
+        onShowToast(`🎉 Berhasil mengirim notifikasi WA ke seluruh ${totalSent} Store Fulfillment!`, 'success');
+      }
+    } else {
+      if (onShowToast) {
+        onShowToast('Gagal mengirim otomatis: Fonnte token belum dikonfigurasi atau nomor WA store kosong.', 'warning');
       }
     }
   };
@@ -317,6 +371,38 @@ _WMS Warehouse System_`;
               </div>
             )}
 
+            {/* Multi-Fulfillment Store Selector jika order diambil dari lebih dari 1 store */}
+            {fulfillmentData.hasMultipleFulfillments && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Multi-Store Fulfillment ({fulfillmentData.groups.length} Store Asal Berbeda)</span>
+                  </span>
+                  <span className="text-[10px] bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 font-bold px-2 py-0.5 rounded-full">
+                    Pilih Store untuk Kirim Notif
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {fulfillmentData.groups.map((grp, gIdx) => (
+                    <button
+                      key={grp.storeName}
+                      type="button"
+                      onClick={() => setSelectedGroupIdx(gIdx)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                        selectedGroupIdx === gIdx
+                          ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-400'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>{grp.storeName} ({grp.items.length} item)</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Kotak Info Identifikasi Toko & Sumber Barang */}
             <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5 shadow-2xs">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
@@ -327,7 +413,7 @@ _WMS Warehouse System_`;
                   <div>
                     <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Toko Target Penerima WA</div>
                     <div className="text-sm font-black text-slate-900 dark:text-white">
-                      {sourceInfo?.sourceStoreName || 'Store Outlet'}
+                      {targetStoreName}
                     </div>
                   </div>
                 </div>
@@ -357,7 +443,7 @@ _WMS Warehouse System_`;
                 <div className="p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg text-[10.5px] text-amber-900 dark:text-amber-200 leading-relaxed flex items-start gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <strong>Skema Ambil Toko Lain:</strong> Pesanan diminta oleh <strong>{sourceInfo.requesterStoreName}</strong>, namun fisik barang diambil dari <strong>{sourceInfo.sourceStoreName}</strong>. Notifikasi WhatsApp ini ditujukan ke tim <strong>{sourceInfo.sourceStoreName}</strong> agar segera mengirimkan produk ke Warehouse.
+                    <strong>Skema Ambil Toko Lain:</strong> Pesanan diminta oleh <strong>{sourceInfo.requesterStoreName}</strong>, namun fisik barang diambil dari <strong>{targetStoreName}</strong>. Notifikasi WhatsApp ini ditujukan ke tim <strong>{targetStoreName}</strong> agar segera mengirimkan produk ke Warehouse.
                   </div>
                 </div>
               )}
@@ -368,7 +454,7 @@ _WMS Warehouse System_`;
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Kontak WhatsApp Toko {sourceInfo?.sourceStoreName}</span>
+                  <span>Kontak WhatsApp Toko {targetStoreName}</span>
                 </label>
                 <button
                   type="button"
@@ -383,7 +469,7 @@ _WMS Warehouse System_`;
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <div className="text-[10px] text-slate-500 mb-1 font-medium">Nomor WhatsApp Store:</div>
+                  <div className="text-[10px] text-slate-500 mb-1 font-medium">Nomor WhatsApp Store ({targetStoreName}):</div>
                   <input
                     type="text"
                     value={editablePhone}
@@ -414,7 +500,7 @@ _WMS Warehouse System_`;
             <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2 shadow-2xs">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Pratinjau Pesan WhatsApp ({activeOrder.no_pesanan}):
+                  Pratinjau Pesan WhatsApp ke {targetStoreName} ({activeOrder.no_pesanan}):
                 </span>
                 <button
                   type="button"
@@ -427,35 +513,45 @@ _WMS Warehouse System_`;
               </div>
 
               <div className="p-3 bg-slate-100/80 dark:bg-slate-950 font-mono text-[11px] text-slate-800 dark:text-slate-200 rounded-lg whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto border border-slate-200/80 dark:border-slate-800 select-all">
-                {generateWaMessage(activeOrder, editablePhone)}
+                {generateWaMessage(activeOrder, targetStoreName, currentGroup?.items)}
               </div>
             </div>
 
             {/* Tombol Aksi Pengiriman WhatsApp */}
-            <div className="pt-1 flex flex-col sm:flex-row gap-2">
-              <button
-                type="button"
-                onClick={() => handleOpenWaWeb(activeOrder)}
-                className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Buka Chat WhatsApp (wa.me)</span>
-              </button>
+            <div className="pt-1 flex flex-col gap-2">
+              {fulfillmentData.hasMultipleFulfillments && (
+                <button
+                  type="button"
+                  disabled={isSendingWa}
+                  onClick={handleSendAllFulfillmentsFonnte}
+                  className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50 text-xs"
+                >
+                  <Send className="w-4 h-4 text-amber-200" />
+                  <span>🚀 Kirim WA Notif ke Semua Store Fulfillment ({fulfillmentData.groups.length} Store Sekaligus)</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                disabled={isSendingWa}
-                onClick={handleSendWaFonnte}
-                className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50"
-                title="Kirim otomatis ke nomor store melalui integrasi Fonnte WhatsApp API"
-              >
-                {isSendingWa ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                <span>Kirim via Fonnte API</span>
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenWaWeb(activeOrder)}
+                  className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Buka Chat WA ({targetStoreName})</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSendingWa}
+                  onClick={handleSendWaFonnte}
+                  className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50"
+                  title="Kirim otomatis ke nomor store melalui integrasi Fonnte WhatsApp API"
+                >
+                  {isSendingWa ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>Kirim WA Fonnte ke {targetStoreName}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
