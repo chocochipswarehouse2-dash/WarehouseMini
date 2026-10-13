@@ -25,6 +25,25 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
   const [isSendingWa, setIsSendingWa] = useState(false);
   const [selectedOrderIdx, setSelectedOrderIdx] = useState(0);
 
+  // Pilihan ukuran kertas thermal kasir: 58mm (60mm / Mini POS Kasir 58-60mm) vs 80mm (Standar POS 80mm)
+  const [paperWidth, setPaperWidth] = useState<'58mm' | '80mm'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('wms_pos_printer_width');
+      if (saved === '80mm' || saved === '58mm') return saved;
+    }
+    return '58mm'; // Default 58mm (60mm/6cm) printer kasir mini agar tidak macet di printer 58mm/60mm
+  });
+
+  const handleSelectPaperWidth = (w: '58mm' | '80mm') => {
+    setPaperWidth(w);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('wms_pos_printer_width', w);
+    }
+    if (onShowToast) {
+      onShowToast(`Ukuran kertas diatur ke ${w === '58mm' ? '58mm / 60mm (Printer Kasir Mini 6cm)' : '80mm (Standar POS 8cm)'}`, 'info');
+    }
+  };
+
   const orderList = React.useMemo(() => {
     if (orders && orders.length > 0) return orders;
     if (order) return [order];
@@ -64,10 +83,11 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
   React.useEffect(() => {
     const genQrs = async () => {
       const map: Record<string, string> = {};
+      const qrWidth = paperWidth === '58mm' ? 65 : 90;
       for (const ord of orderList) {
         try {
           const text = ord.no_pesanan || ord.no_transaksi_customer || 'CHOC-AR-SJ';
-          const url = await QRCode.toDataURL(text, { width: 90, margin: 1 });
+          const url = await QRCode.toDataURL(text, { width: qrWidth, margin: 1 });
           map[ord.no_pesanan || (ord as any).id || text] = url;
         } catch (e) {
           console.warn('QR Code generation error', e);
@@ -78,7 +98,7 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
     if (orderList.length > 0) {
       genQrs();
     }
-  }, [orderList]);
+  }, [orderList, paperWidth]);
 
   const handlePrint = () => {
     window.print();
@@ -248,10 +268,22 @@ _WMS Warehouse System_`;
     }
   };
 
+  const [printCopy, setPrintCopy] = useState<'both' | 'copy1' | 'copy2'>('both');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
       <style>{`
         @media print {
+          @page {
+            size: ${paperWidth === '58mm' ? '58mm auto' : '80mm auto'};
+            margin: 0 !important;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            width: ${paperWidth === '58mm' ? '58mm' : '80mm'} !important;
+          }
           body * {
             visibility: hidden !important;
           }
@@ -263,18 +295,21 @@ _WMS Warehouse System_`;
             left: 0 !important;
             right: 0 !important;
             top: 0 !important;
-            width: 80mm !important;
-            max-width: 80mm !important;
+            width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
+            max-width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
             margin: 0 auto !important;
-            padding: 2mm !important;
+            padding: 1mm !important;
+            box-sizing: border-box !important;
             background: #ffffff !important;
             box-shadow: none !important;
             border: none !important;
             z-index: 999999 !important;
+            font-size: ${paperWidth === '58mm' ? '8.5px' : '10.5px'} !important;
+            line-height: 1.15 !important;
           }
           .receipt-page-break {
-            page-break-after: always;
-            break-after: page;
+            page-break-after: auto !important;
+            break-after: auto !important;
           }
         }
       `}</style>
@@ -298,7 +333,37 @@ _WMS Warehouse System_`;
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Paper Width Selector (Khusus Tab Struk) */}
+            {activeTab === 'receipt' && (
+              <div className="inline-flex p-0.5 bg-slate-200/90 dark:bg-slate-800 rounded-lg text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleSelectPaperWidth('58mm')}
+                  className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                    paperWidth === '58mm'
+                      ? 'bg-amber-600 text-white shadow-2xs font-black'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                  title="Ukuran printer kasir mini 58mm / 60mm (6 cm) agar tidak macet / tersangkut"
+                >
+                  58mm (6cm)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectPaperWidth('80mm')}
+                  className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                    paperWidth === '80mm'
+                      ? 'bg-amber-600 text-white shadow-2xs font-black'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                  title="Ukuran printer kasir POS standar 80mm (8 cm)"
+                >
+                  80mm (8cm)
+                </button>
+              </div>
+            )}
+
             {/* Tab Toggles */}
             <div className="inline-flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-xs font-bold mr-1">
               <button
@@ -310,7 +375,7 @@ _WMS Warehouse System_`;
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                 }`}
               >
-                Struk 80mm
+                Struk {paperWidth === '58mm' ? '58mm' : '80mm'}
               </button>
               <button
                 type="button"
@@ -556,50 +621,97 @@ _WMS Warehouse System_`;
           </div>
         )}
 
-        {/* TAB 2: PRINTABLE AREA STRUK KASIR 80MM */}
+        {/* TAB 2: PRINTABLE AREA STRUK KASIR (58mm / 80mm) */}
         {activeTab === 'receipt' && (
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-100/60 dark:bg-slate-950/60 print:p-0 print:bg-white">
-          <div
-            id="printableSuratJalanKasir"
-            className="bg-white text-slate-950 w-full max-w-[80mm] mx-auto p-3.5 border border-slate-300 print:border-none print:shadow-none print:w-[80mm] print:max-w-[80mm] space-y-6 text-[11px] leading-tight select-text shadow-sm"
-            style={{ fontFamily: "'Courier New', Courier, monospace" }}
-          >
-            {orderList.map((ord, oIndex) => {
-              const formattedDate = ord.created_at
-                ? new Date(ord.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-                : new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        <>
+          {/* Sub-bar Pilihan Rangkap & Anti-Macet */}
+          <div className="flex items-center justify-between gap-2 px-4 py-2 bg-amber-500/10 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900/40 print:hidden text-xs shrink-0">
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 mr-1">Opsi Cetak:</span>
+              <button
+                type="button"
+                onClick={() => setPrintCopy('both')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  printCopy === 'both'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                Rangkap 1 & 2
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintCopy('copy1')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  printCopy === 'copy1'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                Hanya Copy 1 (Arsip Toko)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintCopy('copy2')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  printCopy === 'copy2'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                Hanya Copy 2 (Lampiran Gudang)
+              </button>
+            </div>
+            <span className="text-[10px] text-amber-800 dark:text-amber-300 font-mono hidden md:inline-block">
+              {paperWidth === '58mm' ? 'Format 58mm/60mm (Lebar Area 48mm)' : 'Format 80mm (Lebar Area 72mm)'}
+            </span>
+          </div>
 
-              const arData = ord.alteration_repair_data;
-              const sInfo = resolveOrderSourceStore(ord);
-              const senderStore = sInfo.requesterStoreName || ord.nama_pengirim || 'Store Outlet';
-              const sourceStore = sInfo.sourceStoreName || arData?.nama_asal || senderStore;
-              const picStore = sInfo.pic || arData?.pic_pemohon || arData?.pic_kirim_store || ord.pic_store || ord.submitted_by || 'PIC Store';
-              const kurirStore = arData?.kurir_kirim_store || ord.jasa_kirim || 'Kurir Toko / Ekspedisi';
-              const resiStore = arData?.resi_kirim_store || ord.no_resi || '-';
-              const targetSelesai = (arData as any)?.tanggal_target
-                ? new Date((arData as any).tanggal_target).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
-                : ((ord as any).estimasi_selesai || '-');
-              const ordQr = qrMap[ord.no_pesanan || (ord as any).id || ''] || '';
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-100/60 dark:bg-slate-950/60 print:p-0 print:bg-white">
+            <div
+              id="printableSuratJalanKasir"
+              className={`bg-white text-slate-950 w-full mx-auto p-3 sm:p-3.5 border border-slate-300 print:border-none print:shadow-none space-y-4 leading-tight select-text shadow-sm ${
+                paperWidth === '58mm' ? 'max-w-[340px] text-[10px] print:max-w-[48mm] print:text-[8.5px]' : 'max-w-[420px] text-[11px] print:max-w-[72mm] print:text-[10.5px]'
+              }`}
+              style={{ fontFamily: "'Courier New', Courier, monospace" }}
+            >
+              {orderList.map((ord, oIndex) => {
+                const formattedDate = ord.created_at
+                  ? new Date(ord.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
-              const item = ord.items?.[0];
-              const productName = item?.nama_produk || 'Produk Pakaian';
-              const sku = item?.sku || '-';
-              const size = item?.size || '-';
-              const qty = item?.qty || 1;
+                const arData = ord.alteration_repair_data;
+                const sInfo = resolveOrderSourceStore(ord);
+                const senderStore = sInfo.requesterStoreName || ord.nama_pengirim || 'Store Outlet';
+                const sourceStore = sInfo.sourceStoreName || arData?.nama_asal || senderStore;
+                const picStore = sInfo.pic || arData?.pic_pemohon || arData?.pic_kirim_store || ord.pic_store || ord.submitted_by || 'PIC Store';
+                const kurirStore = arData?.kurir_kirim_store || ord.jasa_kirim || 'Kurir Toko / Ekspedisi';
+                const resiStore = arData?.resi_kirim_store || ord.no_resi || '-';
+                const targetSelesai = (arData as any)?.tanggal_target
+                  ? new Date((arData as any).tanggal_target).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+                  : ((ord as any).estimasi_selesai || '-');
+                const ordQr = qrMap[ord.no_pesanan || (ord as any).id || ''] || '';
 
-              // Deteksi apakah ada item yang diambil dari store lain
-              const differentFulfillments = Array.from(new Set(
-                (ord.items || [])
-                  .map(it => it.fulfillment)
-                  .filter(f => f && f.toLowerCase() !== 'marketplace' && f.toLowerCase() !== 'gudang' && f.toLowerCase() !== senderStore.toLowerCase())
-              ));
+                const item = ord.items?.[0];
+                const productName = item?.nama_produk || 'Produk Pakaian';
+                const sku = item?.sku || '-';
+                const size = item?.size || '-';
+                const qty = item?.qty || 1;
 
-              return (
-                <div key={ord.no_pesanan || oIndex} className={`space-y-4 ${oIndex < orderList.length - 1 ? 'receipt-page-break pb-6 border-b-2 border-slate-400 print:border-none' : ''}`}>
-                  {/* ======================================================= */}
-                  {/* RANGKAP 1: LEMBAR ARSIP STORE (COPY 1) */}
-                  {/* ======================================================= */}
-                  <div className="space-y-2">
+                // Deteksi apakah ada item yang diambil dari store lain
+                const differentFulfillments = Array.from(new Set(
+                  (ord.items || [])
+                    .map(it => it.fulfillment)
+                    .filter(f => f && f.toLowerCase() !== 'marketplace' && f.toLowerCase() !== 'gudang' && f.toLowerCase() !== senderStore.toLowerCase())
+                ));
+
+                return (
+                  <div key={ord.no_pesanan || oIndex} className={`space-y-4 ${oIndex < orderList.length - 1 ? 'receipt-page-break pb-6 border-b-2 border-slate-400 print:border-none' : ''}`}>
+                    {/* ======================================================= */}
+                    {/* RANGKAP 1: LEMBAR ARSIP STORE (COPY 1) */}
+                    {/* ======================================================= */}
+                    {(printCopy === 'both' || printCopy === 'copy1') && (
+                    <div className="space-y-2">
                     <div className="text-center space-y-0.5 border-b border-dashed border-slate-800 pb-2">
                       <div className="text-base font-black tracking-wider uppercase font-sans">
                         chocochips
@@ -748,20 +860,24 @@ _WMS Warehouse System_`;
                       * Simpan lembar ini sebagai arsip bukti pengiriman Store ke Gudang
                     </div>
                   </div>
+                  )}
 
                   {/* ======================================================= */}
                   {/* GARIS PERFORASI / PEMBATAS POTONG */}
                   {/* ======================================================= */}
-                  <div className="relative py-2.5 my-1 text-center">
-                    <div className="border-b-2 border-dashed border-slate-800 w-full" />
-                    <div className="absolute left-1/2 -top-1 -translate-x-1/2 bg-white px-2 text-[9px] font-bold uppercase tracking-wider text-slate-700 font-sans">
-                      ✂️ POTONG DI SINI (RANGKAP 2) ✂️
+                  {printCopy === 'both' && (
+                    <div className="relative py-2.5 my-1 text-center">
+                      <div className="border-b-2 border-dashed border-slate-800 w-full" />
+                      <div className="absolute left-1/2 -top-1 -translate-x-1/2 bg-white px-2 text-[9px] font-bold uppercase tracking-wider text-slate-700 font-sans">
+                        ✂️ POTONG DI SINI (RANGKAP 2) ✂️
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* ======================================================= */}
                   {/* RANGKAP 2: LEMBAR LAMPIRAN FISIK PRODUK (COPY 2) */}
                   {/* ======================================================= */}
+                  {(printCopy === 'both' || printCopy === 'copy2') && (
                   <div className="space-y-2">
                     <div className="text-center space-y-0.5 border-b border-dashed border-slate-800 pb-2">
                       <div className="text-base font-black tracking-wider uppercase font-sans">
@@ -907,18 +1023,20 @@ _WMS Warehouse System_`;
                       Dokumen Otentik WMS Chocochips • Lembar ini menyertai pakaian dari Store sampai tiba di Gudang
                     </div>
                   </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
+        </>
         )}
 
         {/* Modal Footer */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 print:hidden shrink-0 text-xs">
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-slate-500">
-              Format Struk Kasir Thermal (80mm) Rangkap 2
+              Format Struk Kasir Thermal ({paperWidth === '58mm' ? '58mm / 60mm Mini POS' : '80mm Standar POS'}) Rangkap 2
             </span>
           </div>
           <button

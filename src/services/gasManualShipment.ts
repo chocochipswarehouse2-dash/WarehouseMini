@@ -201,20 +201,30 @@ export function getStoreContact(storeNameOrCode?: string): OutletContactInfo {
     } catch {}
   }
 
+  // 1. Jika terdaftar di kontak tersimpan (termasuk jika nilainya dikosongkan pengguna), gunakan kontak tersimpan
   if (savedContacts[fullName]) return savedContacts[fullName];
-  if (DEFAULT_STORE_CONTACTS[fullName]) return DEFAULT_STORE_CONTACTS[fullName];
 
-  // Cari case-insensitive
+  // 2. Pencarian case-insensitive di savedContacts
   const lower = fullName.toLowerCase();
-  const match = Object.values({ ...DEFAULT_STORE_CONTACTS, ...savedContacts }).find(
+  const savedMatch = Object.values(savedContacts).find(
     c => c.nama.toLowerCase() === lower || c.kode.toLowerCase() === lower
   );
-  if (match) return match;
+  if (savedMatch) return savedMatch;
+
+  // 3. Fallback ke DEFAULT_STORE_CONTACTS
+  if (DEFAULT_STORE_CONTACTS[fullName]) return DEFAULT_STORE_CONTACTS[fullName];
+
+  const defaultMatch = Object.values(DEFAULT_STORE_CONTACTS).find(
+    c => c.nama.toLowerCase() === lower || c.kode.toLowerCase() === lower
+  );
+  if (defaultMatch) return defaultMatch;
 
   return {
     nama: fullName || 'Store',
     kode: 'STORE',
     no_wa: '',
+    alamat_store: '',
+    email_store: '',
     pic_default: 'PIC Store'
   };
 }
@@ -222,7 +232,7 @@ export function getStoreContact(storeNameOrCode?: string): OutletContactInfo {
 /**
  * Menyimpan / memperbarui nomor telepon WhatsApp resmi store
  */
-export function saveStoreContact(storeName: string, noWa: string, alamat?: string, email?: string, pic?: string, kode?: string): void {
+export function saveStoreContact(storeName: string, noWa?: string, alamat?: string, email?: string, pic?: string, kode?: string): void {
   const fullName = getFullStoreName(storeName);
   if (!fullName) return;
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -242,7 +252,7 @@ export function saveStoreContact(storeName: string, noWa: string, alamat?: strin
         ...existing,
         nama: fullName,
         kode: kode ? kode.trim().toUpperCase() : existing.kode,
-        no_wa: noWa ? noWa.trim() : existing.no_wa,
+        no_wa: noWa !== undefined ? noWa.trim() : existing.no_wa,
         alamat_store: alamat !== undefined ? alamat.trim() : existing.alamat_store,
         email_store: email !== undefined ? email.trim() : existing.email_store,
         pic_default: pic !== undefined ? pic.trim() : existing.pic_default
@@ -439,18 +449,33 @@ export interface OutletItem {
 
 export async function fetchOutlets(): Promise<OutletItem[]> {
   const deletedSet = getDeletedOutletNames();
-  // Sync kontak dari cloud wms_system_docs jika tersedia
+  // Sync kontak & deleted outlets dari cloud wms_system_docs jika tersedia
   if (typeof window !== 'undefined') {
     try {
-      supabaseFetch<any[]>('wms_system_docs', 'GET', null, 'section_id=eq.store_contacts_directory&limit=1').then(docData => {
-        if (docData && docData.length > 0 && docData[0].content) {
-          try {
-            const parsed = JSON.parse(docData[0].content);
-            const localRaw = localStorage.getItem('wms_store_contacts_directory');
-            const localContacts = localRaw ? JSON.parse(localRaw) : {};
-            const merged = { ...parsed, ...localContacts };
-            localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
-          } catch {}
+      supabaseFetch<any[]>('wms_system_docs', 'GET', null, 'section_id=in.(store_contacts_directory,deleted_outlets_directory)').then(docList => {
+        if (docList && docList.length > 0) {
+          docList.forEach(docData => {
+            if (docData.section_id === 'store_contacts_directory' && docData.content) {
+              try {
+                const parsed = JSON.parse(docData.content);
+                const localRaw = localStorage.getItem('wms_store_contacts_directory');
+                const localContacts = localRaw ? JSON.parse(localRaw) : {};
+                const merged = { ...parsed, ...localContacts };
+                localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
+              } catch {}
+            }
+            if (docData.section_id === 'deleted_outlets_directory' && docData.content) {
+              try {
+                const parsedDel = JSON.parse(docData.content);
+                if (Array.isArray(parsedDel)) {
+                  const localRawDel = localStorage.getItem('wms_deleted_outlets');
+                  const localDel: string[] = localRawDel ? JSON.parse(localRawDel) : [];
+                  const mergedDel = Array.from(new Set([...parsedDel, ...localDel]));
+                  localStorage.setItem('wms_deleted_outlets', JSON.stringify(mergedDel));
+                }
+              } catch {}
+            }
+          });
         }
       }).catch(() => {});
     } catch {}
@@ -581,6 +606,13 @@ export async function deleteOutlet(idOrName: string, nameFallback?: string): Pro
           list.push(cleanLower);
           localStorage.setItem('wms_deleted_outlets', JSON.stringify(list));
         }
+        // Background sync to Cloud Supabase
+        supabaseFetch('wms_system_docs', 'POST', [{
+          section_id: 'deleted_outlets_directory',
+          content: JSON.stringify(list),
+          updated_by: 'Master Pengaturan Toko',
+          updated_at: new Date().toISOString()
+        }], 'resolution=merge-duplicates').catch(() => {});
       } catch {}
     }
 

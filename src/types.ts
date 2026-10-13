@@ -155,6 +155,7 @@ export interface WmsUser {
   created_at?: string;
   nik?: string;
   no_hp?: string;
+  phone?: string;
   email?: string;
   store_code?: string;
   store_name?: string;

@@ -2756,6 +2756,10 @@ export async function verifySupabaseLogin(
   role: UserRole;
   permissions?: Partial<UserPermissions>;
   nik?: string;
+  store_code?: string;
+  store_name?: string;
+  no_hp?: string;
+  email?: string;
   message?: string;
 }> {
   const cleanUser = username.trim().toLowerCase();
@@ -2846,6 +2850,18 @@ export async function verifySupabaseLogin(
         ? { ...ALL_PERMISSIONS }
         : { ...userDefaultPerms, ...(u.permissions || {}) };
 
+      // Resolve linked store and contact details
+      const p = (u.permissions || {}) as any;
+      let storeCode = u.store_code || p.store_code || p._store_code || '';
+      let storeName = u.store_name || p.store_name || p._store_name || '';
+      if (!storeName && (role === 'Store' || u.username.toLowerCase().startsWith('choco'))) {
+        const auto = resolveStoreDetails(u.name || u.username, u.username);
+        storeCode = auto.store_code;
+        storeName = auto.store_name;
+      }
+      const phone = u.no_hp || u.phone || p.phone || p.no_hp || '';
+      const email = u.email || p.email || '';
+
       const token = `sb_tok_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       return {
         success: true,
@@ -2855,6 +2871,10 @@ export async function verifySupabaseLogin(
         role: isUserSuper ? 'Superadmin' : role,
         permissions: resolvedPerms,
         nik: u.nik,
+        store_code: storeCode || undefined,
+        store_name: storeName || undefined,
+        no_hp: phone || undefined,
+        email: email || undefined,
         message: 'Login berhasil (terverifikasi dari Supabase wms_users)',
       };
     }
@@ -2911,23 +2931,168 @@ export async function verifySupabaseLogin(
 }
 
 /**
+ * Store Code to Full Name dictionary for auto-resolving store details
+ */
+export const WMS_STORE_CODE_MAP: Record<string, string> = {
+  GAIA: 'Gaia Pontianak',
+  BTS: 'By The Sea PIK',
+  CPJ: 'Central Park Jakarta',
+  CWS: 'Ciputra World Surabaya',
+  DPM: 'Deli Park Medan',
+  GST: 'Gading Serpong Tangerang',
+  LMP: 'Lippo Mall Puri',
+  LVL: 'La Vela Tangerang',
+  LVT: 'La Vela Tangerang',
+  LWS: 'Living World Tangerang',
+  MKG: 'Mall Kelapa Gading',
+  NSJ: 'Neo Soho Jakarta',
+  PHB: 'Paskal Hyper Square Bandung',
+  PIM: 'Pondok Indah Mall',
+  PMS: 'Pakuwon Mall Surabaya',
+  SPM: 'Sun Plaza Medan',
+  TP: 'Tunjungan Plaza Surabaya',
+  KYTE: 'Kyte',
+};
+
+export function resolveStoreDetails(storeNameOrCode?: string, username?: string): { store_code: string; store_name: string } {
+  const target = (storeNameOrCode || username || '').trim();
+  if (!target) return { store_code: '', store_name: '' };
+  const upper = target.toUpperCase().replace(/\s+/g, '').replace(/[-_]/g, '');
+
+  // 1. Direct code match
+  if (WMS_STORE_CODE_MAP[upper]) {
+    return { store_code: upper, store_name: WMS_STORE_CODE_MAP[upper] };
+  }
+  if (upper.startsWith('CHOCO')) {
+    const code = upper.substring(5);
+    if (WMS_STORE_CODE_MAP[code]) {
+      return { store_code: code, store_name: WMS_STORE_CODE_MAP[code] };
+    }
+  }
+
+  // 2. Full name match
+  const entry = Object.entries(WMS_STORE_CODE_MAP).find(
+    ([, fullName]) => fullName.toUpperCase() === upper || upper.includes(fullName.toUpperCase().replace(/\s+/g, ''))
+  );
+  if (entry) {
+    return { store_code: entry[0], store_name: entry[1] };
+  }
+
+  // 3. Substring aliases
+  const lower = target.toLowerCase().replace(/[\s\-_]/g, '');
+  if (lower.includes('serpong') || lower.includes('gst')) return { store_code: 'GST', store_name: 'Gading Serpong Tangerang' };
+  if (lower.includes('centralpark') || lower.includes('cpj')) return { store_code: 'CPJ', store_name: 'Central Park Jakarta' };
+  if (lower.includes('lippo') || lower.includes('lmp')) return { store_code: 'LMP', store_name: 'Lippo Mall Puri' };
+  if (lower.includes('ciputra') || lower.includes('cws')) return { store_code: 'CWS', store_name: 'Ciputra World Surabaya' };
+  if (lower.includes('lavela') || lower.includes('lvl') || lower.includes('lvt')) return { store_code: 'LVL', store_name: 'La Vela Tangerang' };
+  if (lower.includes('livingworld') || lower.includes('lws')) return { store_code: 'LWS', store_name: 'Living World Tangerang' };
+  if (lower.includes('kelapa') || lower.includes('mkg')) return { store_code: 'MKG', store_name: 'Mall Kelapa Gading' };
+  if (lower.includes('bythesea') || lower.includes('bts')) return { store_code: 'BTS', store_name: 'By The Sea PIK' };
+  if (lower.includes('pontianak') || lower.includes('gaia')) return { store_code: 'GAIA', store_name: 'Gaia Pontianak' };
+  if (lower.includes('paskal') || lower.includes('phb')) return { store_code: 'PHB', store_name: 'Paskal Hyper Square Bandung' };
+  if (lower.includes('pondok') || lower.includes('pim')) return { store_code: 'PIM', store_name: 'Pondok Indah Mall' };
+  if (lower.includes('pakuwon') || lower.includes('pms')) return { store_code: 'PMS', store_name: 'Pakuwon Mall Surabaya' };
+  if (lower.includes('tunjungan') || lower.includes('tp')) return { store_code: 'TP', store_name: 'Tunjungan Plaza Surabaya' };
+  if (lower.includes('deli') || lower.includes('dpm')) return { store_code: 'DPM', store_name: 'Deli Park Medan' };
+  if (lower.includes('sun') || lower.includes('spm')) return { store_code: 'SPM', store_name: 'Sun Plaza Medan' };
+  if (lower.includes('neo') || lower.includes('nsj')) return { store_code: 'NSJ', store_name: 'Neo Soho Jakarta' };
+
+  return { store_code: upper.slice(0, 10), store_name: target };
+}
+
+/**
  * Fetch list of WMS users directly from Supabase (Database = Frontend Source of Truth)
+ * Uses select=* to prevent schema mismatches if optional columns are absent in Supabase table
  */
 export async function fetchWmsUsersFromSupabase(): Promise<WmsUser[]> {
   try {
+    let deletedSet = new Set<string>();
+    try {
+      const delRaw = localStorage.getItem('wms_deleted_users');
+      if (delRaw) {
+        const parsed = JSON.parse(delRaw);
+        if (Array.isArray(parsed)) {
+          deletedSet = new Set(parsed.map((s: string) => String(s).toLowerCase().trim()));
+        }
+      }
+    } catch {}
+
     const data = await supabaseFetch<WmsUser[]>(
       'wms_users',
       'GET',
       null,
-      'select=id,username,name,role,password,permissions,nik,no_hp,email,store_code,store_name,created_at,updated_at&order=created_at.asc'
+      'select=*&order=created_at.asc'
     );
     if (data && Array.isArray(data) && data.length > 0) {
       // Deduplicate by case-insensitive username just in case stale duplicates exist in DB
       const seen = new Map<string, WmsUser>();
-      for (const u of data) {
-        const key = u.username.toLowerCase();
-        seen.set(key, u);
+      for (const raw of data) {
+        const u = { ...raw };
+        const key = (u.username || '').toLowerCase().trim();
+        if (!key || deletedSet.has(key)) continue;
+
+        // Auto-resolve store info from columns or JSONB permissions
+        const p = (u.permissions || {}) as any;
+
+        // Respect explicit column values if defined (even if empty string)
+        const phone = u.no_hp !== undefined && u.no_hp !== null ? u.no_hp : (u.phone !== undefined && u.phone !== null ? u.phone : (p.phone || p.no_hp || ''));
+        const email = u.email !== undefined && u.email !== null ? u.email : (p.email || '');
+
+        let storeCode = u.store_code !== undefined && u.store_code !== null ? u.store_code : (p.store_code || p._store_code || '');
+        let storeName = u.store_name !== undefined && u.store_name !== null ? u.store_name : (p.store_name || p._store_name || '');
+
+        if (!storeName && (u.role === 'Store' || key.startsWith('choco'))) {
+          const auto = resolveStoreDetails(u.name || key, key);
+          storeCode = storeCode || auto.store_code;
+          storeName = storeName || auto.store_name;
+        }
+
+        // Clean permissions dictionary by omitting non-permission metadata fields
+        const cleanPerms: any = { ...p };
+        delete cleanPerms.store_code;
+        delete cleanPerms._store_code;
+        delete cleanPerms.store_name;
+        delete cleanPerms._store_name;
+        delete cleanPerms.phone;
+        delete cleanPerms.no_hp;
+        delete cleanPerms.email;
+
+        const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'] || {};
+        const hasBooleanKeys = Object.keys(cleanPerms).some((k) => typeof cleanPerms[k] === 'boolean');
+        const resolvedPermissions =
+          u.role?.toLowerCase() === 'superadmin'
+            ? { ...ALL_PERMISSIONS }
+            : hasBooleanKeys
+            ? { ...defaultRolePerms, ...cleanPerms }
+            : { ...defaultRolePerms };
+
+        const normalized: WmsUser = {
+          ...u,
+          store_code: storeCode || undefined,
+          store_name: storeName || undefined,
+          no_hp: phone || undefined,
+          email: email || undefined,
+          phone: phone || undefined,
+          permissions: resolvedPermissions,
+        };
+
+        seen.set(key, normalized);
       }
+
+      // Ensure default system accounts (admin, superadmin, etc.) are present if not in DB or deleted
+      for (const defUser of DEFAULT_WMS_USERS) {
+        const defKey = defUser.username.toLowerCase().trim();
+        if (!seen.has(defKey) && !deletedSet.has(defKey)) {
+          seen.set(defKey, {
+            ...defUser,
+            permissions:
+              defUser.role === 'Superadmin'
+                ? { ...ALL_PERMISSIONS }
+                : { ...(ROLE_DEFAULT_PERMISSIONS[defUser.role || 'Operator'] || {}) },
+          });
+        }
+      }
+
       const deduplicated = Array.from(seen.values());
       registerUserNames(deduplicated);
       try {
@@ -2964,24 +3129,85 @@ export async function saveWmsUserToSupabase(
   const cleanU = user.username.trim();
   const lowerU = cleanU.toLowerCase();
 
-  const payload: any = {
+  // Remove from deleted usernames list if user is being created/saved anew
+  try {
+    const delRaw = localStorage.getItem('wms_deleted_users');
+    if (delRaw) {
+      const list: string[] = JSON.parse(delRaw);
+      const updated = list.filter((s) => s.toLowerCase() !== lowerU);
+      localStorage.setItem('wms_deleted_users', JSON.stringify(updated));
+    }
+  } catch {}
+
+  // Resolve store details
+  const storeInfo = resolveStoreDetails(user.store_name || user.store_code || cleanU, cleanU);
+  const storeCode = user.store_code ? user.store_code : (user.role === 'Store' ? storeInfo.store_code : null);
+  const storeName = user.store_name ? user.store_name : (user.role === 'Store' ? (user.name || storeInfo.store_name) : null);
+  const phone = user.no_hp ? user.no_hp : ((user as any).phone ? (user as any).phone : null);
+  const email = user.email ? user.email : null;
+
+  // Preserve complete permissions map merged with role defaults
+  const userRole = user.role || 'Operator';
+  const defaultPerms =
+    userRole.toLowerCase() === 'superadmin'
+      ? ALL_PERMISSIONS
+      : ROLE_DEFAULT_PERMISSIONS[userRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+  const fullPermissionsDict = {
+    ...defaultPerms,
+    ...(user.permissions || {}),
+  };
+
+  // Embed store & contact info directly inside permissions JSONB to guarantee 100% persistence in Supabase
+  const permissionsWithStore: any = {
+    ...fullPermissionsDict,
+  };
+
+  // Always strip metadata keys first so empty fields do not leak stale data
+  delete permissionsWithStore.store_code;
+  delete permissionsWithStore._store_code;
+  delete permissionsWithStore.store_name;
+  delete permissionsWithStore._store_name;
+  delete permissionsWithStore.phone;
+  delete permissionsWithStore.no_hp;
+  delete permissionsWithStore.email;
+
+  if (storeCode) {
+    permissionsWithStore.store_code = storeCode;
+    permissionsWithStore._store_code = storeCode;
+  }
+  if (storeName) {
+    permissionsWithStore.store_name = storeName;
+    permissionsWithStore._store_name = storeName;
+  }
+  if (phone) {
+    permissionsWithStore.phone = phone;
+    permissionsWithStore.no_hp = phone;
+  }
+  if (email) {
+    permissionsWithStore.email = email;
+  }
+
+  const corePayload: any = {
     username: cleanU,
     name: user.name || user.username,
     role: user.role || 'Operator',
-    permissions: user.permissions || {},
+    permissions: permissionsWithStore,
     updated_at: new Date().toISOString(),
   };
 
-  payload.nik = user.nik || null;
-  payload.no_hp = user.no_hp || (user as any).phone || null;
-  payload.email = user.email || null;
-  payload.store_code = user.store_code || null;
-  payload.store_name = user.store_name || null;
-
-  // Only hash & update password if a non-empty password was provided
+  if (user.nik) corePayload.nik = user.nik;
   if (user.password && user.password.trim() !== '') {
-    payload.password = user.password.trim();
+    corePayload.password = user.password.trim();
   }
+
+  // Full payload including optional columns if present in table
+  const fullPayload: any = {
+    ...corePayload,
+    store_code: storeCode,
+    store_name: storeName,
+    no_hp: phone,
+    email: email,
+  };
 
   try {
     let targetExistingId: string | null = null;
@@ -3045,7 +3271,7 @@ export async function saveWmsUserToSupabase(
         const patchRes = await supabaseFetch<WmsUser[]>(
           'wms_users',
           'PATCH',
-          payload,
+          fullPayload,
           `id=eq.${encodeURIComponent(targetExistingId)}`,
           true
         );
@@ -3053,21 +3279,12 @@ export async function saveWmsUserToSupabase(
           savedRecord = patchRes[0];
         }
       } catch (errPatch: any) {
-        console.warn('Initial PATCH wms_users failed, retrying with core fields fallback:', errPatch?.message);
-        const fallbackPayload = {
-          username: cleanU,
-          name: user.name || user.username,
-          role: user.role || 'Operator',
-          permissions: user.permissions || {},
-          nik: user.nik || null,
-          updated_at: new Date().toISOString(),
-          ...(payload.password ? { password: payload.password } : {}),
-        };
+        console.warn('Full PATCH wms_users failed, retrying with core fields + embedded permissions payload:', errPatch?.message);
         try {
           const fallbackRes = await supabaseFetch<WmsUser[]>(
             'wms_users',
             'PATCH',
-            fallbackPayload,
+            corePayload,
             `id=eq.${encodeURIComponent(targetExistingId)}`,
             true
           );
@@ -3075,20 +3292,21 @@ export async function saveWmsUserToSupabase(
             savedRecord = fallbackRes[0];
           }
         } catch (errFallback) {
-          console.warn('Fallback PATCH also failed:', errFallback);
+          console.warn('Fallback core PATCH also failed:', errFallback);
         }
       }
     } else {
       // BRAND NEW USER -> INSERT (POST)
-      if (!payload.password) {
-        payload.password = await computeSha256('123456');
+      if (!fullPayload.password) {
+        fullPayload.password = await computeSha256('123456');
+        corePayload.password = fullPayload.password;
       }
 
       try {
         const postRes = await supabaseFetch<WmsUser[]>(
           'wms_users',
           'POST',
-          payload,
+          fullPayload,
           'on_conflict=username',
           true
         );
@@ -3096,21 +3314,12 @@ export async function saveWmsUserToSupabase(
           savedRecord = postRes[0];
         }
       } catch (errPost: any) {
-        console.warn('Initial POST wms_users failed, retrying with core fields fallback:', errPost?.message);
-        const fallbackPayload = {
-          username: cleanU,
-          name: user.name || user.username,
-          role: user.role || 'Operator',
-          permissions: user.permissions || {},
-          nik: user.nik || null,
-          password: payload.password,
-          updated_at: new Date().toISOString(),
-        };
+        console.warn('Full POST wms_users failed, retrying with core fields + embedded permissions payload:', errPost?.message);
         try {
           const fallbackRes = await supabaseFetch<WmsUser[]>(
             'wms_users',
             'POST',
-            fallbackPayload,
+            corePayload,
             'on_conflict=username',
             true
           );
@@ -3118,12 +3327,12 @@ export async function saveWmsUserToSupabase(
             savedRecord = fallbackRes[0];
           }
         } catch (errPostFallback) {
-          console.warn('Fallback POST also failed:', errPostFallback);
+          console.warn('Fallback core POST also failed:', errPostFallback);
         }
       }
     }
 
-    // Sync to local cache (guarantees local persistence even if Supabase table lacks newly added columns)
+    // Sync to local cache (guarantees local persistence)
     try {
       const local = localStorage.getItem('wms_local_users');
       const list: WmsUser[] = local ? JSON.parse(local) : [];
@@ -3135,9 +3344,13 @@ export async function saveWmsUserToSupabase(
           (!originalUsername || u.username.toLowerCase() !== originalUsername.toLowerCase())
       );
       updated.push({
-        ...payload,
+        ...corePayload,
         id: finalId,
-        password: payload.password || user.password,
+        password: corePayload.password || user.password,
+        store_code: storeCode || undefined,
+        store_name: storeName || undefined,
+        no_hp: phone || undefined,
+        email: email || undefined,
       });
       localStorage.setItem('wms_local_users', JSON.stringify(updated));
     } catch {}
@@ -3156,12 +3369,16 @@ export async function saveWmsUserToSupabase(
           (!originalUsername || u.username.toLowerCase() !== originalUsername.toLowerCase())
       );
       updated.push({
-        ...payload,
+        ...corePayload,
         id: finalId,
-        password: payload.password || user.password,
+        password: corePayload.password || user.password,
+        store_code: storeCode || undefined,
+        store_name: storeName || undefined,
+        no_hp: phone || undefined,
+        email: email || undefined,
       });
       localStorage.setItem('wms_local_users', JSON.stringify(updated));
-      return { success: true, savedUser: { ...payload, id: finalId } };
+      return { success: true, savedUser: { ...corePayload, id: finalId } };
     } catch {
       return { success: false, message: err?.message || 'Gagal menyimpan data pengguna.' };
     }
@@ -3218,6 +3435,16 @@ export async function deleteWmsUserFromSupabase(
         );
       } catch {}
     }
+
+    // Persist deleted status in localStorage so system default users do not resurrect
+    try {
+      const delRaw = localStorage.getItem('wms_deleted_users');
+      const delList: string[] = delRaw ? JSON.parse(delRaw) : [];
+      if (!delList.includes(cleanU)) {
+        delList.push(cleanU);
+        localStorage.setItem('wms_deleted_users', JSON.stringify(delList));
+      }
+    } catch {}
 
     // Clean up local storage cache as well
     try {

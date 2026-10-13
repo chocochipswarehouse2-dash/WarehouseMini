@@ -1395,6 +1395,20 @@ _WMS Warehouse System_`;
                     } else {
                       setIsCustomJasaKirim(false);
                       setJasaKirim(val);
+                      if (val.includes('Drop ke Store')) {
+                        setDeliveryMethod('drop_store');
+                        const target = userAssignedStore || (pengirim && !pengirim.toLowerCase().includes('gudang') ? pengirim : '') || dropStoreTarget;
+                        if (target) {
+                          setDropStoreTarget(target);
+                          const contact = getStoreContact(target);
+                          setAlamatTujuan(
+                            `[DROP OFF STORE]: ${target} - ${contact.alamat_store || 'Outlet Store Chocochips'}`
+                          );
+                          if (contact.no_wa && !telpTujuan) {
+                            setTelpTujuan(contact.no_wa);
+                          }
+                        }
+                      }
                     }
                   }}
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-2 px-3"
@@ -5799,68 +5813,76 @@ _WMS Warehouse System_`;
                     </div>
                   </div>
                   
-                  <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex justify-between items-center">
-                    <button 
-                      type="button"
-                      onClick={() => setSelectedOrderDetails(order)}
-                      className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-3 py-1.5 rounded-md border border-indigo-100 dark:border-indigo-800/80 transition-colors flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                      {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
-                    </button>
-                    
-                    {/* Aksi footer card view */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 space-y-2">
+                    {/* Baris 1: Ringkasan Item & Quick Action Icons */}
+                    <div className="flex items-center justify-between gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedOrderDetails(order)}
+                        className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/90 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-2.5 py-1.5 rounded-lg border border-indigo-200/80 dark:border-indigo-800/80 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Klik untuk melihat rincian barang"
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <span>{order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items</span>
+                      </button>
+                      
+                      <div className="flex items-center gap-1.5">
+                        {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                          <button
+                            type="button"
+                            onClick={() => handlePrintAlterWorkOrder(order)}
+                            title="Cetak Surat Perintah Kerja (SPK) Penjahit"
+                            className="p-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <Scissors className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handlePrintLabel(order)}
+                          title="Print Label Pengiriman (A6 / Resi)"
+                          className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSendWaStoreNoticeDirect(order)}
+                          className="p-1.5 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-lg transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                          title="Kirim Notifikasi WA Permintaan Kirim ke Store"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Baris 2: Tombol Operasional & Menu Aksi (Full Row) */}
+                    <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
                       {isEligibleForSjStruk(order) && (
                         <button
                           type="button"
                           onClick={() => setSjAlterModalOrders([order])}
-                          className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                          title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (80mm)"
+                          className="flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer truncate"
+                          title="Cetak Surat Jalan Pengiriman format Struk Kasir Rangkap 2 (58mm / 80mm)"
                         >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>SJ Struk</span>
+                          <Printer className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">SJ Struk</span>
                         </button>
                       )}
                       {isOrderIncomingFulfillment(order) && (
                         <button
                           type="button"
                           onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
-                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                          className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer truncate"
                           title="Tandai pesanan telah dikirim dari store ke warehouse"
                         >
-                          <Truck className="w-3.5 h-3.5" />
-                          <span>Kirim ke Gudang</span>
+                          <Truck className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Kirim ke Gudang</span>
                         </button>
                       )}
-                      {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
-                        <button
-                          type="button"
-                          onClick={() => handlePrintAlterWorkOrder(order)}
-                          title="Cetak Surat Perintah Kerja (SPK) Penjahit"
-                          className="p-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
-                        >
-                          <Scissors className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handlePrintLabel(order)}
-                        title="Print Label Pengiriman (A6 / Resi)"
-                        className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSendWaStoreNoticeDirect(order)}
-                        className="p-1.5 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 rounded-lg transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
-                        title="Kirim Notifikasi WA Permintaan Kirim ke Store"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                      </button>
-                      <select
-                        className="text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm font-medium w-24 cursor-pointer"
+                      <div className={isEligibleForSjStruk(order) || isOrderIncomingFulfillment(order) ? 'w-24 shrink-0' : 'w-full'}>
+                        <select
+                          className="w-full text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer"
                           onChange={(e) => {
                             const action = e.target.value;
                             if (action === 'print') handlePrintLabel(order);
@@ -5907,10 +5929,10 @@ _WMS Warehouse System_`;
                             <option value="mark_diproses">▶️ Mulai Proses</option>
                           )}
                           {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
-                            <>
-                              <option value="spk_penjahit">✂️ SPK Penjahit</option>
-                              <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
-                            </>
+                            <option value="spk_penjahit">✂️ SPK Penjahit</option>
+                          )}
+                          {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                            <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
                           )}
                           {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
                             <option value="spk">Cetak SPK</option>
@@ -5925,6 +5947,7 @@ _WMS Warehouse System_`;
                       </div>
                     </div>
                   </div>
+                </div>
               ))
             )}
           </div>

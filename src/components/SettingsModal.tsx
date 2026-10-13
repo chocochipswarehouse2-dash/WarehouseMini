@@ -266,8 +266,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (dbUsers && dbUsers.length > 0) {
         const mappedUsers: LocalUserRecord[] = dbUsers.map((u: any) => ({
           ...u,
-          phone: u.phone || u.no_hp || '',
-          no_hp: u.no_hp || u.phone || '',
+          phone: u.phone || u.no_hp || u.permissions?.phone || '',
+          no_hp: u.no_hp || u.phone || u.permissions?.phone || '',
+          store_code: u.store_code || u.permissions?.store_code || '',
+          store_name: u.store_name || u.permissions?.store_name || '',
         }));
         setUserList(mappedUsers);
         saveLocalUsersList(mappedUsers);
@@ -703,15 +705,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     // Sync to Database table in background
     setIsLoadingUsers(true);
     
-    // Hanya simpan permission yang berbeda dari default Role agar sinkronisasi role template tetap bekerja
-    const defaultPerms = ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS['Operator'];
-    const finalPermissions: Partial<UserPermissions> = {};
-    Object.keys(newPermissions).forEach((key) => {
-      const k = key as UserPermissionKey;
-      if (!!newPermissions[k] !== !!defaultPerms[k]) {
-        finalPermissions[k] = !!newPermissions[k];
-      }
-    });
+    // Simpan permission lengkap pengguna agar tidak terhapus di Supabase
+    const finalPermissions: Partial<UserPermissions> = { ...newPermissions };
 
     const res = await saveWmsUserToSupabase({
       id: userToSave.id,
@@ -720,11 +715,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       role: newRole,
       password: cleanP ? cleanP : undefined,
       permissions: finalPermissions,
-      nik: newNik.trim() || undefined,
-      no_hp: newPhone.trim() || undefined,
-      email: newEmail.trim() || undefined,
-      store_code: newStoreCode.trim() || undefined,
-      store_name: newStoreName.trim() || undefined,
+      nik: newNik.trim(),
+      no_hp: newPhone.trim(),
+      email: newEmail.trim(),
+      store_code: newStoreCode.trim(),
+      store_name: newStoreName.trim(),
     }, originalTarget?.username);
     setIsLoadingUsers(false);
 
@@ -778,15 +773,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setNewName(u.name || u.username);
     setNewPassword('');
     setNewNik(u.nik || '');
-    setNewPhone(u.phone || (u as any).no_hp || '');
-    setNewEmail(u.email || '');
-    setNewStoreCode(u.store_code || '');
-    setNewStoreName(u.store_name || '');
-    setNewRole(u.role || 'Operator');
+    setNewPhone(u.phone || (u as any).no_hp || (u.permissions as any)?.phone || '');
+    setNewEmail(u.email || (u.permissions as any)?.email || '');
+    setNewStoreCode(u.store_code || (u.permissions as any)?.store_code || '');
+    setNewStoreName(u.store_name || (u.permissions as any)?.store_name || '');
+    const userRole = u.role || 'Operator';
+    const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[userRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+    const cleanUserPerms = { ...(u.permissions || {}) };
+    delete (cleanUserPerms as any).store_code;
+    delete (cleanUserPerms as any)._store_code;
+    delete (cleanUserPerms as any).store_name;
+    delete (cleanUserPerms as any)._store_name;
+    delete (cleanUserPerms as any).phone;
+    delete (cleanUserPerms as any).no_hp;
+    delete (cleanUserPerms as any).email;
+
     setNewPermissions(
-      u.permissions
-        ? { ...ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'], ...u.permissions }
-        : { ...ROLE_DEFAULT_PERMISSIONS[u.role || 'Operator'] }
+      userRole.toLowerCase() === 'superadmin'
+        ? { ...ALL_PERMISSIONS }
+        : { ...defaultRolePerms, ...cleanUserPerms }
     );
     setIsPermissionFormOpen(false);
   };
@@ -2065,10 +2070,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-[#0f172a]">
                   {userList.map((usr, idx) => {
-                    const roleInfo = ROLE_DETAILS[usr.role || 'Operator'] || ROLE_DETAILS['Operator'];
-                    const grantedCount = countGrantedPermissions(
-                      usr.permissions || ROLE_DEFAULT_PERMISSIONS[usr.role || 'Operator']
-                    );
+                    const userRole = usr.role || 'Operator';
+                    const roleInfo = ROLE_DETAILS[userRole] || ROLE_DETAILS['Operator'];
+                    const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[userRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
+                    const cleanUserPerms = { ...(usr.permissions || {}) };
+                    delete (cleanUserPerms as any).store_code;
+                    delete (cleanUserPerms as any)._store_code;
+                    delete (cleanUserPerms as any).store_name;
+                    delete (cleanUserPerms as any)._store_name;
+                    delete (cleanUserPerms as any).phone;
+                    delete (cleanUserPerms as any).no_hp;
+                    delete (cleanUserPerms as any).email;
+
+                    const effectivePerms = userRole.toLowerCase() === 'superadmin'
+                      ? ALL_PERMISSIONS
+                      : { ...defaultRolePerms, ...cleanUserPerms };
+                    const grantedCount = countGrantedPermissions(effectivePerms);
                     const isCurrentUser = session?.username.toLowerCase() === usr.username.toLowerCase();
 
                     return (

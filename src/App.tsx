@@ -292,7 +292,9 @@ export default function App() {
       const nik = localStorage.getItem('wms_user_nik') || undefined;
       const storedName = localStorage.getItem('wms_session_name');
       const name = storedName || getUserPersonName(username);
-      return { token, username, name, role: role as any, permissions, nik, endpointUrl: endpointUrl || '' };
+      const store_code = localStorage.getItem('wms_user_store_code') || undefined;
+      const store_name = localStorage.getItem('wms_user_store_name') || undefined;
+      return { token, username, name, role: role as any, permissions, nik, store_code, store_name, endpointUrl: endpointUrl || '' };
     }
     return null;
   });
@@ -1033,6 +1035,10 @@ export default function App() {
         role: res.role || 'Operator',
         permissions: res.permissions,
         nik: res.nik,
+        store_code: res.store_code,
+        store_name: res.store_name,
+        no_hp: res.no_hp,
+        email: res.email,
         endpointUrl: sharedGasEndpoint,
       };
       setSession(newSession);
@@ -1040,6 +1046,16 @@ export default function App() {
       localStorage.setItem('wms_session_username', res.user || user);
       localStorage.setItem('wms_session_name', resolvedName);
       localStorage.setItem('wms_user_role', res.role || 'Operator');
+      if (res.store_code) {
+        localStorage.setItem('wms_user_store_code', res.store_code);
+      } else {
+        localStorage.removeItem('wms_user_store_code');
+      }
+      if (res.store_name) {
+        localStorage.setItem('wms_user_store_name', res.store_name);
+      } else {
+        localStorage.removeItem('wms_user_store_name');
+      }
       if (sharedGasEndpoint) {
         localStorage.setItem('wms_endpoint_url', sharedGasEndpoint);
       }
@@ -1081,6 +1097,8 @@ export default function App() {
     localStorage.removeItem('wms_session_expiry');
     localStorage.removeItem('wms_user_permissions');
     localStorage.removeItem('wms_user_nik');
+    localStorage.removeItem('wms_user_store_code');
+    localStorage.removeItem('wms_user_store_name');
     setSession(null);
     setScannedData([]);
     releaseScreenWakeLock();
@@ -1988,6 +2006,16 @@ export default function App() {
           localStorage.setItem('wms_session_username', updated.username);
           localStorage.setItem('wms_user_role', updated.role);
           localStorage.setItem('wms_endpoint_url', updated.endpointUrl);
+          if (updated.store_code) {
+            localStorage.setItem('wms_user_store_code', updated.store_code);
+          } else {
+            localStorage.removeItem('wms_user_store_code');
+          }
+          if (updated.store_name) {
+            localStorage.setItem('wms_user_store_name', updated.store_name);
+          } else {
+            localStorage.removeItem('wms_user_store_name');
+          }
           if (updated.permissions) {
             localStorage.setItem('wms_user_permissions', JSON.stringify(updated.permissions));
           } else {
