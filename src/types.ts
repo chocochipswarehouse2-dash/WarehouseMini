@@ -125,6 +125,7 @@ export type UserPermissionKey =
   | 'menu_ops_peminjaman'
   | 'menu_ops_roadmap'
   | 'menu_ops_cetak_barcode'
+  | 'menu_ops_bbk'
   // KARYAWAN & PRESENSI
   | 'menu_hr_karyawan'
   | 'menu_hr_presensi'

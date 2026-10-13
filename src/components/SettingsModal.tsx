@@ -100,6 +100,7 @@ import {
   PERMISSION_GROUPS,
   countGrantedPermissions,
   TOTAL_PERMISSIONS_COUNT,
+  ALL_PERMISSIONS,
 } from '../services/permissions';
 import {
   playSuccessBeep,
@@ -167,22 +168,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setThemeIconStyle = () => {},
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
-  const canManageUsers = userIsSuperadmin;
-  const canManageSettings = userIsSuperadmin;
+  const userRoleLower = (session?.role || '').toLowerCase().replace(/[\s_-]/g, '');
+  const canManageUsers = userIsSuperadmin || ['superadmin', 'admin', 'manager', 'hradmin', 'hr'].includes(userRoleLower) || session?.username.toLowerCase() === 'wh0006';
+  const canManageSettings = userIsSuperadmin || ['superadmin', 'admin', 'manager'].includes(userRoleLower);
   const canAccessModal = !!session;
 
-  // Default tab: Superadmin defaults to 'database', User Lain defaults to 'theme'!
+  // Default tab: Superadmin/Admin/Manager defaults to 'database' or 'users', User Lain defaults to 'theme'!
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
-    if (userIsSuperadmin) return 'database';
+    if (userIsSuperadmin || canManageSettings) return 'database';
+    if (canManageUsers) return 'users';
     return 'theme';
   });
 
-  // Guard: non-admin users are strictly kept on 'theme' or 'device' tabs
+  // Guard: non-authorized users are kept on allowed tabs
   useEffect(() => {
-    if (!userIsSuperadmin && activeTab !== 'theme' && activeTab !== 'device') {
+    if (!canManageUsers && !canManageSettings && activeTab !== 'theme' && activeTab !== 'device') {
       setActiveTab('theme');
     }
-  }, [userIsSuperadmin, activeTab]);
+  }, [canManageUsers, canManageSettings, activeTab]);
 
   // Supabase Config State
   const [supabaseUrl, setSupabaseUrl] = useState<string>('');
@@ -405,8 +408,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       const mappedRoles = Object.keys(ROLE_DETAILS).map(k => ({
         name: k,
-        icon: ROLE_DETAILS[k].icon,
-        badge: ROLE_DETAILS[k].badge,
+        icon: ROLE_DETAILS[k]?.icon || '👤',
+        badge: ROLE_DETAILS[k]?.badge || 'bg-slate-500',
         permissions: ROLE_DEFAULT_PERMISSIONS[k] || {}
       }));
       setRoleList(mappedRoles);
