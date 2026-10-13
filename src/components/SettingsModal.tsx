@@ -3056,109 +3056,140 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Form Tambah / Edit Store */}
+              {/* Modal Popup Tambah / Edit Store (Sama seperti Mode Edit Manajemen Pengguna) */}
               {editingOutlet && (
-                <form onSubmit={handleSaveOutlet} className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-primary-200 dark:border-primary-900/40 space-y-4 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2.5">
-                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                      <Store className="w-4 h-4 text-primary-500" />
-                      {editingOutlet.id || editingOutlet.nama ? `Edit Toko: ${editingOutlet.nama}` : 'Tambah Store / Outlet Baru'}
-                    </h4>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Form Master Toko</span>
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                  <div className="bg-white dark:bg-[#131d31] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+                    <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-[#0f172a]/70 sticky top-0 z-10 backdrop-blur-md">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-primary-500/10 text-primary-500 border border-primary-500/20">
+                          <Store className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                            {editingOutlet.id || editingOutlet.nama ? (
+                              <>
+                                <span>Edit Store:</span>
+                                <span className="text-primary-600 dark:text-primary-400 font-mono">
+                                  {editingOutlet.nama || '(Belum diberi nama)'}
+                                </span>
+                              </>
+                            ) : (
+                              'Tambah Store / Outlet Baru'
+                            )}
+                          </h2>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Konfigurasi detail identitas, kontak WhatsApp resmi, alamat operasional, dan email toko
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingOutlet(null)}
+                        className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                        title="Tutup Popup"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveOutlet} className="p-5 sm:p-6 space-y-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                            Nama Lengkap Store / Outlet <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={editingOutlet.nama}
+                            onChange={e => setEditingOutlet({ ...editingOutlet, nama: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 font-medium transition-all"
+                            placeholder="Misal: Gading Serpong Tangerang"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                            Kode Singkatan Store
+                          </label>
+                          <input
+                            type="text"
+                            value={editingOutlet.kode || ''}
+                            onChange={e => setEditingOutlet({ ...editingOutlet, kode: e.target.value.toUpperCase() })}
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 font-mono font-bold uppercase transition-all"
+                            placeholder="Misal: GST"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">Kode 2-4 huruf untuk label rak &amp; packing</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-500" />
+                            No. WhatsApp Resmi Toko
+                          </label>
+                          <input
+                            type="text"
+                            value={editingOutlet.no_wa || ''}
+                            onChange={e => setEditingOutlet({ ...editingOutlet, no_wa: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-mono transition-all"
+                            placeholder="Misal: 081288990022"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">Digunakan otomatis untuk notifikasi Surat Jalan &amp; Pengiriman</span>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-red-500" />
+                            Alamat Lengkap Operasional Store
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={editingOutlet.alamat_store || ''}
+                            onChange={e => setEditingOutlet({ ...editingOutlet, alamat_store: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 font-medium transition-all resize-none"
+                            placeholder="Misal: Mall Central Park Lt. 1 No. 102, Jl. Letjen S. Parman, Jakarta Barat"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">Dicetak pada kop Surat Jalan dan bukti serah terima toko</span>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-blue-500" />
+                            Alamat Email Resmi Toko
+                          </label>
+                          <input
+                            type="email"
+                            value={editingOutlet.email_store || ''}
+                            onChange={e => setEditingOutlet({ ...editingOutlet, email_store: e.target.value })}
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 font-medium transition-all"
+                            placeholder="Misal: gst.store@chocochips.id"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">Email resmi untuk arsip PDF dan korespondensi</span>
+                        </div>
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setEditingOutlet(null)}
+                          className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isLoadingOutlets}
+                          className="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50 cursor-pointer"
+                        >
+                          {isLoadingOutlets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                          <span>Simpan Store & Kontak</span>
+                        </button>
+                      </div>
+                    </form>
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                        Nama Lengkap Store <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingOutlet.nama}
-                        onChange={e => setEditingOutlet({...editingOutlet, nama: e.target.value})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-medium"
-                        placeholder="Misal: Gading Serpong Tangerang"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                        Kode Singkatan Store
-                      </label>
-                      <input
-                        type="text"
-                        value={editingOutlet.kode || ''}
-                        onChange={e => setEditingOutlet({...editingOutlet, kode: e.target.value.toUpperCase()})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-mono font-bold uppercase"
-                        placeholder="Misal: GST"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                        <MessageCircle className="w-3 h-3 text-emerald-500" />
-                        No. WhatsApp Resmi Toko
-                      </label>
-                      <input
-                        type="text"
-                        value={editingOutlet.no_wa || ''}
-                        onChange={e => setEditingOutlet({...editingOutlet, no_wa: e.target.value})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 font-mono"
-                        placeholder="Misal: 081288990022"
-                      />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Digunakan untuk notifikasi WA Surat Jalan &amp; Pengiriman</span>
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-red-500" />
-                        Alamat Lengkap Store
-                      </label>
-                      <input
-                        type="text"
-                        value={editingOutlet.alamat_store || ''}
-                        onChange={e => setEditingOutlet({...editingOutlet, alamat_store: e.target.value})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-medium"
-                        placeholder="Misal: Mall Central Park Lt. 1 No. 102, Jakarta Barat"
-                      />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Alamat fisik operasional outlet / toko</span>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                        <Mail className="w-3 h-3 text-blue-500" />
-                        Alamat Email Store
-                      </label>
-                      <input
-                        type="email"
-                        value={editingOutlet.email_store || ''}
-                        onChange={e => setEditingOutlet({...editingOutlet, email_store: e.target.value})}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 font-medium"
-                        placeholder="Misal: cpj.store@chocochips.id"
-                      />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Email resmi korespondensi store</span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => setEditingOutlet(null)}
-                      className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isLoadingOutlets}
-                      className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-                    >
-                      {isLoadingOutlets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      Simpan Store & Kontak
-                    </button>
-                  </div>
-                </form>
+                </div>
               )}
 
               {/* Tabel Daftar Store & Master Kontak */}
