@@ -17,6 +17,7 @@ import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { WaStoreNoticeModal } from './WaStoreNoticeModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import { BulkUpdateResiModal } from './BulkUpdateResiModal';
+import { isRealAlterItem, hasRealAlterItems, getRealAlterItems } from '../../utils/alterationUtils';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -304,15 +305,13 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
       ? dealposArr.join(', ')
       : (order.no_transaksi_customer || order.no_pesanan || '-');
 
-    const alterItems = (order.items || []).filter(
-      (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-    );
+    const alterItems = (order.items || []).filter(isRealAlterItem);
 
     let itemsList = '';
     if (order.items && order.items.length > 0) {
       itemsList = order.items.map((it, idx) => {
         const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (${it.size})` : '';
-        const alterText = (it.needs_alteration || it.id_form_alter || it.alteration_detail)
+        const alterText = isRealAlterItem(it)
           ? `\n     ✂️ _Permintaan Alter: ${it.alteration_detail || 'Sesuai catatan'}_`
           : '';
         return `  ${idx + 1}. *${it.nama_produk}*${sizeStr} - ${it.qty || 1} pcs${alterText}`;
@@ -348,9 +347,7 @@ Jika Kakak memiliki pertanyaan atau membutuhkan bantuan seputar pesanan maupun a
    * Helper: Format Pesan Surat Perintah Kerja (SPK) Alterasi untuk WhatsApp (Store & Tim Penjahit Gudang)
    */
   const formatAlterationWorkOrderWaMessage = (order: ManualShipmentOrder): string => {
-    const alterItems = (order.items || []).filter(
-      (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-    );
+    const alterItems = (order.items || []).filter(isRealAlterItem);
     if (alterItems.length === 0) return '';
 
     const dealposStr = Array.isArray(order.no_transaksi_pengirim)
@@ -398,9 +395,7 @@ _WMS Warehouse & Tailor Management System_`;
    * Action Handler: Kirim notifikasi WA Alterasi via Fonnte langsung
    */
   const handleSendAlterWaFonnte = async (order: ManualShipmentOrder) => {
-    const alterItems = (order.items || []).filter(
-      (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-    );
+    const alterItems = (order.items || []).filter(isRealAlterItem);
     if (alterItems.length === 0) {
       onShowToast('Tidak ada item alterasi pada pesanan ini', 'info');
       return;
@@ -1159,9 +1154,7 @@ _WMS Warehouse System_`;
 
       // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke No. Telp Store (Pengirim) & Group Gudang
       const fonnteCfg = getFonnteConfig();
-      const alterItems = (orderData.items || []).filter(
-        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-      );
+      const alterItems = (orderData.items || []).filter(isRealAlterItem);
       const isAlterationOrder = alterItems.length > 0 || orderData.order_type === 'alteration_repair';
 
       if (!fonnteCfg.token) {
@@ -3763,9 +3756,7 @@ _WMS Warehouse System_`;
     const isAr = order.order_type === 'alteration_repair' || 
                  (order.no_pesanan || '').toUpperCase().startsWith('AR-') || 
                  !!order.alteration_repair_data;
-    const hasAlter = (order.items || []).some(
-      it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-    );
+    const hasAlter = (order.items || []).some(isRealAlterItem);
 
     const sender = (order.nama_pengirim || '').toLowerCase().trim();
     const arOrigin = (order.alteration_repair_data?.nama_asal || '').toLowerCase().trim();
@@ -3957,7 +3948,7 @@ _WMS Warehouse System_`;
     const hasAlterFeature = order.order_type === 'alteration_repair' ||
       (order.no_pesanan || '').toUpperCase().startsWith('AR-') ||
       !!order.alteration_repair_data ||
-      (order.items || []).some(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
+      (order.items || []).some(isRealAlterItem);
 
     if (!hasMarketplaceOrWarehouse && !hasAlterFeature) return null;
 
@@ -4030,9 +4021,7 @@ _WMS Warehouse System_`;
     if (filterOrderType !== 'all') {
       result = result.filter(o => {
         const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-        const hasAlterItem = (o.items || []).some(
-          (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-        );
+        const hasAlterItem = (o.items || []).some(isRealAlterItem);
         if (filterOrderType === 'alteration_repair') return isAr;
         if (filterOrderType === 'manual_with_alter') return !isAr && hasAlterItem;
         if (filterOrderType === 'manual_shipment') return !isAr && !hasAlterItem;
@@ -4044,9 +4033,7 @@ _WMS Warehouse System_`;
     if (filterAlterStatus !== 'all') {
       result = result.filter(o => {
         const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-        const hasAlterItem = (o.items || []).some(
-          (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-        );
+        const hasAlterItem = (o.items || []).some(isRealAlterItem);
         if (filterAlterStatus === 'manual_with_alter') return !isAr && hasAlterItem;
         if (filterAlterStatus === 'all_alter') return isAr || hasAlterItem;
         if (filterAlterStatus === 'no_alter') return !isAr && !hasAlterItem;
@@ -4354,15 +4341,11 @@ _WMS Warehouse System_`;
     const totalArCount = scopedOrders.filter(o => o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data).length;
     const totalManualWithAlterCount = scopedOrders.filter(o => {
       const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-      return !isAr && (o.items || []).some(
-        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-      );
+      return !isAr && (o.items || []).some(isRealAlterItem);
     }).length;
     const totalManualPureCount = scopedOrders.filter(o => {
       const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-      const hasAlter = (o.items || []).some(
-        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-      );
+      const hasAlter = (o.items || []).some(isRealAlterItem);
       return !isAr && !hasAlter;
     }).length;
     const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
@@ -4371,7 +4354,7 @@ _WMS Warehouse System_`;
       const k = getOrderKey(o);
       if (!selectedOrders.has(k)) return false;
       const isAr = o.order_type === 'alteration_repair' || (o.no_pesanan || '').toUpperCase().startsWith('AR-') || !!o.alteration_repair_data;
-      return isAr || (o.items || []).some(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
+      return isAr || (o.items || []).some(isRealAlterItem);
     });
 
     return (
@@ -5132,9 +5115,7 @@ _WMS Warehouse System_`;
                       }
 
                       // Badge Penanda Khusus Manual Shipment yang Disertai Alter
-                      const alterItems = (order.items || []).filter(
-                        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-                      );
+                      const alterItems = (order.items || []).filter(isRealAlterItem);
                       if (alterItems.length > 0) {
                         return (
                           <div className="mt-1 flex flex-col gap-1 items-start">
@@ -5300,7 +5281,7 @@ _WMS Warehouse System_`;
                     </button>
                     {(() => {
                       const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
-                      const alterItems = (order.items || []).filter(it => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail);
+                      const alterItems = (order.items || []).filter(isRealAlterItem);
                       if (!isAr && alterItems.length > 0) {
                         const alterPhotoCount = (order.items || []).reduce((acc, it) => acc + (it.foto_urls?.length || 0), 0);
                         return (
@@ -5554,7 +5535,7 @@ _WMS Warehouse System_`;
                         {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
                           <option value="mark_diproses">▶️ Mulai Proses</option>
                         )}
-                        {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                        {(hasRealAlterItems(order)) && (
                           <>
                             <option value="spk_penjahit">✂️ Cetak SPK Penjahit</option>
                             <option value="kirim_wa_alter">💬 Kirim WA Alter</option>
@@ -5648,9 +5629,7 @@ _WMS Warehouse System_`;
                       </span>
                       {(() => {
                         const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
-                        const alterItems = (order.items || []).filter(
-                          (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail
-                        );
+                        const alterItems = (order.items || []).filter(isRealAlterItem);
                         if (!isAr && alterItems.length > 0) {
                           const photoCount = (order.items || []).reduce((acc, it) => acc + (it.foto_urls?.length || 0), 0);
                           return (
@@ -6741,9 +6720,7 @@ _WMS Warehouse System_`;
             printPayload.orders.map((order, oIdx) => {
               const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
               const arData = order.alteration_repair_data;
-              const alterItems = (order.items || []).filter(
-                (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter || !!it.alteration_detail || isAr
-              );
+              const alterItems = isAr ? (order.items || []) : (order.items || []).filter(isRealAlterItem);
               const qrDataUrl = printPayload.qrMap[order.no_pesanan || ''] || '';
               const todayStr = new Date().toLocaleDateString('id-ID', {
                 weekday: 'long',

@@ -13,6 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { ManualShipmentOrder } from '../../types';
+import { isRealAlterItem } from '../../utils/alterationUtils';
 import {
   resolveOrderSourceStore,
   resolveOrderFulfillmentStores,
@@ -59,7 +60,7 @@ export const WaStoreNoticeModal: React.FC<WaStoreNoticeModalProps> = ({
   const itemsText = items.map((it, idx) => {
     const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
     const fulText = it.fulfillment ? ` [Ambil dari: ${it.fulfillment}]` : '';
-    const alterText = it.needs_alteration || it.id_form_alter || it.alteration_detail
+    const alterText = isRealAlterItem(it)
       ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
       : '';
     return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${fulText}${alterText}`;
@@ -159,7 +160,7 @@ _WMS Warehouse System_`;
       const itemsTextGrp = (group.items || []).map((it, idx) => {
         const sizeStr = it.size && it.size !== 'ALL' && it.size !== '-' ? ` (Size: *${it.size}*)` : '';
         const fulText = it.fulfillment ? ` [Ambil dari: ${it.fulfillment}]` : '';
-        const alterText = it.needs_alteration || it.id_form_alter || it.alteration_detail
+        const alterText = isRealAlterItem(it)
           ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
           : '';
         return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${fulText}${alterText}`;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, X, Scissors, Wrench, Building2, Warehouse, Calendar, User, Clock, CheckCircle2, MessageCircle, Send, Copy, Loader2, Save, ExternalLink, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { ManualShipmentOrder } from '../../types';
+import { isRealAlterItem } from '../../utils/alterationUtils';
 import QRCode from 'qrcode';
 import { sendFonnteMessage, getFonnteConfig, normalizeWhatsAppNumber } from '../../services/whatsapp';
 import { resolveOrderSourceStore, resolveOrderFulfillmentStores, StoreFulfillmentGroup, getStoreContact, saveStoreContact, getFullStoreName } from '../../services/gasManualShipment';
@@ -127,7 +128,7 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
 
     const itemsText = itemsToDisplay.map((it, idx) => {
       const fulText = it.fulfillment ? ` (Ambil dari: ${it.fulfillment})` : '';
-      const alterText = it.needs_alteration || it.id_form_alter || it.alteration_detail
+      const alterText = isRealAlterItem(it)
         ? `\n     ✂️ *Instruksi Alter:* ${it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}`
         : '';
       return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Size: *${it.size || '-'}*) - *${it.qty || 1} pcs*${fulText}${alterText}`;

@@ -41,7 +41,16 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   onShowToast,
 }) => {
   const arData = order.alteration_repair_data || {} as any;
-  const storeName = arData.nama_asal || order.nama_pengirim || 'Store';
+  const isAlterOrder = order.order_type === 'alteration_repair' || !!order.alteration_repair_data;
+
+  // Prioritaskan Toko Fulfillment spesifik item jika tersedia (misal "Gading Serpong Tangerang"), baru nama pengirim
+  const itemFulfillmentStore = order.items?.find((it: any) => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'))?.fulfillment
+    || order.items?.[0]?.fulfillment
+    || order.items?.[0]?.toko_asal
+    || order.items?.[0]?.store_name
+    || '';
+
+  const storeName = arData.nama_asal || itemFulfillmentStore || order.nama_pengirim || 'Store';
   const productName = order.items?.[0]?.nama_produk || 'Produk Pakaian';
   const sku = order.items?.[0]?.sku || '-';
 
@@ -51,7 +60,9 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   const [tglKirimStore, setTglKirimStore] = useState(() => new Date().toISOString().slice(0, 10));
   const [kurirStore, setKurirStore] = useState(order.jasa_kirim || 'Kurir Internal Toko');
   const [resiStore, setResiStore] = useState(arData.resi_kirim_store || '');
-  const [picKirimStore, setPicKirimStore] = useState(arData.pic_pemohon || order.pic_store || order.submitted_by || '');
+  const [picKirimStore, setPicKirimStore] = useState(
+    arData.pic_pemohon || order.pic_store || session?.name || session?.username || order.submitted_by || ''
+  );
 
   // Form states: Mark Received Warehouse
   const [tglTerimaWarehouse, setTglTerimaWarehouse] = useState(() => new Date().toISOString().slice(0, 10));
@@ -328,8 +339,16 @@ ${catatanKirimKembali ? `📝 *Catatan:* ${catatanKirimKembali}\n` : ''}Produk s
                 SKU: {sku} • Toko: <strong>{storeName}</strong>
               </div>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-              {arData.layanan_type?.toUpperCase() || 'ALTER & REPAIR'}
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+              isAlterOrder
+                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+            }`}>
+              {arData.layanan_type
+                ? arData.layanan_type.toUpperCase()
+                : isAlterOrder
+                ? 'ALTER & REPAIR'
+                : 'MANUAL SHIPMENT'}
             </span>
           </div>
 

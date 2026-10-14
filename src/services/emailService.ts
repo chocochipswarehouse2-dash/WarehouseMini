@@ -1,4 +1,5 @@
 import { ManualShipmentOrder } from '../types';
+import { isRealAlterItem } from '../utils/alterationUtils';
 import { getGdriveConfig } from './gdriveUpload';
 
 export type EmailNotificationEvent =
@@ -153,7 +154,7 @@ function getProductTableHtml(order: ManualShipmentOrder): string {
       }
     }
 
-    const alterNote = (it.needs_alteration || it.id_form_alter || it.alteration_detail)
+    const alterNote = isRealAlterItem(it)
       ? `<div style="margin-top: 4px; padding: 4px 8px; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 4px; font-size: 11px; color: #9f1239;">
           ✂️ <strong>Alterasi:</strong> ${it.alteration_detail || 'Permintaan alterasi pakaian'}
          </div>`

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ManualShipmentOrder } from '../../types';
 import { bulkUpdateShipmentResi, BulkResiUpdateItem } from '../../services/gasManualShipment';
+import { isRealAlterItem } from '../../utils/alterationUtils';
 
 interface BulkUpdateResiModalProps {
   isOpen: boolean;
@@ -236,9 +237,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
     };
 
     const rows = ordersToExport.map((o) => {
-      const hasAlter = (o.items || []).some(
-        (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter
-      ) || o.order_type === 'alteration_repair';
+      const hasAlter = (o.items || []).some(isRealAlterItem) || o.order_type === 'alteration_repair';
 
       const itemsSummary = (o.items || []).map((it) => `${it.sku || it.nama_produk} (x${it.qty})`).join('; ');
 
@@ -680,9 +679,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
                             (order.no_resi || '').trim() !== currentInputValue.trim() &&
                             currentInputValue.trim().length > 0;
 
-                          const hasAlter = (order.items || []).some(
-                            (it) => it.needs_alteration || !!it.id_form_alter || !!it.layanan_alter
-                          ) || order.order_type === 'alteration_repair';
+                          const hasAlter = (order.items || []).some(isRealAlterItem) || order.order_type === 'alteration_repair';
 
                           return (
                             <tr
