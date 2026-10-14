@@ -735,7 +735,9 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
           }
         }
 
-        var rowNet = (isSpecificDate && rowDatang > 0) ? rowDatang : (Number(sz.totalSizeQty) || (rowDatang - rowRetur));
+        var rowNet = (isSpecificDate && rowDatang > 0)
+          ? rowDatang
+          : (isCMT ? Math.max(0, (rowDatang - rowRetur)) : (Number(sz.totalSizeQty) || rowDatang));
         dataRowVals.push(rowNet);
 
         if (!isSpecificDate) {

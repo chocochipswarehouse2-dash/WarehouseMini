@@ -737,6 +737,28 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 created_at: nowStr,
               });
             }
+            if (activeTab === 'CMT') {
+              Object.entries(sz.qtyReturByDate || {}).forEach(([rDate, rQty]) => {
+                if (rDate && Number(rQty) > 0) {
+                  itemsToPush.push({
+                    tanggal_penerimaan: rDate,
+                    tanggal_retur: rDate,
+                    qty_retur: Number(rQty),
+                    kategori: 'Lokal CMT',
+                    no_surat_jalan: `RETUR-${block.code}`,
+                    kode_produksi: block.code,
+                    nama_produk: block.productName || '',
+                    warna: cg.color,
+                    size: sz.size,
+                    qty: 0,
+                    foto_url: block.photoUrl || '',
+                    keterangan: `RETUR_CMT:${rQty}@${rDate}`,
+                    operator: 'WMS Spreadsheet Editor',
+                    created_at: nowStr,
+                  });
+                }
+              });
+            }
           });
         });
       });
@@ -1041,16 +1063,23 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
     blockId: string,
     colorIndex: number,
     sizeIndex: number,
+    slotIndex: number,
     dateStr: string,
     rawText: string
   ) => {
-    if (!dateStr) return;
     const cleanDigits = rawText.replace(/\D/g, '');
     const numVal = cleanDigits === '' ? 0 : parseInt(cleanDigits, 10);
 
     setBlocks((prev) =>
       prev.map((b) => {
         if (b.id !== blockId) return b;
+
+        const newSlots = [...(b.returDateSlots || ['', '', '', '', ''])];
+        const effectiveDate = dateStr || newSlots[slotIndex] || new Date().toISOString().split('T')[0];
+        if (numVal > 0 && !newSlots[slotIndex]) {
+          newSlots[slotIndex] = effectiveDate;
+        }
+
         const newColors = [...b.colorGroups];
         const targetColor = { ...newColors[colorIndex] };
         const newSizes = [...targetColor.sizes];
@@ -1058,9 +1087,9 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
 
         const newQtyReturByDate = { ...targetSize.qtyReturByDate };
         if (numVal === 0) {
-          delete newQtyReturByDate[dateStr];
+          delete newQtyReturByDate[effectiveDate];
         } else {
-          newQtyReturByDate[dateStr] = numVal;
+          newQtyReturByDate[effectiveDate] = numVal;
         }
 
         targetSize.qtyReturByDate = newQtyReturByDate;
@@ -1068,7 +1097,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
         targetColor.sizes = newSizes;
         newColors[colorIndex] = targetColor;
 
-        return recalculateBlock({ ...b, colorGroups: newColors });
+        return recalculateBlock({ ...b, returDateSlots: newSlots, colorGroups: newColors });
       })
     );
   };
@@ -2240,7 +2269,8 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                               {/* 9. QTY BARANG RETUR (Khusus CMT) */}
                               {isCMT &&
                                 returSlots.map((rStr, rIdx) => {
-                                  const rQtyVal = rStr ? sizeItem.qtyReturByDate?.[rStr] : undefined;
+                                  const effectiveSlotDate = rStr || (block.returDateSlots && block.returDateSlots[rIdx]) || '';
+                                  const rQtyVal = effectiveSlotDate ? sizeItem.qtyReturByDate?.[effectiveSlotDate] : undefined;
                                   return (
                                     <td
                                       key={`slot-retur-${rIdx}`}
@@ -2257,19 +2287,11 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                                           pattern="[0-9]*"
                                           value={rQtyVal !== undefined && rQtyVal !== 0 ? String(rQtyVal) : ''}
                                           onChange={(e) => {
-                                            let activeReturDate = rStr;
-                                            if (!activeReturDate) {
-                                              // Jika kolom header tanggal retur belum diisi, otomatis set tanggal hari ini
-                                              const todayStr = new Date().toISOString().split('T')[0];
-                                              activeReturDate = todayStr;
-                                              const newSlots = [...(block.returDateSlots || ['', '', '', '', ''])];
-                                              newSlots[rIdx] = todayStr;
-                                              block.returDateSlots = newSlots;
-                                            }
-                                            handleTypeQtyRetur(block.id, colorIndex, sizeIndex, activeReturDate, e.target.value);
+                                            const activeReturDate = effectiveSlotDate || new Date().toISOString().split('T')[0];
+                                            handleTypeQtyRetur(block.id, colorIndex, sizeIndex, rIdx, activeReturDate, e.target.value);
                                           }}
                                           placeholder="-"
-                                          title={!rStr ? "Klik header +Ret untuk set tanggal retur spesifik, atau langsung ketik angka" : undefined}
+                                          title={!effectiveSlotDate ? "Klik header +Ret untuk set tanggal retur spesifik, atau langsung ketik angka" : undefined}
                                           className="w-full h-8 text-center bg-transparent border-none outline-none font-bold text-xs text-red-600 dark:text-red-400 focus:bg-red-200 dark:focus:bg-red-900/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         />
                                       ) : (

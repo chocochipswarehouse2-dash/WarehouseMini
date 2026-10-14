@@ -426,6 +426,8 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const [variantInputs, setVariantInputs] = useState<Record<string, { recountQty: number | null; note: string }>>({});
   const [isSavingAudit, setIsSavingAudit] = useState<boolean>(false);
   const [isSyncingSheet, setIsSyncingSheet] = useState<boolean>(false);
+  const [isBatchSyncing, setIsBatchSyncing] = useState<boolean>(false);
+  const [batchSyncProgress, setBatchSyncProgress] = useState<{ current: number; total: number; activeCode: string } | null>(null);
 
   // Print ref for direct isolated printing
   const printContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1042,67 +1044,69 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   };
 
   // Re-push audit delta for a code to Google Sheets directly
+  // Helper to map a CodeAuditGroup to MasterRecountDeltaItem array
+  const buildDeltaItemsForGroup = (group: CodeAuditGroup): MasterRecountDeltaItem[] => {
+    const auditRec = recountAuditMap[group.kode_produksi];
+    const nowIso = new Date().toISOString();
+    const allDates = Array.from(new Set(group.items.map((it) => it.tanggal_penerimaan).filter(Boolean)));
+    const arrivalDatesInfo = formatDatesSummary(allDates as string[]);
+
+    if (auditRec && Array.isArray(auditRec.variants) && auditRec.variants.length > 0) {
+      return auditRec.variants.map((v: any) => ({
+        kode_produksi: group.kode_produksi,
+        warna: v.warna || '-',
+        size: v.size || '-',
+        qty_asli: Number(v.qty_asli) || 0,
+        qty_fisik: Number(v.qty_fisik !== undefined ? v.qty_fisik : v.qty_asli) || 0,
+        selisih: Number(v.selisih) || 0,
+        status: v.status || (v.selisih === 0 ? 'MATCH' : v.selisih < 0 ? 'KURANG' : 'LEBIH'),
+        round: auditRec.round || 1,
+        auditor: auditRec.auditor || 'Auditor Fisik',
+        catatan: v.note || auditRec.catatan || '',
+        tanggal_kedatangan_info: arrivalDatesInfo,
+        updated_at: nowIso,
+      }));
+    }
+
+    const varMap = new Map<string, { warna: string; size: string; qtyAsli: number; qtyFisik: number; note?: string }>();
+    group.items.forEach((it) => {
+      const key = `${it.warna || '-'}_${it.size || '-'}`;
+      if (!varMap.has(key)) {
+        varMap.set(key, { warna: it.warna || '-', size: it.size || '-', qtyAsli: 0, qtyFisik: 0, note: it.recount_notes });
+      }
+      const rec = varMap.get(key)!;
+      const qAsli = Number(it.qty) || 0;
+      const qFisik = it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : qAsli;
+      rec.qtyAsli += qAsli;
+      rec.qtyFisik += qFisik;
+    });
+
+    return Array.from(varMap.values()).map((v) => {
+      const selisih = v.qtyFisik - v.qtyAsli;
+      return {
+        kode_produksi: group.kode_produksi,
+        warna: v.warna,
+        size: v.size,
+        qty_asli: v.qtyAsli,
+        qty_fisik: v.qtyFisik,
+        selisih,
+        status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
+        round: group.last_round || 1,
+        auditor: group.last_auditor || 'Auditor Fisik',
+        catatan: v.note || group.last_notes || '',
+        tanggal_kedatangan_info: arrivalDatesInfo,
+        updated_at: nowIso,
+      };
+    });
+  };
+
   const handleDirectRePushToSheet = async (group: CodeAuditGroup, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!group) return;
 
     try {
       setIsSyncingSheet(true);
-      const auditRec = recountAuditMap[group.kode_produksi];
-      const nowIso = new Date().toISOString();
-      const allDates = Array.from(new Set(group.items.map((it) => it.tanggal_penerimaan).filter(Boolean)));
-      const arrivalDatesInfo = formatDatesSummary(allDates as string[]);
-
-      // Map delta items
-      let deltaItems: MasterRecountDeltaItem[] = [];
-
-      if (auditRec && Array.isArray(auditRec.variants) && auditRec.variants.length > 0) {
-        deltaItems = auditRec.variants.map((v: any) => ({
-          kode_produksi: group.kode_produksi,
-          warna: v.warna || '-',
-          size: v.size || '-',
-          qty_asli: Number(v.qty_asli) || 0,
-          qty_fisik: Number(v.qty_fisik !== undefined ? v.qty_fisik : v.qty_asli) || 0,
-          selisih: Number(v.selisih) || 0,
-          status: v.status || (v.selisih === 0 ? 'MATCH' : v.selisih < 0 ? 'KURANG' : 'LEBIH'),
-          round: auditRec.round || 1,
-          auditor: auditRec.auditor || 'Auditor Fisik',
-          catatan: v.note || auditRec.catatan || '',
-          tanggal_kedatangan_info: arrivalDatesInfo,
-          updated_at: nowIso,
-        }));
-      } else {
-        const varMap = new Map<string, { warna: string; size: string; qtyAsli: number; qtyFisik: number; note?: string }>();
-        group.items.forEach((it) => {
-          const key = `${it.warna || '-'}_${it.size || '-'}`;
-          if (!varMap.has(key)) {
-            varMap.set(key, { warna: it.warna || '-', size: it.size || '-', qtyAsli: 0, qtyFisik: 0, note: it.recount_notes });
-          }
-          const rec = varMap.get(key)!;
-          const qAsli = Number(it.qty) || 0;
-          const qFisik = it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : qAsli;
-          rec.qtyAsli += qAsli;
-          rec.qtyFisik += qFisik;
-        });
-
-        deltaItems = Array.from(varMap.values()).map((v) => {
-          const selisih = v.qtyFisik - v.qtyAsli;
-          return {
-            kode_produksi: group.kode_produksi,
-            warna: v.warna,
-            size: v.size,
-            qty_asli: v.qtyAsli,
-            qty_fisik: v.qtyFisik,
-            selisih,
-            status: selisih === 0 ? 'MATCH' : selisih < 0 ? 'KURANG' : 'LEBIH',
-            round: group.last_round || 1,
-            auditor: group.last_auditor || 'Auditor Fisik',
-            catatan: v.note || group.last_notes || '',
-            tanggal_kedatangan_info: arrivalDatesInfo,
-            updated_at: nowIso,
-          };
-        });
-      }
+      const deltaItems = buildDeltaItemsForGroup(group);
 
       const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
         activeTab: group.kategori === 'Kargo' ? 'Kargo' : 'CMT',
@@ -1124,6 +1128,63 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       onShowToast(`Gagal re-push ke Google Sheet: ${err.message || err}`, 'error');
     } finally {
       setIsSyncingSheet(false);
+    }
+  };
+
+  // Batch Re-Push all counted codes to Google Sheet
+  const handleBatchRePushToSheet = async () => {
+    const targetGroups = filteredQueue.filter((g) => g.is_counted);
+    if (targetGroups.length === 0) {
+      onShowToast('Tidak ada kode produksi yang sudah dihitung untuk di-repush ke Google Sheet.', 'warning');
+      return;
+    }
+
+    const confirmMsg = `Kirim ulang (Re-Push) hasil hitung ulang untuk ${targetGroups.length} Kode Produksi ke Master Sheet Google?\n\nProses akan berjalan bertahap otomatis (anti-timeout).`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setIsBatchSyncing(true);
+      setBatchSyncProgress({ current: 0, total: targetGroups.length, activeCode: targetGroups[0].kode_produksi });
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < targetGroups.length; i++) {
+        const group = targetGroups[i];
+        setBatchSyncProgress({ current: i + 1, total: targetGroups.length, activeCode: group.kode_produksi });
+
+        try {
+          const deltaItems = buildDeltaItemsForGroup(group);
+          const deltaRes = await pushMasterRecountDeltaToGoogleSheet({
+            activeTab: group.kategori === 'Kargo' ? 'Kargo' : 'CMT',
+            kode_produksi: group.kode_produksi,
+            tanggal_hitung: group.last_audit_date ? group.last_audit_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            items: deltaItems,
+          });
+
+          if (deltaRes.success) {
+            successCount++;
+          } else {
+            console.warn(`Gagal sync batch sheet untuk ${group.kode_produksi}:`, deltaRes.message);
+            failCount++;
+          }
+        } catch (itemErr) {
+          console.error(`Error push delta ${group.kode_produksi}:`, itemErr);
+          failCount++;
+        }
+      }
+
+      if (failCount === 0) {
+        onShowToast(`✅ Berhasil Re-Push Semua! ${successCount} kode produksi telah disinkronkan ke Master Sheet Google.`, 'success');
+      } else {
+        onShowToast(`Re-Push Selesai: ${successCount} sukses, ${failCount} gagal dikirim ke Google Sheet.`, 'warning');
+      }
+    } catch (err: any) {
+      console.error('Error batch re-push:', err);
+      onShowToast(`Gagal eksekusi Re-Push masal: ${err?.message || err}`, 'error');
+    } finally {
+      setIsBatchSyncing(false);
+      setBatchSyncProgress(null);
     }
   };
 
@@ -1375,6 +1436,22 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                   <span>+ Panggil Kode (Multiple)</span>
                 </button>
 
+                {/* Batch Re-Push All Counted Codes Button */}
+                <button
+                  type="button"
+                  onClick={handleBatchRePushToSheet}
+                  disabled={isBatchSyncing || isSyncingSheet || (metrics.total - metrics.uncounted === 0)}
+                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  title="Kirim ulang (Re-Push) semua hasil hitung ulang fisik antrian ke Master Sheet Google Spreadsheet sekaligus secara otomatis"
+                >
+                  <CloudUpload className={`w-4 h-4 ${isBatchSyncing ? 'animate-bounce' : ''}`} />
+                  <span>
+                    {isBatchSyncing
+                      ? `Re-Push (${batchSyncProgress?.current || 0}/${batchSyncProgress?.total || 0})...`
+                      : `Re-Push Semua (${metrics.total - metrics.uncounted})`}
+                  </span>
+                </button>
+
                 {/* Cloud Sync Button (Tarik Hasil Hitung Ulang & Antrian Terbaru) */}
                 <button
                   type="button"
@@ -1408,6 +1485,34 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Batch Re-Push Live Progress Banner */}
+            {isBatchSyncing && batchSyncProgress && (
+              <div className="bg-purple-50 dark:bg-purple-950/70 border border-purple-200 dark:border-purple-800 rounded-xl p-3 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0">
+                    <CloudUpload className="w-4 h-4 animate-bounce" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-purple-950 dark:text-purple-100 flex items-center gap-2">
+                      <span>Sedang Mengirim ke Google Sheet...</span>
+                      <span className="px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-[10px] font-bold">
+                        {batchSyncProgress.current} dari {batchSyncProgress.total} Kode
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-purple-700 dark:text-purple-300 font-mono mt-0.5">
+                      Memproses: <strong>{batchSyncProgress.activeCode}</strong>
+                    </div>
+                  </div>
+                </div>
+                <div className="w-28 sm:w-40 bg-purple-200 dark:bg-purple-900 h-2 rounded-full overflow-hidden shrink-0">
+                  <div
+                    className="bg-purple-600 h-full transition-all duration-300 rounded-full"
+                    style={{ width: `${Math.round((batchSyncProgress.current / batchSyncProgress.total) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Filter Tabs / Pills */}
             <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
