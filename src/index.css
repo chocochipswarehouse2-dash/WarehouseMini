@@ -415,49 +415,48 @@ html.dark {
   [role="navigation"],
   .no-print,
   .print\:hidden,
-  [class*="print:hidden"],
-  [id^="tab-pesanan-"] {
+  [class*="print:hidden"] {
     display: none !important;
   }
 
-  /* Isolasi area cetak Surat Jalan Struk Kasir (80mm) Rangkap 2 */
-  body:has(#printableSuratJalanKasir) * {
-    visibility: hidden;
+  /* Buka kuncian container modal/overlay saat cetak agar tidak terpotong atau blank */
+  .fixed,
+  [class*="fixed"],
+  .overflow-hidden,
+  .overflow-y-auto,
+  [class*="overflow-"] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    inset: auto !important;
+    transform: none !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
   }
-  body:has(#printableSuratJalanKasir) #printableSuratJalanKasir,
-  body:has(#printableSuratJalanKasir) #printableSuratJalanKasir * {
-    visibility: visible;
-  }
-  body:has(#printableSuratJalanKasir) #printableSuratJalanKasir {
-    position: absolute !important;
+
+  /* Isolasi area cetak Surat Jalan Struk Kasir (58mm / 80mm) */
+  #printableSuratJalanKasir,
+  #printableAlterationRepairReceipt,
+  #manual-shipment-print-area,
+  #printable-surat-jalan-area,
+  #printable-koli-area,
+  #printable-sticker-area {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
     left: 0 !important;
     right: 0 !important;
     top: 0 !important;
-    width: 80mm !important;
-    max-width: 80mm !important;
     margin: 0 auto !important;
-    padding: 2mm !important;
     background: #ffffff !important;
-    z-index: 999999 !important;
-  }
-
-  /* Isolasi area cetak Manual Shipment */
-  body:has(#manual-shipment-print-area:not(.hidden)) * {
-    visibility: hidden;
-  }
-  body:has(#manual-shipment-print-area:not(.hidden)) #manual-shipment-print-area,
-  body:has(#manual-shipment-print-area:not(.hidden)) #manual-shipment-print-area * {
-    visibility: visible;
-  }
-  body:has(#manual-shipment-print-area:not(.hidden)) #manual-shipment-print-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #ffffff !important;
+    color: #000000 !important;
     z-index: 999999 !important;
   }
 }
 @media print { @page { margin: 0; } }
+

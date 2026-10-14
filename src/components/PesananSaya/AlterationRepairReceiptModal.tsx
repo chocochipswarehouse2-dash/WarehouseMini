@@ -60,6 +60,53 @@ export const AlterationRepairReceiptModal: React.FC<AlterationRepairReceiptModal
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 5mm;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .fixed, [class*="fixed"], .overflow-y-auto, .overflow-hidden, [class*="overflow-"] {
+            position: static !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            inset: auto !important;
+            transform: none !important;
+            backdrop-filter: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: transparent !important;
+          }
+          header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
+            display: none !important;
+          }
+          #printableAlterationRepairReceipt {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
+            margin: 0 auto !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: none !important;
+            border: 2px solid #000000 !important;
+            border-radius: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          #printableAlterationRepairReceipt * {
+            visibility: visible !important;
+          }
+        }
+      `}</style>
       {/* Container Print & Preview */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden my-auto">
         

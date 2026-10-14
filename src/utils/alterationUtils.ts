@@ -5,18 +5,31 @@
 export function isRealAlterItem(it: any): boolean {
   if (!it) return false;
 
-  // 1. Check boolean or string needs_alteration
-  let needsAlt = false;
-  if (typeof it.needs_alteration === 'boolean') {
-    needsAlt = it.needs_alteration;
-  } else if (typeof it.needs_alteration === 'string') {
-    const s = it.needs_alteration.trim().toLowerCase();
-    needsAlt = s === 'true' || s === '1' || s === 'ya' || s === 'yes';
-  } else if (typeof it.needs_alteration === 'number') {
-    needsAlt = it.needs_alteration === 1;
+  // 1. If needs_alteration is explicitly false or 'false' or 0 or '0' or 'tidak' or 'no', then user did NOT opt for alteration
+  if (
+    it.needs_alteration === false ||
+    it.needs_alteration === 'false' ||
+    it.needs_alteration === 0 ||
+    it.needs_alteration === '0' ||
+    it.needs_alteration === 'tidak' ||
+    it.needs_alteration === 'no'
+  ) {
+    return false;
   }
 
-  // 2. Check id_form_alter
+  // 2. Check boolean or string needs_alteration for true value
+  if (
+    it.needs_alteration === true ||
+    it.needs_alteration === 'true' ||
+    it.needs_alteration === 1 ||
+    it.needs_alteration === '1' ||
+    it.needs_alteration === 'ya' ||
+    it.needs_alteration === 'yes'
+  ) {
+    return true;
+  }
+
+  // 3. Check id_form_alter
   const cleanFormId = String(it.id_form_alter || '').trim();
   const hasFormId =
     cleanFormId.length > 0 &&
@@ -25,25 +38,30 @@ export function isRealAlterItem(it: any): boolean {
     cleanFormId.toLowerCase() !== 'null' &&
     cleanFormId.toLowerCase() !== 'undefined';
 
-  // 3. Check layanan_alter
-  const cleanLayanan = String(it.layanan_alter || '').trim();
+  // 4. Check layanan_alter / layanan_type
+  const cleanLayanan = String(it.layanan_alter || it.layanan_type || '').trim().toLowerCase();
   const hasLayanan =
     cleanLayanan.length > 0 &&
     cleanLayanan !== '-' &&
-    cleanLayanan.toLowerCase() !== 'none' &&
-    cleanLayanan.toLowerCase() !== 'null' &&
-    cleanLayanan.toLowerCase() !== 'undefined';
+    cleanLayanan !== 'none' &&
+    cleanLayanan !== 'null' &&
+    cleanLayanan !== 'undefined' &&
+    cleanLayanan !== 'alteration' && // Ignore generic default string
+    cleanLayanan !== 'tanpa alterasi' &&
+    cleanLayanan !== 'tidak ada';
 
-  // 4. Check alteration_detail
-  const cleanDetail = String(it.alteration_detail || '').trim();
+  // 5. Check alteration_detail
+  const cleanDetail = String(it.alteration_detail || '').trim().toLowerCase();
   const hasDetail =
     cleanDetail.length > 0 &&
     cleanDetail !== '-' &&
-    cleanDetail.toLowerCase() !== 'none' &&
-    cleanDetail.toLowerCase() !== 'null' &&
-    cleanDetail.toLowerCase() !== 'undefined';
+    cleanDetail !== 'none' &&
+    cleanDetail !== 'null' &&
+    cleanDetail !== 'undefined' &&
+    cleanDetail !== 'tanpa alterasi' &&
+    cleanDetail !== 'tidak ada';
 
-  return needsAlt || hasFormId || hasLayanan || hasDetail;
+  return hasFormId || hasLayanan || hasDetail;
 }
 
 export function hasRealAlterItems(order: any): boolean {

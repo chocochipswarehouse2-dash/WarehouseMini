@@ -284,15 +284,29 @@ _WMS Warehouse System_`;
             padding: 0 !important;
             background: #ffffff !important;
             width: ${paperWidth === '58mm' ? '58mm' : '80mm'} !important;
+            height: auto !important;
+            overflow: visible !important;
           }
-          body * {
-            visibility: hidden !important;
+          .fixed, [class*="fixed"], .overflow-y-auto, .overflow-hidden, [class*="overflow-"] {
+            position: static !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            inset: auto !important;
+            transform: none !important;
+            backdrop-filter: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: transparent !important;
           }
-          #printableSuratJalanKasir, #printableSuratJalanKasir * {
-            visibility: visible !important;
+          header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
+            display: none !important;
           }
           #printableSuratJalanKasir {
-            position: absolute !important;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
             left: 0 !important;
             right: 0 !important;
             top: 0 !important;
@@ -302,11 +316,15 @@ _WMS Warehouse System_`;
             padding: 1mm !important;
             box-sizing: border-box !important;
             background: #ffffff !important;
+            color: #000000 !important;
             box-shadow: none !important;
             border: none !important;
             z-index: 999999 !important;
             font-size: ${paperWidth === '58mm' ? '8.5px' : '10.5px'} !important;
             line-height: 1.15 !important;
+          }
+          #printableSuratJalanKasir * {
+            visibility: visible !important;
           }
           .receipt-page-break {
             page-break-after: auto !important;

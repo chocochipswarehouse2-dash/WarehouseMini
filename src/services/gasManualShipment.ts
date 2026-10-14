@@ -891,7 +891,16 @@ export async function updateShipmentResi(idOrNoPesanan: string, resi: string, ti
     }
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNoPesanan);
     const filter = isUuid ? `id=eq.${idOrNoPesanan}` : `no_pesanan=eq.${encodeURIComponent(idOrNoPesanan)}`;
-    await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+    try {
+      await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+    } catch (patchErr: any) {
+      if (payload.tanggal_scan) {
+        delete payload.tanggal_scan;
+        await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+      } else {
+        throw patchErr;
+      }
+    }
     return true;
   } catch (err) {
     console.warn('Error updateShipmentResi', err);
@@ -945,7 +954,16 @@ export async function bulkUpdateShipmentResi(
             return;
           }
 
-          await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+          try {
+            await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+          } catch (patchErr: any) {
+            if (payload.tanggal_scan) {
+              delete payload.tanggal_scan;
+              await supabaseFetch('manual_shipment', 'PATCH', payload, filter);
+            } else {
+              throw patchErr;
+            }
+          }
           successCount++;
         } catch (err: any) {
           failCount++;
