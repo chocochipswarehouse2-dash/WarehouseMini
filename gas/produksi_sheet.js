@@ -44,6 +44,39 @@ function doPost(e) {
 }
 
 function doGet(e) {
+  if (e && e.parameter && (e.parameter.action === 'getCCT45' || e.parameter.action === 'searchCode')) {
+    try {
+      var query = (e.parameter.q || e.parameter.code || '045').trim().toUpperCase();
+      var ss = SpreadsheetApp.openById(TARGET_PRODUKSI_SPREADSHEET_ID);
+      var sheets = ss.getSheets();
+      var found = [];
+      for (var i = 0; i < sheets.length; i++) {
+        var s = sheets[i];
+        var name = s.getName();
+        var data = s.getDataRange().getValues();
+        var formulas = s.getDataRange().getFormulas();
+        var headers = data.length > 1 ? data[1] : [];
+        for (var r = 0; r < data.length; r++) {
+          var rowStr = JSON.stringify(data[r]).toUpperCase();
+          if (rowStr.indexOf(query) !== -1) {
+            found.push({
+              sheet: name,
+              row: r + 1,
+              headers: headers,
+              data: data[r],
+              formulas: formulas[r]
+            });
+          }
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ success: true, query: query, found: found }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: 'online',
     message: 'WMS Produksi Google Sheet Sync Gateway is Active (Supports 1 SJ = 1 Sheet & Master Matrix)',
