@@ -4521,7 +4521,9 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
           }
         } catch {}
       }
-      rawLokasi = cachedCat?.lokasi || (Array.isArray(cachedCat?.locList) && cachedCat?.locList[0]?.lokasi) || 'A-01';
+      const locItem = Array.isArray(cachedCat?.locList) ? cachedCat?.locList[0] : null;
+      const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
+      rawLokasi = cachedCat?.lokasi || locStr || 'A-01';
     }
   }
 
@@ -5065,7 +5067,9 @@ export async function createPickingSuratJalanSupabase(
         itemLokasi = cleanTujuan || 'STORE';
       } else {
         const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
-        itemLokasi = cachedCat?.lokasi || (Array.isArray(cachedCat?.locList) && cachedCat?.locList[0]?.lokasi) || 'A-01';
+        const locItem = Array.isArray(cachedCat?.locList) ? cachedCat?.locList[0] : null;
+        const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
+        itemLokasi = cachedCat?.lokasi || locStr || 'A-01';
       }
     }
 

@@ -46,8 +46,8 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   // Prioritaskan Toko Fulfillment spesifik item jika tersedia (misal "Gading Serpong Tangerang"), baru nama pengirim
   const itemFulfillmentStore = order.items?.find((it: any) => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'))?.fulfillment
     || order.items?.[0]?.fulfillment
-    || order.items?.[0]?.toko_asal
-    || order.items?.[0]?.store_name
+    || (order.items?.[0] as any)?.toko_asal
+    || (order.items?.[0] as any)?.store_name
     || '';
 
   const storeName = arData.nama_asal || itemFulfillmentStore || order.nama_pengirim || 'Store';

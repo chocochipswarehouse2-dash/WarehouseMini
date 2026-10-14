@@ -509,7 +509,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         if (isStoreItem) {
           effectiveLokasi = item.tujuan || 'STORE';
         } else {
-          effectiveLokasi = catMatch?.lokasi || (Array.isArray(catMatch?.locList) && catMatch?.locList[0]?.lokasi) || 'A-01';
+          const locItem = Array.isArray(catMatch?.locList) ? catMatch?.locList[0] : null;
+          const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
+          effectiveLokasi = catMatch?.lokasi || locStr || 'A-01';
         }
       }
 
@@ -1027,7 +1029,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           if (isStoreSJ) {
             itemLokasi = sj.tujuan || 'STORE';
           } else {
-            itemLokasi = catMatch?.lokasi || (Array.isArray(catMatch?.locList) && catMatch?.locList[0]?.lokasi) || 'A-01';
+            const locItem = Array.isArray(catMatch?.locList) ? catMatch?.locList[0] : null;
+            const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
+            itemLokasi = catMatch?.lokasi || locStr || 'A-01';
           }
         }
 

@@ -203,12 +203,14 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
                     width: ${contentCssWidth} !important;
                     max-width: ${contentCssWidth} !important;
                     margin: 0 auto !important;
-                    padding: 1mm !important;
+                    padding: 2mm 1.5mm 25mm 1.5mm !important;
                     font-size: ${basePx}px !important;
-                    line-height: 1.22 !important;
+                    line-height: 1.35 !important;
                     color: #000000 !important;
                     background: #ffffff !important;
                     font-weight: 700 !important;
+                    word-break: break-word !important;
+                    overflow-wrap: break-word !important;
                   }
                   #printableSuratJalanKasir * {
                     box-sizing: border-box;
@@ -216,23 +218,23 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
                   #printableSuratJalanKasir .text-base,
                   #printableSuratJalanKasir .text-xl,
                   #printableSuratJalanKasir .text-lg {
-                    font-size: 1.25em !important;
+                    font-size: 1.2em !important;
                     font-weight: 900 !important;
                   }
                   #printableSuratJalanKasir .text-sm {
-                    font-size: 1.1em !important;
+                    font-size: 1.05em !important;
                     font-weight: 800 !important;
                   }
                   #printableSuratJalanKasir .text-xs,
                   #printableSuratJalanKasir .text-\\[11px\\],
                   #printableSuratJalanKasir .text-\\[10.5px\\] {
-                    font-size: 1.0em !important;
+                    font-size: 0.95em !important;
                   }
                   #printableSuratJalanKasir .text-\\[10px\\],
                   #printableSuratJalanKasir .text-\\[9.5px\\],
                   #printableSuratJalanKasir .text-\\[9px\\],
                   #printableSuratJalanKasir .text-\\[8.5px\\] {
-                    font-size: 0.9em !important;
+                    font-size: 0.88em !important;
                   }
                   .receipt-page-break {
                     page-break-after: always;
@@ -485,7 +487,7 @@ _WMS Warehouse System_`;
           width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
           max-width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
           margin: 0 auto !important;
-          padding: 1.5mm !important;
+          padding: 2mm 1.5mm 25mm 1.5mm !important;
           box-sizing: border-box !important;
           background: #ffffff !important;
           color: #000000 !important;
@@ -494,7 +496,7 @@ _WMS Warehouse System_`;
               ? (fontSizeOption === 'normal' ? 12 : fontSizeOption === 'large' ? 14 : 16)
               : (fontSizeOption === 'normal' ? 14 : fontSizeOption === 'large' ? 16 : 18)
           }px !important;
-          line-height: 1.22 !important;
+          line-height: 1.35 !important;
           font-weight: 700 !important;
           font-family: 'Courier New', Courier, monospace !important;
           word-break: break-word !important;
@@ -506,24 +508,24 @@ _WMS Warehouse System_`;
         #printableSuratJalanKasir .text-base,
         #printableSuratJalanKasir .text-xl,
         #printableSuratJalanKasir .text-lg {
-          font-size: 1.22em !important;
+          font-size: 1.2em !important;
           font-weight: 900 !important;
         }
         #printableSuratJalanKasir .text-sm {
-          font-size: 1.1em !important;
+          font-size: 1.05em !important;
           font-weight: 800 !important;
         }
         #printableSuratJalanKasir .text-xs,
         #printableSuratJalanKasir .text-\\[11px\\],
         #printableSuratJalanKasir .text-\\[10.5px\\] {
-          font-size: 1.0em !important;
+          font-size: 0.95em !important;
         }
         #printableSuratJalanKasir .text-\\[10px\\],
         #printableSuratJalanKasir .text-\\[9.5px\\],
         #printableSuratJalanKasir .text-\\[9px\\],
         #printableSuratJalanKasir .text-\\[8.5px\\],
         #printableSuratJalanKasir .text-\\[8px\\] {
-          font-size: 0.9em !important;
+          font-size: 0.88em !important;
         }
 
         @media print {
@@ -1003,326 +1005,235 @@ _WMS Warehouse System_`;
                 ));
 
                 return (
-                  <div key={ord.no_pesanan || oIndex} className={`space-y-4 ${oIndex < orderList.length - 1 ? 'receipt-page-break pb-6 border-b-2 border-slate-400 print:border-none' : ''}`}>
+                  <div key={ord.no_pesanan || oIndex} className={`space-y-4 ${oIndex < orderList.length - 1 ? 'receipt-page-break pb-8 border-b-2 border-slate-400 print:border-none' : ''}`}>
                     {/* ======================================================= */}
                     {/* RANGKAP 1: LEMBAR ARSIP STORE (COPY 1) */}
                     {/* ======================================================= */}
                     {(printCopy === 'both' || printCopy === 'copy1') && (
-                    <div className="space-y-2">
-                    <div className="text-center space-y-0.5 border-b border-dashed border-slate-800 pb-2">
-                      <div className="text-base font-black tracking-wider uppercase font-sans">
-                        chocochips
-                      </div>
-                      <div className="text-[10px] font-black uppercase">
-                        SURAT JALAN PENGIRIMAN BARANG
-                      </div>
-                      <div className="text-[8.5px] font-bold text-slate-700 uppercase font-sans">
-                        [PENGIRIMAN FISIK STORE ➔ WAREHOUSE]
-                      </div>
-                      <div className="text-[9px] font-bold bg-slate-100 border border-slate-400 px-1 py-0.5 inline-block rounded-xs mt-0.5">
-                        [COPY 1: ARSIP TOKO PENGIRIM]
-                      </div>
-                    </div>
-
-                    {/* Meta Informasi */}
-                    <div className="space-y-1 text-[10px]">
-                      <div className="flex justify-between">
-                        <span>No. Pesanan:</span>
-                        <strong className="font-bold font-mono">{ord.no_pesanan}</strong>
-                      </div>
-                      {arData?.id_form_alter && (
-                        <div className="flex justify-between">
-                          <span>No. ID Form Alter:</span>
-                          <strong className="font-bold font-mono">{arData.id_form_alter}</strong>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span>Tanggal:</span>
-                        <span>{formattedDate} {currentTimeStr}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Dari Store (Sumber):</span>
-                        <strong className="font-bold">{sourceStore}</strong>
-                      </div>
-                      {differentFulfillments.length > 0 && (
-                        <div className="flex justify-between text-[9px] text-indigo-900 bg-indigo-50 px-1 py-0.5 rounded">
-                          <span>Ambil dari Store:</span>
-                          <strong>{differentFulfillments.join(', ')}</strong>
-                        </div>
-                      )}
-                      {senderStore !== sourceStore && (
-                        <div className="flex justify-between">
-                          <span>Store Pemohon:</span>
-                          <span>{senderStore}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span>PIC Toko:</span>
-                        <span>{picStore} {arData?.pic_store_phone ? `(${arData.pic_store_phone})` : ''}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Tujuan:</span>
-                        <span className="font-bold">WAREHOUSE (GUDANG PUSAT)</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Kurir/Ekspedisi:</span>
-                        <span>{kurirStore}</span>
-                      </div>
-                      {resiStore && resiStore !== '-' && (
-                        <div className="flex justify-between">
-                          <span>No. Resi:</span>
-                          <span>{resiStore}</span>
-                        </div>
-                      )}
-                      {arData?.no_delivery_dealpos && (
-                        <div className="flex justify-between text-indigo-900 font-bold bg-indigo-50 px-1 py-0.5 rounded">
-                          <span>Delivery DealPOS:</span>
-                          <span>{arData.no_delivery_dealpos}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border-t border-dashed border-slate-800 my-1" />
-
-                    {/* Rincian Produk (Support Multi-Item) */}
-                    <div className="space-y-1.5">
-                      <div className="text-[9px] font-bold uppercase text-slate-500 font-sans">
-                        Daftar Pakaian Kirim ({ord.items?.length || 1} Item / Total {ord.items?.reduce((s, it) => s + (Number(it.qty) || 1), 0) || qty} pcs):
-                      </div>
-                      {(ord.items && ord.items.length > 0 ? ord.items : [{ nama_produk: productName, sku, size, qty }]).map((it, idx) => (
-                        <div key={idx} className="space-y-0.5 border-b border-dotted border-slate-300 pb-1 last:border-b-0">
-                          <div className="flex justify-between items-start font-bold">
-                            <span className="truncate pr-1">{idx + 1}. {it.nama_produk || 'Produk Pakaian'}</span>
-                            <span className="shrink-0">{it.qty || 1}x</span>
+                      <div className="space-y-2">
+                        {/* Header */}
+                        <div className="text-center space-y-0.5 border-b border-dashed border-slate-800 pb-2">
+                          <div className="text-base font-black tracking-widest uppercase font-sans">
+                            CHOCOCHIPS
                           </div>
-                          <div className="flex justify-between text-[10px] text-slate-700">
-                            <span>SKU: {it.sku || '-'}</span>
-                            <span>Size: {it.size || '-'}</span>
+                          <div className="text-[10px] font-black uppercase tracking-wider">
+                            SURAT JALAN PENGIRIMAN
                           </div>
-                          {it.fulfillment && (
-                            <div className="text-[9px] text-slate-600">
-                              Ambil dari: <strong>{it.fulfillment}</strong>
+                          <div className="text-[9px] font-bold text-slate-800 uppercase font-sans">
+                            STORE ➔ WAREHOUSE
+                          </div>
+                          <div className="text-[8.5px] font-bold bg-slate-100 border border-slate-400 px-1.5 py-0.5 inline-block rounded-xs mt-0.5">
+                            [COPY 1: ARSIP TOKO]
+                          </div>
+                        </div>
+
+                        {/* Structured Key-Value Meta Info */}
+                        <div className="space-y-0.5 text-[9.5px] py-0.5">
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">No. Order</span>
+                            <span className="font-bold font-mono text-black">: {ord.no_pesanan}</span>
+                          </div>
+                          {arData?.id_form_alter && (
+                            <div className="flex">
+                              <span className="w-20 shrink-0 text-slate-600">ID Alter</span>
+                              <span className="font-bold font-mono text-black">: {arData.id_form_alter}</span>
                             </div>
                           )}
-                          {it.layanan_type && (
-                            <div className="text-[9px] text-indigo-900 font-semibold font-sans">
-                              Layanan: [{it.layanan_type.toUpperCase()}]
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">Tanggal</span>
+                            <span>: {formattedDate} {currentTimeStr}</span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">Dari Store</span>
+                            <span className="font-bold text-black">: {sourceStore}</span>
+                          </div>
+                          {differentFulfillments.length > 0 && (
+                            <div className="flex text-indigo-950 font-bold">
+                              <span className="w-20 shrink-0">Sumber Item</span>
+                              <span>: {differentFulfillments.join(', ')}</span>
                             </div>
                           )}
-                          {(it.alteration_detail || it.repair_detail) && (
-                            <div className="text-[9px] text-slate-600 bg-slate-50 p-1 rounded-xs">
-                              {it.alteration_detail && <div>• Alter: {it.alteration_detail}</div>}
-                              {it.repair_detail && <div>• Repair: {it.repair_detail}</div>}
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">Tujuan</span>
+                            <span className="font-bold text-black">: WAREHOUSE (GUDANG)</span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">PIC / Kurir</span>
+                            <span>: {picStore} / {kurirStore}</span>
+                          </div>
+                          {(resiStore && resiStore !== '-') && (
+                            <div className="flex">
+                              <span className="w-20 shrink-0 text-slate-600">No. Resi</span>
+                              <span>: {resiStore}</span>
+                            </div>
+                          )}
+                          {arData?.no_delivery_dealpos && (
+                            <div className="flex text-indigo-950 font-bold">
+                              <span className="w-20 shrink-0">DealPOS</span>
+                              <span>: {arData.no_delivery_dealpos}</span>
                             </div>
                           )}
                         </div>
-                      ))}
-                    </div>
 
-                    {/* Instruksi Singkat Keseluruhan (jika ada di header level) */}
-                    {(ord.alteration_detail || ord.repair_detail) && (!ord.items || ord.items.length <= 1) && (
-                      <div className="bg-slate-50 border border-slate-300 p-1.5 rounded-xs text-[9.5px] space-y-0.5 mt-1">
-                        {ord.alteration_detail && (
-                          <div>
-                            <strong>Alter: </strong>
-                            <span>{ord.alteration_detail}</span>
+                        {/* Product List Table */}
+                        <div className="border-t border-b border-dashed border-slate-800 my-1 py-1 space-y-1">
+                          <div className="text-[9px] font-bold uppercase text-slate-700">
+                            DAFTAR BARANG ({ord.items?.length || 1} Item, {ord.items?.reduce((s, it) => s + (Number(it.qty) || 1), 0) || qty} pcs):
                           </div>
-                        )}
-                        {ord.repair_detail && (
-                          <div>
-                            <strong>Repair: </strong>
-                            <span>{ord.repair_detail}</span>
+                          {(ord.items && ord.items.length > 0 ? ord.items : [{ nama_produk: productName, sku, size, qty }]).map((it, idx) => (
+                            <div key={idx} className="text-[9.5px] space-y-0.5 border-b border-dotted border-slate-300 pb-1 last:border-b-0">
+                              <div className="font-bold leading-snug">
+                                {idx + 1}. {it.nama_produk || 'Produk Pakaian'} ({it.qty || 1}x)
+                              </div>
+                              <div className="text-[9px] text-slate-700 pl-2">
+                                SKU: {it.sku || '-'} | Size: {it.size || '-'}
+                              </div>
+                              {it.fulfillment && (
+                                <div className="text-[8.5px] text-slate-600 pl-2">
+                                  Ambil: <strong>{it.fulfillment}</strong>
+                                </div>
+                              )}
+                              {(it.alteration_detail || it.repair_detail) && (
+                                <div className="text-[8.5px] text-black bg-slate-100 p-1 rounded-xs ml-2 my-0.5">
+                                  {it.alteration_detail && <div>• <strong>Alter:</strong> {it.alteration_detail}</div>}
+                                  {it.repair_detail && <div>• <strong>Repair:</strong> {it.repair_detail}</div>}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Signature Section */}
+                        <div className="grid grid-cols-2 gap-2 text-center text-[9px] pt-2">
+                          <div className="space-y-5">
+                            <div>Pengirim (Store)</div>
+                            <div className="border-t border-slate-700 pt-0.5 font-bold">
+                              ({picStore})
+                            </div>
                           </div>
-                        )}
+                          <div className="space-y-5">
+                            <div>Driver / Kurir</div>
+                            <div className="border-t border-slate-700 pt-0.5">
+                              (______________)
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
 
-                    {/* Tanda Tangan */}
-                    <div className="grid grid-cols-2 gap-2 text-center text-[9px] pt-3">
-                      <div className="space-y-6">
-                        <div>Pengirim (Store)</div>
-                        <div className="border-t border-slate-700 pt-0.5">
-                          ({picStore})
+                    {/* ======================================================= */}
+                    {/* GARIS PEMBATAS POTONG DENGAN JARAK AMAN (PERFORATION) */}
+                    {/* ======================================================= */}
+                    {printCopy === 'both' && (
+                      <div className="py-5 my-3 text-center border-t-2 border-b-2 border-dashed border-slate-900 bg-slate-50 rounded-xs">
+                        <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-900 font-sans">
+                          ✂️ POTONG DI SINI (RANGKAP 2) ✂️
                         </div>
-                      </div>
-                      <div className="space-y-6">
-                        <div>Kurir / Driver</div>
-                        <div className="border-t border-slate-700 pt-0.5">
-                          (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)
+                        <div className="text-[8px] text-slate-600 font-bold">
+                          (Jarak potong aman agar tidak mengenai teks)
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="text-[8.5px] text-center text-slate-500 pt-1">
-                      * Simpan lembar ini sebagai arsip bukti pengiriman Store ke Gudang
-                    </div>
-                  </div>
-                  )}
-
-                  {/* ======================================================= */}
-                  {/* GARIS PERFORASI / PEMBATAS POTONG */}
-                  {/* ======================================================= */}
-                  {printCopy === 'both' && (
-                    <div className="relative py-2.5 my-1 text-center">
-                      <div className="border-b-2 border-dashed border-slate-800 w-full" />
-                      <div className="absolute left-1/2 -top-1 -translate-x-1/2 bg-white px-2 text-[9px] font-bold uppercase tracking-wider text-slate-700 font-sans">
-                        ✂️ POTONG DI SINI (RANGKAP 2) ✂️
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ======================================================= */}
-                  {/* RANGKAP 2: LEMBAR LAMPIRAN FISIK PRODUK (COPY 2) */}
-                  {/* ======================================================= */}
-                  {(printCopy === 'both' || printCopy === 'copy2') && (
-                  <div className="space-y-2">
-                    <div className="text-center space-y-0.5 border-b border-dashed border-slate-800 pb-2">
-                      <div className="text-base font-black tracking-wider uppercase font-sans">
-                        chocochips
-                      </div>
-                      <div className="text-[10px] font-black uppercase">
-                        SURAT JALAN PENGIRIMAN BARANG
-                      </div>
-                      <div className="text-[8.5px] font-bold text-indigo-900 uppercase font-sans">
-                        [PENGIRIMAN FISIK STORE ➔ WAREHOUSE]
-                      </div>
-                      <div className="text-[9px] font-bold bg-indigo-50 border border-indigo-400 text-indigo-900 px-1.5 py-0.5 inline-block rounded-xs mt-0.5">
-                        [COPY 2: LAMPIRAN PADA PRODUK KE GUDANG]
-                      </div>
-                      <div className="text-[8px] text-slate-500 font-bold">
-                        *Wajib disematkan pada hanger / polybag pakaian
-                      </div>
-                    </div>
-
-                    {/* QR Code & Meta */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="space-y-0.5 text-[10px] flex-1">
-                        <div>
-                          <span>No. Pesanan: </span>
-                          <strong className="font-bold font-mono">{ord.no_pesanan}</strong>
-                        </div>
-                        {arData?.id_form_alter && (
-                          <div>
-                            <span>ID Form Alter: </span>
-                            <strong className="font-bold font-mono">{arData.id_form_alter}</strong>
-                          </div>
-                        )}
-                        <div>
-                          <span>Store Asal: </span>
-                          <strong className="font-bold">{sourceStore}</strong>
-                        </div>
-                        {differentFulfillments.length > 0 && (
-                          <div className="text-[9px] text-indigo-900 font-semibold">
-                            Ambil dari: {differentFulfillments.join(', ')}
-                          </div>
-                        )}
-                        {senderStore !== sourceStore && (
-                          <div>
-                            <span>Store Pemohon: </span>
-                            <span>{senderStore}</span>
-                          </div>
-                        )}
-                        {arData?.pic_store_phone && (
-                          <div>
-                            <span>PIC Store: </span>
-                            <span>{picStore} ({arData.pic_store_phone})</span>
-                          </div>
-                        )}
-                        {arData?.no_delivery_dealpos && (
-                          <div>
-                            <span>DealPOS: </span>
-                            <strong className="font-mono text-indigo-900">{arData.no_delivery_dealpos}</strong>
-                          </div>
-                        )}
-                        <div>
-                          <span>Tgl Kirim: </span>
-                          <span>{formattedDate}</span>
-                        </div>
-                        <div>
-                          <span>Target: </span>
-                          <strong>{targetSelesai}</strong>
-                        </div>
-                      </div>
-                      {ordQr && (
-                        <img src={ordQr} alt="QR" className="w-14 h-14 object-contain shrink-0" />
-                      )}
-                    </div>
-
-                    <div className="border-t border-dashed border-slate-800 my-1" />
-
-                    {/* Detail Barang (Support Multi-Item) */}
-                    <div className="space-y-1.5">
-                      <div className="text-[9px] font-bold uppercase text-slate-500 font-sans">
-                        Daftar Pakaian Kirim ({ord.items?.length || 1} Item / Total {ord.items?.reduce((s, it) => s + (Number(it.qty) || 1), 0) || qty} pcs):
-                      </div>
-                      {(ord.items && ord.items.length > 0 ? ord.items : [{ nama_produk: productName, sku, size, qty }]).map((it, idx) => (
-                        <div key={idx} className="space-y-0.5 border-b border-dotted border-slate-300 pb-1 last:border-b-0">
-                          <div className="flex justify-between items-start font-bold">
-                            <span className="truncate pr-1">{idx + 1}. {it.nama_produk || 'Produk Pakaian'}</span>
-                            <span className="shrink-0">{it.qty || 1}x</span>
-                          </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span>SKU: {it.sku || '-'}</span>
-                            <span>Size: {it.size || '-'}</span>
-                          </div>
-                          {it.fulfillment && (
-                            <div className="text-[9px] text-slate-600">
-                              Ambil dari: <strong>{it.fulfillment}</strong>
-                            </div>
-                          )}
-                          {it.layanan_type && (
-                            <div className="text-[9px] text-indigo-900 font-semibold font-sans">
-                              Layanan: [{it.layanan_type.toUpperCase()}]
-                            </div>
-                          )}
-                          {(it.alteration_detail || it.repair_detail) && (
-                            <div className="text-[9px] text-slate-700 bg-slate-50 p-1 rounded-xs border border-slate-200">
-                              {it.alteration_detail && <div><strong>• Alter:</strong> {it.alteration_detail}</div>}
-                              {it.repair_detail && <div><strong>• Repair:</strong> {it.repair_detail}</div>}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Detail Instruksi Pengerjaan untuk Warehouse (Global level) */}
-                    {(ord.alteration_detail || ord.repair_detail) && (!ord.items || ord.items.length <= 1) && (
-                      <div className="bg-slate-50 border border-slate-300 p-1.5 rounded-xs text-[9.5px] space-y-0.5">
-                        {ord.alteration_detail && (
-                          <div>
-                            <strong>✂️ ALTER: </strong>
-                            <span>{ord.alteration_detail}</span>
-                          </div>
-                        )}
-                        {ord.repair_detail && (
-                          <div>
-                            <strong>🔧 REPAIR: </strong>
-                            <span>{ord.repair_detail}</span>
-                          </div>
-                        )}
                       </div>
                     )}
 
-                    {/* Checklist Penerimaan di Warehouse */}
-                    <div className="border border-dashed border-slate-600 p-1.5 rounded-xs space-y-1 text-[9px]">
-                      <div className="font-bold uppercase text-[8.5px] font-sans">
-                        VERIFIKASI PENERIMAAN WAREHOUSE:
-                      </div>
-                      <div className="grid grid-cols-2 gap-1 text-[8.5px]">
-                        <div>Tgl Tiba: ___/___/___</div>
-                        <div>Diterima: _____________</div>
-                        <div>Penjahit: _____________</div>
-                        <div>QC Pass : [  ] Lolos</div>
-                      </div>
-                    </div>
+                    {/* ======================================================= */}
+                    {/* RANGKAP 2: LEMBAR LAMPIRAN FISIK PRODUK (COPY 2) */}
+                    {/* ======================================================= */}
+                    {(printCopy === 'both' || printCopy === 'copy2') && (
+                      <div className="space-y-2">
+                        {/* Header Copy 2 */}
+                        <div className="text-center space-y-0.5 border-b border-dashed border-slate-800 pb-2">
+                          <div className="text-base font-black tracking-widest uppercase font-sans">
+                            CHOCOCHIPS
+                          </div>
+                          <div className="text-[10px] font-black uppercase tracking-wider">
+                            SURAT JALAN PENGIRIMAN
+                          </div>
+                          <div className="text-[9px] font-bold text-indigo-900 uppercase font-sans">
+                            STORE ➔ WAREHOUSE
+                          </div>
+                          <div className="text-[8.5px] font-bold bg-indigo-50 border border-indigo-400 text-indigo-900 px-1.5 py-0.5 inline-block rounded-xs mt-0.5">
+                            [COPY 2: LAMPIRAN FISIK BARANG]
+                          </div>
+                          <div className="text-[8px] text-slate-600 font-bold">
+                            *Disematkan pada hanger / polybag pakaian
+                          </div>
+                        </div>
 
-                    <div className="text-[8px] text-center text-slate-500 pt-0.5">
-                      Dokumen Otentik WMS Chocochips • Lembar ini menyertai pakaian dari Store sampai tiba di Gudang
-                    </div>
+                        {/* QR Code & Meta */}
+                        <div className="flex items-center justify-between gap-1.5 py-0.5">
+                          <div className="space-y-0.5 text-[9.5px] flex-1 min-w-0">
+                            <div className="flex">
+                              <span className="w-18 shrink-0 text-slate-600">No. Order</span>
+                              <span className="font-bold font-mono text-black truncate">: {ord.no_pesanan}</span>
+                            </div>
+                            {arData?.id_form_alter && (
+                              <div className="flex">
+                                <span className="w-18 shrink-0 text-slate-600">ID Alter</span>
+                                <span className="font-bold font-mono text-black truncate">: {arData.id_form_alter}</span>
+                              </div>
+                            )}
+                            <div className="flex">
+                              <span className="w-18 shrink-0 text-slate-600">Store Asal</span>
+                              <span className="font-bold text-black truncate">: {sourceStore}</span>
+                            </div>
+                            <div className="flex">
+                              <span className="w-18 shrink-0 text-slate-600">Tgl Kirim</span>
+                              <span>: {formattedDate}</span>
+                            </div>
+                            {targetSelesai && targetSelesai !== '-' && (
+                              <div className="flex">
+                                <span className="w-18 shrink-0 text-slate-600">Target</span>
+                                <span className="font-bold">: {targetSelesai}</span>
+                              </div>
+                            )}
+                          </div>
+                          {ordQr && (
+                            <img src={ordQr} alt="QR" className="w-13 h-13 object-contain shrink-0 border border-slate-300 p-0.5" />
+                          )}
+                        </div>
+
+                        {/* Items List Table */}
+                        <div className="border-t border-b border-dashed border-slate-800 my-1 py-1 space-y-1">
+                          <div className="text-[9px] font-bold uppercase text-slate-700">
+                            DAFTAR BARANG ({ord.items?.length || 1} Item, {ord.items?.reduce((s, it) => s + (Number(it.qty) || 1), 0) || qty} pcs):
+                          </div>
+                          {(ord.items && ord.items.length > 0 ? ord.items : [{ nama_produk: productName, sku, size, qty }]).map((it, idx) => (
+                            <div key={idx} className="text-[9.5px] space-y-0.5 border-b border-dotted border-slate-300 pb-1 last:border-b-0">
+                              <div className="font-bold leading-snug">
+                                {idx + 1}. {it.nama_produk || 'Produk Pakaian'} ({it.qty || 1}x)
+                              </div>
+                              <div className="text-[9px] text-slate-700 pl-2">
+                                SKU: {it.sku || '-'} | Size: {it.size || '-'}
+                              </div>
+                              {(it.alteration_detail || it.repair_detail) && (
+                                <div className="text-[8.5px] text-black bg-slate-100 p-1 rounded-xs ml-2 my-0.5">
+                                  {it.alteration_detail && <div>• <strong>Alter:</strong> {it.alteration_detail}</div>}
+                                  {it.repair_detail && <div>• <strong>Repair:</strong> {it.repair_detail}</div>}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Checklist Warehouse */}
+                        <div className="border border-dashed border-slate-700 p-1.5 rounded-xs space-y-1 text-[8.5px]">
+                          <div className="font-bold uppercase text-[8px] tracking-wider text-slate-800">
+                            VERIFIKASI WAREHOUSE:
+                          </div>
+                          <div className="grid grid-cols-2 gap-1 font-mono">
+                            <div>Tgl Tiba: ___/___</div>
+                            <div>Penerima: _______</div>
+                            <div>Penjahit: _______</div>
+                            <div>QC Pass : [ ] OK</div>
+                          </div>
+                        </div>
+
+                        {/* Feed Spacer at bottom of Copy 2 so printer cut doesn't slice content */}
+                        <div className="h-10 print:h-16" />
+                      </div>
+                    )}
                   </div>
-                  )}
-                </div>
-              );
+                );
             })}
           </div>
         </div>
