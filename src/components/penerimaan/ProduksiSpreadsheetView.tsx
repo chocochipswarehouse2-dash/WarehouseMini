@@ -25,10 +25,11 @@ import {
   FileText,
   AlertTriangle,
   Clock,
+  ExternalLink,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
-import { pushPenerimaanProduksiToGoogleSheet } from '../../services/gasProduksiSync';
+import { pushPenerimaanProduksiToGoogleSheet, PRODUKSI_SPREADSHEET_ID } from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
 import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase, updatePenerimaanPhotoInSupabase } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
@@ -1434,6 +1435,17 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
                 : 'Push Sheet'}
             </span>
           </button>
+
+          <a
+            href={`https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`}
+            target="_blank"
+            rel="noreferrer"
+            className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-200 dark:border-slate-700 shadow-xs"
+            title="Buka Google Spreadsheet (Indeks DAFTAR_TANGGAL & Tab Master)"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span className="hidden sm:inline">Buka Sheet</span>
+          </a>
 
           <button
             type="button"

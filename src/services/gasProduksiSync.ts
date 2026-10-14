@@ -985,3 +985,52 @@ export async function pushMasterRecountDeltaToGoogleSheet(
   }
 }
 
+/**
+ * Memperbarui tab indeks DAFTAR_TANGGAL di Google Spreadsheet
+ * Membaca semua tab tanggal yang ada, menyusun urutan tanggal terbaru di atas,
+ * dan menyediakan hyperlink navigasi langsung ke setiap tab tanggal.
+ */
+export async function refreshProduksiSpreadsheetIndex(
+  customSpreadsheetId?: string
+): Promise<PushProduksiResponse & { totalTabs?: number }> {
+  const targetSpreadsheetId = customSpreadsheetId || localStorage.getItem('wms_produksi_spreadsheet_id') || PRODUKSI_SPREADSHEET_ID;
+  const gasUrl = getProduksiGasUrl();
+
+  const payload = {
+    action: 'refresh_index',
+    spreadsheetId: targetSpreadsheetId,
+  };
+
+  try {
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: Gagal memperbarui indeks spreadsheet`);
+    }
+
+    const json = await res.json().catch(() => ({ success: true }));
+    return {
+      success: json.success !== false,
+      message: json.message || 'Sukses memperbarui Indeks Daftar Tanggal di Google Spreadsheet!',
+      totalTabs: json.totalTabs,
+      sheetUrl: json.sheetUrl || `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
+    };
+  } catch (err: any) {
+    console.error('Error refreshProduksiSpreadsheetIndex:', err);
+    return {
+      success: false,
+      message: `Gagal memperbarui indeks spreadsheet: ${err?.message || err}`,
+      error: err?.message || String(err),
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit`,
+    };
+  }
+}
+
+

@@ -66,6 +66,13 @@ function handlePushPenerimaanProduksi(data) {
     }
 
     // =========================================================================
+    // JIKA ACTION: REFRESH TAB INDEKS DAFTAR TANGGAL (DAFTAR_TANGGAL)
+    // =========================================================================
+    if (data.action === 'refresh_index' || data.action === 'update_index_daftar_tanggal') {
+      return updateIndexDaftarTanggal(ss);
+    }
+
+    // =========================================================================
     // JIKA ACTION: UPDATE TARGETED DELTA HITUNG ULANG (SUPER CEPAT ANTI-TIMEOUT)
     // =========================================================================
     if (data.action === 'update_master_recount_delta') {
@@ -129,7 +136,7 @@ function handlePushPenerimaanProduksi(data) {
     }
 
     // =========================================================================
-    // FALLBACK / MODE MATRIKS BLOCKS (Master Produksi)
+    // FALLBACK / MODE MATRIKS BLOCKS (Master Produksi atau Single Date Tab)
     // =========================================================================
     var activeTab = data.activeTab || 'CMT';
     var targetSheetName = data.sheetName || ('Master Produksi (' + activeTab + ')');
@@ -142,13 +149,20 @@ function handlePushPenerimaanProduksi(data) {
     var blocks = data.blocks || [];
     var items = data.items || [];
     var isCMT = activeTab === 'CMT';
+    var specificDateStr = data.targetDate || (targetSheetName && /^\d{2}-\d{2}-\d{4}/.test(targetSheetName) ? targetSheetName.split(' ')[0] : null);
 
     if ((!blocks || blocks.length === 0) && items.length > 0) {
-      blocks = buildBlocksFromItemsGAS(items, isCMT, null);
+      blocks = buildBlocksFromItemsGAS(items, isCMT, specificDateStr);
     }
 
     if (blocks && blocks.length > 0) {
-      var resMatrix = renderProductBlocksMatrix(sheet, blocks, isCMT, null);
+      var resMatrix = renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr);
+      
+      // Jika yang dipush adalah tab tanggal, otomatis perbarui indeks DAFTAR_TANGGAL
+      if (specificDateStr) {
+        updateIndexDaftarTanggal(ss);
+      }
+
       return {
         success: true,
         message: 'Sukses menulis ' + blocks.length + ' Master Tabel Kode Produk ke Google Sheet (' + targetSheetName + ')!',
@@ -595,6 +609,45 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
   var currentRow = 1;
 
+  // JIKA TAB TANGGAL: TAMPILKAN BANNER NAVIGASI CEPAT KEMBALI KE "DAFTAR_TANGGAL"
+  if (isSpecificDate) {
+    try {
+      var ss = sheet.getParent();
+      var indexSheet = ss.getSheetByName('DAFTAR_TANGGAL');
+      var indexGid = indexSheet ? indexSheet.getSheetId() : null;
+
+      var totalPcsAll = 0;
+      for (var tb = 0; tb < blocks.length; tb++) {
+        totalPcsAll += (Number(blocks[tb].totalNet) || Number(blocks[tb].totalDatang) || 0);
+      }
+
+      // Tombol Navigasi Kembali ke DAFTAR_TANGGAL
+      if (indexGid !== null) {
+        sheet.getRange(1, 1, 1, 3).merge()
+          .setFormula('=HYPERLINK("#gid=' + indexGid + '", "🔙 KEMBALI KE DAFTAR TANGGAL (KLIK DISINI)")')
+          .setBackground('#0F172A').setFontColor('#38BDF8').setFontWeight('bold').setFontSize(10)
+          .setHorizontalAlignment('center').setVerticalAlignment('middle');
+      } else {
+        sheet.getRange(1, 1, 1, 3).merge()
+          .setValue('📋 TAB TANGGAL PENERIMAAN')
+          .setBackground('#0F172A').setFontColor('#38BDF8').setFontWeight('bold').setFontSize(10)
+          .setHorizontalAlignment('center').setVerticalAlignment('middle');
+      }
+
+      var infoText = '📅 Tanggal: ' + specificDateStr + '  |  🏷️ Kategori: ' + (isCMT ? 'Lokal CMT' : 'Kargo') + '  |  📦 Total: ' + blocks.length + ' Model  |  🔢 Datang: ' + totalPcsAll + ' pcs';
+      sheet.getRange(1, 4, 1, 15).merge().setValue(infoText)
+        .setBackground('#1E293B').setFontColor('#F8FAFC').setFontWeight('bold').setFontSize(9.5)
+        .setHorizontalAlignment('left').setVerticalAlignment('middle');
+
+      sheet.setRowHeight(1, 32);
+      sheet.setRowHeight(2, 6); // Jarak pemisah
+      currentRow = 3;
+    } catch (eNav) {
+      Logger.log('Error setup top navigation banner: ' + eNav);
+      currentRow = 1;
+    }
+  }
+
   for (var b = 0; b < blocks.length; b++) {
     var block = blocks[b];
     var headerRow1Index = currentRow;
@@ -880,7 +933,8 @@ function writeSingleDateSheet(ss, dateObj, defaultActiveTab) {
 
 /**
  * Buat atau update tab ringkasan indeks DAFTAR_TANGGAL
- * Mempermudah navigasi langsung ke sheet tanggal tertentu
+ * Ditempatkan di urutan paling depan (tab 0), diurutkan dari tanggal terbaru ke terlama.
+ * Memuat ringkasan Model, Total Pcs, dan Link Navigasi langsung ke tab tanggal bersangkutan.
  */
 function updateIndexDaftarTanggal(ss) {
   try {
@@ -888,78 +942,259 @@ function updateIndexDaftarTanggal(ss) {
     var sheet = ss.getSheetByName(indexSheetName);
     if (!sheet) {
       sheet = ss.insertSheet(indexSheetName, 0); // Tempatkan di tab paling depan
+    } else {
+      // Pindahkan ke posisi 0 (paling kiri / depan)
+      try {
+        ss.setActiveSheet(sheet);
+        ss.moveActiveSheet(1);
+      } catch (eMove) {}
     }
 
     var allSheets = ss.getSheets();
-    var rows = [];
-    var no = 1;
+    var dateEntries = [];
+
+    // Cari ID Master Kargo dan Master CMT untuk Quick Links
+    var kargoMasterSheet = ss.getSheetByName('Master Produksi (Kargo)');
+    var kargoGid = kargoMasterSheet ? kargoMasterSheet.getSheetId() : null;
+    var cmtMasterSheet = ss.getSheetByName('Master Produksi (CMT)');
+    var cmtGid = cmtMasterSheet ? cmtMasterSheet.getSheetId() : null;
+
+    var bulanIndo = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
 
     for (var i = 0; i < allSheets.length; i++) {
       var s = allSheets[i];
-      var name = s.getName();
-      // Deteksi tab tanggal: format DD-MM-YYYY atau memiliki (CMT)/(Kargo)
-      if (/^\d{2}-\d{2}-\d{4}/.test(name)) {
-        var tgl = '';
-        var kategori = '';
-        var totalQty = '';
-        var totalVarian = '';
-        try {
-          tgl = s.getRange('B2').getValue();
-          kategori = s.getRange('E2').getValue();
-          totalQty = s.getRange('H2').getValue();
-          totalVarian = s.getRange('H3').getValue();
-        } catch (e) {}
+      var name = s.getName().trim();
 
-        rows.push([
-          no++,
-          name,
-          tgl || name,
-          kategori || '-',
-          totalQty || '-',
-          totalVarian || '-',
-          '=HYPERLINK("#gid=' + s.getSheetId() + '", "Buka Tab ' + name + '")'
-        ]);
+      // Deteksi tab tanggal: format DD-MM-YYYY atau memiliki (CMT)/(Kargo)
+      // Contoh: "26-09-2026 (Kargo)", "26-09-2026 (CMT)", "26-09-2026"
+      var dateMatch = name.match(/^(\d{2})[-/](\d{2})[-/](\d{4})(?:\s*\((.*?)\))?/);
+      if (dateMatch) {
+        var dd = dateMatch[1];
+        var mm = dateMatch[2];
+        var yyyy = dateMatch[3];
+        var tag = (dateMatch[4] || '').trim();
+
+        // Sort key numerik yyyymmdd untuk pengurutan tanggal terbaru ke terlama
+        var sortKey = yyyy + mm + dd;
+
+        var mIdx = Number(mm) - 1;
+        var formattedDateIndo = dd + ' ' + (bulanIndo[mIdx] || mm) + ' ' + yyyy;
+
+        var kategori = 'Lokal CMT';
+        if (tag.toLowerCase().indexOf('kargo') !== -1) {
+          kategori = 'Kargo';
+        } else if (tag.toLowerCase().indexOf('cmt') !== -1) {
+          kategori = 'Lokal CMT';
+        }
+
+        // Hitung total kode dan total pcs dari tab sheet ini
+        var totalCodes = 0;
+        var totalPcs = 0;
+        var lastRow = s.getLastRow();
+        var lastCol = s.getLastColumn();
+
+        if (lastRow >= 3) {
+          try {
+            // Cek apakah di baris 1 terdapat metadata ringkasan info (misal: "📦 Total: 12 Model  |  🔢 Datang: 850 pcs")
+            var topBannerVal = String(s.getRange(1, 4).getValue() || '');
+            var metaCodeMatch = topBannerVal.match(/Total:\s*(\d+)\s*Model/i);
+            var metaPcsMatch = topBannerVal.match(/Datang:\s*(\d+)\s*pcs/i);
+            
+            if (metaCodeMatch && metaPcsMatch) {
+              totalCodes = Number(metaCodeMatch[1]) || 0;
+              totalPcs = Number(metaPcsMatch[1]) || 0;
+            } else {
+              // Baca data untuk menghitung kode & pcs riil
+              var maxScanRows = Math.min(lastRow, 500);
+              var scanCols = Math.min(lastCol, 25);
+              var dataVals = s.getRange(1, 1, maxScanRows, scanCols).getValues();
+
+              var codeSet = {};
+              // Cari kolom total pcs (bisa 'TOTAL DATANG (NET)' atau col 8)
+              var colTotal = -1;
+              for (var c = 0; c < scanCols; c++) {
+                var h1 = String(dataVals[0] && dataVals[0][c] || '').toUpperCase();
+                var h2 = String(dataVals[1] && dataVals[1][c] || '').toUpperCase();
+                var h3 = String(dataVals[2] && dataVals[2][c] || '').toUpperCase();
+                if (h1.indexOf('TOTAL DATANG') !== -1 || h2.indexOf('TOTAL DATANG') !== -1 || h3.indexOf('TOTAL DATANG') !== -1) {
+                  colTotal = c;
+                  break;
+                }
+              }
+              if (colTotal === -1) {
+                // Kolom H (indeks 7) adalah kolom tanggal pertama
+                colTotal = 7;
+              }
+
+              for (var r = 0; r < maxScanRows; r++) {
+                var rCode = String(dataVals[r][1] || '').trim().toUpperCase();
+                var rSize = String(dataVals[r][6] || '').trim().toUpperCase();
+                
+                if (rCode && rCode !== 'CODE' && rCode !== '-' && rCode.indexOf('CATATAN') === -1) {
+                  codeSet[rCode] = true;
+                }
+
+                if (rSize && rSize !== 'SIZE' && rSize !== '-' && rCode.indexOf('CATATAN') === -1) {
+                  var qVal = Number(dataVals[r][colTotal]) || 0;
+                  totalPcs += qVal;
+                }
+              }
+
+              totalCodes = Object.keys(codeSet).length;
+              if (totalCodes === 0 && metaCodeMatch) {
+                totalCodes = Number(metaCodeMatch[1]) || 0;
+              }
+            }
+          } catch (eScan) {
+            Logger.log('Error scan tab ' + name + ': ' + eScan);
+          }
+        }
+
+        dateEntries.push({
+          sheetId: s.getSheetId(),
+          sheetName: name,
+          sortKey: sortKey,
+          tanggalIndo: formattedDateIndo,
+          kategori: kategori,
+          totalCodes: totalCodes,
+          totalPcs: totalPcs
+        });
       }
     }
+
+    // Urutkan Tanggal: Terbaru di paling atas (Descending by sortKey)
+    dateEntries.sort(function(a, b) {
+      if (b.sortKey !== a.sortKey) {
+        return b.sortKey.localeCompare(a.sortKey);
+      }
+      return a.kategori.localeCompare(b.kategori);
+    });
 
     sheet.clearContents();
     sheet.clearFormats();
 
-    // Judul Indeks
+    // 1. Title Banner (Row 1)
     sheet.getRange('A1:G1').merge();
-    sheet.getRange('A1').setValue('DAFTAR INDEKS TANGGAL PENERIMAAN PRODUKSI')
+    sheet.getRange('A1').setValue('📋 DAFTAR INDEKS TANGGAL PENERIMAAN PRODUKSI (KARGO & CMT)')
       .setFontSize(13).setFontWeight('bold').setBackground('#0F172A').setFontColor('#FFFFFF')
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
-    sheet.setRowHeight(1, 35);
+    sheet.setRowHeight(1, 38);
 
-    var headers = ['NO', 'TAB SHEET', 'TANGGAL PENERIMAAN', 'KATEGORI', 'TOTAL DATANG', 'TOTAL VARIAN', 'LINK NAVIGASI'];
-    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
-    var headerRange = sheet.getRange(2, 1, 1, headers.length);
-    headerRange.setBackground('#BE123C').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(9.5).setHorizontalAlignment('center');
-    sheet.setRowHeight(2, 26);
-
-    if (rows.length > 0) {
-      sheet.getRange(3, 1, rows.length, headers.length).setValues(rows);
-      var dataRange = sheet.getRange(3, 1, rows.length, headers.length);
-      dataRange.setFontSize(9.5).setVerticalAlignment('middle');
-      dataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
-      sheet.getRange(3, 1, rows.length, 1).setHorizontalAlignment('center');
-      sheet.getRange(3, 2, rows.length, 1).setFontWeight('bold');
-      sheet.getRange(3, 4, rows.length, 1).setHorizontalAlignment('center');
-      sheet.getRange(3, 5, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#0369A1');
-      sheet.getRange(3, 6, rows.length, 1).setHorizontalAlignment('center');
-      sheet.getRange(3, 7, rows.length, 1).setHorizontalAlignment('center').setFontColor('#2563EB');
+    // 2. Quick Links & Master Stats Bar (Row 2)
+    // Col A-B: Link Master Kargo
+    sheet.getRange('A2:B2').merge();
+    if (kargoGid !== null) {
+      sheet.getRange('A2').setFormula('=HYPERLINK("#gid=' + kargoGid + '", "📦 Buka Master Kargo (Semua Data)")')
+        .setBackground('#1E293B').setFontColor('#38BDF8').setFontWeight('bold').setFontSize(9.5)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    } else {
+      sheet.getRange('A2').setValue('📦 Master Kargo Belum Dibuat')
+        .setBackground('#1E293B').setFontColor('#94A3B8').setFontSize(9)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle');
     }
 
-    sheet.setColumnWidth(1, 45);
-    sheet.setColumnWidth(2, 160);
-    sheet.setColumnWidth(3, 160);
-    sheet.setColumnWidth(4, 110);
-    sheet.setColumnWidth(5, 120);
-    sheet.setColumnWidth(6, 120);
-    sheet.setColumnWidth(7, 160);
+    // Col C-D: Link Master CMT
+    sheet.getRange('C2:D2').merge();
+    if (cmtGid !== null) {
+      sheet.getRange('C2').setFormula('=HYPERLINK("#gid=' + cmtGid + '", "🧵 Buka Master CMT (Semua Data)")')
+        .setBackground('#1E293B').setFontColor('#F43F5E').setFontWeight('bold').setFontSize(9.5)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    } else {
+      sheet.getRange('C2').setValue('🧵 Master CMT Belum Dibuat')
+        .setBackground('#1E293B').setFontColor('#94A3B8').setFontSize(9)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    }
+
+    // Col E-G: Timestamp & Total Tabs
+    sheet.getRange('E2:G2').merge();
+    var nowWib = Utilities.formatDate(new Date(), 'Asia/Jakarta', 'dd-MM-yyyy HH:mm:ss');
+    sheet.getRange('E2').setValue('🕒 Terakhir Disinkron: ' + nowWib + ' WIB (' + dateEntries.length + ' Tab Tanggal)')
+      .setBackground('#1E293B').setFontColor('#CBD5E1').setFontWeight('bold').setFontSize(9)
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(2, 28);
+
+    // Spacer (Row 3)
+    sheet.setRowHeight(3, 10);
+
+    // 3. Table Header (Row 4)
+    var headers = ['NO', 'TANGGAL KEDATANGAN', 'KATEGORI', 'NAMA TAB SHEET', 'TOTAL MODEL / KODE', 'TOTAL PCS DATANG', 'AKSI NAVIGASI'];
+    sheet.getRange(4, 1, 1, headers.length).setValues([headers]);
+    var headerRange = sheet.getRange(4, 1, 1, headers.length);
+    headerRange.setBackground('#BE123C').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(9.5)
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(4, 28);
+
+    // 4. Data Rows (Row 5+)
+    if (dateEntries.length > 0) {
+      var rows = [];
+      for (var d = 0; d < dateEntries.length; d++) {
+        var entry = dateEntries[d];
+        rows.push([
+          d + 1,
+          entry.tanggalIndo,
+          entry.kategori,
+          entry.sheetName,
+          entry.totalCodes > 0 ? (entry.totalCodes + ' Model') : '-',
+          entry.totalPcs > 0 ? entry.totalPcs : 0,
+          '=HYPERLINK("#gid=' + entry.sheetId + '", "👉 Buka Tab ' + entry.sheetName + '")'
+        ]);
+      }
+
+      sheet.getRange(5, 1, rows.length, headers.length).setValues(rows);
+      var dataRange = sheet.getRange(5, 1, rows.length, headers.length);
+      dataRange.setFontSize(9.5).setVerticalAlignment('middle');
+      dataRange.setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+      // Alignment & Styling
+      sheet.getRange(5, 1, rows.length, 1).setHorizontalAlignment('center'); // NO
+      sheet.getRange(5, 2, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold'); // TANGGAL
+      sheet.getRange(5, 3, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold'); // KATEGORI
+      sheet.getRange(5, 4, rows.length, 1).setHorizontalAlignment('left').setFontWeight('bold'); // NAMA TAB
+      sheet.getRange(5, 5, rows.length, 1).setHorizontalAlignment('center'); // TOTAL KODE
+      sheet.getRange(5, 6, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#047857').setNumberFormat('#,##0'); // TOTAL PCS
+      sheet.getRange(5, 7, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontColor('#2563EB'); // NAVIGASI LINK
+
+      for (var rIdx = 0; rIdx < rows.length; rIdx++) {
+        var rowNum = 5 + rIdx;
+        sheet.setRowHeight(rowNum, 26);
+        if (rIdx % 2 === 1) {
+          sheet.getRange(rowNum, 1, 1, headers.length).setBackground('#F8FAFC');
+        }
+        var cat = dateEntries[rIdx].kategori;
+        if (cat === 'Kargo') {
+          sheet.getRange(rowNum, 3).setFontColor('#0284C7'); // Cyan/Blue
+        } else if (cat === 'Lokal CMT') {
+          sheet.getRange(rowNum, 3).setFontColor('#BE123C'); // Rose
+        }
+      }
+    } else {
+      // Empty state
+      sheet.getRange('A5:G5').merge();
+      sheet.getRange('A5').setValue('Belum ada tab tanggal yang terdaftar. Silakan lakukan Push Tab Tanggal dari WMS.')
+        .setFontSize(10).setFontStyle('italic').setFontColor('#64748B').setHorizontalAlignment('center');
+      sheet.setRowHeight(5, 40);
+    }
+
+    sheet.setColumnWidth(1, 45);  // NO
+    sheet.setColumnWidth(2, 170); // TANGGAL KEDATANGAN
+    sheet.setColumnWidth(3, 110); // KATEGORI
+    sheet.setColumnWidth(4, 180); // NAMA TAB SHEET
+    sheet.setColumnWidth(5, 140); // TOTAL KODE
+    sheet.setColumnWidth(6, 130); // TOTAL PCS
+    sheet.setColumnWidth(7, 180); // NAVIGASI LINK
+
+    return {
+      success: true,
+      message: 'Sukses memperbarui Indeks DAFTAR_TANGGAL (' + dateEntries.length + ' tab tanggal terindeks)!',
+      totalTabs: dateEntries.length,
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/edit#gid=' + sheet.getSheetId()
+    };
   } catch (err) {
     Logger.log('updateIndexDaftarTanggal error: ' + err.toString());
+    return { success: false, error: err.toString() };
   }
 }
 

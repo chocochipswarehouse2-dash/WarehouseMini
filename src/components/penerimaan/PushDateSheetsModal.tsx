@@ -12,11 +12,14 @@ import {
   CalendarDays,
   Sparkles,
   ChevronRight,
+  RotateCw,
 } from 'lucide-react';
 import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import {
   pushProduksiPerTanggalToGoogleSheet,
   pushPenerimaanProduksiToGoogleSheet,
+  refreshProduksiSpreadsheetIndex,
+  PRODUKSI_SPREADSHEET_ID,
   formatDateTabName,
   formatDateIndo,
 } from '../../services/gasProduksiSync';
@@ -122,8 +125,26 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
   });
 
   const [isPushing, setIsPushing] = useState<boolean>(false);
+  const [isRefreshingIndex, setIsRefreshingIndex] = useState<boolean>(false);
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [lastSheetUrl, setLastSheetUrl] = useState<string | null>(null);
+
+  const handleRefreshIndex = async () => {
+    try {
+      setIsRefreshingIndex(true);
+      const res = await refreshProduksiSpreadsheetIndex();
+      if (res.success) {
+        onShowToast(res.message || 'Sukses memperbarui Indeks DAFTAR_TANGGAL di Spreadsheet!', 'success');
+        if (res.sheetUrl) setLastSheetUrl(res.sheetUrl);
+      } else {
+        onShowToast(res.message || 'Gagal memperbarui indeks', 'error');
+      }
+    } catch (err: any) {
+      onShowToast('Gagal refresh indeks: ' + (err?.message || err), 'error');
+    } finally {
+      setIsRefreshingIndex(false);
+    }
+  };
 
   // Sync state if modal reopens or tab switches
   React.useEffect(() => {
@@ -282,6 +303,49 @@ export const PushDateSheetsModal: React.FC<PushDateSheetsModalProps> = ({
 
         {/* MODAL BODY */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* DAFTAR_TANGGAL SPREADSHEET INDEX BANNER & ACTIONS */}
+          <div className="p-3.5 bg-gradient-to-r from-blue-50 via-indigo-50 to-slate-50 dark:from-slate-850 dark:via-blue-950/30 dark:to-slate-850 border border-blue-200/80 dark:border-blue-900/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="p-2 bg-blue-600 text-white rounded-xl shadow-xs shrink-0 mt-0.5">
+                <FileSpreadsheet className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                  <span>Tab Indeks: "DAFTAR_TANGGAL"</span>
+                  <span className="text-[10px] font-extrabold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 px-1.5 py-0.2 rounded-md">
+                    Tab Paling Depan
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Semua tab tanggal yang Anda push otomatis tercatat & diurutkan dari yang terbaru di tab <strong>DAFTAR_TANGGAL</strong> lengkap dengan link langsung buka tab.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={handleRefreshIndex}
+                disabled={isRefreshingIndex || isPushing}
+                className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl font-bold flex items-center gap-1.5 transition text-[11px] cursor-pointer shadow-xs disabled:opacity-50"
+                title="Pindai ulang semua tab tanggal di Spreadsheet dan perbarui urutan serta rekap di tab DAFTAR_TANGGAL"
+              >
+                <RotateCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshingIndex ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingIndex ? 'Menata Indeks...' : 'Perbarui Indeks'}</span>
+              </button>
+              <a
+                href={`https://docs.google.com/spreadsheets/d/${PRODUKSI_SPREADSHEET_ID}/edit`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition text-[11px] shadow-xs"
+                title="Buka Google Spreadsheet"
+              >
+                <span>Buka Sheet</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+
           {/* CATEGORY SWITCHER INSIDE MODAL */}
           <div className="bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl flex items-center gap-2">
             <button
