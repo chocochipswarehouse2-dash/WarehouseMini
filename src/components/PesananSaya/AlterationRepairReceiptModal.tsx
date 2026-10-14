@@ -93,10 +93,12 @@ export const AlterationRepairReceiptModal: React.FC<AlterationRepairReceiptModal
                   #printableAlterationRepairReceipt {
                     width: 100% !important;
                     margin: 0 auto !important;
-                    padding: 10px !important;
+                    padding: 12px !important;
                     border: 2px solid #000 !important;
                     color: #000000 !important;
                     background: #ffffff !important;
+                    font-size: 13.5px !important;
+                    line-height: 1.3 !important;
                   }
                   img {
                     max-width: 100%;

@@ -35,6 +35,15 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
     return '58mm'; // Default 58mm (60mm/6cm) printer kasir mini agar tidak macet di printer 58mm/60mm
   });
 
+  // Pilihan ukuran font receipt thermal: 'normal' | 'large' | 'xl'
+  const [fontSizeOption, setFontSizeOption] = useState<'normal' | 'large' | 'xl'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('wms_pos_printer_font_size');
+      if (saved === 'normal' || saved === 'large' || saved === 'xl') return saved;
+    }
+    return 'large'; // Default 'large' agar tulisan di printer thermal jelas dan mudah dibaca
+  });
+
   const handleSelectPaperWidth = (w: '58mm' | '80mm') => {
     setPaperWidth(w);
     if (typeof window !== 'undefined') {
@@ -42,6 +51,17 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
     }
     if (onShowToast) {
       onShowToast(`Ukuran kertas diatur ke ${w === '58mm' ? '58mm / 60mm (Printer Kasir Mini 6cm)' : '80mm (Standar POS 8cm)'}`, 'info');
+    }
+  };
+
+  const handleSelectFontSize = (size: 'normal' | 'large' | 'xl') => {
+    setFontSizeOption(size);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('wms_pos_printer_font_size', size);
+    }
+    if (onShowToast) {
+      const label = size === 'normal' ? 'Sedang (12px/14px)' : size === 'large' ? 'Besar (14px/16px)' : 'Jumbo (16px/18px)';
+      onShowToast(`Ukuran font cetak diatur ke ${label}`, 'info');
     }
   };
 
@@ -144,7 +164,13 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
         if (doc) {
           const pageCssWidth = paperWidth === '58mm' ? '58mm' : '80mm';
           const contentCssWidth = paperWidth === '58mm' ? '48mm' : '72mm';
-          const fontSize = paperWidth === '58mm' ? '8.5px' : '10.5px';
+          
+          let basePx = 14;
+          if (paperWidth === '58mm') {
+            basePx = fontSizeOption === 'normal' ? 12 : fontSizeOption === 'large' ? 14 : 16;
+          } else {
+            basePx = fontSizeOption === 'normal' ? 14 : fontSizeOption === 'large' ? 16 : 18;
+          }
 
           const fullHtml = `
             <!DOCTYPE html>
@@ -178,10 +204,35 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
                     max-width: ${contentCssWidth} !important;
                     margin: 0 auto !important;
                     padding: 1mm !important;
-                    font-size: ${fontSize} !important;
-                    line-height: 1.15 !important;
+                    font-size: ${basePx}px !important;
+                    line-height: 1.22 !important;
                     color: #000000 !important;
                     background: #ffffff !important;
+                    font-weight: 700 !important;
+                  }
+                  #printableSuratJalanKasir * {
+                    box-sizing: border-box;
+                  }
+                  #printableSuratJalanKasir .text-base,
+                  #printableSuratJalanKasir .text-xl,
+                  #printableSuratJalanKasir .text-lg {
+                    font-size: 1.25em !important;
+                    font-weight: 900 !important;
+                  }
+                  #printableSuratJalanKasir .text-sm {
+                    font-size: 1.1em !important;
+                    font-weight: 800 !important;
+                  }
+                  #printableSuratJalanKasir .text-xs,
+                  #printableSuratJalanKasir .text-\\[11px\\],
+                  #printableSuratJalanKasir .text-\\[10.5px\\] {
+                    font-size: 1.0em !important;
+                  }
+                  #printableSuratJalanKasir .text-\\[10px\\],
+                  #printableSuratJalanKasir .text-\\[9.5px\\],
+                  #printableSuratJalanKasir .text-\\[9px\\],
+                  #printableSuratJalanKasir .text-\\[8.5px\\] {
+                    font-size: 0.9em !important;
                   }
                   .receipt-page-break {
                     page-break-after: always;
@@ -768,54 +819,96 @@ _WMS Warehouse System_`;
         {/* TAB 2: PRINTABLE AREA STRUK KASIR (58mm / 80mm) */}
         {activeTab === 'receipt' && (
         <>
-          {/* Sub-bar Pilihan Rangkap & Anti-Macet */}
-          <div className="flex items-center justify-between gap-2 px-4 py-2 bg-amber-500/10 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900/40 print:hidden text-xs shrink-0">
-            <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 mr-1">Opsi Cetak:</span>
+          {/* Sub-bar Pilihan Rangkap, Ukuran Font & Info Format */}
+          <div className="flex items-center justify-between gap-2 px-4 py-2 bg-amber-500/10 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900/40 print:hidden text-xs shrink-0 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 mr-0.5">Rangkap:</span>
               <button
                 type="button"
                 onClick={() => setPrintCopy('both')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                   printCopy === 'both'
                     ? 'bg-amber-600 text-white shadow-2xs'
                     : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                 }`}
               >
-                Rangkap 1 & 2
+                1 & 2
               </button>
               <button
                 type="button"
                 onClick={() => setPrintCopy('copy1')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                   printCopy === 'copy1'
                     ? 'bg-amber-600 text-white shadow-2xs'
                     : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                 }`}
               >
-                Hanya Copy 1 (Arsip Toko)
+                Copy 1 (Arsip Toko)
               </button>
               <button
                 type="button"
                 onClick={() => setPrintCopy('copy2')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                   printCopy === 'copy2'
                     ? 'bg-amber-600 text-white shadow-2xs'
                     : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                 }`}
               >
-                Hanya Copy 2 (Lampiran Gudang)
+                Copy 2 (Gudang)
+              </button>
+
+              <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
+
+              <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 mr-0.5">Font Thermal:</span>
+              <button
+                type="button"
+                onClick={() => handleSelectFontSize('normal')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  fontSizeOption === 'normal'
+                    ? 'bg-amber-600 text-white shadow-2xs font-black'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+                title="Ukuran font sedang (12px / 14px)"
+              >
+                Sedang
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectFontSize('large')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  fontSizeOption === 'large'
+                    ? 'bg-amber-600 text-white shadow-2xs font-black'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+                title="Ukuran font besar rekomendasi (14px / 16px) - Jelas di Printer Kasir"
+              >
+                Besar ✨
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectFontSize('xl')}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  fontSizeOption === 'xl'
+                    ? 'bg-amber-600 text-white shadow-2xs font-black'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+                title="Ukuran font jumbo (16px / 18px)"
+              >
+                Jumbo
               </button>
             </div>
             <span className="text-[10px] text-amber-800 dark:text-amber-300 font-mono hidden md:inline-block">
-              {paperWidth === '58mm' ? 'Format 58mm/60mm (Lebar Area 48mm)' : 'Format 80mm (Lebar Area 72mm)'}
+              {paperWidth === '58mm' ? 'Lebar Kertas 58mm (48mm)' : 'Lebar Kertas 80mm (72mm)'}
             </span>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-100/60 dark:bg-slate-950/60 print:p-0 print:bg-white">
             <div
               id="printableSuratJalanKasir"
-              className={`bg-white text-slate-950 w-full mx-auto p-3 sm:p-3.5 border border-slate-300 print:border-none print:shadow-none space-y-4 leading-tight select-text shadow-sm ${
-                paperWidth === '58mm' ? 'max-w-[340px] text-[10px] print:max-w-[48mm] print:text-[8.5px]' : 'max-w-[420px] text-[11px] print:max-w-[72mm] print:text-[10.5px]'
+              className={`bg-white text-slate-950 w-full mx-auto p-3 sm:p-3.5 border border-slate-300 print:border-none print:shadow-none space-y-4 leading-normal select-text shadow-sm font-bold ${
+                paperWidth === '58mm'
+                  ? (fontSizeOption === 'xl' ? 'max-w-[380px] text-[15px]' : fontSizeOption === 'normal' ? 'max-w-[330px] text-[12px]' : 'max-w-[350px] text-[13.5px]')
+                  : (fontSizeOption === 'xl' ? 'max-w-[460px] text-[17px]' : fontSizeOption === 'normal' ? 'max-w-[410px] text-[14px]' : 'max-w-[430px] text-[15.5px]')
               }`}
               style={{ fontFamily: "'Courier New', Courier, monospace" }}
             >
