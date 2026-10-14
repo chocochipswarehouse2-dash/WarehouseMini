@@ -248,24 +248,31 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       let isKosong = false;
       let primaryLokasi = 'Belum Ada Rak';
 
+      const isStoreDraft = /store|toko|sps|outlet/i.test(draft?.destination || draft?.source || '');
+
       if (locsWithStock.length > 0) {
         lokasiDisplay = locsWithStock.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
         primaryLokasi = locsWithStock[0].lokasi;
+        isKosong = false;
+      } else if (isStoreDraft) {
+        const storeTarget = draft?.destination || 'STORE';
+        lokasiDisplay = storeTarget;
+        primaryLokasi = storeTarget;
         isKosong = false;
       } else if (locsZeroStock.length > 0) {
         isKosong = true;
         lokasiDisplay = locsZeroStock.map((l) => l.lokasi).join(', ');
         primaryLokasi = locsZeroStock[0].lokasi;
-      } else if ((it as any).lokasi && isWarehouseLocation((it as any).lokasi)) {
+      } else if ((it as any).lokasi && (it as any).lokasi !== '-' && (it as any).lokasi !== 'KOSONG') {
         lokasiDisplay = (it as any).lokasi;
         primaryLokasi = (it as any).lokasi;
-      } else if (prod?.lokasi && isWarehouseLocation(prod.lokasi)) {
+      } else if (prod?.lokasi && prod.lokasi !== '-' && prod.lokasi !== 'KOSONG') {
         lokasiDisplay = prod.lokasi;
         primaryLokasi = prod.lokasi;
       } else {
-        lokasiDisplay = loadingStock ? 'Memeriksa Rak...' : 'Belum Ada Rak';
-        primaryLokasi = 'Belum Ada Rak';
-        isKosong = true;
+        lokasiDisplay = prod?.lokasi || 'A-01';
+        primaryLokasi = prod?.lokasi || 'A-01';
+        isKosong = false;
       }
 
       // Pastikan nama_produk mengambil nama asli dari katalog jika di draft isinya hanya SKU

@@ -502,10 +502,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         ? item.size 
         : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(item.sku));
       const effectiveName = item.nama_produk;
+
+      const isStoreItem = /store|toko|sps|outlet/i.test(item.tujuan || '');
+      let effectiveLokasi = (item.lokasi || '').trim();
+      if (!effectiveLokasi || effectiveLokasi === '-' || effectiveLokasi === '--' || effectiveLokasi === 'KOSONG') {
+        if (isStoreItem) {
+          effectiveLokasi = item.tujuan || 'STORE';
+        } else {
+          effectiveLokasi = catMatch?.lokasi || (Array.isArray(catMatch?.locList) && catMatch?.locList[0]?.lokasi) || 'A-01';
+        }
+      }
+
       const enhancedItem: PickingListItem = {
         ...item,
         size: effectiveSize,
         nama_produk: effectiveName,
+        lokasi: effectiveLokasi,
       };
 
       if (item.is_unexpected || item.qty_req === 0) {
@@ -1008,12 +1020,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           ? it.size 
           : (catMatch?.s && catMatch.s !== '-' ? catMatch.s : extractSizeFromSku(cleanSku));
         const effectiveName = it.nama_produk || cleanSku;
+
+        const isStoreSJ = /store|toko|sps|outlet/i.test(sj.tujuan || '');
+        let itemLokasi = (it.lokasi || '').trim();
+        if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG') {
+          if (isStoreSJ) {
+            itemLokasi = sj.tujuan || 'STORE';
+          } else {
+            itemLokasi = catMatch?.lokasi || (Array.isArray(catMatch?.locList) && catMatch?.locList[0]?.lokasi) || 'A-01';
+          }
+        }
+
         return {
           ...it,
           sku: cleanSku,
           size: effectiveSize,
           nama_produk: effectiveName,
-          lokasi: it.lokasi || catMatch?.lokasi || 'A-01',
+          lokasi: itemLokasi,
           qty_req: Math.max(1, Number(it.qty_req) || 1),
           qty_picked: Math.max(0, Number(it.qty_picked) || 0),
           status: it.status === 'SELESAI' ? ('SELESAI' as const) : ('SEDANG PICKING' as const),
@@ -2498,6 +2521,18 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           </button>
                         );
                       })
+                    ) : /store|toko|sps|outlet/i.test(activeSJ?.tujuan || '') ? (
+                      /* FULFILL STORE: DISPLAY STORE LOCATION BADGE */
+                      <div className="px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border-2 border-blue-500/30 shadow-xs">
+                        <Building className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span>{item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? item.lokasi : (activeSJ?.tujuan || 'STORE')}</span>
+                      </div>
+                    ) : item.lokasi && item.lokasi !== '-' && item.lokasi !== 'KOSONG' ? (
+                      /* FULFILL MARKETPLACE WITH SPECIFIED LOCATION */
+                      <div className="px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-500/30 shadow-xs">
+                        <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>{item.lokasi}</span>
+                      </div>
                     ) : isRealtimeLoaded ? (
                       /* KETIKA STOK GUDANG 0 PCS (TIDAK MEREKOMENDASIKAN RAK KOSONG) */
                       <div

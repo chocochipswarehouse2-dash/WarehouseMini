@@ -4497,17 +4497,30 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
     // nama_produk = nama_produk;
   }
 
+  const rawTujuan = String(row.tujuan || row.destination || row.channel || 'Marketplace').trim();
+  const isStoreTujuan = /store|toko|sps|outlet/i.test(rawTujuan);
+  let rawLokasi = String(row.lokasi || row.location || row.rak || '').trim();
+
+  if (!rawLokasi || rawLokasi === '-' || rawLokasi === '--' || rawLokasi === 'null' || rawLokasi === 'undefined' || rawLokasi === 'KOSONG') {
+    if (isStoreTujuan) {
+      rawLokasi = rawTujuan || 'STORE';
+    } else {
+      const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === sku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === sku));
+      rawLokasi = cachedCat?.lokasi || (Array.isArray(cachedCat?.locList) && cachedCat?.locList[0]?.lokasi) || 'A-01';
+    }
+  }
+
   return {
     id: String(row.id || `pick_${no_sj}_${sku}_${Date.now()}`),
     no_sj,
     tanggal: String(row.tanggal || row.date || row.created_at || nowIso.slice(0, 10)).slice(0, 10),
-    tujuan: String(row.tujuan || row.destination || row.channel || 'Marketplace').trim(),
+    tujuan: rawTujuan,
     sku,
     nama_produk,
     size: rawSize || '-',
     qty_req: isNaN(rawQtyReq) || rawQtyReq <= 0 ? 1 : rawQtyReq,
     qty_picked: isNaN(rawQtyPicked) || rawQtyPicked < 0 ? 0 : rawQtyPicked,
-    lokasi: String(row.lokasi || row.location || row.rak || '-').trim(),
+    lokasi: rawLokasi,
     status: (String(row.status || 'PENDING').trim().toUpperCase() as any) || 'PENDING',
     picker_name: row.picker_name || row.picker || '',
     catatan: row.catatan || row.notes || row.keterangan || '',
@@ -5030,18 +5043,29 @@ export async function createPickingSuratJalanSupabase(
     const formattedNama = rawNama || cleanSku;
     const safeNumericId = baseTime * 1000 + (idx % 1000);
 
+    const isStoreTujuan = /store|toko|sps|outlet/i.test(cleanTujuan);
+    let itemLokasi = (it.lokasi || '').trim();
+    if (!itemLokasi || itemLokasi === '-' || itemLokasi === '--' || itemLokasi === 'KOSONG') {
+      if (isStoreTujuan) {
+        itemLokasi = cleanTujuan || 'STORE';
+      } else {
+        const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === cleanSku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku));
+        itemLokasi = cachedCat?.lokasi || (Array.isArray(cachedCat?.locList) && cachedCat?.locList[0]?.lokasi) || 'A-01';
+      }
+    }
+
     return {
       id: safeNumericId,
       invoice_picking: generatedInvoice,
       no_sj: cleanNoSj,
       tanggal: nowIso.slice(0, 10),
       tujuan: cleanTujuan,
-      sku: it.sku.trim().toUpperCase(),
+      sku: cleanSku,
       nama_produk: formattedNama,
       size: cleanSize || '-',
       qty_req: Number(it.qty_req) || 1,
       qty_picked: 0,
-      lokasi: it.lokasi || 'A-01',
+      lokasi: itemLokasi,
       status: 'PENDING' as const,
       created_at: nowIso,
     };
