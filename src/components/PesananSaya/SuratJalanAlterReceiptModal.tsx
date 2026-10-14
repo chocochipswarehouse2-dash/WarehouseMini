@@ -478,6 +478,82 @@ _WMS Warehouse System_`;
           header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
             display: none !important;
           }
+      `}</style>
+      {/* Dynamic Style tag for both On-Screen Preview and Fallback Window Print */}
+      <style>{`
+        #printableSuratJalanKasir {
+          width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
+          max-width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
+          margin: 0 auto !important;
+          padding: 1.5mm !important;
+          box-sizing: border-box !important;
+          background: #ffffff !important;
+          color: #000000 !important;
+          font-size: ${
+            paperWidth === '58mm'
+              ? (fontSizeOption === 'normal' ? 12 : fontSizeOption === 'large' ? 14 : 16)
+              : (fontSizeOption === 'normal' ? 14 : fontSizeOption === 'large' ? 16 : 18)
+          }px !important;
+          line-height: 1.22 !important;
+          font-weight: 700 !important;
+          font-family: 'Courier New', Courier, monospace !important;
+          word-break: break-word !important;
+          overflow-wrap: break-word !important;
+        }
+        #printableSuratJalanKasir * {
+          box-sizing: border-box !important;
+        }
+        #printableSuratJalanKasir .text-base,
+        #printableSuratJalanKasir .text-xl,
+        #printableSuratJalanKasir .text-lg {
+          font-size: 1.22em !important;
+          font-weight: 900 !important;
+        }
+        #printableSuratJalanKasir .text-sm {
+          font-size: 1.1em !important;
+          font-weight: 800 !important;
+        }
+        #printableSuratJalanKasir .text-xs,
+        #printableSuratJalanKasir .text-\\[11px\\],
+        #printableSuratJalanKasir .text-\\[10.5px\\] {
+          font-size: 1.0em !important;
+        }
+        #printableSuratJalanKasir .text-\\[10px\\],
+        #printableSuratJalanKasir .text-\\[9.5px\\],
+        #printableSuratJalanKasir .text-\\[9px\\],
+        #printableSuratJalanKasir .text-\\[8.5px\\],
+        #printableSuratJalanKasir .text-\\[8px\\] {
+          font-size: 0.9em !important;
+        }
+
+        @media print {
+          @page {
+            size: ${paperWidth === '58mm' ? '58mm' : '80mm'} auto !important;
+            margin: 0 !important;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            width: ${paperWidth === '58mm' ? '58mm' : '80mm'} !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .fixed, [class*="fixed"], .overflow-y-auto, .overflow-hidden, [class*="overflow-"] {
+            position: static !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            inset: auto !important;
+            transform: none !important;
+            backdrop-filter: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: transparent !important;
+          }
+          header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
+            display: none !important;
+          }
           #printableSuratJalanKasir {
             display: block !important;
             visibility: visible !important;
@@ -486,25 +562,14 @@ _WMS Warehouse System_`;
             left: 0 !important;
             right: 0 !important;
             top: 0 !important;
-            width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
-            max-width: ${paperWidth === '58mm' ? '48mm' : '72mm'} !important;
-            margin: 0 auto !important;
-            padding: 1mm !important;
-            box-sizing: border-box !important;
-            background: #ffffff !important;
-            color: #000000 !important;
-            box-shadow: none !important;
-            border: none !important;
             z-index: 999999 !important;
-            font-size: ${paperWidth === '58mm' ? '8.5px' : '10.5px'} !important;
-            line-height: 1.15 !important;
           }
           #printableSuratJalanKasir * {
             visibility: visible !important;
           }
           .receipt-page-break {
-            page-break-after: auto !important;
-            break-after: auto !important;
+            page-break-after: always !important;
+            break-after: page !important;
           }
         }
       `}</style>
@@ -905,12 +970,7 @@ _WMS Warehouse System_`;
           <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-100/60 dark:bg-slate-950/60 print:p-0 print:bg-white">
             <div
               id="printableSuratJalanKasir"
-              className={`bg-white text-slate-950 w-full mx-auto p-3 sm:p-3.5 border border-slate-300 print:border-none print:shadow-none space-y-4 leading-normal select-text shadow-sm font-bold ${
-                paperWidth === '58mm'
-                  ? (fontSizeOption === 'xl' ? 'max-w-[380px] text-[15px]' : fontSizeOption === 'normal' ? 'max-w-[330px] text-[12px]' : 'max-w-[350px] text-[13.5px]')
-                  : (fontSizeOption === 'xl' ? 'max-w-[460px] text-[17px]' : fontSizeOption === 'normal' ? 'max-w-[410px] text-[14px]' : 'max-w-[430px] text-[15.5px]')
-              }`}
-              style={{ fontFamily: "'Courier New', Courier, monospace" }}
+              className="bg-white text-slate-950 mx-auto border border-slate-300 print:border-none print:shadow-none space-y-4 leading-normal select-text shadow-xl font-bold rounded-xs"
             >
               {orderList.map((ord, oIndex) => {
                 const formattedDate = ord.created_at
