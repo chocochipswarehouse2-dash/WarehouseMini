@@ -201,6 +201,11 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   } | null>(null);
   const [copiedSj, setCopiedSj] = useState<string | null>(null);
 
+  // Modal Update Resi
+  const [resiModalOrder, setResiModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [inputResiValue, setInputResiValue] = useState<string>('');
+  const [isSavingResi, setIsSavingResi] = useState<boolean>(false);
+
   // Modal Khusus Penanganan Barang Sold Out (Marketplace)
   const [soldModalData, setSoldModalData] = useState<{
     order: ManualShipmentOrder;
@@ -2837,6 +2842,90 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     );
   };
 
+  const renderResiModal = () => {
+    if (!resiModalOrder) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="flex justify-between items-center px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-indigo-50/80 dark:bg-indigo-950/40">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-indigo-600 text-white">
+                <Truck className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">Input / Update Nomor Resi</h3>
+                <p className="text-[10px] text-slate-500 font-mono">{resiModalOrder.no_pesanan}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setResiModalOrder(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-5 flex flex-col gap-3.5">
+            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 text-[11px] text-slate-600 dark:text-slate-300 space-y-1 border border-slate-200/80 dark:border-slate-800">
+              <p><span className="font-semibold text-slate-400">Penerima:</span> <strong className="text-slate-800 dark:text-slate-200">{resiModalOrder.nama_tujuan || '-'}</strong> ({resiModalOrder.no_telp_tujuan || '-'})</p>
+              <p><span className="font-semibold text-slate-400">Jasa Kirim:</span> {resiModalOrder.jasa_kirim || '-'}</p>
+              <p><span className="font-semibold text-slate-400">Alamat:</span> <span className="line-clamp-2">{resiModalOrder.alamat_tujuan || '-'}</span></p>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Nomor Resi Pengiriman:
+              </label>
+              <input
+                type="text"
+                value={inputResiValue}
+                onChange={(e) => setInputResiValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && inputResiValue.trim() && !isSavingResi) {
+                    handleSaveResiModal();
+                  }
+                }}
+                placeholder="Contoh: JNE1234567890 / SPX012345"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-xs font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+            <button
+              type="button"
+              onClick={() => setResiModalOrder(null)}
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={isSavingResi || !inputResiValue.trim()}
+              onClick={handleSaveResiModal}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              {isSavingResi ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Simpan & Kirim Notif</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderOrderDetailsModal = () => {
     if (!selectedOrderDetails) return null;
     const order = selectedOrderDetails;
@@ -3386,31 +3475,48 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     onShowToast(`Menyiapkan cetak label A6 ${itemsToPrint.length} paket`, 'success');
   };
 
-  const handleUpdateResi = async (no_pesanan: string) => {
-    const resi = prompt('Masukkan Nomor Resi:');
-    if (!resi || !resi.trim()) return;
-    
-    const cleanResi = resi.trim();
-    setLoading(true);
+  const handleUpdateResi = (no_pesanan: string) => {
     const targetOrder = orders.find(o => o.no_pesanan === no_pesanan || (o as any).id === no_pesanan);
-    const success = await updateShipmentResi(no_pesanan, cleanResi);
-    if (success) {
-      setOrders(prev => prev.map(o => (o.no_pesanan === no_pesanan || (o as any).id === no_pesanan) ? { ...o, no_resi: cleanResi, status: 'dikirim' } : o));
-      onShowToast('Resi berhasil diupdate & status otomatis berubah menjadi Dikirim', 'success');
+    if (!targetOrder) {
+      onShowToast('Pesanan tidak ditemukan', 'error');
+      return;
+    }
+    setResiModalOrder(targetOrder);
+    setInputResiValue(targetOrder.no_resi || '');
+  };
 
-      // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke Store
-      const storePhone = targetOrder?.no_telp_store;
-      if (storePhone && storePhone.trim()) {
-        const resiMsg = `🚚 *UPDATE RESI PENGIRIMAN MANUAL SHIPMENT*
+  const handleSaveResiModal = async () => {
+    if (!resiModalOrder) return;
+    if (!inputResiValue.trim()) {
+      onShowToast('Silakan masukkan nomor resi', 'warning');
+      return;
+    }
+
+    const cleanResi = inputResiValue.trim();
+    const no_pesanan = resiModalOrder.no_pesanan || (resiModalOrder as any).id;
+    setIsSavingResi(true);
+    try {
+      const success = await updateShipmentResi(no_pesanan, cleanResi);
+      if (success) {
+        setOrders(prev => prev.map(o => (o.no_pesanan === no_pesanan || (o as any).id === no_pesanan) ? { ...o, no_resi: cleanResi, status: 'dikirim' } : o));
+        if (selectedOrderDetails && (selectedOrderDetails.no_pesanan === no_pesanan || (selectedOrderDetails as any).id === no_pesanan)) {
+          setSelectedOrderDetails(prev => prev ? { ...prev, no_resi: cleanResi, status: 'dikirim' } : null);
+        }
+        onShowToast('Resi berhasil diupdate & status otomatis berubah menjadi Dikirim', 'success');
+
+        // OTOMATIS FONNTE: Kirim notifikasi WhatsApp ke Store
+        const storePhone = resiModalOrder.no_telp_store;
+        if (storePhone && storePhone.trim()) {
+          const resiMsg = `🚚 *UPDATE RESI PENGIRIMAN MANUAL SHIPMENT*
 --------------------------------------------
-Halo Tim *${targetOrder?.nama_pengirim || 'Store'}*, nomor resi pengiriman untuk pesanan Anda telah diperbarui di sistem WMS Gudang:
+Halo Tim *${resiModalOrder.nama_pengirim || 'Store'}*, nomor resi pengiriman untuk pesanan Anda telah diperbarui di sistem WMS Gudang:
 
 📋 *Rincian Pesanan:*
-• *Order ID / No. Pesanan:* ${targetOrder?.no_transaksi_customer || targetOrder?.no_pesanan}
-• *Store Pengirim:* ${targetOrder?.nama_pengirim || '-'} (PIC: ${targetOrder?.pic_store || '-'})
-• *Jasa Kirim:* ${targetOrder?.jasa_kirim || '-'}
-• *Nama Customer:* ${targetOrder?.nama_tujuan || '-'}
-• *No. Telp Customer:* ${targetOrder?.no_telp_tujuan || '-'}
+• *Order ID / No. Pesanan:* ${resiModalOrder.no_transaksi_customer || resiModalOrder.no_pesanan}
+• *Store Pengirim:* ${resiModalOrder.nama_pengirim || '-'} (PIC: ${resiModalOrder.pic_store || '-'})
+• *Jasa Kirim:* ${resiModalOrder.jasa_kirim || '-'}
+• *Nama Customer:* ${resiModalOrder.nama_tujuan || '-'}
+• *No. Telp Customer:* ${resiModalOrder.no_telp_tujuan || '-'}
 
 📦 *Nomor Resi Baru:*
 👉 *${cleanResi}*
@@ -3420,28 +3526,31 @@ Status pengiriman paket telah diperbarui. Silakan simpan dan teruskan nomor resi
 Terima kasih!
 _WMS Warehouse System_`;
 
-        sendFonnteMessage(storePhone, resiMsg)
-          .then((res) => {
-            if (res.success) {
-              console.log('Notifikasi WA update resi terkirim ke store:', storePhone);
-            }
-          })
-          .catch((err) => console.warn('WA resi notice error:', err));
-      }
+          sendFonnteMessage(storePhone, resiMsg)
+            .then((res) => {
+              if (res.success) {
+                console.log('Notifikasi WA update resi terkirim ke store:', storePhone);
+              }
+            })
+            .catch((err) => console.warn('WA resi notice error:', err));
+        }
 
-      // NOTIFIKASI EMAIL RESI (Chocochips Official) ke Store & Customer jika dilampirkan
-      if (targetOrder) {
+        // NOTIFIKASI EMAIL RESI (Chocochips Official) ke Store & Customer jika dilampirkan
         triggerOrderEmailNotifications(
-          { ...targetOrder, no_resi: cleanResi, status: 'dikirim' },
+          { ...resiModalOrder, no_resi: cleanResi, status: 'dikirim' },
           'status_dikirim'
         ).catch((err) => console.warn('Resi email trigger error:', err));
-      }
 
-      loadOrders();
-    } else {
-      onShowToast('Gagal update resi', 'error');
+        setResiModalOrder(null);
+        loadOrders();
+      } else {
+        onShowToast('Gagal memperbarui nomor resi di database', 'error');
+      }
+    } catch (err: any) {
+      onShowToast(`Error: ${err?.message || 'Gagal menyimpan resi'}`, 'error');
+    } finally {
+      setIsSavingResi(false);
     }
-    setLoading(false);
   };
 
   const handleEdit = (order: ManualShipmentOrder) => {
@@ -3804,7 +3913,7 @@ _WMS Warehouse System_`;
               ...o,
               tgl_jadwal_kirim_store: inputJadwalDate,
               catatan_jadwal_store: inputJadwalCatatan,
-              status: 'selesai',
+              status: 'dikirim',
             };
           }
           return o;
@@ -3814,7 +3923,7 @@ _WMS Warehouse System_`;
             ...prev,
             tgl_jadwal_kirim_store: inputJadwalDate,
             catatan_jadwal_store: inputJadwalCatatan,
-            status: 'selesai',
+            status: 'dikirim',
           } : null);
         }
         setJadwalModalOrder(null);
@@ -6094,6 +6203,7 @@ _WMS Warehouse System_`;
       {renderSoldOutModal()}
       {renderOrderDetailsModal()}
       {renderJadwalKirimStoreModal()}
+      {renderResiModal()}
 
       {/* Modal WhatsApp Template Customer */}
       {waModalOrder && (

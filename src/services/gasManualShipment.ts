@@ -259,13 +259,13 @@ export function saveStoreContact(storeName: string, noWa?: string, alamat?: stri
       };
       localStorage.setItem('wms_store_contacts_directory', JSON.stringify(savedContacts));
       window.dispatchEvent(new CustomEvent('wms_store_contacts_updated', { detail: savedContacts }));
-      // Background sync to Cloud Supabase wms_system_docs
+      // Background sync to Cloud Supabase wms_system_docs with valid on_conflict param
       supabaseFetch('wms_system_docs', 'POST', [{
         section_id: 'store_contacts_directory',
         content: JSON.stringify(savedContacts),
         updated_by: 'Master Pengaturan Toko',
         updated_at: new Date().toISOString()
-      }], 'resolution=merge-duplicates').catch(() => {});
+      }], 'on_conflict=section_id').catch(() => {});
     } catch {}
   }
 }
@@ -452,32 +452,32 @@ export async function fetchOutlets(): Promise<OutletItem[]> {
   // Sync kontak & deleted outlets dari cloud wms_system_docs jika tersedia
   if (typeof window !== 'undefined') {
     try {
-      supabaseFetch<any[]>('wms_system_docs', 'GET', null, 'section_id=in.(store_contacts_directory,deleted_outlets_directory)').then(docList => {
-        if (docList && docList.length > 0) {
-          docList.forEach(docData => {
-            if (docData.section_id === 'store_contacts_directory' && docData.content) {
-              try {
-                const parsed = JSON.parse(docData.content);
-                const localRaw = localStorage.getItem('wms_store_contacts_directory');
-                const localContacts = localRaw ? JSON.parse(localRaw) : {};
-                const merged = { ...parsed, ...localContacts };
-                localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
-              } catch {}
-            }
-            if (docData.section_id === 'deleted_outlets_directory' && docData.content) {
-              try {
-                const parsedDel = JSON.parse(docData.content);
-                if (Array.isArray(parsedDel)) {
-                  const localRawDel = localStorage.getItem('wms_deleted_outlets');
-                  const localDel: string[] = localRawDel ? JSON.parse(localRawDel) : [];
-                  const mergedDel = Array.from(new Set([...parsedDel, ...localDel]));
-                  localStorage.setItem('wms_deleted_outlets', JSON.stringify(mergedDel));
-                }
-              } catch {}
-            }
-          });
-        }
-      }).catch(() => {});
+      const docList = await supabaseFetch<any[]>('wms_system_docs', 'GET', null, 'section_id=in.(store_contacts_directory,deleted_outlets_directory)');
+      if (docList && docList.length > 0) {
+        docList.forEach(docData => {
+          if (docData.section_id === 'store_contacts_directory' && docData.content) {
+            try {
+              const parsed = JSON.parse(docData.content);
+              const localRaw = localStorage.getItem('wms_store_contacts_directory');
+              const localContacts = localRaw ? JSON.parse(localRaw) : {};
+              const merged = { ...localContacts, ...parsed };
+              localStorage.setItem('wms_store_contacts_directory', JSON.stringify(merged));
+            } catch {}
+          }
+          if (docData.section_id === 'deleted_outlets_directory' && docData.content) {
+            try {
+              const parsedDel = JSON.parse(docData.content);
+              if (Array.isArray(parsedDel)) {
+                const localRawDel = localStorage.getItem('wms_deleted_outlets');
+                const localDel: string[] = localRawDel ? JSON.parse(localRawDel) : [];
+                const mergedDel = Array.from(new Set([...localDel, ...parsedDel]));
+                localStorage.setItem('wms_deleted_outlets', JSON.stringify(mergedDel));
+                mergedDel.forEach(d => deletedSet.add(d.toLowerCase()));
+              }
+            } catch {}
+          }
+        });
+      }
     } catch {}
   }
 
@@ -566,6 +566,12 @@ export async function saveOutlet(outlet: { id?: string; nama: string; fulfillmen
           const arr = JSON.parse(raw);
           const filtered = arr.filter((n: string) => n.toLowerCase() !== cleanName.toLowerCase());
           localStorage.setItem('wms_deleted_outlets', JSON.stringify(filtered));
+          supabaseFetch('wms_system_docs', 'POST', [{
+            section_id: 'deleted_outlets_directory',
+            content: JSON.stringify(filtered),
+            updated_by: 'Master Pengaturan Toko',
+            updated_at: new Date().toISOString()
+          }], 'on_conflict=section_id').catch(() => {});
         }
       } catch {}
     }
@@ -612,7 +618,7 @@ export async function deleteOutlet(idOrName: string, nameFallback?: string): Pro
           content: JSON.stringify(list),
           updated_by: 'Master Pengaturan Toko',
           updated_at: new Date().toISOString()
-        }], 'resolution=merge-duplicates').catch(() => {});
+        }], 'on_conflict=section_id').catch(() => {});
       } catch {}
     }
 
@@ -724,6 +730,13 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
       notes_paket: notes,
       created_at: payload.created_at || new Date().toISOString()
     };
+
+    // Pastikan status mematuhi check constraint Supabase ('diterima', 'diproses', 'dikirim', 'batal', 'DELETED')
+    if (!submitPayload.status || submitPayload.status === 'pending') {
+      submitPayload.status = 'diterima';
+    } else if (submitPayload.status === 'selesai') {
+      submitPayload.status = 'dikirim';
+    }
 
     // Pastikan tidak mengirim properti transient yang tidak ada di schema
     delete submitPayload.layanan_type;
@@ -858,7 +871,8 @@ export async function updateShipmentStatus(idOrNoPesanan: string, status: string
   try {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNoPesanan);
     const filter = isUuid ? `id=eq.${idOrNoPesanan}` : `no_pesanan=eq.${encodeURIComponent(idOrNoPesanan)}`;
-    await supabaseFetch('manual_shipment', 'PATCH', { status }, filter);
+    const dbStatus = status === 'selesai' ? 'dikirim' : (status === 'pending' ? 'diterima' : status);
+    await supabaseFetch('manual_shipment', 'PATCH', { status: dbStatus }, filter);
     return true;
   } catch (err) {
     console.warn('Error updateShipmentStatus', err);
@@ -1035,6 +1049,14 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
       updated_at: new Date().toISOString()
     };
 
+    if (patchPayload.status) {
+      if (patchPayload.status === 'selesai') {
+        patchPayload.status = 'dikirim';
+      } else if (patchPayload.status === 'pending') {
+        patchPayload.status = 'diterima';
+      }
+    }
+
     delete patchPayload.layanan_type;
     delete patchPayload.kondisi;
     delete patchPayload.perkiraan_selesai;
@@ -1110,7 +1132,7 @@ export async function updateJadwalKirimStore(
       ...order,
       tgl_jadwal_kirim_store: tglJadwal,
       catatan_jadwal_store: catatan || order.catatan_jadwal_store || '',
-      status: 'selesai',
+      status: 'dikirim',
       alteration_repair_data: updatedArData,
       history_logs: logs
     };
@@ -1192,10 +1214,8 @@ export async function updateAlterationFlowStage(
       newStatus = 'diterima';
     } else if (newStage === 'dalam_pengerjaan' || newStage === 'selesai_qc') {
       newStatus = 'diproses';
-    } else if (newStage === 'siap_dikirim') {
+    } else if (newStage === 'siap_dikirim' || newStage === 'selesai') {
       newStatus = 'dikirim';
-    } else if (newStage === 'selesai') {
-      newStatus = 'selesai';
     }
 
     const updatedOrder: ManualShipmentOrder = {
