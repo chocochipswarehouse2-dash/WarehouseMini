@@ -2474,7 +2474,7 @@ export const PenerimaanProduksiView: React.FC<PenerimaanProduksiViewProps> = ({
             {/* Conditional View: Matrix Spreadsheet vs Card vs Table */}
             {viewMode === 'matrix' ? (
               <ProduksiSpreadsheetView
-                dataList={filteredData}
+                dataList={dataList}
                 productCatalog={productCatalog}
                 searchQuery={searchQuery}
                 onOpenLightbox={(img) => setLightboxImage(img)}

@@ -31,7 +31,7 @@ import { PenerimaanProduksiItem, ProductItem } from '../../types';
 import { exportProduksiToModernExcel } from '../../utils/excelProduksiExporter';
 import { pushPenerimaanProduksiToGoogleSheet, PRODUKSI_SPREADSHEET_ID } from '../../services/gasProduksiSync';
 import { compressImage } from '../../utils/imageCompressor';
-import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase, updatePenerimaanPhotoInSupabase } from '../../services/supabase';
+import { supabaseFetch, simpanBatchPenerimaanProduksiToSupabase, updatePenerimaanPhotoInSupabase, getNextPenerimaanProduksiIds } from '../../services/supabase';
 import { PushSuratJalanModal } from './PushSuratJalanModal';
 import { PushDateSheetsModal } from './PushDateSheetsModal';
 
@@ -642,9 +642,13 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
   const filteredBlocks = useMemo(() => {
     let result = blocks;
 
-    // Filter per tanggal penerimaan jika dipilih spesifik
+    // Filter per tanggal penerimaan jika dipilih spesifik (mendukung tanggal kedatangan maupun tanggal retur)
     if (selectedDateFilter && selectedDateFilter !== 'all') {
-      result = result.filter((b) => b.dateSlots.includes(selectedDateFilter));
+      result = result.filter(
+        (b) =>
+          b.dateSlots.includes(selectedDateFilter) ||
+          (b.returDateSlots && b.returDateSlots.includes(selectedDateFilter))
+      );
     }
 
     // Filter status audit hitung ulang
@@ -915,7 +919,7 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
             if (returDate && numR > 0) {
               const vendorNote = targetBlock.upVendor ? ` | UP: ${targetBlock.upVendor}` : '';
               newItems.push({
-                tanggal_penerimaan: '',
+                tanggal_penerimaan: returDate || defaultDate,
                 tanggal_retur: returDate,
                 qty_retur: numR,
                 kategori: 'Lokal CMT',
@@ -936,47 +940,83 @@ export const ProduksiSpreadsheetView: React.FC<ProduksiSpreadsheetViewProps> = (
       });
     });
 
-    // If newItems has valid rows, persist safely
-    if (newItems.length > 0) {
-      // 1. Update Supabase
-      try {
-        // Delete previous rows for this code in Supabase
-        await supabaseFetch(
-          'penerimaan_produksi',
-          'DELETE',
-          undefined,
-          `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`
-        );
-        // Clean payload strictly to valid table columns (no invalid columns like nama_produk)
-        const rowsToInsert = newItems.map((it) => ({
-          tanggal_penerimaan: it.tanggal_penerimaan || defaultDate,
-          kategori: it.kategori || fallbackCategory,
-          no_surat_jalan: (it.no_surat_jalan || primarySj).trim().toUpperCase(),
-          kode_produksi: (it.kode_produksi || targetBlock.code).trim().toUpperCase(),
-          warna: (it.warna || '').trim().toUpperCase(),
-          size: (it.size || 'Default').trim(),
-          qty: Math.max(0, Number(it.qty) || 0),
-          foto_url: it.foto_url || targetBlock.photoUrl || '',
-          keterangan: (it.keterangan || targetBlock.upVendor || targetBlock.catatan || '').trim(),
-          operator: it.operator || 'Spreadsheet Editor',
-          created_at: it.created_at || nowStr,
-        }));
-        await supabaseFetch('penerimaan_produksi', 'POST', rowsToInsert);
-      } catch (errSupabase) {
-        console.warn('Gagal sync block save ke Supabase:', errSupabase);
-      }
-
-      // 2. Update LocalStorage cache (atomic update)
-      try {
-        const cached = localStorage.getItem('wms_local_penerimaan_produksi');
-        let list: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
-        list = list.filter(
-          (it) => normalizeProductCode(it.kode_produksi) !== normalizeProductCode(targetBlock.code)
-        );
-        list = [...newItems, ...list];
-        localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
-      } catch {}
+    if (newItems.length === 0) {
+      onShowToast('Tidak ada kuantitas barang datang atau retur yang diinput. Masukkan kuantitas minimal 1 pcs.', 'warning');
+      return;
     }
+
+    // 1. Clean payload strictly to valid table columns (no invalid columns like nama_produk)
+    const rowsToInsert = newItems.map((it) => ({
+      tanggal_penerimaan: it.tanggal_penerimaan || it.tanggal_retur || defaultDate,
+      kategori: it.kategori || fallbackCategory,
+      no_surat_jalan: (it.no_surat_jalan || primarySj).trim().toUpperCase(),
+      kode_produksi: (it.kode_produksi || targetBlock.code).trim().toUpperCase(),
+      warna: (it.warna || '').trim().toUpperCase(),
+      size: (it.size || 'Default').trim(),
+      qty: Math.max(0, Number(it.qty) || 0),
+      foto_url: it.foto_url || targetBlock.photoUrl || '',
+      keterangan: (it.keterangan || targetBlock.upVendor || targetBlock.catatan || '').trim(),
+      operator: it.operator || 'Spreadsheet Editor',
+      created_at: it.created_at || nowStr,
+    }));
+
+    // Pre-allocate explicit sequential IDs to prevent sequence desync / primary key collision
+    try {
+      const nextIds = await getNextPenerimaanProduksiIds(rowsToInsert.length);
+      if (nextIds.length === rowsToInsert.length) {
+        for (let idx = 0; idx < rowsToInsert.length; idx++) {
+          (rowsToInsert[idx] as any).id = nextIds[idx];
+        }
+      }
+    } catch (eId) {
+      console.warn('Could not pre-allocate IDs in spreadsheet save:', eId);
+    }
+
+    // 2. Persist to Supabase safely
+    try {
+      // Delete previous rows for this code in Supabase
+      await supabaseFetch(
+        'penerimaan_produksi',
+        'DELETE',
+        undefined,
+        `kode_produksi=eq.${encodeURIComponent(targetBlock.code)}`
+      );
+
+      try {
+        await supabaseFetch('penerimaan_produksi', 'POST', rowsToInsert, '', true);
+      } catch (postErr: any) {
+        const errMsg = String(postErr?.message || postErr || '');
+        if (errMsg.includes('penerimaan_produksi_pkey') || errMsg.includes('23505')) {
+          const freshIds = await getNextPenerimaanProduksiIds(rowsToInsert.length);
+          if (freshIds.length === rowsToInsert.length) {
+            for (let idx = 0; idx < rowsToInsert.length; idx++) {
+              (rowsToInsert[idx] as any).id = freshIds[idx];
+            }
+            await supabaseFetch('penerimaan_produksi', 'POST', rowsToInsert, '', true);
+          }
+        } else {
+          throw postErr;
+        }
+      }
+    } catch (errSupabase) {
+      console.warn('Gagal sync block save ke Supabase:', errSupabase);
+      onShowToast(`Peringatan: Gagal sync ke server (${errSupabase instanceof Error ? errSupabase.message : 'Koneksi lambat'}), data tetap aman di memori lokal.`, 'warning');
+    }
+
+    // 3. Update LocalStorage cache (atomic update with assigned IDs)
+    try {
+      const cached = localStorage.getItem('wms_local_penerimaan_produksi');
+      let list: PenerimaanProduksiItem[] = cached ? JSON.parse(cached) : [];
+      list = list.filter(
+        (it) => normalizeProductCode(it.kode_produksi) !== normalizeProductCode(targetBlock.code)
+      );
+      const finalItems = rowsToInsert.map((it, idx) => ({
+        ...it,
+        id: (it as any).id || (Date.now() + idx),
+      }));
+      list = [...finalItems, ...list];
+      localStorage.setItem('wms_local_penerimaan_produksi', JSON.stringify(list));
+    } catch {}
 
     // Patch photo if updated
     if (targetBlock.photoUrl) {
