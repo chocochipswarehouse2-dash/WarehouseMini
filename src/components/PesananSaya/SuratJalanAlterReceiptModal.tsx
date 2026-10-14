@@ -102,7 +102,132 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
   }, [orderList, paperWidth]);
 
   const handlePrint = () => {
-    window.print();
+    if (activeTab !== 'receipt') {
+      setActiveTab('receipt');
+    }
+
+    if (onShowToast) {
+      onShowToast('Menyiapkan pencetakan Surat Jalan Struk...', 'info');
+    }
+
+    setTimeout(() => {
+      try {
+        const printableElement = document.getElementById('printableSuratJalanKasir');
+        if (!printableElement) {
+          window.print();
+          return;
+        }
+
+        const iframeId = 'sj-struk-direct-print-frame';
+        let printFrame = document.getElementById(iframeId) as HTMLIFrameElement | null;
+        if (printFrame) {
+          try {
+            document.body.removeChild(printFrame);
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+
+        printFrame = document.createElement('iframe');
+        printFrame.id = iframeId;
+        printFrame.style.position = 'fixed';
+        printFrame.style.top = '-9999px';
+        printFrame.style.left = '-9999px';
+        printFrame.style.width = '100%';
+        printFrame.style.height = '100%';
+        printFrame.style.border = 'none';
+        document.body.appendChild(printFrame);
+
+        const printableContent = printableElement.innerHTML;
+        const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
+
+        if (doc) {
+          const pageCssWidth = paperWidth === '58mm' ? '58mm' : '80mm';
+          const contentCssWidth = paperWidth === '58mm' ? '48mm' : '72mm';
+          const fontSize = paperWidth === '58mm' ? '8.5px' : '10.5px';
+
+          const fullHtml = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Cetak Surat Jalan Struk Kasir</title>
+                <meta charset="utf-8" />
+                <style>
+                  @page {
+                    size: ${pageCssWidth} auto;
+                    margin: 0 !important;
+                  }
+                  *, *:before, *:after {
+                    box-sizing: border-box;
+                  }
+                  html, body {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #ffffff !important;
+                    color: #000000 !important;
+                    font-family: 'Courier New', Courier, monospace;
+                    width: ${pageCssWidth} !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                  }
+                  .no-print, button, .print\\:hidden, [class*="print:hidden"] {
+                    display: none !important;
+                  }
+                  #printableSuratJalanKasir {
+                    width: ${contentCssWidth} !important;
+                    max-width: ${contentCssWidth} !important;
+                    margin: 0 auto !important;
+                    padding: 1mm !important;
+                    font-size: ${fontSize} !important;
+                    line-height: 1.15 !important;
+                    color: #000000 !important;
+                    background: #ffffff !important;
+                  }
+                  .receipt-page-break {
+                    page-break-after: always;
+                    break-after: page;
+                  }
+                  img {
+                    max-width: 100%;
+                    height: auto;
+                  }
+                  table {
+                    width: 100%;
+                    border-collapse: collapse;
+                  }
+                  .text-center { text-align: center; }
+                  .text-right { text-align: right; }
+                  .font-bold { font-weight: bold; }
+                </style>
+              </head>
+              <body>
+                <div id="printableSuratJalanKasir">
+                  ${printableContent}
+                </div>
+              </body>
+            </html>
+          `;
+
+          doc.open();
+          doc.write(fullHtml);
+          doc.close();
+
+          setTimeout(() => {
+            if (printFrame && printFrame.contentWindow) {
+              printFrame.contentWindow.focus();
+              printFrame.contentWindow.print();
+            } else {
+              window.print();
+            }
+          }, 300);
+        } else {
+          window.print();
+        }
+      } catch (err) {
+        console.error('Direct print error, fallback to window.print()', err);
+        window.print();
+      }
+    }, activeTab !== 'receipt' ? 150 : 50);
   };
 
   const currentTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });

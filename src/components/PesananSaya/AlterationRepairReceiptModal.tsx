@@ -30,7 +30,115 @@ export const AlterationRepairReceiptModal: React.FC<AlterationRepairReceiptModal
   }, [order]);
 
   const handlePrint = () => {
-    window.print();
+    if (onShowToast) {
+      onShowToast('Menyiapkan pencetakan SPK Alteration & Repair...', 'info');
+    }
+
+    setTimeout(() => {
+      try {
+        const printableElement = document.getElementById('printableAlterationRepairReceipt');
+        if (!printableElement) {
+          window.print();
+          return;
+        }
+
+        const iframeId = 'spk-direct-print-frame';
+        let printFrame = document.getElementById(iframeId) as HTMLIFrameElement | null;
+        if (printFrame) {
+          try {
+            document.body.removeChild(printFrame);
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+
+        printFrame = document.createElement('iframe');
+        printFrame.id = iframeId;
+        printFrame.style.position = 'fixed';
+        printFrame.style.top = '-9999px';
+        printFrame.style.left = '-9999px';
+        printFrame.style.width = '100%';
+        printFrame.style.height = '100%';
+        printFrame.style.border = 'none';
+        document.body.appendChild(printFrame);
+
+        const printableContent = printableElement.innerHTML;
+        const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
+
+        if (doc) {
+          const fullHtml = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Cetak SPK Alteration & Repair</title>
+                <meta charset="utf-8" />
+                <style>
+                  @page {
+                    size: A4 portrait;
+                    margin: 10mm !important;
+                  }
+                  *, *:before, *:after {
+                    box-sizing: border-box;
+                  }
+                  html, body {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #ffffff !important;
+                    color: #000000 !important;
+                    font-family: system-ui, -apple-system, sans-serif;
+                  }
+                  .no-print, button, .print\\:hidden, [class*="print:hidden"] {
+                    display: none !important;
+                  }
+                  #printableAlterationRepairReceipt {
+                    width: 100% !important;
+                    margin: 0 auto !important;
+                    padding: 10px !important;
+                    border: 2px solid #000 !important;
+                    color: #000000 !important;
+                    background: #ffffff !important;
+                  }
+                  img {
+                    max-width: 100%;
+                    height: auto;
+                  }
+                  table {
+                    width: 100%;
+                    border-collapse: collapse;
+                  }
+                  .text-center { text-align: center; }
+                  .text-right { text-align: right; }
+                  .font-bold { font-weight: bold; }
+                </style>
+              </head>
+              <body>
+                <div id="printableAlterationRepairReceipt">
+                  ${printableContent}
+                </div>
+              </body>
+            </html>
+          `;
+
+          doc.open();
+          doc.write(fullHtml);
+          doc.close();
+
+          setTimeout(() => {
+            if (printFrame && printFrame.contentWindow) {
+              printFrame.contentWindow.focus();
+              printFrame.contentWindow.print();
+            } else {
+              window.print();
+            }
+          }, 300);
+        } else {
+          window.print();
+        }
+      } catch (err) {
+        console.error('Direct print error, fallback to window.print()', err);
+        window.print();
+      }
+    }, 50);
   };
 
   const formattedDate = order.created_at
