@@ -65,3 +65,60 @@ export function getRealAlterItems(order: any): any[] {
   if (isAr) return order.items;
   return order.items.filter(isRealAlterItem);
 }
+
+/**
+ * Utility functions for Store Drop & Courier Shipment logic
+ */
+export function isKirimKeStoreOrder(order: any): boolean {
+  if (!order) return false;
+  if (order.tujuan_pengiriman === 'store' || order.delivery_method === 'drop_store') return true;
+  if (order.alteration_repair_data?.tujuan_pengembalian === 'store') return true;
+
+  const tujuan = String(order.nama_tujuan || '').toLowerCase();
+  const alamat = String(order.alamat_tujuan || '').toLowerCase();
+  const jasa = String(order.jasa_kirim || '').toLowerCase();
+
+  if (tujuan.includes('store') || tujuan.startsWith('toko')) return true;
+  if (alamat.includes('store') || alamat.includes('toko chocochips') || alamat.includes('[drop off store]')) return true;
+  if (
+    jasa.includes('internal') ||
+    jasa.includes('ambil di store') ||
+    jasa.includes('pickup store') ||
+    jasa.includes('drop ke store') ||
+    jasa.includes('handover store')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isExternalCourier(jasaKirim?: string): boolean {
+  if (!jasaKirim) return false;
+  const j = jasaKirim.toLowerCase().trim();
+  if (!j || j === '-' || j === '--') return false;
+  if (
+    j.includes('drop ke store') ||
+    j.includes('internal') ||
+    j.includes('ambil di store') ||
+    j.includes('pickup store') ||
+    j.includes('handover store') ||
+    j === 'drop_store'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function orderNeedsResi(order: any): boolean {
+  if (!order || order.status === 'batal') return false;
+  const isStoreDrop = isKirimKeStoreOrder(order);
+  const isCourier = isExternalCourier(order.jasa_kirim);
+
+  if (isStoreDrop && !isCourier) {
+    // Drop di toko tanpa jasa kirim eksternal -> TIDAK PERLU UPDATE RESI
+    return false;
+  }
+  return true;
+}
+

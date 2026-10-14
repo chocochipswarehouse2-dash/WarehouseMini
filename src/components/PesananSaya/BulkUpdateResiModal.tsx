@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { ManualShipmentOrder } from '../../types';
 import { bulkUpdateShipmentResi, BulkResiUpdateItem } from '../../services/gasManualShipment';
-import { isRealAlterItem } from '../../utils/alterationUtils';
+import { isRealAlterItem, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
 
 interface BulkUpdateResiModalProps {
   isOpen: boolean;
@@ -79,6 +79,8 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
 
       // Filter no resi only
       if (filterMode === 'no_resi_only') {
+        const needsResi = orderNeedsResi(o);
+        if (!needsResi) return false;
         const hasResi = (o.no_resi || '').trim().length > 0;
         if (hasResi) return false;
       }
@@ -101,7 +103,7 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
 
   // Count orders without resi
   const unassignedCount = useMemo(() => {
-    return orders.filter((o) => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
+    return orders.filter((o) => o.status !== 'batal' && orderNeedsResi(o) && !(o.no_resi || '').trim()).length;
   }, [orders]);
 
   // Count changed inputs in table mode
@@ -205,8 +207,8 @@ export const BulkUpdateResiModal: React.FC<BulkUpdateResiModalProps> = ({
   // CSV TEMPLATE GENERATOR & DOWNLOAD
   // -------------------------------------------------------------
   const handleDownloadTemplate = () => {
-    // Collect target orders: by default all orders without resi, or currently filtered
-    const targetOrders = orders.filter((o) => o.status !== 'batal' && !(o.no_resi || '').trim());
+    // Collect target orders: by default all orders that need resi and don't have one
+    const targetOrders = orders.filter((o) => o.status !== 'batal' && orderNeedsResi(o) && !(o.no_resi || '').trim());
     const ordersToExport = targetOrders.length > 0 ? targetOrders : orders.filter((o) => o.status !== 'batal');
 
     if (ordersToExport.length === 0) {

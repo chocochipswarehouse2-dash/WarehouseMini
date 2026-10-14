@@ -250,16 +250,19 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
 
       const isStoreDraft = /store|toko|sps|outlet/i.test(draft?.destination || draft?.source || '');
 
-      if (locsWithStock.length > 0) {
-        lokasiDisplay = locsWithStock.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
-        primaryLokasi = locsWithStock[0].lokasi;
-        isKosong = false;
-      } else if (isStoreDraft) {
-        const storeTarget = draft?.destination || 'STORE';
+      if (isStoreDraft) {
+        // Fulfil Store: lokasi = store target
+        const storeTarget = (draft?.destination || draft?.source || 'STORE').toUpperCase().trim();
         lokasiDisplay = storeTarget;
         primaryLokasi = storeTarget;
         isKosong = false;
+      } else if (locsWithStock.length > 0) {
+        // Fulfil Marketplace: ambil data lokasi rak gudang (stok > 0)
+        lokasiDisplay = locsWithStock.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
+        primaryLokasi = locsWithStock[0].lokasi;
+        isKosong = false;
       } else if (locsZeroStock.length > 0) {
+        // Fulfil Marketplace: jika stok 0, ambil data rak gudang tercatat
         isKosong = true;
         lokasiDisplay = locsZeroStock.map((l) => l.lokasi).join(', ');
         primaryLokasi = locsZeroStock[0].lokasi;

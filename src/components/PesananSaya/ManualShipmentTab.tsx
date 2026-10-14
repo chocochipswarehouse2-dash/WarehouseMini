@@ -17,7 +17,7 @@ import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { WaStoreNoticeModal } from './WaStoreNoticeModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import { BulkUpdateResiModal } from './BulkUpdateResiModal';
-import { isRealAlterItem, hasRealAlterItems, getRealAlterItems } from '../../utils/alterationUtils';
+import { isRealAlterItem, hasRealAlterItems, getRealAlterItems, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
 import {
   fetchOutlets,
   fetchManualShipments,
@@ -3692,29 +3692,20 @@ _WMS Warehouse System_`;
 
   // Helper: Deteksi apakah pesanan ditujukan kirim ke Store atau ke Customer
   const isKirimKeStore = (order: ManualShipmentOrder): boolean => {
-    if (order.tujuan_pengiriman === 'store') return true;
-    if (order.alteration_repair_data?.tujuan_pengembalian === 'store') return true;
-    const tujuan = (order.nama_tujuan || '').toLowerCase();
-    const alamat = (order.alamat_tujuan || '').toLowerCase();
-    const jasa = (order.jasa_kirim || '').toLowerCase();
-    if (tujuan.includes('store') || tujuan.startsWith('toko')) return true;
-    if (alamat.includes('store') || alamat.includes('toko chocochips')) return true;
-    if (jasa.includes('internal') || jasa.includes('ambil di store') || jasa.includes('pickup store')) return true;
-    const allOutlets = outlets.length > 0 ? outlets : DEFAULT_OUTLETS;
-    if (allOutlets.some(o => o.nama.toLowerCase().trim() === tujuan.trim())) return true;
-    return false;
+    return isKirimKeStoreOrder(order);
   };
 
   // Helper: Tahap Selesai
-  // Selesai = Sudah terisi resi paket untuk paket yang opsi kirim ke customer | untuk yang dikirim ke store perlu masukkan tanggal jadwal kirim ke store
+  // Selesai = Sudah terisi resi paket untuk paket yang memerlukan resi (ke customer / store via ekpedisi) | Opsi kirim drop di toko tanpa jasa kirim tidak memerlukan resi paket
   const isOrderSelesai = (order: ManualShipmentOrder): boolean => {
     if (order.status === 'batal') return false;
     if (order.status === 'selesai') return true;
 
-    if (isKirimKeStore(order)) {
-      return !!(order.tgl_jadwal_kirim_store && order.tgl_jadwal_kirim_store.trim());
+    if (!orderNeedsResi(order)) {
+      // Drop di toko tanpa jasa kirim eksternal: tidak wajib isi resi paket
+      return !!(order.tgl_jadwal_kirim_store && order.tgl_jadwal_kirim_store.trim()) || order.status === 'dikirim';
     } else {
-      // Kirim ke Customer
+      // Kirim ke Customer atau Kirim ke Store via Ekspedisi
       return !!(order.no_resi && order.no_resi.trim()) || order.status === 'dikirim';
     }
   };
@@ -4348,7 +4339,7 @@ _WMS Warehouse System_`;
       const hasAlter = (o.items || []).some(isRealAlterItem);
       return !isAr && !hasAlter;
     }).length;
-    const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && !(o.no_resi || '').trim()).length;
+    const unassignedResiCount = scopedOrders.filter(o => o.status !== 'batal' && orderNeedsResi(o) && !(o.no_resi || '').trim()).length;
 
     const selectedAlterOrders = scopedOrders.filter(o => {
       const k = getOrderKey(o);

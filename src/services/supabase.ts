@@ -4501,11 +4501,26 @@ export function extractPickingItemFromRow(row: any): PickingListItem | null {
   const isStoreTujuan = /store|toko|sps|outlet/i.test(rawTujuan);
   let rawLokasi = String(row.lokasi || row.location || row.rak || '').trim();
 
-  if (!rawLokasi || rawLokasi === '-' || rawLokasi === '--' || rawLokasi === 'null' || rawLokasi === 'undefined' || rawLokasi === 'KOSONG') {
-    if (isStoreTujuan) {
+  if (isStoreTujuan) {
+    // Fulfil Store -> lokasi = store
+    if (!rawLokasi || rawLokasi === '-' || rawLokasi === '--' || rawLokasi === 'null' || rawLokasi === 'undefined' || rawLokasi === 'KOSONG') {
       rawLokasi = rawTujuan || 'STORE';
-    } else {
-      const cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === sku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === sku));
+    }
+  } else {
+    // Fulfil Marketplace -> lokasi = ambil data lokasi rak gudang
+    if (!rawLokasi || rawLokasi === '-' || rawLokasi === '--' || rawLokasi === 'null' || rawLokasi === 'undefined' || rawLokasi === 'KOSONG') {
+      let cachedCat = memoryProductCache?.find(p => (p.k && p.k.trim().toUpperCase() === sku) || ((p as any).sku && String((p as any).sku).trim().toUpperCase() === sku));
+      if (!cachedCat) {
+        try {
+          const rawLocal = localStorage.getItem('wms_product_cache');
+          if (rawLocal) {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              cachedCat = parsed.find((p: any) => (p.k && p.k.trim().toUpperCase() === sku) || (p.sku && String(p.sku).trim().toUpperCase() === sku));
+            }
+          }
+        } catch {}
+      }
       rawLokasi = cachedCat?.lokasi || (Array.isArray(cachedCat?.locList) && cachedCat?.locList[0]?.lokasi) || 'A-01';
     }
   }
