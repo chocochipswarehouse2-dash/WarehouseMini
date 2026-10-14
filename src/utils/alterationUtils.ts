@@ -5,7 +5,7 @@
 export function isRealAlterItem(it: any): boolean {
   if (!it) return false;
 
-  // 1. If needs_alteration is explicitly false or 'false' or 0 or '0' or 'tidak' or 'no', then user did NOT opt for alteration
+  // 1. If needs_alteration is explicitly false/0/tidak/no, then user did NOT opt for alteration
   if (
     it.needs_alteration === false ||
     it.needs_alteration === 'false' ||
@@ -29,28 +29,17 @@ export function isRealAlterItem(it: any): boolean {
     return true;
   }
 
-  // 3. Check id_form_alter
+  // 3. If needs_alteration is null/undefined, check for explicit form ID or detailed instructions
   const cleanFormId = String(it.id_form_alter || '').trim();
   const hasFormId =
     cleanFormId.length > 0 &&
     cleanFormId !== '-' &&
     cleanFormId.toLowerCase() !== 'none' &&
     cleanFormId.toLowerCase() !== 'null' &&
-    cleanFormId.toLowerCase() !== 'undefined';
+    cleanFormId.toLowerCase() !== 'undefined' &&
+    cleanFormId.toLowerCase() !== 'auto';
 
-  // 4. Check layanan_alter / layanan_type
-  const cleanLayanan = String(it.layanan_alter || it.layanan_type || '').trim().toLowerCase();
-  const hasLayanan =
-    cleanLayanan.length > 0 &&
-    cleanLayanan !== '-' &&
-    cleanLayanan !== 'none' &&
-    cleanLayanan !== 'null' &&
-    cleanLayanan !== 'undefined' &&
-    cleanLayanan !== 'alteration' && // Ignore generic default string
-    cleanLayanan !== 'tanpa alterasi' &&
-    cleanLayanan !== 'tidak ada';
-
-  // 5. Check alteration_detail
+  // 4. Check alteration_detail for non-default, specific text
   const cleanDetail = String(it.alteration_detail || '').trim().toLowerCase();
   const hasDetail =
     cleanDetail.length > 0 &&
@@ -59,9 +48,11 @@ export function isRealAlterItem(it: any): boolean {
     cleanDetail !== 'null' &&
     cleanDetail !== 'undefined' &&
     cleanDetail !== 'tanpa alterasi' &&
-    cleanDetail !== 'tidak ada';
+    cleanDetail !== 'tidak ada' &&
+    cleanDetail !== 'sesuai instruksi store' &&
+    cleanDetail !== 'sesuai catatan';
 
-  return hasFormId || hasLayanan || hasDetail;
+  return hasFormId || hasDetail;
 }
 
 export function hasRealAlterItems(order: any): boolean {

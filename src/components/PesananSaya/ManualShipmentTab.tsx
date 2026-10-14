@@ -3040,7 +3040,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                       Print Label
                     </button>
                   )}
-                  {!isStoreUser && ((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                  {!isStoreUser && hasRealAlterItems(order) && (
                     <>
                       <button 
                         onClick={() => { setSelectedOrderDetails(null); handlePrintAlterWorkOrder(order); }}
@@ -5906,7 +5906,7 @@ _WMS Warehouse System_`;
                       </button>
                       
                       <div className="flex items-center gap-1.5">
-                        {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                        {hasRealAlterItems(order) && (
                           <button
                             type="button"
                             onClick={() => handlePrintAlterWorkOrder(order)}
@@ -6007,10 +6007,10 @@ _WMS Warehouse System_`;
                           {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
                             <option value="mark_diproses">▶️ Mulai Proses</option>
                           )}
-                          {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                          {hasRealAlterItems(order) && (
                             <option value="spk_penjahit">✂️ SPK Penjahit</option>
                           )}
-                          {((order.items || []).some(it => it.needs_alteration || it.id_form_alter || it.alteration_detail) || order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-')) && (
+                          {hasRealAlterItems(order) && (
                             <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
                           )}
                           {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (

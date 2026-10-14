@@ -66,31 +66,37 @@ export const AlterationRepairReceiptModal: React.FC<AlterationRepairReceiptModal
         const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
 
         if (doc) {
+          const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+            .map(el => el.outerHTML)
+            .join('\n');
+
           const fullHtml = `
             <!DOCTYPE html>
             <html>
               <head>
                 <title>Cetak SPK Alteration & Repair</title>
                 <meta charset="utf-8" />
+                ${headStyles}
                 <style>
                   @page {
                     size: A4 portrait;
                     margin: 10mm !important;
                   }
                   *, *:before, *:after {
-                    box-sizing: border-box;
+                    box-sizing: border-box !important;
                   }
                   html, body {
                     margin: 0 !important;
                     padding: 0 !important;
                     background: #ffffff !important;
                     color: #000000 !important;
-                    font-family: system-ui, -apple-system, sans-serif;
+                    font-family: system-ui, -apple-system, sans-serif !important;
                   }
                   .no-print, button, .print\\:hidden, [class*="print:hidden"] {
                     display: none !important;
                   }
                   #printableAlterationRepairReceipt {
+                    display: block !important;
                     width: 100% !important;
                     margin: 0 auto !important;
                     padding: 12px !important;
@@ -98,19 +104,25 @@ export const AlterationRepairReceiptModal: React.FC<AlterationRepairReceiptModal
                     color: #000000 !important;
                     background: #ffffff !important;
                     font-size: 13.5px !important;
-                    line-height: 1.3 !important;
+                    line-height: 1.35 !important;
                   }
+                  .flex { display: flex !important; }
+                  .flex-col { display: flex !important; flex-direction: column !important; }
+                  .grid { display: grid !important; }
+                  .grid-cols-2 { display: grid !important; grid-template-columns: 1fr 1fr !important; }
+                  .justify-between { justify-content: space-between !important; }
+                  .items-center { align-items: center !important; }
                   img {
-                    max-width: 100%;
-                    height: auto;
+                    max-width: 100% !important;
+                    height: auto !important;
                   }
                   table {
-                    width: 100%;
-                    border-collapse: collapse;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
                   }
-                  .text-center { text-align: center; }
-                  .text-right { text-align: right; }
-                  .font-bold { font-weight: bold; }
+                  .text-center { text-align: center !important; }
+                  .text-right { text-align: right !important; }
+                  .font-bold { font-weight: bold !important; }
                 </style>
               </head>
               <body>

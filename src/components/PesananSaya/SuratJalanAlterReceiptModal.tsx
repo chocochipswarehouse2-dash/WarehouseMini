@@ -172,85 +172,90 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
             basePx = fontSizeOption === 'normal' ? 14 : fontSizeOption === 'large' ? 16 : 18;
           }
 
+          // Copy all current page head stylesheets so Tailwind utility classes work in iframe
+          const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+            .map(el => el.outerHTML)
+            .join('\n');
+
           const fullHtml = `
             <!DOCTYPE html>
             <html>
               <head>
                 <title>Cetak Surat Jalan Struk Kasir</title>
                 <meta charset="utf-8" />
+                ${headStyles}
                 <style>
                   @page {
                     size: ${pageCssWidth} auto;
                     margin: 0 !important;
                   }
                   *, *:before, *:after {
-                    box-sizing: border-box;
+                    box-sizing: border-box !important;
                   }
                   html, body {
                     margin: 0 !important;
                     padding: 0 !important;
                     background: #ffffff !important;
                     color: #000000 !important;
-                    font-family: 'Courier New', Courier, monospace;
+                    font-family: 'Courier New', Courier, monospace !important;
                     width: ${pageCssWidth} !important;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
                   }
                   .no-print, button, .print\\:hidden, [class*="print:hidden"] {
                     display: none !important;
                   }
                   #printableSuratJalanKasir {
+                    display: block !important;
                     width: ${contentCssWidth} !important;
                     max-width: ${contentCssWidth} !important;
                     margin: 0 auto !important;
-                    padding: 2mm 1.5mm 25mm 1.5mm !important;
+                    padding: 3mm 2mm 25mm 2mm !important;
                     font-size: ${basePx}px !important;
-                    line-height: 1.35 !important;
+                    line-height: 1.4 !important;
                     color: #000000 !important;
                     background: #ffffff !important;
                     font-weight: 700 !important;
+                    font-family: 'Courier New', Courier, monospace !important;
                     word-break: break-word !important;
                     overflow-wrap: break-word !important;
                   }
                   #printableSuratJalanKasir * {
-                    box-sizing: border-box;
+                    box-sizing: border-box !important;
                   }
-                  #printableSuratJalanKasir .text-base,
-                  #printableSuratJalanKasir .text-xl,
-                  #printableSuratJalanKasir .text-lg {
-                    font-size: 1.2em !important;
-                    font-weight: 900 !important;
-                  }
-                  #printableSuratJalanKasir .text-sm {
-                    font-size: 1.05em !important;
-                    font-weight: 800 !important;
-                  }
-                  #printableSuratJalanKasir .text-xs,
-                  #printableSuratJalanKasir .text-\\[11px\\],
-                  #printableSuratJalanKasir .text-\\[10.5px\\] {
-                    font-size: 0.95em !important;
-                  }
-                  #printableSuratJalanKasir .text-\\[10px\\],
-                  #printableSuratJalanKasir .text-\\[9.5px\\],
-                  #printableSuratJalanKasir .text-\\[9px\\],
-                  #printableSuratJalanKasir .text-\\[8.5px\\] {
-                    font-size: 0.88em !important;
-                  }
+                  /* Critical Layout fallbacks for iframe rendering */
+                  .flex { display: flex !important; }
+                  .flex-col { display: flex !important; flex-direction: column !important; }
+                  .flex-1 { flex: 1 1 0% !important; }
+                  .shrink-0 { flex-shrink: 0 !important; }
+                  .grid { display: grid !important; }
+                  .grid-cols-2 { display: grid !important; grid-template-columns: 1fr 1fr !important; }
+                  .gap-1 { gap: 4px !important; }
+                  .gap-1\\.5 { gap: 6px !important; }
+                  .gap-2 { gap: 8px !important; }
+                  .justify-between { justify-content: space-between !important; }
+                  .items-center { align-items: center !important; }
+                  .text-center { text-align: center !important; }
+                  .text-right { text-align: right !important; }
+                  .font-bold { font-weight: bold !important; }
+                  .font-black { font-weight: 900 !important; }
+                  .w-18 { width: 75px !important; flex-shrink: 0 !important; }
+                  .w-20 { width: 80px !important; flex-shrink: 0 !important; }
+                  .border-dashed { border-style: dashed !important; }
+                  .border-b { border-bottom-style: solid !important; border-bottom-width: 1px !important; }
+                  .border-t { border-top-style: solid !important; border-top-width: 1px !important; }
                   .receipt-page-break {
-                    page-break-after: always;
-                    break-after: page;
+                    page-break-after: always !important;
+                    break-after: page !important;
                   }
                   img {
-                    max-width: 100%;
-                    height: auto;
+                    max-width: 100% !important;
+                    height: auto !important;
                   }
                   table {
-                    width: 100%;
-                    border-collapse: collapse;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
                   }
-                  .text-center { text-align: center; }
-                  .text-right { text-align: right; }
-                  .font-bold { font-weight: bold; }
                 </style>
               </head>
               <body>
@@ -272,7 +277,7 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
             } else {
               window.print();
             }
-          }, 300);
+          }, 350);
         } else {
           window.print();
         }
@@ -1125,12 +1130,12 @@ _WMS Warehouse System_`;
                     {/* GARIS PEMBATAS POTONG DENGAN JARAK AMAN (PERFORATION) */}
                     {/* ======================================================= */}
                     {printCopy === 'both' && (
-                      <div className="py-5 my-3 text-center border-t-2 border-b-2 border-dashed border-slate-900 bg-slate-50 rounded-xs">
-                        <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-900 font-sans">
+                      <div className="py-6 my-6 text-center border-t-2 border-b-2 border-dashed border-slate-900 bg-slate-50 rounded-xs space-y-1">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-900 font-sans">
                           ✂️ POTONG DI SINI (RANGKAP 2) ✂️
                         </div>
-                        <div className="text-[8px] text-slate-600 font-bold">
-                          (Jarak potong aman agar tidak mengenai teks)
+                        <div className="text-[8.5px] text-slate-800 font-extrabold uppercase">
+                          --- BATAS JARAK POTONG AMAN KERTAS ---
                         </div>
                       </div>
                     )}
