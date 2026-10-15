@@ -255,14 +255,36 @@ export function getSupabaseClient(): SupabaseClient {
   return supabaseInstance;
 }
 
-export function getAreaFromLokasi(lokasi: string, _area?: string): string {
+export function getAreaFromLokasi(lokasi: string, area?: string): string {
   const l = (lokasi || '').trim().toUpperCase();
-  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
-  if (/^(CC|PMK|DF)\d{3}$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI')) return 'Perbaikan';
+  if (!l) return area || 'Warehouse';
+  
+  // 1. Warehouse: A001-A100, B001-B100, C001-C100, D001-D100 (supports 1-4 digits or dash e.g. A01, A-01, B005)
+  if (/^[ABCD]-?\d{1,4}$/.test(l) || l === 'WAREHOUSE') return 'Warehouse';
+
+  // 2. Aksesoris: BELT..., CARD..., GIFT..., BOX... (e.g. BELT, BELT001, CARD002, BOX01)
+  if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
+
+  // 3. Transit: X / TRANSIT (e.g. X, X001, X017, TRANSIT)
+  if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.startsWith('TRANSIT')) return 'Transit';
+
+  // 4. Kolian: R0..., V0..., Z0... (e.g. R047, R01, V003, Z005, Z105, KOLI...)
+  if (/^[RVZ]-?\d+$/.test(l) || l.startsWith('KOLI')) return 'Kolian';
+
+  // 5. Blok F: TIKTOK, SHOPEE, STUDIO
   if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.includes('BLOK F') || l.includes('SHOPEE') || l.includes('TIKTOK') || l.includes('STUDIO')) return 'Blok F';
-  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
-  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
-  if (/^X\d{3}$/.test(l) || l === 'TRANSIT') return 'Transit';
+
+  // 6. Perbaikan: CC... (Cuci), PMK... (Permak), DF... (Defect)
+  if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.includes('PERBAIKAN') || l.includes('CUCI') || l.includes('PERMAK') || l.includes('DEFECT')) return 'Perbaikan';
+
+  // 7. Fallback to existing recorded area if valid
+  if (area) {
+    const a = area.trim();
+    if (['Warehouse', 'Aksesoris', 'Transit', 'Kolian', 'Blok F', 'Perbaikan'].includes(a)) {
+      return a;
+    }
+  }
+
   return 'Anomali';
 }
 

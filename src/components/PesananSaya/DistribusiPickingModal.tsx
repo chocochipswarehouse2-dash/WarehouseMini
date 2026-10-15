@@ -183,7 +183,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       });
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi));
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isWarehouseLocation(l.lokasi, l.area));
     // Sort: locations with stock > 0 first (descending by qty), then locations with 0 stock
     allLocs.sort((a, b) => {
       const pA = getPickingPriority(a.lokasi, a.area);
@@ -248,21 +248,13 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       let isKosong = false;
       let primaryLokasi = 'Belum Ada Rak';
 
-      const isStoreDraft = /store|toko|sps|outlet/i.test(draft?.destination || draft?.source || '');
-
-      if (isStoreDraft) {
-        // Fulfil Store: lokasi = store target
-        const storeTarget = (draft?.destination || draft?.source || 'STORE').toUpperCase().trim();
-        lokasiDisplay = storeTarget;
-        primaryLokasi = storeTarget;
-        isKosong = false;
-      } else if (locsWithStock.length > 0) {
-        // Fulfil Marketplace: ambil data lokasi rak gudang (stok > 0)
+      if (locsWithStock.length > 0) {
+        // Ambil data lokasi rak gudang (stok > 0) terurut prioritas
         lokasiDisplay = locsWithStock.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
         primaryLokasi = locsWithStock[0].lokasi;
         isKosong = false;
       } else if (locsZeroStock.length > 0) {
-        // Fulfil Marketplace: jika stok 0, ambil data rak gudang tercatat
+        // Jika stok 0, ambil data rak gudang tercatat
         isKosong = true;
         lokasiDisplay = locsZeroStock.map((l) => l.lokasi).join(', ');
         primaryLokasi = locsZeroStock[0].lokasi;
@@ -273,8 +265,8 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         lokasiDisplay = prod.lokasi;
         primaryLokasi = prod.lokasi;
       } else {
-        lokasiDisplay = prod?.lokasi || 'A-01';
-        primaryLokasi = prod?.lokasi || 'A-01';
+        lokasiDisplay = prod?.lokasi || 'Belum Ada Rak';
+        primaryLokasi = prod?.lokasi || 'Belum Ada Rak';
         isKosong = false;
       }
 

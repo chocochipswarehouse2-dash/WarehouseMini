@@ -371,7 +371,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
       // If checked against realtime DB and all warehouse locations have 0 stock:
       // Return empty list so we DO NOT recommend empty racks to the picker!
-      const sorted = Array.from(map.values()).sort((a, b) => (b.qty || 0) - (a.qty || 0));
+      const sorted = Array.from(map.values()).sort((a, b) => {
+        const pA = getPickingPriority(a.lokasi, a.area);
+        const pB = getPickingPriority(b.lokasi, b.area);
+        if (pA !== pB) return pA - pB;
+        return (b.qty || 0) - (a.qty || 0);
+      });
       if (sorted.length > 0) {
         sorted[0].isPrimary = true;
       }
@@ -414,7 +419,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       });
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi));
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && l.lokasi !== '-' && isWarehouseLocation(l.lokasi, l.area));
     allLocs.sort((a, b) => {
       const pA = getPickingPriority(a.lokasi, a.area);
       const pB = getPickingPriority(b.lokasi, b.area);

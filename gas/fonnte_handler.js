@@ -44,12 +44,12 @@ function supabaseApiFetch(endpoint, method, payload) {
 function getArea(lokasi) {
   var l = String(lokasi || '').trim().toUpperCase();
   if (!l) return 'Warehouse';
-  if (/^[ABCD]\d{3}$/.test(l)) return 'Warehouse';
-  if (/^(CC|PMK|DF)\d{3}$/.test(l) || l.indexOf('PERBAIKAN') > -1 || l.indexOf('CUCI') > -1) return 'Perbaikan';
+  if (/^[ABCD]-?\d{1,4}$/.test(l) || l === 'WAREHOUSE') return 'Warehouse';
+  if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
+  if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.indexOf('TRANSIT') === 0) return 'Transit';
+  if (/^[RVZ]-?\d+$/.test(l) || l.indexOf('KOLI') === 0) return 'Kolian';
   if (/^(TIKTOK|SHOPEE|STUDIO)$/.test(l) || l.indexOf('BLOK F') > -1 || l.indexOf('SHOPEE') > -1 || l.indexOf('TIKTOK') > -1 || l.indexOf('STUDIO') > -1) return 'Blok F';
-  if (/^(BELT|CARD|GIFT|BOX)\d{3}$/.test(l)) return 'Aksesoris';
-  if (/^[RVZ]\d{3}$/.test(l)) return 'Kolian';
-  if (/^X\d{3}$/.test(l) || l === 'TRANSIT') return 'Transit';
+  if (/^(CC|PMK|DF)-?\d*$/.test(l) || l.indexOf('PERBAIKAN') > -1 || l.indexOf('CUCI') > -1 || l.indexOf('PERMAK') > -1 || l.indexOf('DEFECT') > -1) return 'Perbaikan';
   return 'Warehouse';
 }
 
