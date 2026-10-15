@@ -5689,6 +5689,75 @@ _WMS Warehouse System_`;
                       </div>
                     </div>
 
+                    {/* Box Produk Fulfillment Store / Penarikan Fisik Toko */}
+                    {(() => {
+                      const storeItems = (order.items || []).filter(it => {
+                        const ful = (it.fulfillment || '').toLowerCase().trim();
+                        return ful && !ful.includes('marketplace') && !ful.includes('gudang') && !ful.includes('warehouse');
+                      });
+                      if (storeItems.length === 0) return null;
+
+                      // Prioritaskan produk milik store user jika terdeteksi login akun store
+                      const myStoreItems = userAssignedStore
+                        ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
+                        : storeItems;
+
+                      const displayItems = myStoreItems.length > 0 ? myStoreItems : storeItems;
+
+                      return (
+                        <div className="p-3 bg-blue-50/80 dark:bg-blue-950/50 rounded-xl border border-blue-300 dark:border-blue-800 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-extrabold text-blue-900 dark:text-blue-200 uppercase tracking-wider flex items-center gap-1">
+                              <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                              <span>
+                                {userAssignedStore && myStoreItems.length > 0
+                                  ? `Produk Ambil dari Store Anda: ${userAssignedStore} (${myStoreItems.length})`
+                                  : `Produk Fulfillment Store (${storeItems.length})`}
+                              </span>
+                            </span>
+                            {isOrderIncomingFulfillment(order) && (
+                              <button
+                                type="button"
+                                onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
+                                className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                              >
+                                <Truck className="w-3 h-3" />
+                                <span>Kirim ke Gudang</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* List Produk Store */}
+                          <div className="space-y-1.5 bg-white dark:bg-slate-900/80 p-2 rounded-lg border border-blue-200 dark:border-blue-900/50">
+                            {displayItems.map((it, idx) => (
+                              <div key={it.id || idx} className="text-xs pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
+                                <div className="flex justify-between items-start gap-1">
+                                  <span className="font-bold text-slate-900 dark:text-white leading-tight">
+                                    {it.nama_produk}
+                                  </span>
+                                  <span className="font-bold text-[10px] bg-blue-100 dark:bg-blue-900/80 text-blue-900 dark:text-blue-100 px-1.5 py-0.5 rounded shrink-0">
+                                    x{it.qty}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap gap-1">
+                                  <span>{it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''}</span>
+                                  <span className="text-blue-800 dark:text-blue-200 font-sans font-extrabold bg-blue-100/70 dark:bg-blue-950 px-1.5 py-0.2 rounded border border-blue-300 dark:border-blue-800">
+                                    🏬 {it.fulfillment || 'Store'}
+                                  </span>
+                                </div>
+                                {isRealAlterItem(it) && (
+                                  <div className="mt-1 text-[9.5px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 p-1 rounded border border-rose-200 dark:border-rose-800 flex items-center gap-1">
+                                    <Scissors className="w-3 h-3" />
+                                    <span>Instruksi Alter: {it.alteration_detail || it.layanan_type || 'Perlu Alterasi'}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Box Surat Jalan DealPOS (Khusus Produk Fulfilment Marketplace) */}
                     {(() => {
                       const mktItems = (order.items || []).filter(it => (it.fulfillment || '').toLowerCase().includes('marketplace'));
