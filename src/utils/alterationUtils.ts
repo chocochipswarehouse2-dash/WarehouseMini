@@ -2,6 +2,41 @@
  * Utility functions for Alteration & Repair detection & validation
  */
 
+export function hasValidArData(arData: any): boolean {
+  if (!arData || typeof arData !== 'object') return false;
+
+  const cleanFormId = String(arData.id_form_alter || '').trim();
+  const hasFormId =
+    cleanFormId.length > 0 &&
+    cleanFormId !== '-' &&
+    cleanFormId.toLowerCase() !== 'none' &&
+    cleanFormId.toLowerCase() !== 'null' &&
+    cleanFormId.toLowerCase() !== 'undefined';
+
+  const cleanAltDetail = String(arData.alteration_detail || '').trim();
+  const hasAltDetail =
+    cleanAltDetail.length > 0 &&
+    cleanAltDetail !== '-' &&
+    cleanAltDetail.toLowerCase() !== 'none' &&
+    cleanAltDetail.toLowerCase() !== 'tanpa alterasi' &&
+    cleanAltDetail.toLowerCase() !== 'tidak ada' &&
+    cleanAltDetail.toLowerCase() !== 'null' &&
+    cleanAltDetail.toLowerCase() !== 'undefined';
+
+  const cleanRepDetail = String(arData.repair_detail || '').trim();
+  const hasRepDetail =
+    cleanRepDetail.length > 0 &&
+    cleanRepDetail !== '-' &&
+    cleanRepDetail.toLowerCase() !== 'none' &&
+    cleanRepDetail.toLowerCase() !== 'tidak ada' &&
+    cleanRepDetail.toLowerCase() !== 'null' &&
+    cleanRepDetail.toLowerCase() !== 'undefined';
+
+  // Hanya anggap valid data alterasi jika memiliki ID Form Alter, atau instruksi alter/repair spesifik.
+  // Catatan log pengiriman antar store/gudang (kurir, tanggal kirim) BUKAN bukti alterasi pakaian.
+  return hasFormId || hasAltDetail || hasRepDetail;
+}
+
 export function isRealAlterItem(it: any): boolean {
   if (!it) return false;
 
@@ -57,21 +92,22 @@ export function isRealAlterItem(it: any): boolean {
 
 export function hasRealAlterItems(order: any): boolean {
   if (!order) return false;
-  const isAr =
-    order.order_type === 'alteration_repair' ||
-    (order.no_pesanan || '').toUpperCase().startsWith('AR-') ||
-    !!order.alteration_repair_data;
-  if (isAr) return true;
+  const noPesanan = (order.no_pesanan || '').toUpperCase();
+  const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
+  const validArData = hasValidArData(order.alteration_repair_data);
+
+  if (isArPrefix || validArData) return true;
+  if (order.order_type === 'alteration_repair' && (isArPrefix || validArData)) return true;
+
   return Array.isArray(order.items) && order.items.some(isRealAlterItem);
 }
 
 export function getRealAlterItems(order: any): any[] {
   if (!order || !Array.isArray(order.items)) return [];
-  const isAr =
-    order.order_type === 'alteration_repair' ||
-    (order.no_pesanan || '').toUpperCase().startsWith('AR-') ||
-    !!order.alteration_repair_data;
-  if (isAr) return order.items;
+  if (hasRealAlterItems(order)) {
+    const itemsWithAlter = order.items.filter(isRealAlterItem);
+    return itemsWithAlter.length > 0 ? itemsWithAlter : order.items;
+  }
   return order.items.filter(isRealAlterItem);
 }
 

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ManualShipmentOrder, AlterationFlowStage, AlterationFlowLog } from '../../types';
 import { editManualShipment } from '../../services/gasManualShipment';
+import { hasRealAlterItems } from '../../utils/alterationUtils';
 import { triggerOrderEmailNotifications } from '../../services/emailService';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 
@@ -41,7 +42,7 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   onShowToast,
 }) => {
   const arData = order.alteration_repair_data || {} as any;
-  const isAlterOrder = order.order_type === 'alteration_repair' || !!order.alteration_repair_data;
+  const isAlterOrder = hasRealAlterItems(order);
 
   // Prioritaskan Toko Fulfillment spesifik item jika tersedia (misal "Gading Serpong Tangerang"), baru nama pengirim
   const itemFulfillmentStore = order.items?.find((it: any) => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'))?.fulfillment

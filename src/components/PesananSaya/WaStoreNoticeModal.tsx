@@ -55,6 +55,7 @@ export const WaStoreNoticeModal: React.FC<WaStoreNoticeModalProps> = ({
 
   const requesterStore = fulfillmentData.requesterStoreName;
   const isInterStore = currentGroup?.isInterStore || false;
+  const isGudangGroup = currentGroup?.isGudangGroup || targetStore.toLowerCase().includes('gudang utama');
   const items = currentGroup?.items || order.items || [];
 
   const itemsText = items.map((it, idx) => {
@@ -66,7 +67,24 @@ export const WaStoreNoticeModal: React.FC<WaStoreNoticeModalProps> = ({
     return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk}${sizeStr} - *${it.qty || 1} pcs*${fulText}${alterText}`;
   }).join('\n');
 
-  const waMessage = `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
+  const waMessage = isGudangGroup
+    ? `📦 *INFORMASI STOK DARI GUDANG UTAMA / MARKETPLACE*
+--------------------------------------------------
+Rincian Alokasi Produk dari Stok Gudang Utama (DealPOS Marketplace):
+
+📋 *Rincian Pesanan:*
+• *Order ID / No. Pesanan:* ${order.no_transaksi_customer || order.no_pesanan}
+• *Store Pemohon:* ${requesterStore} (PIC: ${order.pic_store || '-'})
+• *Store Penyedia Barang:* Gudang Utama (DealPOS Marketplace)
+• *Customer Tujuan Akhir:* ${order.nama_tujuan || '-'}
+• *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
+
+👕 *Daftar Produk Stok Marketplace / Gudang:*
+${itemsText || '  1. Produk Pakaian Pesanan'}
+
+ℹ️ *Catatan:* Stok dialokasikan langsung dari Gudang Utama / DealPOS Marketplace. Tidak memerlukan pengiriman fisik antar-store.
+_WMS Warehouse System_`
+    : `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
 --------------------------------------------------
 Halo Tim *${targetStore}*,
 ${isInterStore 
@@ -151,7 +169,14 @@ _WMS Warehouse System_`;
     const fonnteCfg = getFonnteConfig();
     let totalSent = 0;
 
-    for (const group of fulfillmentData.groups) {
+    const storeGroups = fulfillmentData.groups.filter(g => !g.isGudangGroup);
+    if (storeGroups.length === 0) {
+      onShowToast('Seluruh item pada pesanan ini merupakan stok dari Gudang Utama / Marketplace (tidak memerlukan notif WA toko).', 'info');
+      setIsSending(false);
+      return;
+    }
+
+    for (const group of storeGroups) {
       const contact = getStoreContact(group.storeName);
       const phoneToUse = group.phone || contact?.no_wa || '';
       const cleanPhone = normalizeWhatsAppNumber(phoneToUse);

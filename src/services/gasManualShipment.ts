@@ -1,5 +1,6 @@
 import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem } from '../types';
 import { supabaseFetch } from './supabase';
+import { hasValidArData } from '../utils/alterationUtils';
 
 export const DEFAULT_MANUAL_SHIPMENT_GAS_URL = '';
 
@@ -276,6 +277,7 @@ export interface StoreFulfillmentGroup {
   pic: string;
   items: ManualShipmentItem[];
   isInterStore: boolean;
+  isGudangGroup?: boolean;
 }
 
 /**
@@ -349,16 +351,18 @@ export function resolveOrderFulfillmentStores(order: ManualShipmentOrder): {
 
   items.forEach((it) => {
     const rawFul = (it.fulfillment || '').trim();
-    let targetStore = requesterFull;
-    if (
-      rawFul &&
-      rawFul.toLowerCase() !== 'marketplace' &&
-      rawFul.toLowerCase() !== 'gudang' &&
-      rawFul.toLowerCase() !== 'warehouse'
-    ) {
+    const fulLower = rawFul.toLowerCase();
+
+    let targetStore: string;
+
+    if (fulLower === 'marketplace' || fulLower === 'gudang' || fulLower === 'warehouse') {
+      targetStore = 'Gudang Utama (Marketplace)';
+    } else if (rawFul) {
       targetStore = getFullStoreName(rawFul);
     } else if (order.alteration_repair_data?.nama_asal) {
       targetStore = getFullStoreName(order.alteration_repair_data.nama_asal);
+    } else {
+      targetStore = requesterFull;
     }
 
     if (!groupsMap.has(targetStore)) {
@@ -373,10 +377,11 @@ export function resolveOrderFulfillmentStores(order: ManualShipmentOrder): {
 
   const groups: StoreFulfillmentGroup[] = [];
   groupsMap.forEach((groupItems, storeName) => {
-    const contact = getStoreContact(storeName);
-    const phone = contact?.no_wa || (isSameStore(storeName, requesterFull) ? (order.no_telp_store || '') : '') || '';
-    const pic = contact?.pic_default || (isSameStore(storeName, requesterFull) ? (order.pic_store || '') : '') || '';
-    const isInterStore = !isSameStore(storeName, requesterFull);
+    const isGudangGroup = storeName.toLowerCase().includes('gudang utama');
+    const contact = isGudangGroup ? null : getStoreContact(storeName);
+    const phone = contact?.no_wa || (!isGudangGroup && isSameStore(storeName, requesterFull) ? (order.no_telp_store || '') : '') || '';
+    const pic = contact?.pic_default || (!isGudangGroup && isSameStore(storeName, requesterFull) ? (order.pic_store || '') : '') || '';
+    const isInterStore = !isGudangGroup && !isSameStore(storeName, requesterFull);
 
     groups.push({
       storeName,
@@ -384,6 +389,7 @@ export function resolveOrderFulfillmentStores(order: ManualShipmentOrder): {
       pic,
       items: groupItems,
       isInterStore,
+      isGudangGroup,
     });
   });
 
@@ -827,7 +833,8 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
 
       // Deteksi order_type
       const noPesanan = (item.no_pesanan || '').toUpperCase();
-      const isAlterationRepair = !!alteration_repair_data || noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
+      const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
+      const isAlterationRepair = isArPrefix || hasValidArData(alteration_repair_data);
       const order_type = isAlterationRepair ? 'alteration_repair' : 'manual_shipment';
 
       return {

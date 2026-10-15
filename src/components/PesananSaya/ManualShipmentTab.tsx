@@ -3744,9 +3744,7 @@ _WMS Warehouse System_`;
    */
   const isEligibleForSjStruk = (order: ManualShipmentOrder): boolean => {
     if (!order) return false;
-    const isAr = order.order_type === 'alteration_repair' || 
-                 (order.no_pesanan || '').toUpperCase().startsWith('AR-') || 
-                 !!order.alteration_repair_data;
+    const isAr = hasRealAlterItems(order);
     const hasAlter = (order.items || []).some(isRealAlterItem);
 
     const sender = (order.nama_pengirim || '').toLowerCase().trim();
@@ -3936,10 +3934,7 @@ _WMS Warehouse System_`;
     const missingSj = mktOrGudangItems.some(it => !it.no_sj_dealpos || !it.no_sj_dealpos.trim());
     const existingSj = mktOrGudangItems.find(it => it.no_sj_dealpos && it.no_sj_dealpos.trim())?.no_sj_dealpos;
 
-    const hasAlterFeature = order.order_type === 'alteration_repair' ||
-      (order.no_pesanan || '').toUpperCase().startsWith('AR-') ||
-      !!order.alteration_repair_data ||
-      (order.items || []).some(isRealAlterItem);
+    const hasAlterFeature = hasRealAlterItems(order);
 
     if (!hasMarketplaceOrWarehouse && !hasAlterFeature) return null;
 
@@ -5063,11 +5058,11 @@ _WMS Warehouse System_`;
                     {/* BADGES: Reminder SJ DealPOS (MKT to Store) & Penanda Perlu Alter/Repair */}
                     {renderOrderBadges(order)}
                     {(() => {
-                      const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+                      const isAr = hasRealAlterItems(order);
                       if (isAr) {
                         const ar = order.alteration_repair_data;
-                        const layanan = ar?.layanan_type || order.layanan_type || 'both';
-                        const layananText = layanan === 'alteration' ? 'ALTER' : layanan === 'repair' ? 'REPAIR' : 'ALTER + REPAIR';
+                        const layanan = ar?.layanan_type || order.layanan_type;
+                        const layananText = layanan === 'alteration' ? 'ALTER' : layanan === 'repair' ? 'REPAIR' : layanan === 'both' ? 'ALTER + REPAIR' : '';
                         const flowStage = ar?.status_flow || 'diajukan';
 
                         let stageBadge = 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300';
@@ -5094,12 +5089,27 @@ _WMS Warehouse System_`;
 
                         return (
                           <div className="mt-1 flex flex-col gap-1 items-start">
-                            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                              <Scissors className="w-2.5 h-2.5 text-rose-600" />
-                              {layananText}
-                            </span>
+                            {layananText && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                <Scissors className="w-2.5 h-2.5 text-rose-600" />
+                                {layananText}
+                              </span>
+                            )}
                             <span className={`inline-flex items-center text-[8.5px] font-bold px-1.5 py-0.2 rounded border ${stageBadge}`}>
                               {stageText}
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      // Jika bukan pesanan alterasi, tetapi merupakan barang kirim store ke warehouse
+                      const ar = order.alteration_repair_data;
+                      if (ar?.status_flow === 'dikirim_store') {
+                        return (
+                          <div className="mt-1 flex items-center">
+                            <span className="inline-flex items-center gap-1 text-[8.5px] font-bold px-1.5 py-0.5 rounded border bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 shadow-2xs">
+                              <Truck className="w-2.5 h-2.5 text-blue-600" />
+                              <span>Dikirim ke Gudang {ar.kurir_kirim_store ? `(${ar.kurir_kirim_store})` : ''}</span>
                             </span>
                           </div>
                         );
@@ -5271,7 +5281,7 @@ _WMS Warehouse System_`;
                       {order.items?.reduce((acc, it) => acc + (Number(it.qty) || 0), 0) || 0} Items
                     </button>
                     {(() => {
-                      const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+                      const isAr = hasRealAlterItems(order);
                       const alterItems = (order.items || []).filter(isRealAlterItem);
                       if (!isAr && alterItems.length > 0) {
                         const alterPhotoCount = (order.items || []).reduce((acc, it) => acc + (it.foto_urls?.length || 0), 0);
@@ -5532,7 +5542,7 @@ _WMS Warehouse System_`;
                             <option value="kirim_wa_alter">💬 Kirim WA Alter</option>
                           </>
                         )}
-                        {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
+                        {hasRealAlterItems(order) && (
                           <>
                             <option value="spk">Cetak SPK Gudang</option>
                             {order.alteration_repair_data?.status_flow === 'diajukan' && (
@@ -5619,7 +5629,7 @@ _WMS Warehouse System_`;
                         {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
                       </span>
                       {(() => {
-                        const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+                        const isAr = hasRealAlterItems(order);
                         const alterItems = (order.items || []).filter(isRealAlterItem);
                         if (!isAr && alterItems.length > 0) {
                           const photoCount = (order.items || []).reduce((acc, it) => acc + (it.foto_urls?.length || 0), 0);
@@ -6013,7 +6023,7 @@ _WMS Warehouse System_`;
                           {hasRealAlterItems(order) && (
                             <option value="kirim_wa_alter">💬 Kirim WA Alter (Fonnte)</option>
                           )}
-                          {(order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data) && (
+                          {hasRealAlterItems(order) && (
                             <option value="spk">Cetak SPK</option>
                           )}
                           <option value="edit">Edit</option>
@@ -6721,7 +6731,7 @@ _WMS Warehouse System_`;
           ) : printPayload.mode === 'ALTER_WORK_ORDER' ? (
             // Work Order / SPK Penjahit Mode
             printPayload.orders.map((order, oIdx) => {
-              const isAr = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || !!order.alteration_repair_data;
+              const isAr = hasRealAlterItems(order);
               const arData = order.alteration_repair_data;
               const alterItems = isAr ? (order.items || []) : (order.items || []).filter(isRealAlterItem);
               const qrDataUrl = printPayload.qrMap[order.no_pesanan || ''] || '';

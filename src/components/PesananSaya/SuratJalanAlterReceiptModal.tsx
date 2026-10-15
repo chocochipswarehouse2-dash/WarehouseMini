@@ -317,6 +317,26 @@ export const SuratJalanAlterReceiptModal: React.FC<SuratJalanAlterReceiptModalPr
       return `  ${idx + 1}. *${it.sku || '-'}* - ${it.nama_produk} (Size: *${it.size || '-'}*) - *${it.qty || 1} pcs*${fulText}${alterText}`;
     }).join('\n');
 
+    const isGudangGroup = storeName.toLowerCase().includes('gudang utama');
+    if (isGudangGroup) {
+      return `📦 *INFORMASI STOK DARI GUDANG UTAMA / MARKETPLACE*
+--------------------------------------------------
+Rincian Alokasi Produk dari Stok Gudang Utama (DealPOS Marketplace):
+
+📋 *Rincian Pesanan:*
+• *Order ID / No. Pesanan:* ${ord.no_transaksi_customer || ord.no_pesanan}
+• *Store Pemohon:* ${requesterStore} (PIC: ${ord.pic_store || arData?.pic_pemohon || '-'})
+• *Store Penyedia Barang:* Gudang Utama (DealPOS Marketplace)
+• *Customer Tujuan Akhir:* ${ord.nama_tujuan || '-'}
+• *Waktu Permintaan:* ${new Date().toLocaleString('id-ID')}
+
+👕 *Daftar Produk Stok Marketplace / Gudang:*
+${itemsText}
+
+ℹ️ *Catatan:* Stok dialokasikan langsung dari Gudang Utama / DealPOS Marketplace. Tidak memerlukan pengiriman fisik antar-store.
+_WMS Warehouse System_`;
+    }
+
     return `📦 *PERMINTAAN PENGIRIMAN PRODUK (STORE ➔ WAREHOUSE)*
 --------------------------------------------------
 Halo Tim *${storeName}*,
