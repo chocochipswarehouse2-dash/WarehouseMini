@@ -637,6 +637,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
           setSelectedSku(null);
           handleOpenLokasiExport(loc);
         }}
+        onReloadStock={handleManualRefresh}
       />
 
       {/* ========================================================

@@ -18,6 +18,10 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
+  Pencil,
+  Trash2,
+  Save,
+  Check,
 } from 'lucide-react';
 import {
   KOMPARASI_5,
@@ -30,7 +34,7 @@ import {
   type InventoryRow,
 } from './inventoryModel';
 import { SelisihCell } from './InventoryList';
-import { fetchLogsBySku } from '../../services/supabase';
+import { fetchLogsBySku, deleteLogProdukItem, updateLogProdukItem } from '../../services/supabase';
 import type { LogProdukItem } from '../../types';
 
 interface DrawerProps {
@@ -38,6 +42,7 @@ interface DrawerProps {
   areas: AreaFilterType[];
   onClose: () => void;
   onLoc: (loc: string) => void;
+  onReloadStock?: () => void;
 }
 
 type DrawerTab = 'stok' | 'histori';
@@ -126,12 +131,100 @@ function formatDateTime(isoString: string): string {
   }
 }
 
-export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClose, onLoc }) => {
+export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClose, onLoc, onReloadStock }) => {
   const [activeTab, setActiveTab] = useState<DrawerTab>('stok');
   const [logs, setLogs] = useState<LogProdukItem[]>([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [logFilter, setLogFilter] = useState<LogFilterType>('ALL');
   const [logSearch, setLogSearch] = useState<string>('');
+
+  // Edit & Delete Log states
+  const [editingLog, setEditingLog] = useState<LogProdukItem | null>(null);
+  const [editForm, setEditForm] = useState<{
+    type: string;
+    qty: number;
+    lokasi: string;
+    keterangan: string;
+  }>({
+    type: 'IN',
+    qty: 1,
+    lokasi: '',
+    keterangan: '',
+  });
+  const [deletingLog, setDeletingLog] = useState<LogProdukItem | null>(null);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Auto-dismiss feedback
+  useEffect(() => {
+    if (!feedback) return;
+    const t = setTimeout(() => setFeedback(null), 4000);
+    return () => clearTimeout(t);
+  }, [feedback]);
+
+  const handleStartEdit = (log: LogProdukItem) => {
+    setEditingLog(log);
+    setEditForm({
+      type: log.type || 'IN',
+      qty: Math.abs(Number(log.qty) || 1),
+      lokasi: log.lokasi || '',
+      keterangan: log.keterangan || '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingLog) return;
+    const qty = Number(editForm.qty);
+    if (!qty || qty <= 0) {
+      setFeedback({ type: 'error', message: 'Kuantitas (Qty) harus lebih dari 0!' });
+      return;
+    }
+    const lokasi = editForm.lokasi.trim().toUpperCase();
+    if (!lokasi) {
+      setFeedback({ type: 'error', message: 'Lokasi rak tidak boleh kosong!' });
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const res = await updateLogProdukItem(editingLog.id, {
+        type: editForm.type,
+        qty,
+        lokasi,
+        keterangan: editForm.keterangan.trim(),
+      });
+      if (!res.success) {
+        throw new Error(res.error || 'Gagal mengubah log mutasi');
+      }
+      setFeedback({ type: 'success', message: 'Log mutasi berhasil diperbarui!' });
+      setEditingLog(null);
+      if (row?.sku) loadProductLogs(row.sku);
+      if (onReloadStock) onReloadStock();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Terjadi kesalahan saat menyimpan perubahan' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingLog) return;
+    setActionLoading(true);
+    try {
+      const res = await deleteLogProdukItem(deletingLog.id);
+      if (!res.success) {
+        throw new Error(res.error || 'Gagal menghapus log mutasi');
+      }
+      setFeedback({ type: 'success', message: 'Log mutasi berhasil dihapus!' });
+      setDeletingLog(null);
+      if (row?.sku) loadProductLogs(row.sku);
+      if (onReloadStock) onReloadStock();
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Terjadi kesalahan saat menghapus log' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Close on Escape
   useEffect(() => {
@@ -456,6 +549,33 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                TAB 2: HISTORI MUTASI (LOG PRODUK)
                ======================================================== */
             <div className="space-y-4">
+              {/* Feedback Toast */}
+              {feedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 shadow-xs transition-all ${
+                    feedback.type === 'success'
+                      ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-500/15 border border-rose-500/30 text-rose-800 dark:text-rose-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {feedback.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    )}
+                    <span>{feedback.message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFeedback(null)}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Summary KPIs */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800">
@@ -587,7 +707,7 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                         key={log.id || `${log.invoice}_${idx}`}
                         className="p-3 rounded-2xl bg-slate-50/70 dark:bg-[#0E1420] border border-slate-200/80 dark:border-slate-800 space-y-2 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
                       >
-                        {/* Top Row: Type Badge + Qty + Date */}
+                        {/* Top Row: Type Badge + Qty + Date + Actions */}
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
                             <span
@@ -608,9 +728,38 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
                               {Math.abs(Number(log.qty) || 0)} pcs
                             </span>
                           </div>
-                          <div className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-slate-400" />
-                            <span>{formatDateTime(log.created_at)}</span>
+
+                          <div className="flex items-center gap-2">
+                            <div className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-400" />
+                              <span>{formatDateTime(log.created_at)}</span>
+                            </div>
+
+                            {/* Edit & Delete Action Buttons */}
+                            <div className="flex items-center gap-0.5 pl-1.5 border-l border-slate-200 dark:border-slate-800">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit(log);
+                                }}
+                                className="p-1 rounded-md text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                title="Edit mutasi ini"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeletingLog(log);
+                                }}
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                title="Hapus mutasi ini"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
 
@@ -657,6 +806,194 @@ export const InventoryDetailDrawer: React.FC<DrawerProps> = ({ row, areas, onClo
           )}
         </div>
       </div>
+
+      {/* ========================================================
+          DELETE CONFIRMATION MODAL
+          ======================================================== */}
+      {deletingLog && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                  Hapus Baris Log Mutasi?
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Tindakan ini permanen dan langsung mengubah stok fisik di Supabase.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 text-xs space-y-1.5 font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-sans">Tipe / Qty:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">
+                  {deletingLog.type} ({deletingLog.qty} pcs)
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-sans">Lokasi Rak:</span>
+                <span className="font-bold text-amber-600 dark:text-amber-400">
+                  {deletingLog.lokasi || '-'}
+                </span>
+              </div>
+              <div className="flex justify-between truncate">
+                <span className="text-slate-400 font-sans">Invoice:</span>
+                <span className="text-slate-600 dark:text-slate-300 truncate max-w-[170px]">
+                  {deletingLog.invoice || '-'}
+                </span>
+              </div>
+              {deletingLog.keterangan && (
+                <div className="pt-1 border-t border-slate-200 dark:border-slate-800 font-sans italic text-[11px] text-slate-500">
+                  &ldquo;{deletingLog.keterangan}&rdquo;
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setDeletingLog(null)}
+                className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-xs font-black rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{actionLoading ? 'Menghapus...' : 'Ya, Hapus'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          EDIT LOG MODAL
+          ======================================================== */}
+      {editingLog && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    Edit Log Mutasi
+                  </h4>
+                  <span className="font-mono text-[11px] font-bold text-slate-400">
+                    {editingLog.sku}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingLog(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {/* Tipe Mutasi */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Tipe Mutasi
+                </label>
+                <select
+                  value={editForm.type}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, type: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="IN">IN (Barang Masuk)</option>
+                  <option value="OUT">OUT (Barang Keluar)</option>
+                  <option value="ADJ_IN">ADJ_IN (Penyesuaian Masuk)</option>
+                  <option value="ADJ_OUT">ADJ_OUT (Penyesuaian Keluar)</option>
+                  <option value="SO">SO (Stock Opname Scan)</option>
+                </select>
+              </div>
+
+              {/* Kuantitas */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Kuantitas (Qty Pcs)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editForm.qty}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, qty: Math.max(1, parseInt(e.target.value) || 1) }))}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 font-mono font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Lokasi Rak */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Lokasi Rak
+                </label>
+                <input
+                  type="text"
+                  value={editForm.lokasi}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, lokasi: e.target.value.toUpperCase() }))}
+                  placeholder="Contoh: A002, B037, DF004..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 font-mono font-bold text-slate-800 dark:text-slate-200 uppercase focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Keterangan */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Keterangan / Catatan
+                </label>
+                <input
+                  type="text"
+                  value={editForm.keterangan}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, keterangan: e.target.value }))}
+                  placeholder="Catatan alasan perubahan..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10.5px] text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>Perubahan lokasi rak atau qty akan langsung mengoreksi stok fisik di Supabase.</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setEditingLog(null)}
+                className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={handleSaveEdit}
+                className="px-4 py-2 text-xs font-black rounded-xl bg-amber-500 hover:bg-amber-600 text-black flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                <span>{actionLoading ? 'Menyimpan...' : 'Simpan'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
