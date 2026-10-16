@@ -1261,6 +1261,26 @@ export async function fetchLogsByInvoice(invoice: string): Promise<LogProdukItem
 }
 
 /**
+ * Fetch mutation logs for a specific product SKU with limit and descending order by date
+ */
+export async function fetchLogsBySku(sku: string, limit = 100): Promise<LogProdukItem[]> {
+  if (!sku) return [];
+  const cleanSku = sku.trim().toUpperCase();
+  try {
+    const data = await supabaseFetch<LogProdukItem[]>(
+      'log_produk',
+      'GET',
+      null,
+      `select=*&sku=eq.${encodeURIComponent(cleanSku)}&order=created_at.desc&limit=${limit}`
+    );
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn(`Error fetching logs for SKU ${cleanSku}:`, err);
+    return [];
+  }
+}
+
+/**
  * Update a single log_produk record
  */
 export async function updateLogProdukItem(
