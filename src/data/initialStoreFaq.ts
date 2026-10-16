@@ -43,17 +43,17 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-sold-out-handling',
     category: 'manual_shipment',
     is_pinned: true,
-    question: 'Barang di toko penyedia ternyata kosong / reject (Sold Out), apa yang harus dilakukan?',
-    answer: 'Jika staf toko menemukan bahwa produk yang diminta ternyata sold out atau cacat fisik di rak toko, staf toko harus menekan tombol "Tandai Sold Out" pada baris item di detail pesanan WMS. Sistem akan mencatat riwayat dan memberikan opsi kelanjutan paket.',
-    keywords: ['sold out', 'kosong', 'habis', 'reject', 'rusak', 'cacat', 'batal', 'partial', 'kirim sebagian'],
+    question: 'Barang di toko penyedia ternyata kosong / reject (Sold Out), apa yang harus dilakukan Store?',
+    answer: 'Tombol "Tandai Sold Out" adalah wewenang khusus Admin Gudang demi menjaga sinkronisasi stok dan DealPOS. Jika staf Store menemukan barang fisik di rak toko Anda ternyata kosong atau rusak, Store TIDAK BISA membatalkan langsung, melainkan harus segera melapor ke Admin Gudang.',
+    keywords: ['sold out', 'kosong', 'habis', 'reject', 'rusak', 'cacat', 'batal', 'partial', 'kirim sebagian', 'toko kosong'],
     button_badges: [
-      { label: 'Tandai Sold Out', color: 'rose', icon: 'AlertTriangle' },
-      { label: 'Kirim Sebagian (Partial)', color: 'amber', icon: 'Package' }
+      { label: 'Ajukan ke Admin Gudang', color: 'rose', icon: 'AlertTriangle' },
+      { label: 'Kirim Sebagian / Partial (Proses Admin)', color: 'amber', icon: 'Package' }
     ],
     action_steps: [
-      { step: 1, title: 'Buka Detail Pesanan', desc: 'Buka menu Pesanan Saya -> Manual Shipment -> Rekap Pesanan.' },
-      { step: 2, title: 'Klik [Tandai Sold Out]', desc: 'Pada produk yang kosong, klik tombol "Tandai Sold Out" dan masukkan catatan alasannya.' },
-      { step: 3, title: 'Pilih Tindakan Penyelesaian', desc: 'Pilih "Kirim Sebagian" (produk lain tetap dikirim) atau "Batalkan Seluruh Pesanan" jika customer tidak berkenan.' }
+      { step: 1, title: 'Verifikasi Fisik di Rak Toko', desc: 'Pastikan barang di toko Anda memang benar-benar kosong atau reject (rusak permanen).' },
+      { step: 2, title: 'Laporkan ke Admin Gudang Segera', desc: 'Gunakan tab "Ajukan Kendala ke Superadmin" di Pusat Bantuan ini (atau hubungi Admin via chat). Informasikan No. Pesanan dan produk yang kosong.' },
+      { step: 3, title: 'Admin Eksekusi di Sistem', desc: 'Admin Gudang akan menekan tombol "Tandai Sold" di sistem, lalu memutuskan apakah pesanan dikirim sebagian (partial) atau dialihkan ke toko lain.' }
     ],
     view_count: 95
   },
@@ -68,9 +68,9 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
       { label: 'Kirim ke Gudang', color: 'emerald', icon: 'Truck' }
     ],
     action_steps: [
-      { step: 1, title: 'Periksa Tab Tugas Toko', desc: 'Lihat daftar pesanan dengan label "Permintaan Ambil Toko Lain" atau pesanan alter toko Anda.' },
-      { step: 2, title: 'Cetak Surat Jalan Struk', desc: 'Klik tombol cetak Surat Jalan Struk, masukkan ke dalam plastik bersama pakaian.' },
-      { step: 3, title: 'Konfirmasi Pengiriman', desc: 'Serahkan ke kurir/driver dan tekan tombol "Tandai Dikirim ke Gudang" di WMS.' }
+      { step: 1, title: 'Periksa Tab Rekap Pesanan Toko', desc: 'Lihat daftar pesanan dengan label toko Anda sebagai penyedia barang, atau pesanan alter toko Anda.' },
+      { step: 2, title: 'Cetak Surat Jalan Struk', desc: 'Pilih opsi "Cetak SJ Struk" pada kolom aksi, cetak dan masukkan ke dalam plastik bersama pakaian.' },
+      { step: 3, title: 'Serahkan ke Kurir / Driver', desc: 'Serahkan barang fisik beserta struk ke kurir/driver internal untuk diantar ke Gudang Pusat.' }
     ],
     view_count: 82
   },
@@ -81,7 +81,7 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     answer: 'Nomor resi kurir pengiriman ke customer diinput sepenuhnya oleh Tim Admin Gudang Pusat setelah paket selesai dipacking dan ditempeli label ekspedisi. Tim Store TIDAK PERLU menginput nomor resi pengiriman customer saat mendaftarkan pesanan manual.',
     keywords: ['resi', 'no resi', 'kurir', 'jne', 'jnt', 'sicepat', 'gosend', 'ekspedisi', 'tracking', 'lacak'],
     button_badges: [
-      { label: 'Input Resi (Admin Gudang)', color: 'blue', icon: 'Truck' }
+      { label: 'Input Resi (Khusus Admin Gudang)', color: 'blue', icon: 'Truck' }
     ],
     action_steps: [
       { step: 1, title: 'Store Input Pesanan', desc: 'Staf toko cukup memilih jasa kirim yang diminta customer dan melengkapi alamat tujuan.' },
@@ -97,7 +97,7 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     answer: 'No. SJ DealPOS adalah nomor Surat Jalan transfer resmi dari sistem DealPOS saat memotong stok alokasi marketplace ke gudang. Untuk Tim Store, kolom ini bersifat opsional saat pertama kali submit pesanan, dan dapat dilengkapi kemudian oleh Admin Gudang.',
     keywords: ['dealpos', 'no sj', 'surat jalan', 'tr', 'transfer', 'marketplace', 'alokasi'],
     button_badges: [
-      { label: 'No SJ DealPOS', color: 'amber', icon: 'FileText' }
+      { label: 'No SJ DealPOS (Opsional untuk Store)', color: 'amber', icon: 'FileText' }
     ],
     action_steps: [
       { step: 1, title: 'Opsional Saat Submit', desc: 'Jika PIC Store sudah memiliki nomor SJ transfer dari DealPOS, ketikkan di kolom No SJ DealPOS.' },
@@ -109,15 +109,16 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     id: 'faq-cancel-manual-shipment',
     category: 'manual_shipment',
     question: 'Bagaimana cara membatalkan pesanan manual shipment yang salah input?',
-    answer: 'Pesanan manual shipment dapat dibatalkan selama pesanan belum diproses kirim ke customer. Pembatalan wajib disertai alasan yang jelas agar tercatat di histori audit sistem.',
-    keywords: ['batal', 'batalkan', 'cancel', 'salah input', 'keliru', 'hapus pesanan'],
+    answer: 'Untuk menjaga keutuhan stok fisik dan histori audit, Tim Store (Outlet) TIDAK MEMILIKI tombol "Batalkan Pesanan" di layar mereka. Pembatalan hanya dapat dieksekusi oleh Admin Gudang setelah menerima permohonan dari Store.',
+    keywords: ['batal', 'batalkan', 'cancel', 'salah input', 'keliru', 'hapus pesanan', 'store batal'],
     button_badges: [
-      { label: 'Batalkan Pesanan', color: 'rose', icon: 'Trash2' }
+      { label: 'Ajukan Kendala ke Superadmin (Store)', color: 'rose', icon: 'MessageSquare' },
+      { label: 'Batalkan Pesanan (Khusus Admin Gudang)', color: 'slate', icon: 'Trash2' }
     ],
     action_steps: [
-      { step: 1, title: 'Buka Rekap Pesanan', desc: 'Cari nomor pesanan yang ingin dibatalkan di tabel rekap Manual Shipment.' },
-      { step: 2, title: 'Klik [Batalkan Pesanan]', desc: 'Klik tombol merah "Batalkan Pesanan" pada kolom tindakan.' },
-      { step: 3, title: 'Ketik Alasan Pembatalan', desc: 'Tuliskan alasan pembatalan secara jelas (misal: "Customer ganti alamat / salah pilih size").' }
+      { step: 1, title: 'Pastikan Paket Belum Diproses Kirim', desc: 'Pesanan hanya dapat dibatalkan jika statusnya masih baru dan belum dipacking/dikirim oleh ekspedisi.' },
+      { step: 2, title: 'Ajukan Permohonan Batal dari Store', desc: 'Buka tombol "Bantuan Flow" -> klik tab "Ajukan Kendala ke Superadmin" (atau chat Admin Gudang). Cantumkan No. Pesanan dan alasan pembatalan (misal: customer ganti alamat/salah size).' },
+      { step: 3, title: 'Admin Gudang Batalkan di Sistem', desc: 'Admin Gudang akan memverifikasi permohonan Anda dan menekan tombol merah "Batalkan Pesanan" di sistem gudang.' }
     ],
     view_count: 51
   }

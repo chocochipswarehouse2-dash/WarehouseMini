@@ -5,6 +5,7 @@ import {
   Printer, Truck, FileText, Trash2, Building2, Store, Package, Layers, ThumbsUp, Check
 } from 'lucide-react';
 import { StoreFaqItem, UserSession } from '../../types';
+import { isSuperadmin } from '../../services/permissions';
 import {
   fetchStoreFaqs,
   submitStoreHelpTicket,
@@ -27,6 +28,7 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
   onShowToast,
   defaultOrderId
 }) => {
+  const userIsAdmin = isSuperadmin(session);
   const [faqs, setFaqs] = useState<StoreFaqItem[]>([]);
   const [loadingFaqs, setLoadingFaqs] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,8 +169,12 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                   Pusat Bantuan Flow Pesanan & SOP
                 </h2>
-                <span className="text-[10px] bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-full">
-                  Store & Admin
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  userIsAdmin
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                }`}>
+                  {userIsAdmin ? '🛡️ Mode Admin Gudang' : '🏪 Mode Staf Store / Outlet'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -419,6 +425,37 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                                     </div>
                                   ))}
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Tombol Cepat Khusus Store jika butuh bantuan Admin (misal Pembatalan / Sold Out) */}
+                            {!userIsAdmin && (faq.id === 'faq-cancel-manual-shipment' || faq.id === 'faq-sold-out-handling') && (
+                              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between gap-3 flex-wrap">
+                                <div className="space-y-0.5">
+                                  <span className="text-xs font-bold text-amber-900 dark:text-amber-200 block">
+                                    {faq.id === 'faq-cancel-manual-shipment'
+                                      ? 'Perlu bantuan Admin Gudang untuk membatalkan pesanan ini?'
+                                      : 'Perlu bantuan Admin Gudang untuk update stok sold out / ganti toko?'}
+                                  </span>
+                                  <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                                    Kirimkan permohonan ke Superadmin Hub dengan formulir otomatis 1-klik.
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTab('ask');
+                                    setAskCategory(faq.id === 'faq-cancel-manual-shipment' ? 'Pembatalan Pesanan' : 'Barang Sold Out');
+                                    setAskQuestion(faq.id === 'faq-cancel-manual-shipment' ? 'Permohonan Pembatalan Pesanan Salah Input' : 'Laporan Barang Sold Out di Rak Toko');
+                                    setAskDetail(faq.id === 'faq-cancel-manual-shipment'
+                                      ? 'Halo Admin Gudang, mohon bantuan untuk membatalkan pesanan ini karena: '
+                                      : 'Halo Admin Gudang, barang di toko kami tidak tersedia/reject untuk pesanan: ');
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>Ajukan ke Admin Sekarang</span>
+                                </button>
                               </div>
                             )}
 

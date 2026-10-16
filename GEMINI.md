@@ -117,3 +117,14 @@ Agents modifying UI sorting or task allocation MUST strictly enforce the followi
    - Contoh: Lokasi berupa salah ketik operator, tanda strip `-`, nama non-rak, atau string acak.
    - **Tindakan**: DILARANG melakukan pembersihan (*cleanup*) otomatis oleh script tanpa izin.
    - **Wajib Verifikasi & Persetujuan Manusia**: Wajib melalui audit fisik di lapangan dan memerlukan konfirmasi/persetujuan eksplisit (*approval*) dari user/admin sebelum tindakan penyesuaian stok dilakukan.
+
+## 8. WMS Feature Update & Dynamic FAQ Auto-Maintenance Standard
+
+### A. Mandatory Auto-Update of FAQs on Feature Changes
+Whenever features, buttons, modal flows, validation rules, or business logic are added, modified, or revised in `ManualShipmentTab`, `AlterationRepairTab`, or Order Workflows (e.g., Split Fulfil, Form Alter, Multi-Store, Kirim ke Gudang, Resi, DealPOS, Pembatalan):
+1. **Mandatory FAQ Synchronization**: The agent MUST automatically review and update `src/data/initialStoreFaq.ts` (and corresponding Supabase FAQ seeds) so that the user and store teams do not have to write documentation manually.
+2. **Strict Role-Aware Perspective (Store vs. Admin)**:
+   - Instructions and action steps in FAQs MUST be strictly written from the **real perspective of the role performing the action**.
+   - **HARD CONSTRAINT (NO MISLEADING BUTTONS)**: NEVER instruct a Store PIC to click a button or perform an action that is restricted only to Admin (e.g., `Batalkan Pesanan`, `Tandai Sold Out`, `Update Resi`).
+   - If an action requires Admin authority, the FAQ for Store MUST instruct them on how to request/escalate it (e.g., via the "Ajukan Kendala ke Superadmin" tab in `StoreHelpModal` or chat), while clearly describing that Admin will execute the button in the system.
+3. **Miniature UI Badges Consistency**: Always verify that the miniature UI badges listed in the FAQ (`button_badges`) correspond to actual buttons in the interface that match the operator's permission scope.
