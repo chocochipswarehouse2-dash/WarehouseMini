@@ -2425,20 +2425,8 @@ _WMS Warehouse System_`;
     setLoading(true);
     const enrichedTargetList = await enrichOrdersWithLocations(targetList);
 
-    // Update status to diproses for alteration orders
+    // Catatan: Cetak SPK / Struk tidak boleh mengubah status pesanan dari diterima (baru) ke diproses
     const orderIds = enrichedTargetList.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
-    setOrders(prev => prev.map(o => {
-      const id = o.no_pesanan || (o as any).id;
-      if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
-        return {
-          ...o,
-          status: o.status === 'diterima' ? 'diproses' : o.status,
-          is_picking_printed: true,
-        };
-      }
-      return o;
-    }));
-
     updateOrderPrintStatus(orderIds, 'spk').catch(err => console.warn('Async print status error:', err));
 
     // Generate QR Map for fast scanning on physical ticket
@@ -3255,12 +3243,17 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                     </button>
                   )}
 
-                  {isOrderIncomingFulfillment(order) && (
+                  {isOrderSentToWarehouse(order) ? (
+                    <span className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 font-bold rounded-lg text-xs border border-emerald-300 dark:border-emerald-700 flex items-center shadow-2xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                      Sudah Kirim ke WH {order.alteration_repair_data?.kurir_kirim_store ? `(${order.alteration_repair_data.kurir_kirim_store})` : ''}
+                    </span>
+                  ) : isOrderEligibleKirimKeGudang(order) ? (
                     <button 
                       type="button"
                       onClick={() => {
                         setSelectedOrderDetails(null);
-                        const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'));
+                        const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace') && !it.fulfillment.toLowerCase().includes('gudang'));
                         const myStoreItems = userAssignedStore
                           ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
                           : storeItems;
@@ -3271,12 +3264,12 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                         });
                       }}
                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center transition-colors cursor-pointer shadow-xs"
-                      title="Tandai pesanan telah dikirim dari store ke warehouse"
+                      title="Tandai pesanan telah dikirim dari store ke warehouse (sekaligus cetak Struk SJ 2 Rangkap)"
                     >
                       <Truck className="w-3.5 h-3.5 mr-1.5" />
                       Kirim ke Gudang
                     </button>
-                  )}
+                  ) : null}
 
                   <button 
                     type="button"
@@ -3670,6 +3663,11 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
   };
 
   const handlePrintLabel = async (singleOrder?: ManualShipmentOrder | any) => {
+    if (isStoreUser) {
+      onShowToast('Akun Store hanya memiliki akses cetak Struk Surat Jalan (Rangkap 2), bukan Label Pengiriman A6.', 'warning');
+      return;
+    }
+
     const isRealOrder = Boolean(
       singleOrder &&
       typeof singleOrder === 'object' &&
@@ -4094,6 +4092,54 @@ _WMS Warehouse System_`;
     return itemsList.some(it => isSameStore(it.fulfillment, userAssignedStore));
   };
 
+  // Helper: Cek apakah produk fisik sudah diatur kirim dari store ke warehouse
+  const isOrderSentToWarehouse = (order: ManualShipmentOrder): boolean => {
+    const ar = order?.alteration_repair_data;
+    if (!ar) return false;
+    if (['dikirim_store', 'diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'dikirim_kembali', 'selesai'].includes(ar.status_flow || '')) {
+      return true;
+    }
+    if (ar.tgl_kirim_store || ar.kurir_kirim_store) {
+      return true;
+    }
+    return false;
+  };
+
+  // Helper: Cek apakah pesanan memenuhi kriteria "Kirim ke Gudang" oleh Store
+  // Berlaku untuk:
+  // 1. Cross-store fulfillment (incoming request ke store ini)
+  // 2. Produk yang difulfill dari store yang sedang login (myStoreItems)
+  // 3. Pesanan Alteration/Repair yang fisiknya berada di store dan perlu dikirim ke gudang/penjahit pusat
+  const isOrderEligibleKirimKeGudang = (order: ManualShipmentOrder): boolean => {
+    if (!order || order.status === 'batal' || order.status === 'selesai') return false;
+
+    // 1. Incoming cross-store fulfillment
+    if (isOrderIncomingFulfillment(order)) return true;
+
+    // 2. Jika ada item yang difulfill dari store user yang sedang login
+    const storeItems = (order.items || []).filter(it => {
+      const ful = (it.fulfillment || '').toLowerCase().trim();
+      return ful && !ful.includes('marketplace') && !ful.includes('gudang') && !ful.includes('warehouse');
+    });
+
+    if (userAssignedStore) {
+      const hasMyStoreItem = storeItems.some(it => isSameStore(it.fulfillment, userAssignedStore));
+      if (hasMyStoreItem) return true;
+
+      // 3. Alter/Repair yang diajukan oleh store user atau barang fisiknya dari store
+      const isMyStoreOrder = isSameStore(order.nama_pengirim, userAssignedStore) || isSameStore(order.alteration_repair_data?.nama_asal, userAssignedStore);
+      const isArOrder = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || hasRealAlterItems(order);
+      const isFisikStore = order.alteration_repair_data?.sumber_barang !== 'warehouse';
+      if (isMyStoreOrder && isArOrder && isFisikStore) return true;
+    } else if (!isStoreUser) {
+      // Untuk Admin / Warehouse: tampil jika ada store fulfillment atau pesanan AR dari store
+      const isArOrder = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || hasRealAlterItems(order);
+      return storeItems.length > 0 || isArOrder;
+    }
+
+    return false;
+  };
+
   const directionScopedOrders = useMemo(() => {
     if (filterStoreDirection === 'outgoing') {
       return scopedOrders.filter(o => isOrderOutgoingStore(o));
@@ -4206,8 +4252,9 @@ _WMS Warehouse System_`;
     const existingSj = mktOrGudangItems.find(it => it.no_sj_dealpos && it.no_sj_dealpos.trim())?.no_sj_dealpos;
 
     const hasAlterFeature = hasRealAlterItems(order);
+    const isSentToWh = isOrderSentToWarehouse(order);
 
-    if (!hasMarketplaceOrWarehouse && !hasAlterFeature) return null;
+    if (!hasMarketplaceOrWarehouse && !hasAlterFeature && !isSentToWh) return null;
 
     return (
       <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -4249,6 +4296,17 @@ _WMS Warehouse System_`;
           >
             <Scissors className="w-2.5 h-2.5 text-rose-600 dark:text-rose-400 shrink-0" />
             <span>Perlu Alter/Repair</span>
+          </span>
+        )}
+
+        {/* BADGE 3: Penanda Sudah Atur Kirim ke Warehouse */}
+        {isSentToWh && (
+          <span 
+            className="inline-flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 shadow-2xs"
+            title={`Barang telah diatur dikirim dari Store ke Warehouse via ${order.alteration_repair_data?.kurir_kirim_store || 'Kurir'}${order.alteration_repair_data?.tgl_kirim_store ? ` (Tgl: ${order.alteration_repair_data.tgl_kirim_store})` : ''}`}
+          >
+            <Truck className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span>Kirim WH {order.alteration_repair_data?.kurir_kirim_store ? `(${order.alteration_repair_data.kurir_kirim_store})` : ''}</span>
           </span>
         )}
       </div>
@@ -5746,7 +5804,7 @@ _WMS Warehouse System_`;
                   </td>
                   <td className="sticky right-0 z-10 px-3 py-2 text-right align-middle min-w-[270px] pr-4 bg-white dark:bg-slate-900 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.08)] whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                      {isEligibleForSjStruk(order) && (
+                      {(isEligibleForSjStruk(order) || isStoreUser) && (
                         <button
                           type="button"
                           onClick={() => setSjAlterModalOrders([order])}
@@ -5757,35 +5815,42 @@ _WMS Warehouse System_`;
                           <span>SJ Struk</span>
                         </button>
                       )}
-                      {isOrderIncomingFulfillment(order) && (
+                      {isOrderSentToWarehouse(order) ? (
+                        <span className="px-2 py-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-lg inline-flex items-center gap-1 shadow-2xs">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Kirim WH</span>
+                        </span>
+                      ) : isOrderEligibleKirimKeGudang(order) ? (
                         <button
                           type="button"
                           onClick={() => {
-                            const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'));
+                            const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace') && !it.fulfillment.toLowerCase().includes('gudang'));
                             const myStoreItems = userAssignedStore
                               ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
                               : storeItems;
                             setAlterActionData({
                               order,
-                              targetItems: myStoreItems.length > 0 ? myStoreItems : storeItems,
+                              targetItems: myStoreItems.length > 0 ? myStoreItems : (order.items || []),
                               actionType: 'mark_sent_store'
                             });
                           }}
                           className="px-2 py-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-800 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                          title="Tandai pesanan telah dikirim dari store ke warehouse"
+                          title="Tandai pesanan telah dikirim dari store ke warehouse (sekaligus cetak Struk SJ 2 Rangkap)"
                         >
                           <Truck className="w-3 h-3 text-blue-600" />
                           <span>Kirim</span>
                         </button>
+                      ) : null}
+                      {!isStoreUser && (
+                        <button
+                          type="button"
+                          onClick={() => handlePrintLabel(order)}
+                          className="p-1.5 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
+                          title="Print Label Pengiriman (A6 / Resi)"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                        </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handlePrintLabel(order)}
-                        className="p-1.5 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center shadow-2xs"
-                        title="Print Label Pengiriman (A6 / Resi)"
-                      >
-                        <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                      </button>
                       <button
                         type="button"
                         onClick={() => handleSendWaStoreNoticeDirect(order)}
@@ -6049,16 +6114,41 @@ _WMS Warehouse System_`;
                                   : `Produk Fulfillment Store (${storeItems.length})`}
                               </span>
                             </span>
-                            {isOrderIncomingFulfillment(order) && (
+                            {isOrderSentToWarehouse(order) ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[9.5px] font-extrabold text-emerald-800 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 shadow-2xs">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Sudah Atur Kirim ke WH {order.alteration_repair_data?.kurir_kirim_store ? `(${order.alteration_repair_data.kurir_kirim_store})` : ''}</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSjAlterModalOrders([order])}
+                                  className="text-[9.5px] font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-750 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                                  title="Cetak Ulang Surat Jalan Struk Thermal (Rangkap 2)"
+                                >
+                                  <Printer className="w-2.5 h-2.5 text-indigo-600" />
+                                  <span>Struk SJ</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store', targetItems: displayItems })}
+                                  className="text-[9px] font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 underline cursor-pointer"
+                                  title="Ubah data kurir / resi pengiriman ke gudang"
+                                >
+                                  Ubah
+                                </button>
+                              </div>
+                            ) : isOrderEligibleKirimKeGudang(order) ? (
                               <button
                                 type="button"
                                 onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store', targetItems: displayItems })}
-                                className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                                className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                                title="Atur pengiriman barang fisik dari store ke warehouse (sekaligus cetak Struk SJ 2 Rangkap)"
                               >
                                 <Truck className="w-3 h-3" />
                                 <span>Kirim ke Gudang</span>
                               </button>
-                            )}
+                            ) : null}
                           </div>
 
                           {/* List Produk Store */}
@@ -6329,14 +6419,16 @@ _WMS Warehouse System_`;
                             <Scissors className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handlePrintLabel(order)}
-                          title="Print Label Pengiriman (A6 / Resi)"
-                          className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                        </button>
+                        {!isStoreUser && (
+                          <button
+                            type="button"
+                            onClick={() => handlePrintLabel(order)}
+                            title="Print Label Pengiriman (A6 / Resi)"
+                            className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleSendWaStoreNoticeDirect(order)}
@@ -6350,7 +6442,7 @@ _WMS Warehouse System_`;
 
                     {/* Baris 2: Tombol Operasional & Menu Aksi (Full Row) */}
                     <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
-                      {isEligibleForSjStruk(order) && (
+                      {(isEligibleForSjStruk(order) || isStoreUser) && (
                         <button
                           type="button"
                           onClick={() => setSjAlterModalOrders([order])}
@@ -6361,18 +6453,31 @@ _WMS Warehouse System_`;
                           <span className="truncate">SJ Struk</span>
                         </button>
                       )}
-                      {isOrderIncomingFulfillment(order) && (
+                      {isOrderSentToWarehouse(order) ? (
+                        <span className="flex-1 py-1.5 px-2 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-2xs truncate">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate">Sudah Kirim WH</span>
+                        </span>
+                      ) : isOrderEligibleKirimKeGudang(order) ? (
                         <button
                           type="button"
-                          onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
+                          onClick={() => {
+                            const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace') && !it.fulfillment.toLowerCase().includes('gudang'));
+                            const myStoreItems = userAssignedStore ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore)) : storeItems;
+                            setAlterActionData({
+                              order,
+                              targetItems: myStoreItems.length > 0 ? myStoreItems : (order.items || []),
+                              actionType: 'mark_sent_store',
+                            });
+                          }}
                           className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer truncate"
-                          title="Tandai pesanan telah dikirim dari store ke warehouse"
+                          title="Tandai pesanan telah dikirim dari store ke warehouse (sekaligus cetak Struk SJ 2 Rangkap)"
                         >
                           <Truck className="w-3.5 h-3.5 shrink-0" />
                           <span className="truncate">Kirim ke Gudang</span>
                         </button>
-                      )}
-                      <div className={isEligibleForSjStruk(order) || isOrderIncomingFulfillment(order) ? 'w-24 shrink-0' : 'w-full'}>
+                      ) : null}
+                      <div className={isEligibleForSjStruk(order) || isStoreUser || isOrderEligibleKirimKeGudang(order) || isOrderSentToWarehouse(order) ? 'w-24 shrink-0' : 'w-full'}>
                         <select
                           className="w-full text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs font-semibold cursor-pointer"
                           onChange={(e) => {
@@ -6411,11 +6516,11 @@ _WMS Warehouse System_`;
                           defaultValue=""
                         >
                           <option value="" disabled>Aksi</option>
-                          {isEligibleForSjStruk(order) && (
+                          {(isEligibleForSjStruk(order) || isStoreUser) && (
                             <option value="sj_struk">🧾 Cetak SJ Struk</option>
                           )}
                           <option value="notif_wa_store">📲 Notif WA Store</option>
-                          <option value="print">Print Label</option>
+                          {!isStoreUser && <option value="print">Print Label A6</option>}
                           <option value="jadwal_store">📅 Atur Jadwal Store</option>
                           {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
                             <option value="mark_diproses">▶️ Mulai Proses</option>
@@ -6576,9 +6681,15 @@ _WMS Warehouse System_`;
           targetItems={alterActionData.targetItems}
           session={session}
           onClose={() => setAlterActionData(null)}
-          onSuccess={() => {
+          onSuccess={(updatedOrder?: ManualShipmentOrder) => {
+            const wasMarkSentStore = alterActionData?.actionType === 'mark_sent_store';
+            const orderToOpen = updatedOrder || alterActionData?.order;
             setAlterActionData(null);
             loadOrders();
+            if (wasMarkSentStore && orderToOpen) {
+              setSjAlterModalOrders([orderToOpen]);
+              onShowToast('🚚 Berhasil atur Kirim ke Gudang! Membuka Surat Jalan Struk Rangkap 2...', 'success');
+            }
           }}
           onShowToast={onShowToast}
         />

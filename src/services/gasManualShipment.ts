@@ -1219,12 +1219,14 @@ export async function updateOrderPrintStatus(
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
           const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo)}`;
 
-          // Update status ke diproses jika saat ini statusnya masih diterima (atau kosong)
-          // Menggunakan conditional filter agar tidak menimpa status yang sudah dikirim / selesai
-          try {
-            await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=in.(diterima,pending)`);
-          } catch {
-            await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=eq.diterima`);
+          // Update status ke diproses HANYA jika cetak picking list atau label pengiriman gudang
+          // Struk SJ / SPK tanda terima TIDAK BOLEH memindahkan pesanan dari diterima (baru) ke diproses
+          if (type === 'picking' || type === 'label') {
+            try {
+              await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=in.(diterima,pending)`);
+            } catch {
+              await supabaseFetch('manual_shipment', 'PATCH', { status: 'diproses' }, `${filter}&status=eq.diterima`);
+            }
           }
         } catch (e) {
           console.warn('Silent skip order print status patch for', idOrNo, e);

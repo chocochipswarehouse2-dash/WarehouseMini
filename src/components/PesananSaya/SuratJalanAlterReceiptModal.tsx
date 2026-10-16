@@ -1184,38 +1184,43 @@ _WMS Warehouse System_`;
                           </div>
                         </div>
 
-                        {/* QR Code & Meta */}
-                        <div className="flex items-center justify-between gap-1.5 py-0.5">
-                          <div className="space-y-0.5 text-[9.5px] flex-1 min-w-0">
-                            <div className="flex">
-                              <span className="w-18 shrink-0 text-slate-600">No. Order</span>
-                              <span className="font-bold font-mono text-black truncate">: {ord.no_pesanan}</span>
-                            </div>
-                            {arData?.id_form_alter && (
-                              <div className="flex">
-                                <span className="w-18 shrink-0 text-slate-600">ID Alter</span>
-                                <span className="font-bold font-mono text-black truncate">: {arData.id_form_alter}</span>
-                              </div>
-                            )}
-                            <div className="flex">
-                              <span className="w-18 shrink-0 text-slate-600">Store Asal</span>
-                              <span className="font-bold text-black truncate">: {sourceStore}</span>
-                            </div>
-                            <div className="flex">
-                              <span className="w-18 shrink-0 text-slate-600">Tgl Kirim</span>
-                              <span>: {formattedDate}</span>
-                            </div>
-                            {targetSelesai && targetSelesai !== '-' && (
-                              <div className="flex">
-                                <span className="w-18 shrink-0 text-slate-600">Target</span>
-                                <span className="font-bold">: {targetSelesai}</span>
-                              </div>
-                            )}
+                        {/* Structured Key-Value Meta Info (Full Width, Bebas Terpotong) */}
+                        <div className="space-y-0.5 text-[9.5px] py-0.5">
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">No. Order</span>
+                            <span className="font-bold font-mono text-black break-all">: {ord.no_pesanan}</span>
                           </div>
-                          {ordQr && (
-                            <img src={ordQr} alt="QR" className="w-13 h-13 object-contain shrink-0 border border-slate-300 p-0.5" />
+                          {arData?.id_form_alter && (
+                            <div className="flex">
+                              <span className="w-20 shrink-0 text-slate-600">ID Alter</span>
+                              <span className="font-bold font-mono text-black break-all">: {arData.id_form_alter}</span>
+                            </div>
+                          )}
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">Store Asal</span>
+                            <span className="font-bold text-black">: {sourceStore}</span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-20 shrink-0 text-slate-600">Tgl Kirim</span>
+                            <span>: {formattedDate}</span>
+                          </div>
+                          {targetSelesai && targetSelesai !== '-' && (
+                            <div className="flex">
+                              <span className="w-20 shrink-0 text-slate-600">Target</span>
+                              <span className="font-bold">: {targetSelesai}</span>
+                            </div>
                           )}
                         </div>
+
+                        {/* QR Code Khusus Lembar Fisik (Tengah, Tidak Menutupi Teks) */}
+                        {ordQr && (
+                          <div className="flex flex-col items-center justify-center my-1.5 py-1.5 border-t border-b border-dotted border-slate-400 bg-white">
+                            <img src={ordQr} alt="QR" className="w-20 h-20 object-contain border border-slate-300 p-0.5" />
+                            <div className="text-[7.5px] font-mono font-bold text-slate-700 mt-1 tracking-wider uppercase">
+                              SCAN VERIFIKASI WAREHOUSE
+                            </div>
+                          </div>
+                        )}
 
                         {/* Items List Table */}
                         <div className="border-t border-b border-dashed border-slate-800 my-1 py-1 space-y-1">
