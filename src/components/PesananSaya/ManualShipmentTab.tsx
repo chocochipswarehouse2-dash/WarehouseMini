@@ -992,6 +992,7 @@ _WMS Warehouse System_`;
       };
 
       const next = [...prev];
+      next[targetIndex] = updatedTarget;
       next.splice(targetIndex + 1, 0, newItem);
       return next;
     });
