@@ -1404,6 +1404,16 @@ export interface StoreFaqItem {
   category: 'manual_shipment' | 'alteration_repair' | 'multi_store' | 'resi_tracking' | 'stok_dealpos' | 'umum';
   question: string;
   answer: string;
+  target_audience?: 'all' | 'store' | 'admin';
+  // Konten Berbasis Peran (Store vs Admin)
+  answer_admin?: string;
+  answer_store?: string;
+  action_steps_admin?: StoreHelpStep[];
+  action_steps_store?: StoreHelpStep[];
+  button_badges_admin?: StoreHelpBadge[];
+  button_badges_store?: StoreHelpBadge[];
+  admin_notes?: string;
+  store_notes?: string;
   keywords?: string[];
   button_badges?: StoreHelpBadge[];
   action_steps?: StoreHelpStep[];

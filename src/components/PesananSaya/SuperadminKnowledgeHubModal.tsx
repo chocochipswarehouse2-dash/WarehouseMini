@@ -695,6 +695,16 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
                             <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                               {faq.category}
                             </span>
+                            {faq.answer_admin && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                🛡️ Alur Admin
+                              </span>
+                            )}
+                            {faq.answer_store && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                                🏪 Alur Store
+                              </span>
+                            )}
                             <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                               <Eye className="w-3 h-3" />
                               {faq.view_count || 0} kali dibaca
@@ -829,14 +839,56 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Jawaban Lengkap
+                  Jawaban Umum / Ringkasan Fallback <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={editingFaq?.answer || ''}
                   onChange={(e) => setEditingFaq({ ...editingFaq, answer: e.target.value })}
-                  placeholder="Tuliskan jawaban yang ramah, jelas, dan solusi alur yang tepat..."
-                  rows={4}
+                  placeholder="Ringkasan jawaban umum yang dapat dibaca semua pihak..."
+                  rows={2}
                   className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Jawaban Khusus Staf Store */}
+              <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                  <span>🏪 Jawaban & Alur untuk Staf Store / Outlet</span>
+                </div>
+                <textarea
+                  value={editingFaq?.answer_store || ''}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, answer_store: e.target.value })}
+                  placeholder="Tuliskan alur tindakan yang benar-benar ada di layar Store (misal: Store tidak ada tombol batal -> minta ajukan ke Admin)..."
+                  rows={3}
+                  className="w-full p-2.5 text-xs bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                />
+                <input
+                  type="text"
+                  value={editingFaq?.store_notes || ''}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, store_notes: e.target.value })}
+                  placeholder="💡 Tips/SOP khusus Store (opsional, contoh: Jangan buat pesanan baru sebelum mengajukan pembatalan)..."
+                  className="w-full p-2 text-[11px] bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded-lg"
+                />
+              </div>
+
+              {/* Jawaban Khusus Admin Gudang */}
+              <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-300">
+                  <span>🛡️ Jawaban & Wewenang untuk Admin Gudang (Full Access)</span>
+                </div>
+                <textarea
+                  value={editingFaq?.answer_admin || ''}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, answer_admin: e.target.value })}
+                  placeholder="Tuliskan alur eksekusi Admin: nama tab, tombol yang ditekan, status pesanan, dan dampaknya ke stok/DealPOS..."
+                  rows={3}
+                  className="w-full p-2.5 text-xs bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-lg focus:ring-2 focus:ring-amber-500"
+                />
+                <input
+                  type="text"
+                  value={editingFaq?.admin_notes || ''}
+                  onChange={(e) => setEditingFaq({ ...editingFaq, admin_notes: e.target.value })}
+                  placeholder="ℹ️ Catatan audit / sistem khusus Admin (opsional)..."
+                  className="w-full p-2 text-[11px] bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 rounded-lg"
                 />
               </div>
 

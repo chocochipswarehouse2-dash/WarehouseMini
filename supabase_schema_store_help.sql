@@ -9,6 +9,15 @@ CREATE TABLE IF NOT EXISTS public.store_help_faq (
   category TEXT NOT NULL DEFAULT 'manual_shipment',
   question TEXT NOT NULL,
   answer TEXT NOT NULL,
+  target_audience TEXT DEFAULT 'all',
+  answer_admin TEXT,
+  answer_store TEXT,
+  action_steps_admin JSONB DEFAULT '[]',
+  action_steps_store JSONB DEFAULT '[]',
+  button_badges_admin JSONB DEFAULT '[]',
+  button_badges_store JSONB DEFAULT '[]',
+  admin_notes TEXT,
+  store_notes TEXT,
   keywords TEXT[] DEFAULT '{}',
   button_badges JSONB DEFAULT '[]',
   action_steps JSONB DEFAULT '[]',
@@ -18,6 +27,17 @@ CREATE TABLE IF NOT EXISTS public.store_help_faq (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Migrasi kolom berbasis peran jika tabel sudah ada sebelumnya
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS target_audience TEXT DEFAULT 'all';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS answer_admin TEXT;
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS answer_store TEXT;
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS action_steps_admin JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS action_steps_store JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS button_badges_admin JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS button_badges_store JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS admin_notes TEXT;
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS store_notes TEXT;
 
 -- 2. Tabel Tiket Pertanyaan Belum Terjawab & Backlog Fitur (Khusus Superadmin Hub)
 CREATE TABLE IF NOT EXISTS public.store_help_tickets (

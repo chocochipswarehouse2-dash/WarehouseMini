@@ -36,6 +36,11 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
   const [expandedFaqId, setExpandedFaqId] = useState<string | null>(null);
   const [likedFaqs, setLikedFaqs] = useState<Record<string, boolean>>({});
 
+  // Mode Perspektif: 'admin' (eksekusi sistem & full access) vs 'store' (outlet & eskalasi)
+  const [activePerspective, setActivePerspective] = useState<'admin' | 'store'>(
+    userIsAdmin ? 'admin' : 'store'
+  );
+
   // Tab switch: 'faq' (Pusat Bantuan) vs 'ask' (Tanyakan Masalah Baru ke Superadmin)
   const [activeTab, setActiveTab] = useState<'faq' | 'ask'>('faq');
 
@@ -69,20 +74,21 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
   const QUICK_TOPICS = [
     { label: '🔀 Split Fulfil 2 pcs', query: 'split 2 pcs' },
     { label: '✂️ ID Form Alter', query: 'id form alter' },
+    { label: '⛔ Batalkan Pesanan', query: 'batal' },
     { label: '⚠️ Barang Sold Out', query: 'sold out' },
     { label: '🚚 Kirim ke Gudang', query: 'kirim ke gudang' },
     { label: '📦 No Resi Kurir', query: 'resi' },
     { label: '📄 No SJ DealPOS', query: 'dealpos' },
   ];
 
-  // Filter & Intent Matching
+  // Filter & Intent Matching dengan Role Perspective
   const searchResult = useMemo(() => {
     let filtered = faqs;
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(f => f.category === selectedCategory);
     }
-    return searchFaqWithIntent(searchQuery, filtered);
-  }, [faqs, searchQuery, selectedCategory]);
+    return searchFaqWithIntent(searchQuery, filtered, activePerspective);
+  }, [faqs, searchQuery, selectedCategory, activePerspective]);
 
   const handleToggleAccordion = (id?: string) => {
     if (!id) return;
@@ -159,35 +165,65 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
       <div className="relative w-full max-w-3xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden text-slate-800 dark:text-slate-100">
         
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-400 shadow-2xs">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                   Pusat Bantuan Flow Pesanan & SOP
                 </h2>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  userIsAdmin
-                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                }`}>
-                  {userIsAdmin ? '🛡️ Mode Admin Gudang' : '🏪 Mode Staf Store / Outlet'}
-                </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Ketik pertanyaan bebas atau cari solusi panduan tombol di sistem WMS
+                Ketik pertanyaan atau cari solusi alur operasional & tombol di sistem WMS
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2.5 self-end sm:self-center">
+            {/* Perspective Switcher: Khusus Admin bisa intip perspektif Store */}
+            {userIsAdmin ? (
+              <div className="flex items-center bg-slate-200/90 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setActivePerspective('admin')}
+                  className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activePerspective === 'admin'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Tampilkan panduan untuk wewenang & tombol eksekusi Admin Gudang"
+                >
+                  <span>🛡️ Panduan Admin</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivePerspective('store')}
+                  className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activePerspective === 'store'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Lihat persis bagaimana panduan ini ditampilkan di staf toko/outlet"
+                >
+                  <span>🏪 Intip Panduan Store</span>
+                </button>
+              </div>
+            ) : (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                <span>🏪 Mode Staf Store / Outlet</span>
+              </span>
+            )}
+
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Switcher */}
@@ -330,6 +366,23 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                     const isExpanded = expandedFaqId === faq.id;
                     const isLiked = likedFaqs[faq.id || ''];
 
+                    // Resolusi konten berbasis perspektif aktif (Admin vs Store)
+                    const currentAnswer = activePerspective === 'admin'
+                      ? (faq.answer_admin || faq.answer)
+                      : (faq.answer_store || faq.answer);
+
+                    const currentSteps = activePerspective === 'admin'
+                      ? (faq.action_steps_admin && faq.action_steps_admin.length > 0 ? faq.action_steps_admin : (faq.action_steps || []))
+                      : (faq.action_steps_store && faq.action_steps_store.length > 0 ? faq.action_steps_store : (faq.action_steps || []));
+
+                    const currentBadges = activePerspective === 'admin'
+                      ? (faq.button_badges_admin && faq.button_badges_admin.length > 0 ? faq.button_badges_admin : (faq.button_badges || []))
+                      : (faq.button_badges_store && faq.button_badges_store.length > 0 ? faq.button_badges_store : (faq.button_badges || []));
+
+                    const currentNotes = activePerspective === 'admin'
+                      ? faq.admin_notes
+                      : faq.store_notes;
+
                     return (
                       <div
                         key={faq.id || faq.question}
@@ -359,6 +412,13 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                                     ⭐ Top Pertanyaan
                                   </span>
                                 )}
+                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                  activePerspective === 'admin'
+                                    ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                    : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                }`}>
+                                  {activePerspective === 'admin' ? '🛡️ Sudut Pandang Admin' : '🏪 Sudut Pandang Store'}
+                                </span>
                                 <span className="text-[10px] text-slate-400 font-medium">
                                   {faq.category.replace('_', ' ').toUpperCase()}
                                 </span>
@@ -374,19 +434,42 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                         {isExpanded && (
                           <div className="px-4 pb-4 pt-1 border-t border-slate-100 dark:border-slate-800/80 space-y-3.5 animate-in fade-in">
                             
-                            {/* Ringkasan Penjelasan */}
+                            {/* Role Context Indicator & 1-Click Toggle for Admin */}
+                            <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
+                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1.5 ${
+                                activePerspective === 'admin'
+                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                                  : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700'
+                              }`}>
+                                {activePerspective === 'admin' ? '🛡️ Alur Wewenang & Eksekusi Admin Gudang' : '🏪 Alur Operasional Staf Store (Outlet)'}
+                              </span>
+                              {userIsAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActivePerspective(activePerspective === 'admin' ? 'store' : 'admin');
+                                  }}
+                                  className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                                >
+                                  <span>{activePerspective === 'admin' ? '👀 Lihat Versi Store' : '🛡️ Kembali ke Versi Admin'}</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Ringkasan Penjelasan Berbasis Peran */}
                             <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/60 dark:border-slate-700/60">
-                              {faq.answer}
+                              {currentAnswer}
                             </p>
 
-                            {/* Tombol Miniatur UI Asli yang harus dicari staf */}
-                            {faq.button_badges && faq.button_badges.length > 0 && (
+                            {/* Tombol Miniatur UI Asli yang harus dicari staf / admin */}
+                            {currentBadges && currentBadges.length > 0 && (
                               <div className="space-y-1.5">
                                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                                  Miniatur Tombol yang Harus Ditekan:
+                                  {activePerspective === 'admin' ? 'Tombol Eksekusi di Layar Admin Gudang:' : 'Tombol di Layar Staf Store:'}
                                 </span>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  {faq.button_badges.map((b, bIdx) => (
+                                  {currentBadges.map((b, bIdx) => (
                                     <div
                                       key={bIdx}
                                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border shadow-2xs bg-white dark:bg-slate-800 text-slate-800 dark:text-white border-slate-300 dark:border-slate-700"
@@ -400,13 +483,13 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                             )}
 
                             {/* Action Steps */}
-                            {faq.action_steps && faq.action_steps.length > 0 && (
+                            {currentSteps && currentSteps.length > 0 && (
                               <div className="space-y-2 pt-1">
                                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                                  Langkah-langkah di Layar:
+                                  {activePerspective === 'admin' ? 'Langkah Operasional Admin di Sistem:' : 'Langkah Operasional Staf Store di Layar:'}
                                 </span>
                                 <div className="space-y-1.5">
-                                  {faq.action_steps.map((st, sIdx) => (
+                                  {currentSteps.map((st, sIdx) => (
                                     <div
                                       key={sIdx}
                                       className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300"
@@ -428,14 +511,25 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                               </div>
                             )}
 
+                            {/* Catatan Panduan / Tips Berbasis Peran */}
+                            {currentNotes && (
+                              <div className={`p-2.5 rounded-lg border text-xs leading-relaxed ${
+                                activePerspective === 'admin'
+                                  ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                                  : 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200'
+                              }`}>
+                                {currentNotes}
+                              </div>
+                            )}
+
                             {/* Tombol Cepat Khusus Store jika butuh bantuan Admin (misal Pembatalan / Sold Out) */}
-                            {!userIsAdmin && (faq.id === 'faq-cancel-manual-shipment' || faq.id === 'faq-sold-out-handling') && (
+                            {activePerspective === 'store' && (faq.id === 'faq-cancel-manual-shipment' || faq.id === 'faq-sold-out-handling') && (
                               <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between gap-3 flex-wrap">
                                 <div className="space-y-0.5">
                                   <span className="text-xs font-bold text-amber-900 dark:text-amber-200 block">
                                     {faq.id === 'faq-cancel-manual-shipment'
-                                      ? 'Perlu bantuan Admin Gudang untuk membatalkan pesanan ini?'
-                                      : 'Perlu bantuan Admin Gudang untuk update stok sold out / ganti toko?'}
+                                      ? 'Ingin membatalkan pesanan ini sekarang?'
+                                      : 'Barang fisik di toko kosong dan perlu bantuan Admin?'}
                                   </span>
                                   <span className="text-[11px] text-amber-700 dark:text-amber-300">
                                     Kirimkan permohonan ke Superadmin Hub dengan formulir otomatis 1-klik.
@@ -454,7 +548,30 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
                                   className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
                                 >
                                   <Send className="w-3.5 h-3.5" />
-                                  <span>Ajukan ke Admin Sekarang</span>
+                                  <span>{faq.id === 'faq-cancel-manual-shipment' ? 'Ajukan Pembatalan ke Admin' : 'Laporkan Barang Sold ke Admin'}</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Info Cepat Khusus Admin jika butuh eksekusi langsung */}
+                            {activePerspective === 'admin' && (faq.id === 'faq-cancel-manual-shipment' || faq.id === 'faq-sold-out-handling') && (
+                              <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 flex-wrap">
+                                <div className="space-y-0.5">
+                                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                                    Tombol Eksekusi Tersedia di Tab Manual Shipment
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {faq.id === 'faq-cancel-manual-shipment'
+                                      ? 'Gunakan tombol merah [Batalkan Pesanan] di kartu order untuk memproses pembatalan.'
+                                      : 'Gunakan tombol oranye [Tandai Sold] di baris item untuk memilih opsi partial/cancel.'}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={onClose}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 transition-colors shadow-xs cursor-pointer"
+                                >
+                                  Tutup & Eksekusi di Tabel
                                 </button>
                               </div>
                             )}
