@@ -120,6 +120,7 @@ interface SettingsModalProps {
   onRequestNotification: () => void;
   isRealtimeConnected: boolean;
   onOpenUpdateDatabase?: () => void;
+  onOpenLocationPurge?: () => void;
   onNotify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   // Theme Preferences (Akses Bebas Semua Pengguna)
   themeColor?: string;
@@ -154,6 +155,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onRequestNotification,
   isRealtimeConnected,
   onOpenUpdateDatabase,
+  onOpenLocationPurge,
   onNotify,
   themeColor = 'rose',
   setThemeColor = () => {},
@@ -2399,6 +2401,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   >
                     <UploadCloud className="w-4 h-4" />
                     <span>Buka Update Database</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Reset & Pembersihan Log Lokasi (Superadmin & Manager) */}
+              {canManageSettings && onOpenLocationPurge && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-rose-600 text-white font-black shrink-0">
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-black text-slate-800 dark:text-white">
+                          Pusat Pembersihan & Reset Lokasi (Purge to 0)
+                        </h4>
+                        <span className="text-[9px] px-1.5 py-0.2 bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-extrabold rounded">
+                          SUPERADMIN / ADMIN
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Hapus riwayat mutasi log anomali per rak / blok / rentang lokasi. Stok fisik lokasi terpilih otomatis kembali ke 0 pcs murni.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenLocationPurge();
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Buka Tool Reset Lokasi</span>
                   </button>
                 </div>
               )}

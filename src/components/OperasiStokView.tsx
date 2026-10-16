@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScanBarcode, ArrowRightLeft, ClipboardList, FileSpreadsheet } from 'lucide-react';
+import { ScanBarcode, ArrowRightLeft, ClipboardList, FileSpreadsheet, Trash2 } from 'lucide-react';
 
 import { hasPermission, isSuperadmin } from '../services/permissions';
 
@@ -9,6 +9,7 @@ interface OperasiStokViewProps {
   stockOpnameComponent: React.ReactNode;
   session?: any;
   onOpenImportModal?: () => void;
+  onOpenLocationPurge?: () => void;
 }
 
 export function OperasiStokView({
@@ -16,7 +17,8 @@ export function OperasiStokView({
   mutasiLogComponent,
   stockOpnameComponent,
   session,
-  onOpenImportModal
+  onOpenImportModal,
+  onOpenLocationPurge
 }: OperasiStokViewProps) {
   const userIsAdmin = isSuperadmin(session);
   
@@ -95,6 +97,18 @@ export function OperasiStokView({
               <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Impor Data Excel</span>
               <span className="sm:hidden">Impor</span>
+            </button>
+          )}
+
+          {onOpenLocationPurge && userIsAdmin && (
+            <button
+              type="button"
+              onClick={onOpenLocationPurge}
+              className="py-1.5 px-2.5 sm:py-2.5 sm:px-3 text-xs sm:text-sm font-bold bg-white dark:bg-[#131d31] border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 flex items-center justify-center gap-1.5 rounded-lg sm:rounded-xl transition-all duration-200 cursor-pointer shadow-xs shrink-0"
+              title="Pusat Pembersihan & Reset Log Lokasi ke 0"
+            >
+              <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500" />
+              <span className="hidden sm:inline">Reset Lokasi (0)</span>
             </button>
           )}
         </div>

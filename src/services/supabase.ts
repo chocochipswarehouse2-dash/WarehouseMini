@@ -1280,6 +1280,227 @@ export async function fetchLogsBySku(sku: string, limit = 100): Promise<LogProdu
   }
 }
 
+export interface LocationPurgePreviewResult {
+  locations: string[];
+  totalLogs: number;
+  uniqueSkus: number;
+  totalPhysicalQty: number;
+  pendingSoCount: number;
+  stockItems: StockRealtimeItem[];
+  sampleLogs: LogProdukItem[];
+  allLogs: LogProdukItem[];
+}
+
+/**
+ * Fetches an impact preview of what will be affected before purging logs for locations
+ */
+export async function fetchLocationPurgePreview(
+  locations: string[]
+): Promise<LocationPurgePreviewResult> {
+  const cleanLocs = Array.from(new Set(locations.map((l) => (l || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanLocs.length === 0) {
+    return {
+      locations: [],
+      totalLogs: 0,
+      uniqueSkus: 0,
+      totalPhysicalQty: 0,
+      pendingSoCount: 0,
+      stockItems: [],
+      sampleLogs: [],
+      allLogs: [],
+    };
+  }
+
+  // Chunk locations if > 40 to avoid URL length issues
+  const chunkSize = 40;
+  let allLogs: LogProdukItem[] = [];
+  let allStockItems: StockRealtimeItem[] = [];
+  let pendingSoCount = 0;
+
+  for (let i = 0; i < cleanLocs.length; i += chunkSize) {
+    const chunk = cleanLocs.slice(i, i + chunkSize);
+    const locParam = chunk.map((l) => `"${encodeURIComponent(l)}"`).join(',');
+
+    // 1. Fetch matching logs
+    try {
+      const logs = await supabaseFetch<LogProdukItem[]>(
+        'log_produk',
+        'GET',
+        null,
+        `lokasi=in.(${locParam})&select=*&order=created_at.desc&limit=5000`
+      );
+      if (Array.isArray(logs)) {
+        allLogs = allLogs.concat(logs);
+      }
+    } catch (err) {
+      console.warn('Error fetching logs for purge preview chunk:', err);
+    }
+
+    // 2. Fetch live stock from stok_real_fisik
+    try {
+      const stocks = await supabaseFetch<StockRealtimeItem[]>(
+        'stok_real_fisik',
+        'GET',
+        null,
+        `lokasi=in.(${locParam})&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
+      );
+      if (Array.isArray(stocks)) {
+        allStockItems = allStockItems.concat(stocks);
+      }
+    } catch (err) {
+      console.warn('Error fetching stok_real_fisik for purge preview chunk:', err);
+    }
+
+    // 3. Check pending SO queue
+    try {
+      const queues = await supabaseFetch<any[]>(
+        'stock_opname_queue',
+        'GET',
+        null,
+        `lokasi=in.(${locParam})&status=eq.PENDING&select=id`
+      );
+      if (Array.isArray(queues)) {
+        pendingSoCount += queues.length;
+      }
+    } catch {}
+  }
+
+  const skuSet = new Set<string>();
+  let totalPhysicalQty = 0;
+  allStockItems.forEach((it) => {
+    skuSet.add((it.sku || '').toUpperCase());
+    totalPhysicalQty += Number(it.sisa_stok) || 0;
+  });
+
+  return {
+    locations: cleanLocs,
+    totalLogs: allLogs.length,
+    uniqueSkus: skuSet.size,
+    totalPhysicalQty,
+    pendingSoCount,
+    stockItems: allStockItems,
+    sampleLogs: allLogs.slice(0, 50),
+    allLogs,
+  };
+}
+
+export interface PurgeLogsResult {
+  success: boolean;
+  deletedLogsCount: number;
+  deletedSoCount: number;
+  locationsPurged: string[];
+  backupLogs: LogProdukItem[];
+  error?: string;
+}
+
+/**
+ * Permanently deletes all log_produk records for specified locations (and cleans pending SO queue).
+ * Resets physical stock calculation for those locations cleanly to 0.
+ * Also retrieves and returns the entire deleted log snapshot so it can be saved / downloaded as backup JSON.
+ */
+export async function purgeLogsByLocations(
+  locations: string[],
+  operatorName: string = 'Superadmin',
+  deletePendingSo: boolean = true
+): Promise<PurgeLogsResult> {
+  const cleanLocs = Array.from(new Set(locations.map((l) => (l || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanLocs.length === 0) {
+    return {
+      success: false,
+      deletedLogsCount: 0,
+      deletedSoCount: 0,
+      locationsPurged: [],
+      backupLogs: [],
+      error: 'Tidak ada lokasi yang dipilih untuk di-reset',
+    };
+  }
+
+  const chunkSize = 35;
+  let allBackupLogs: LogProdukItem[] = [];
+  let deletedSoCount = 0;
+
+  try {
+    // 1. Fetch entire matching logs first to guarantee complete backup before deletion
+    for (let i = 0; i < cleanLocs.length; i += chunkSize) {
+      const chunk = cleanLocs.slice(i, i + chunkSize);
+      const locParam = chunk.map((l) => `"${encodeURIComponent(l)}"`).join(',');
+      try {
+        const logs = await supabaseFetch<LogProdukItem[]>(
+          'log_produk',
+          'GET',
+          null,
+          `lokasi=in.(${locParam})&select=*&order=created_at.desc&limit=5000`
+        );
+        if (Array.isArray(logs)) {
+          allBackupLogs = allBackupLogs.concat(logs);
+        }
+      } catch (e) {
+        console.warn('Backup fetch warning:', e);
+      }
+    }
+
+    // 2. Execute DELETE on log_produk chunk by chunk
+    for (let i = 0; i < cleanLocs.length; i += chunkSize) {
+      const chunk = cleanLocs.slice(i, i + chunkSize);
+      const locParam = chunk.map((l) => `"${encodeURIComponent(l)}"`).join(',');
+      await supabaseFetch('log_produk', 'DELETE', null, `lokasi=in.(${locParam})`);
+    }
+
+    // 3. Optionally clean pending SO queue
+    if (deletePendingSo) {
+      for (let i = 0; i < cleanLocs.length; i += chunkSize) {
+        const chunk = cleanLocs.slice(i, i + chunkSize);
+        const locParam = chunk.map((l) => `"${encodeURIComponent(l)}"`).join(',');
+        try {
+          await supabaseFetch('stock_opname_queue', 'DELETE', null, `lokasi=in.(${locParam})&status=eq.PENDING`);
+          deletedSoCount += chunk.length;
+        } catch (e) {
+          console.warn('Pending SO queue deletion warning:', e);
+        }
+      }
+    }
+
+    // 4. Invalidate memory & IndexedDB stock cache
+    invalidateStokFisikCache();
+
+    // 5. Clean local IndexedDB inventory stocks for purged locations
+    try {
+      const localStocks = await getAllInventoryStocksFromLocalDb();
+      if (localStocks && localStocks.length > 0) {
+        const locSet = new Set(cleanLocs);
+        const filtered = localStocks.filter((s) => !locSet.has((s.lokasi || '').toUpperCase()));
+        await saveInventoryStocksToLocalDb(filtered);
+      }
+    } catch {}
+
+    // 6. Dispatch global events
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+      window.dispatchEvent(new CustomEvent('wms_stock_updated'));
+      window.dispatchEvent(new CustomEvent('wms_mutasi_updated'));
+    }
+
+    return {
+      success: true,
+      deletedLogsCount: allBackupLogs.length,
+      deletedSoCount,
+      locationsPurged: cleanLocs,
+      backupLogs: allBackupLogs,
+    };
+  } catch (err: any) {
+    console.error('Error during purgeLogsByLocations:', err);
+    return {
+      success: false,
+      deletedLogsCount: allBackupLogs.length,
+      deletedSoCount,
+      locationsPurged: cleanLocs,
+      backupLogs: allBackupLogs,
+      error: err.message || 'Gagal menghapus log lokasi',
+    };
+  }
+}
+
+
 /**
  * Update a single log_produk record
  */

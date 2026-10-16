@@ -39,6 +39,7 @@ import { ToastContainer } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { ThemePickerModal } from './components/ThemePickerModal';
 import { UpdateDatabaseModal } from './components/UpdateDatabaseModal';
+import { LocationPurgeModal } from './components/inventory/LocationPurgeModal';
 import { OfflineProtectionBar } from './components/OfflineProtectionBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { globalRealtimeStore } from './services/store';
@@ -604,6 +605,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isThemePickerOpen, setIsThemePickerOpen] = useState<boolean>(false);
   const [isUpdateDatabaseOpen, setIsUpdateDatabaseOpen] = useState<boolean>(false);
+  const [isLocationPurgeOpen, setIsLocationPurgeOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -1744,6 +1746,7 @@ export default function App() {
                 <OperasiStokView
                   session={session}
                   onOpenImportModal={() => setIsImportModalOpen(true)}
+                  onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
                   scannerComponent={
                     <div className="w-full max-w-2xl mx-auto space-y-4">
                       {/* STICKY / FREEZE SCANNER METHOD & INPUT CARD */}
@@ -2027,6 +2030,7 @@ export default function App() {
         onRequestNotification={handleRequestNotification}
         isRealtimeConnected={isRealtimeConnected}
         onOpenUpdateDatabase={() => setIsUpdateDatabaseOpen(true)}
+        onOpenLocationPurge={() => setIsLocationPurgeOpen(true)}
         onNotify={showToast}
         themeColor={themeColor}
         setThemeColor={setThemeColor}
@@ -2050,6 +2054,17 @@ export default function App() {
         onSuccess={() => {
           loadProducts(true);
         }}
+      />
+
+      <LocationPurgeModal
+        isOpen={isLocationPurgeOpen}
+        onClose={() => setIsLocationPurgeOpen(false)}
+        session={session}
+        onNotify={showToast}
+        onSuccess={() => {
+          loadProducts(true);
+        }}
+        allExistingLocations={activeLocations}
       />
 
       {/* Custom Confirm Dialog (replaces window.confirm for PWA Builder / TWA compat) */}
