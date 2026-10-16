@@ -14,7 +14,7 @@
  */
 import type { ProductItem, StockRealtimeItem } from '../../types';
 import { isCorruptedSku } from '../../utils/anomalyUtils';
-import { isDummyProduct } from '../../services/supabase';
+import { isDummyProduct, getAreaFromLokasi } from '../../services/supabase';
 import { cleanProductName, extractCleanSizeToken, extractSizeFromSku } from '../../utils/sortUtils';
 
 // ========================================================
@@ -44,8 +44,12 @@ export const ALL_AREAS: AreaFilterType[] = ['ALL', 'GUDANG', 'STORE', 'ONLINE', 
 export type InventorySortOption =
   | 'NAME_ASC'
   | 'NAME_DESC'
+  | 'SIZE_ASC'
+  | 'SIZE_DESC'
   | 'SKU_ASC'
   | 'SKU_DESC'
+  | 'LOC_ASC'
+  | 'LOC_DESC'
   | 'FISIK_DESC'
   | 'FISIK_ASC'
   | 'DP_DESC'
@@ -342,15 +346,18 @@ const EMPTY_FISIK = emptyKomparasi();
 const rowCache = new WeakMap<CatalogBase, { agg: SkuStock | null; row: InventoryRow }>();
 
 export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockRealtimeItem[]>): InventoryRow[] {
-  const out: InventoryRow[] = new Array(bases.length);
+  const out: InventoryRow[] = [];
+  const seenSkus = new Set<string>();
+
   for (let i = 0; i < bases.length; i++) {
     const base = bases[i];
+    seenSkus.add(base.sku);
     const stockRows = stockBySku.get(base.sku);
     const agg = stockRows ? aggregateSku(stockRows) : null;
 
     const hit = rowCache.get(base);
     if (hit && hit.agg === agg) {
-      out[i] = hit.row;
+      out.push(hit.row);
       continue;
     }
 
@@ -376,8 +383,44 @@ export function composeRows(bases: CatalogBase[], stockBySku: Map<string, StockR
       active: totalFisik !== 0 || base.dpTotal !== 0 || base.channelActive,
     };
     rowCache.set(base, { agg, row });
-    out[i] = row;
+    out.push(row);
   }
+
+  // Juga sertakan produk fisik yang ada di rak tetapi belum terdaftar di katalog DealPOS
+  stockBySku.forEach((stockRows, sku) => {
+    if (seenSkus.has(sku)) return;
+    if (!isListableSku(sku)) return;
+    const agg = aggregateSku(stockRows);
+    if (!agg || agg.total === 0) return;
+    const first = stockRows[0];
+    const rawProduk = first?.nama_produk || sku;
+    const produk = cleanProductName(rawProduk) || rawProduk;
+    let size = extractCleanSizeToken(first?.size || '');
+    if (!size || size === '-') size = extractSizeFromSku(sku);
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
+
+    const pLower = produk.toLowerCase();
+    const skuLower = sku.toLowerCase();
+    out.push({
+      sku,
+      produk,
+      size,
+      sizeOrder: getSizeOrder(size),
+      pLower,
+      skuLower,
+      fisik: agg.fisik,
+      totalFisik: agg.total,
+      dp: emptyKomparasi(),
+      totalDp: 0,
+      selisih: agg.total,
+      channels: {},
+      locs: agg.locs,
+      locStr: agg.locStr,
+      search: `${pLower} ${skuLower} ${size.toLowerCase()} ${agg.locStr.toLowerCase()}`,
+      active: true,
+    });
+  });
+
   return out;
 }
 
@@ -395,10 +438,18 @@ export function sortRows(rows: InventoryRow[], option: InventorySortOption): Inv
       return sorted.sort(byName);
     case 'NAME_DESC':
       return sorted.sort((a, b) => cmpStr(b.pLower, a.pLower) || cmpStr(b.skuLower, a.skuLower));
+    case 'SIZE_ASC':
+      return sorted.sort((a, b) => a.sizeOrder - b.sizeOrder || byName(a, b));
+    case 'SIZE_DESC':
+      return sorted.sort((a, b) => b.sizeOrder - a.sizeOrder || byName(a, b));
     case 'SKU_ASC':
-      return sorted.sort((a, b) => cmpStr(a.skuLower, b.skuLower));
+      return sorted.sort((a, b) => cmpStr(a.skuLower, b.skuLower) || byName(a, b));
     case 'SKU_DESC':
-      return sorted.sort((a, b) => cmpStr(b.skuLower, a.skuLower));
+      return sorted.sort((a, b) => cmpStr(b.skuLower, a.skuLower) || byName(a, b));
+    case 'LOC_ASC':
+      return sorted.sort((a, b) => cmpStr(a.locs[0]?.name || 'ZZZ', b.locs[0]?.name || 'ZZZ') || byName(a, b));
+    case 'LOC_DESC':
+      return sorted.sort((a, b) => cmpStr(b.locs[0]?.name || '', a.locs[0]?.name || '') || byName(a, b));
     case 'FISIK_DESC':
       return sorted.sort((a, b) => b.totalFisik - a.totalFisik || byName(a, b));
     case 'FISIK_ASC':
@@ -528,3 +579,155 @@ export function buildInventoryCsv(rows: InventoryRow[], areas: AreaFilterType[])
   }
   return '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
 }
+
+// ========================================================
+// LOCATION-LEVEL (PER RAK FISIK) MODEL - MIRIP SUPABASE
+// ========================================================
+export interface InventoryLocationRow {
+  id: string; // `${sku}__${lokasi}`
+  sku: string;
+  produk: string;
+  size: string;
+  sizeOrder: number;
+  pLower: string;
+  skuLower: string;
+  lokasi: string;
+  lokasiLower: string;
+  area: string;
+  qtyFisik: number;
+  totalDp: number;
+  selisih: number;
+  search: string;
+  active: boolean;
+  isNeg: boolean;
+}
+
+export function composeLocationRows(rows: InventoryRow[]): InventoryLocationRow[] {
+  const out: InventoryLocationRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r.locs || r.locs.length === 0) {
+      out.push({
+        id: `${r.sku}__none`,
+        sku: r.sku,
+        produk: r.produk,
+        size: r.size,
+        sizeOrder: r.sizeOrder,
+        pLower: r.pLower,
+        skuLower: r.skuLower,
+        lokasi: '-',
+        lokasiLower: 'zzz',
+        area: '-',
+        qtyFisik: 0,
+        totalDp: r.totalDp,
+        selisih: computeSelisih(0, r.totalDp),
+        search: r.search,
+        active: r.active,
+        isNeg: false,
+      });
+    } else {
+      for (let j = 0; j < r.locs.length; j++) {
+        const l = r.locs[j];
+        out.push({
+          id: `${r.sku}__${l.name}`,
+          sku: r.sku,
+          produk: r.produk,
+          size: r.size,
+          sizeOrder: r.sizeOrder,
+          pLower: r.pLower,
+          skuLower: r.skuLower,
+          lokasi: l.name,
+          lokasiLower: l.name.toLowerCase(),
+          area: getAreaFromLokasi(l.name),
+          qtyFisik: l.qty,
+          totalDp: r.totalDp,
+          selisih: computeSelisih(l.qty, r.totalDp),
+          search: `${r.search} ${l.name.toLowerCase()}`,
+          active: l.qty !== 0 || r.totalDp !== 0,
+          isNeg: l.neg,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+export function sortLocationRows(rows: InventoryLocationRow[], option: InventorySortOption): InventoryLocationRow[] {
+  const sorted = rows.slice();
+  const byName = (a: InventoryLocationRow, b: InventoryLocationRow): number =>
+    cmpStr(a.pLower, b.pLower) || a.sizeOrder - b.sizeOrder || cmpStr(a.lokasiLower, b.lokasiLower) || cmpStr(a.skuLower, b.skuLower);
+
+  switch (option) {
+    case 'NAME_ASC':
+      return sorted.sort(byName);
+    case 'NAME_DESC':
+      return sorted.sort((a, b) => cmpStr(b.pLower, a.pLower) || cmpStr(b.skuLower, a.skuLower));
+    case 'SIZE_ASC':
+      return sorted.sort((a, b) => a.sizeOrder - b.sizeOrder || byName(a, b));
+    case 'SIZE_DESC':
+      return sorted.sort((a, b) => b.sizeOrder - a.sizeOrder || byName(a, b));
+    case 'SKU_ASC':
+      return sorted.sort((a, b) => cmpStr(a.skuLower, b.skuLower) || cmpStr(a.lokasiLower, b.lokasiLower));
+    case 'SKU_DESC':
+      return sorted.sort((a, b) => cmpStr(b.skuLower, a.skuLower) || cmpStr(a.lokasiLower, b.lokasiLower));
+    case 'LOC_ASC':
+      return sorted.sort((a, b) => cmpStr(a.lokasiLower, b.lokasiLower) || byName(a, b));
+    case 'LOC_DESC':
+      return sorted.sort((a, b) => cmpStr(b.lokasiLower, a.lokasiLower) || byName(a, b));
+    case 'FISIK_DESC':
+      return sorted.sort((a, b) => b.qtyFisik - a.qtyFisik || cmpStr(a.lokasiLower, b.lokasiLower));
+    case 'FISIK_ASC':
+      return sorted.sort((a, b) => a.qtyFisik - b.qtyFisik || cmpStr(a.lokasiLower, b.lokasiLower));
+    case 'DP_DESC':
+      return sorted.sort((a, b) => b.totalDp - a.totalDp || byName(a, b));
+    case 'DP_ASC':
+      return sorted.sort((a, b) => a.totalDp - b.totalDp || byName(a, b));
+    case 'SELISIH_DESC':
+      return sorted.sort((a, b) => b.selisih - a.selisih || byName(a, b));
+    case 'SELISIH_ASC':
+      return sorted.sort((a, b) => a.selisih - b.selisih || byName(a, b));
+    default:
+      return sorted.sort(byName);
+  }
+}
+
+export function filterLocationRows(rows: InventoryLocationRow[], f: InventoryFilter): InventoryLocationRow[] {
+  const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (keywords.length === 0 && !f.onlyActive && !f.onlySelisih) return rows;
+  const out: InventoryLocationRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (f.onlyActive && !r.active) continue;
+    if (f.onlySelisih && r.selisih === 0) continue;
+    let ok = true;
+    for (let k = 0; k < keywords.length; k++) {
+      if (!r.search.includes(keywords[k])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) out.push(r);
+  }
+  return out;
+}
+
+export function buildInventoryLocationCsv(rows: InventoryLocationRow[]): string {
+  const headers = ['NAMA_PRODUK', 'SIZE', 'SKU', 'LOKASI_RAK', 'AREA', 'QTY_FISIK', 'TOTAL_DEALPOS', 'SELISIH'];
+  const lines: string[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const cells: Array<string | number> = [
+      csvText(r.produk),
+      csvText(r.size || '-'),
+      csvText(r.sku),
+      csvText(r.lokasi),
+      csvText(r.area),
+      r.qtyFisik,
+      r.totalDp,
+      r.selisih,
+    ];
+    lines[i] = cells.join(',');
+  }
+  return '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
+}
+

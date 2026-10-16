@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, MapPin } from 'lucide-react';
-import type { InventoryRow, InventorySortOption } from './inventoryModel';
+import type { InventoryRow, InventoryLocationRow, InventorySortOption } from './inventoryModel';
 
-export const ROW_H = 60;
-const HEADER_H = 38;
+export type InventoryViewMode = 'LOCATION' | 'SKU';
+
+export const ROW_H = 48;
+const HEADER_H = 40;
 const OVERSCAN = 6;
 
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_52px_52px_56px] sm:grid-cols-[minmax(0,1fr)_56px_minmax(120px,190px)_72px_72px_76px] items-center gap-x-2 px-3';
+  'grid grid-cols-[minmax(190px,2.2fr)_52px_minmax(115px,1.2fr)_minmax(110px,1.2fr)_64px_64px_64px] items-center gap-x-2.5 px-3';
 
 // ----------------------------------------------------------------
 // Number cells
@@ -62,16 +64,109 @@ export const SelisihCell: React.FC<{ v: number; hasData: boolean }> = ({ v, hasD
 };
 
 // ----------------------------------------------------------------
-// Row
+// Row - Mode Per Lokasi (Mirip Supabase)
 // ----------------------------------------------------------------
-interface RowProps {
+interface LocationRowProps {
+  row: InventoryLocationRow;
+  top: number;
+  onOpen: (sku: string) => void;
+  onLoc: (loc: string) => void;
+}
+
+const InventoryLocationRowItem = React.memo(function InventoryLocationRowItem({
+  row,
+  top,
+  onOpen,
+  onLoc,
+}: LocationRowProps) {
+  return (
+    <div
+      role="row"
+      tabIndex={0}
+      onClick={() => onOpen(row.sku)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(row.sku);
+        }
+      }}
+      style={{ top, height: ROW_H }}
+      className={`absolute inset-x-0 ${GRID} border-b border-slate-100 dark:border-slate-800/60 cursor-pointer hover:bg-slate-50 dark:hover:bg-[#161F30] focus:outline-none focus-visible:bg-amber-50 dark:focus-visible:bg-amber-950/20 transition-colors`}
+    >
+      {/* 1. Nama Produk */}
+      <div className="min-w-0 pr-1">
+        <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate" title={row.produk}>
+          {row.produk}
+        </div>
+      </div>
+
+      {/* 2. Size */}
+      <div className="flex justify-center">
+        <span className="px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+          {row.size}
+        </span>
+      </div>
+
+      {/* 3. SKU */}
+      <div className="min-w-0">
+        <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-300 truncate block" title={row.sku}>
+          {row.sku}
+        </span>
+      </div>
+
+      {/* 4. Lokasi Rak */}
+      <div className="flex items-center min-w-0">
+        {row.lokasi === '-' ? (
+          <span className="text-[11px] text-slate-400 italic">-</span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onLoc(row.lokasi);
+            }}
+            title={`Ekspor / cetak lokasi ${row.lokasi} (${row.qtyFisik} pcs)`}
+            className={`text-[9.5px] px-2 py-0.5 rounded-md font-mono font-bold border inline-flex items-center gap-1 cursor-pointer transition-colors ${
+              row.isNeg
+                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                : 'bg-slate-100 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-slate-700 hover:text-amber-800 dark:text-slate-300 dark:hover:text-amber-300 border-slate-200 hover:border-amber-300 dark:border-slate-700'
+            }`}
+          >
+            <MapPin className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+            <span>{row.lokasi}</span>
+          </button>
+        )}
+      </div>
+
+      {/* 5. Qty Fisik */}
+      <div className="flex justify-center">
+        <FisikCell v={row.qtyFisik} />
+      </div>
+
+      {/* 6. DealPOS */}
+      <div className="flex justify-center">
+        <DpCell v={row.totalDp} />
+      </div>
+
+      {/* 7. Selisih */}
+      <div className="flex justify-center">
+        <SelisihCell v={row.selisih} hasData={row.qtyFisik !== 0 || row.totalDp !== 0} />
+      </div>
+    </div>
+  );
+});
+
+// ----------------------------------------------------------------
+// Row - Mode Ringkasan SKU (Agregat)
+// ----------------------------------------------------------------
+interface SkuRowProps {
   row: InventoryRow;
   top: number;
   onOpen: (sku: string) => void;
   onLoc: (loc: string) => void;
 }
 
-const InventoryListRow = React.memo(function InventoryListRow({ row, top, onOpen, onLoc }: RowProps) {
+const InventorySkuRowItem = React.memo(function InventorySkuRowItem({ row, top, onOpen, onLoc }: SkuRowProps) {
   const locs = row.locs;
   const extra = locs.length - 2;
   return (
@@ -88,38 +183,29 @@ const InventoryListRow = React.memo(function InventoryListRow({ row, top, onOpen
       style={{ top, height: ROW_H }}
       className={`absolute inset-x-0 ${GRID} border-b border-slate-100 dark:border-slate-800/60 cursor-pointer hover:bg-slate-50 dark:hover:bg-[#161F30] focus:outline-none focus-visible:bg-amber-50 dark:focus-visible:bg-amber-950/20 transition-colors`}
     >
-      {/* Produk */}
-      <div className="min-w-0">
+      {/* 1. Nama Produk */}
+      <div className="min-w-0 pr-1">
         <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate" title={row.produk}>
           {row.produk}
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
-          <span className="font-mono text-[10.5px] font-bold text-slate-500 dark:text-slate-400 truncate">{row.sku}</span>
-          <span className="sm:hidden shrink-0 px-1 rounded font-mono text-[9.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-            {row.size}
-          </span>
-          {locs.length > 0 && (
-            <span
-              className={`sm:hidden shrink-0 font-mono text-[9.5px] font-bold ${
-                locs[0].neg ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {locs[0].name}
-              {extra >= 0 ? ` +${extra + 1}` : ''}
-            </span>
-          )}
-        </div>
       </div>
 
-      {/* Size (desktop) */}
-      <div className="hidden sm:flex justify-center">
+      {/* 2. Size */}
+      <div className="flex justify-center">
         <span className="px-1.5 py-0.5 rounded font-mono text-[10.5px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
           {row.size}
         </span>
       </div>
 
-      {/* Lokasi rak (desktop) */}
-      <div className="hidden sm:flex flex-wrap items-center gap-1 min-w-0 overflow-hidden max-h-[44px]">
+      {/* 3. SKU */}
+      <div className="min-w-0">
+        <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-300 truncate block" title={row.sku}>
+          {row.sku}
+        </span>
+      </div>
+
+      {/* 4. Lokasi rak */}
+      <div className="flex flex-wrap items-center gap-1 min-w-0 overflow-hidden max-h-[38px]">
         {locs.length === 0 ? (
           <span className="text-[11px] text-slate-400 italic">-</span>
         ) : (
@@ -153,13 +239,17 @@ const InventoryListRow = React.memo(function InventoryListRow({ row, top, onOpen
         )}
       </div>
 
-      {/* Angka */}
+      {/* 5. Qty Fisik */}
       <div className="flex justify-center">
         <FisikCell v={row.totalFisik} />
       </div>
+
+      {/* 6. DealPOS */}
       <div className="flex justify-center">
         <DpCell v={row.totalDp} />
       </div>
+
+      {/* 7. Selisih */}
       <div className="flex justify-center">
         <SelisihCell v={row.selisih} hasData={row.totalFisik !== 0 || row.totalDp !== 0} />
       </div>
@@ -197,8 +287,10 @@ const SortHead: React.FC<{
 // ----------------------------------------------------------------
 // Virtual list
 // ----------------------------------------------------------------
-interface InventoryListProps {
-  rows: InventoryRow[];
+export interface InventoryListProps {
+  viewMode: InventoryViewMode;
+  rows?: InventoryRow[];
+  locationRows?: InventoryLocationRow[];
   sort: InventorySortOption;
   onSort: (s: InventorySortOption) => void;
   onOpen: (sku: string) => void;
@@ -207,11 +299,22 @@ interface InventoryListProps {
   resetKey: string;
 }
 
-export const InventoryList: React.FC<InventoryListProps> = ({ rows, sort, onSort, onOpen, onLoc, resetKey }) => {
+export const InventoryList: React.FC<InventoryListProps> = ({
+  viewMode,
+  rows = [],
+  locationRows = [],
+  sort,
+  onSort,
+  onOpen,
+  onLoc,
+  resetKey,
+}) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(560);
+
+  const itemCount = viewMode === 'LOCATION' ? locationRows.length : rows.length;
 
   const onScroll = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -234,7 +337,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({ rows, sort, onSort
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setScrollTop(0);
-  }, [resetKey]);
+  }, [resetKey, viewMode]);
 
   useEffect(
     () => () => {
@@ -245,12 +348,37 @@ export const InventoryList: React.FC<InventoryListProps> = ({ rows, sort, onSort
 
   const bodyTop = Math.max(0, scrollTop - HEADER_H);
   const start = Math.max(0, Math.floor(bodyTop / ROW_H) - OVERSCAN);
-  const end = Math.min(rows.length, Math.ceil((bodyTop + viewportH) / ROW_H) + OVERSCAN);
+  const end = Math.min(itemCount, Math.ceil((bodyTop + viewportH) / ROW_H) + OVERSCAN);
 
   const visible: React.ReactNode[] = [];
-  for (let i = start; i < end; i++) {
-    const row = rows[i];
-    visible.push(<InventoryListRow key={row.sku} row={row} top={i * ROW_H} onOpen={onOpen} onLoc={onLoc} />);
+  if (viewMode === 'LOCATION') {
+    for (let i = start; i < end; i++) {
+      const locRow = locationRows[i];
+      if (!locRow) continue;
+      visible.push(
+        <InventoryLocationRowItem
+          key={locRow.id}
+          row={locRow}
+          top={i * ROW_H}
+          onOpen={onOpen}
+          onLoc={onLoc}
+        />
+      );
+    }
+  } else {
+    for (let i = start; i < end; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      visible.push(
+        <InventorySkuRowItem
+          key={row.sku}
+          row={row}
+          top={i * ROW_H}
+          onOpen={onOpen}
+          onLoc={onLoc}
+        />
+      );
+    }
   }
 
   return (
@@ -258,23 +386,29 @@ export const InventoryList: React.FC<InventoryListProps> = ({ rows, sort, onSort
       ref={scrollRef}
       onScroll={onScroll}
       role="table"
-      aria-rowcount={rows.length}
-      className="h-[68vh] min-h-[320px] overflow-y-auto overflow-x-hidden border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-[#0E1420] relative"
+      aria-rowcount={itemCount}
+      className="h-[68vh] min-h-[360px] overflow-auto border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-[#0E1420] relative shadow-xs"
     >
-      <div
-        role="row"
-        style={{ height: HEADER_H }}
-        className={`sticky top-0 z-10 ${GRID} bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 text-[10px] border-b border-slate-200 dark:border-slate-800`}
-      >
-        <SortHead label="Produk" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} />
-        <div className="hidden sm:block text-center font-extrabold uppercase">Size</div>
-        <div className="hidden sm:block font-extrabold uppercase">Lokasi Rak</div>
-        <SortHead label="Fisik" asc="FISIK_ASC" desc="FISIK_DESC" sort={sort} onSort={onSort} className="justify-center" />
-        <SortHead label="DP" asc="DP_ASC" desc="DP_DESC" sort={sort} onSort={onSort} className="justify-center" />
-        <SortHead label="Selisih" asc="SELISIH_ASC" desc="SELISIH_DESC" sort={sort} onSort={onSort} className="justify-center" />
-      </div>
-      <div style={{ height: rows.length * ROW_H }} className="relative">
-        {visible}
+      <div className="min-w-[700px] relative">
+        {/* Sticky Header */}
+        <div
+          role="row"
+          style={{ height: HEADER_H }}
+          className={`sticky top-0 z-10 ${GRID} bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 text-[10px] border-b border-slate-200 dark:border-slate-800 shadow-xs backdrop-blur-xs`}
+        >
+          <SortHead label="Nama Produk" asc="NAME_ASC" desc="NAME_DESC" sort={sort} onSort={onSort} />
+          <SortHead label="Size" asc="SIZE_ASC" desc="SIZE_DESC" sort={sort} onSort={onSort} className="justify-center" />
+          <SortHead label="SKU" asc="SKU_ASC" desc="SKU_DESC" sort={sort} onSort={onSort} />
+          <SortHead label="Lokasi" asc="LOC_ASC" desc="LOC_DESC" sort={sort} onSort={onSort} />
+          <SortHead label="Qty Fisik" asc="FISIK_ASC" desc="FISIK_DESC" sort={sort} onSort={onSort} className="justify-center" />
+          <SortHead label="DealPOS" asc="DP_ASC" desc="DP_DESC" sort={sort} onSort={onSort} className="justify-center" />
+          <SortHead label="Selisih" asc="SELISIH_ASC" desc="SELISIH_DESC" sort={sort} onSort={onSort} className="justify-center" />
+        </div>
+
+        {/* Virtualized Rows Container */}
+        <div style={{ height: itemCount * ROW_H }} className="relative">
+          {visible}
+        </div>
       </div>
     </div>
   );

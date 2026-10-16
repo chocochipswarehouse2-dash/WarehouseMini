@@ -26,19 +26,24 @@ import {
   sortRows,
   computeStats,
   buildInventoryCsv,
+  composeLocationRows,
+  sortLocationRows,
+  filterLocationRows,
+  buildInventoryLocationCsv,
   toggleArea,
   areaLabel,
   ALL_AREAS,
   type AreaFilterType,
   type InventorySortOption,
   type InventoryRow,
+  type InventoryLocationRow,
 } from './inventory/inventoryModel';
 import {
   useInventoryStock,
   getStockBySku,
   flattenStock,
 } from './inventory/useInventoryStock';
-import { InventoryList } from './inventory/InventoryList';
+import { InventoryList, type InventoryViewMode } from './inventory/InventoryList';
 import { InventoryDetailDrawer } from './inventory/InventoryDetailDrawer';
 
 export interface InventoryViewProps {
@@ -66,6 +71,22 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const [onlyActive, setOnlyActive] = useState(false);
   const [onlySelisih, setOnlySelisih] = useState(false);
   const [sortOption, setSortOption] = useState<InventorySortOption>('NAME_ASC');
+
+  // View Mode: 'LOCATION' (Per Lokasi Supabase) vs 'SKU' (Ringkasan Agregat)
+  const [viewMode, setViewMode] = useState<InventoryViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('wms_inventory_view_mode');
+      if (saved === 'LOCATION' || saved === 'SKU') return saved;
+    } catch {}
+    return 'LOCATION';
+  });
+
+  const handleSetViewMode = (mode: InventoryViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('wms_inventory_view_mode', mode);
+    } catch {}
+  };
 
   // Multiselect Area filter
   const [activeAreas, setActiveAreas] = useState<AreaFilterType[]>(() => {
@@ -127,7 +148,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return composeRows(catalogBases, map);
   }, [catalogBases, stockVersion]);
 
-  // Step C: Filter by query, active, selisih
+  // Step C: Filter by query, active, selisih (Mode SKU)
   const filteredRows = useMemo(() => {
     return filterRows(allRows, {
       query: deferredSearch,
@@ -136,10 +157,27 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     });
   }, [allRows, deferredSearch, onlyActive, onlySelisih]);
 
-  // Step D: Sort
+  // Step D: Sort (Mode SKU)
   const sortedRows = useMemo(() => {
     return sortRows(filteredRows, sortOption);
   }, [filteredRows, sortOption]);
+
+  // Step B2: Location Rows pipeline (Mode Per Lokasi - Mirip Supabase stok_real_fisik)
+  const allLocationRows = useMemo(() => {
+    return composeLocationRows(allRows);
+  }, [allRows]);
+
+  const filteredLocationRows = useMemo(() => {
+    return filterLocationRows(allLocationRows, {
+      query: deferredSearch,
+      onlyActive,
+      onlySelisih,
+    });
+  }, [allLocationRows, deferredSearch, onlyActive, onlySelisih]);
+
+  const sortedLocationRows = useMemo(() => {
+    return sortLocationRows(filteredLocationRows, sortOption);
+  }, [filteredLocationRows, sortOption]);
 
   // Step E: KPI Stats (calculated on filtered rows for live response)
   const stats = useMemo(() => {
@@ -173,6 +211,25 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   // 7. CSV Export
   const canExportData = hasPermission(session, 'action_export_data');
   const handleExportCsv = () => {
+    if (viewMode === 'LOCATION') {
+      if (!sortedLocationRows.length) {
+        if (onNotify) onNotify('Tidak ada data lokasi yang bisa diekspor.', 'warning');
+        return;
+      }
+      const csv = buildInventoryLocationCsv(sortedLocationRows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `WMS_INVENTORY_LOKASI_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      if (onNotify) onNotify(`File CSV per lokasi berhasil diunduh (${sortedLocationRows.length} baris)!`, 'success');
+      return;
+    }
+
     if (!sortedRows.length) {
       if (onNotify) onNotify('Tidak ada data yang bisa diekspor.', 'warning');
       return;
@@ -319,6 +376,36 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
           {/* Quick Filter Toggles & Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* VIEW MODE TOGGLE (Per Lokasi vs Ringkasan SKU) */}
+            <div className="inline-flex items-center p-0.5 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSetViewMode('LOCATION')}
+                className={`px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'LOCATION'
+                    ? 'bg-amber-500 text-black shadow-xs font-black'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold'
+                }`}
+                title="Tampilkan per baris lokasi fisik rak (mirip stok fisik di Supabase)"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>Per Lokasi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetViewMode('SKU')}
+                className={`px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'SKU'
+                    ? 'bg-amber-500 text-black shadow-xs font-black'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold'
+                }`}
+                title="Tampilkan 1 baris per SKU produk (agregat)"
+              >
+                <Boxes className="w-3.5 h-3.5" />
+                <span>Ringkasan SKU</span>
+              </button>
+            </div>
+
             {/* ADA STOK FILTER */}
             <button
               type="button"
@@ -495,7 +582,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             Memuat data inventori dari Supabase &amp; IndexedDB...
           </span>
         </div>
-      ) : sortedRows.length === 0 ? (
+      ) : (viewMode === 'LOCATION' ? sortedLocationRows.length === 0 : sortedRows.length === 0) ? (
         <div className="py-16 text-center space-y-2 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
           <Boxes className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
           <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -507,20 +594,32 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         </div>
       ) : (
         <InventoryList
+          viewMode={viewMode}
           rows={sortedRows}
+          locationRows={sortedLocationRows}
           sort={sortOption}
           onSort={setSortOption}
           onOpen={setSelectedSku}
           onLoc={handleOpenLokasiExport}
-          resetKey={`${deferredSearch}_${onlyActive}_${onlySelisih}_${sortOption}`}
+          resetKey={`${viewMode}_${deferredSearch}_${onlyActive}_${onlySelisih}_${sortOption}`}
         />
       )}
 
       {/* Bottom status note */}
       <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 px-2 gap-1">
         <span>
-          Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedRows.length.toLocaleString('id-ID')}</strong> dari{' '}
-          <strong className="text-slate-700 dark:text-slate-300 font-mono">{allRows.length.toLocaleString('id-ID')}</strong> SKU master produk. Klik baris untuk detail perbandingan channel.
+          {viewMode === 'LOCATION' ? (
+            <>
+              Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedLocationRows.length.toLocaleString('id-ID')}</strong> baris lokasi fisik rak (dari{' '}
+              <strong className="text-slate-700 dark:text-slate-300 font-mono">{allLocationRows.length.toLocaleString('id-ID')}</strong> total baris rak,{' '}
+              <strong className="text-slate-700 dark:text-slate-300 font-mono">{allRows.length.toLocaleString('id-ID')}</strong> SKU master). Klik baris untuk detail kartu stok.
+            </>
+          ) : (
+            <>
+              Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedRows.length.toLocaleString('id-ID')}</strong> dari{' '}
+              <strong className="text-slate-700 dark:text-slate-300 font-mono">{allRows.length.toLocaleString('id-ID')}</strong> SKU master produk. Klik baris untuk detail perbandingan channel.
+            </>
+          )}
         </span>
         <span className="text-[10px]">
           Virtual Rendering Aktif · 60 FPS
