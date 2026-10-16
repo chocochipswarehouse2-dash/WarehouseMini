@@ -2308,9 +2308,18 @@ _WMS Warehouse System_`;
     }
   };
 
-  const handlePrintPickingList = async (singleOrder?: ManualShipmentOrder) => {
-    const itemsToPrint = singleOrder
-      ? [singleOrder]
+  const handlePrintPickingList = async (singleOrder?: ManualShipmentOrder | any) => {
+    // Robust check: Pastikan singleOrder benar-benar objek ManualShipmentOrder dan bukan MouseEvent dari onClick
+    const isRealOrder = Boolean(
+      singleOrder &&
+      typeof singleOrder === 'object' &&
+      !('nativeEvent' in singleOrder) &&
+      !('bubbles' in singleOrder) &&
+      (singleOrder.no_pesanan || singleOrder.id || (Array.isArray(singleOrder.items) && singleOrder.items.length > 0))
+    );
+
+    const itemsToPrint = isRealOrder
+      ? [singleOrder as ManualShipmentOrder]
       : scopedOrders.filter(o => {
           const k = getOrderKey(o);
           return k && selectedOrders.has(k);
@@ -3618,10 +3627,21 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     );
   };
 
-  const handlePrintLabel = async (singleOrder?: ManualShipmentOrder) => {
-    const itemsToPrint = singleOrder
-      ? [singleOrder]
-      : orders.filter(o => o.no_pesanan && selectedOrders.has(o.no_pesanan));
+  const handlePrintLabel = async (singleOrder?: ManualShipmentOrder | any) => {
+    const isRealOrder = Boolean(
+      singleOrder &&
+      typeof singleOrder === 'object' &&
+      !('nativeEvent' in singleOrder) &&
+      !('bubbles' in singleOrder) &&
+      (singleOrder.no_pesanan || singleOrder.id || (Array.isArray(singleOrder.items) && singleOrder.items.length > 0))
+    );
+
+    const itemsToPrint = isRealOrder
+      ? [singleOrder as ManualShipmentOrder]
+      : scopedOrders.filter(o => {
+          const k = getOrderKey(o);
+          return k && selectedOrders.has(k);
+        });
 
     if (itemsToPrint.length === 0) {
       onShowToast('Pilih setidaknya satu pesanan untuk dicetak labelnya', 'info');
@@ -5171,7 +5191,7 @@ _WMS Warehouse System_`;
                 <>
                   <button
                     type="button"
-                    onClick={handlePrintPickingList}
+                    onClick={() => handlePrintPickingList()}
                     className="px-3 py-1 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900/60 text-xs font-bold flex items-center transition-colors cursor-pointer shadow-xs"
                   >
                     <FileText className="w-3.5 h-3.5 mr-1" />
@@ -5371,7 +5391,7 @@ _WMS Warehouse System_`;
                   <td className="px-3 py-2.5 align-top">
                     <div className="text-[11px] font-semibold text-slate-800 dark:text-white">{order.nama_pengirim}</div>
                     {(() => {
-                      const pic = order.pic_store || order.alteration_repair_data?.pic_pemohon || (order.submitted_by && !isSameStore(order.submitted_by, order.nama_pengirim) ? order.submitted_by : '');
+                      const pic = order.pic_store || order.alteration_repair_data?.pic_pemohon || order.alteration_repair_data?.pic_kirim_store || order.submitted_by || '';
                       return (
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
                           <span className="font-semibold text-slate-600 dark:text-slate-300">PIC:</span>
@@ -6972,12 +6992,15 @@ _WMS Warehouse System_`;
                                 <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">Dari / Pengirim:</div>
                                 <div className="text-[12px] font-black uppercase text-black leading-tight">{order.nama_pengirim || 'CHOCOCHIPS'}</div>
                               </div>
-                              {order.pic_store && (
-                                <div className="px-2 border-l border-gray-300">
-                                  <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">PIC:</div>
-                                  <div className="text-[11px] font-bold text-gray-800 leading-tight">{order.pic_store}</div>
-                                </div>
-                              )}
+                              {(() => {
+                                const p = order.pic_store || order.alteration_repair_data?.pic_pemohon || order.submitted_by;
+                                return p ? (
+                                  <div className="px-2 border-l border-gray-300">
+                                    <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">PIC:</div>
+                                    <div className="text-[11px] font-bold text-gray-800 leading-tight">{p}</div>
+                                  </div>
+                                ) : null;
+                              })()}
                               {order.no_telp_store && (
                                 <div className="text-right pl-2 border-l border-gray-300">
                                   <div className="text-[9px] font-black uppercase text-gray-600 mb-0.5">No. Telp:</div>

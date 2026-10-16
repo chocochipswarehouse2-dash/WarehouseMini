@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   Truck,
@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   AlertCircle
 } from 'lucide-react';
-import { ManualShipmentOrder, AlterationFlowStage, AlterationFlowLog } from '../../types';
+import { ManualShipmentOrder, AlterationFlowStage, AlterationFlowLog, ManualShipmentItem } from '../../types';
 import { editManualShipment } from '../../services/gasManualShipment';
 import { hasRealAlterItems } from '../../utils/alterationUtils';
 import { triggerOrderEmailNotifications } from '../../services/emailService';
@@ -66,9 +66,13 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
     || (activeItem as any)?.store_name
     || '';
 
-  const storeName = arData.nama_asal || itemFulfillmentStore || order.nama_pengirim || 'Store';
-  const productName = activeItem?.nama_produk || 'Produk Pakaian';
-  const sku = activeItem?.sku || '-';
+  const storeName = (actionType === 'mark_sent_store' && itemFulfillmentStore ? itemFulfillmentStore : '')
+    || arData.nama_asal
+    || itemFulfillmentStore
+    || order.nama_pengirim
+    || 'Store';
+  const productName = relevantItems.map(it => it.nama_produk).filter(Boolean).join(', ') || activeItem?.nama_produk || 'Produk Pakaian';
+  const sku = relevantItems.map(it => it.sku).filter(Boolean).join(', ') || activeItem?.sku || '-';
 
   const [isLoading, setIsLoading] = useState(false);
 

@@ -769,10 +769,9 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
     delete submitPayload.status_flow;
     delete submitPayload.flow_logs;
     
-    // Hapus field tambahan dari UI agar tidak crash di schema DB
+    // Hapus field tambahan dari UI yang tidak ada di schema DB (pic_store ada di schema)
     delete submitPayload.email_customer;
     delete submitPayload.email_store;
-    delete submitPayload.pic_store;
     delete submitPayload.tujuan_pengiriman;
     delete submitPayload.tgl_jadwal_kirim_store;
     delete submitPayload.catatan_jadwal_store;
@@ -780,6 +779,10 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
     delete submitPayload.is_label_printed;
     delete submitPayload.tgl_cetak_picking;
     delete submitPayload.tgl_cetak_label;
+
+    if (submitPayload.pic_store !== undefined && submitPayload.pic_store !== null) {
+      submitPayload.pic_store = String(submitPayload.pic_store).trim();
+    }
 
     await supabaseFetch('manual_shipment', 'POST', [submitPayload]);
     return { success: true, message: 'Berhasil menyimpan data ke Supabase' };
@@ -1024,8 +1027,8 @@ export async function deleteManualShipment(no_pesanan: string): Promise<boolean>
 
 export async function editManualShipment(payload: ManualShipmentOrder): Promise<{ success: boolean; message: string }> {
   try {
-    if (!payload.id) {
-      return { success: false, message: 'ID tidak ditemukan untuk diupdate' };
+    if (!payload.id && !payload.no_pesanan) {
+      return { success: false, message: 'ID atau No Pesanan tidak ditemukan untuk diupdate' };
     }
     const { id, history_logs, alteration_repair_data, ...rest } = payload as any;
     
@@ -1128,10 +1131,9 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     delete patchPayload.status_flow;
     delete patchPayload.flow_logs;
     
-    // Hapus field tambahan UI
+    // Hapus field tambahan UI yang tidak ada di schema DB (pic_store ada di schema)
     delete patchPayload.email_customer;
     delete patchPayload.email_store;
-    delete patchPayload.pic_store;
     delete patchPayload.tujuan_pengiriman;
     delete patchPayload.tgl_jadwal_kirim_store;
     delete patchPayload.catatan_jadwal_store;
@@ -1139,6 +1141,10 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     delete patchPayload.is_label_printed;
     delete patchPayload.tgl_cetak_picking;
     delete patchPayload.tgl_cetak_label;
+
+    if (patchPayload.pic_store !== undefined && patchPayload.pic_store !== null) {
+      patchPayload.pic_store = String(patchPayload.pic_store).trim();
+    }
 
     const idOrNo = payload.id || payload.no_pesanan;
     const isUuid = idOrNo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
