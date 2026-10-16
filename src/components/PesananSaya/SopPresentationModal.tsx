@@ -8,6 +8,7 @@ import {
   Play,
   Pause,
   Printer,
+  Loader2,
   Building2,
   ShieldCheck,
   Truck,
@@ -46,6 +47,7 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'admin' | 'store'>('admin');
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const totalSlides = 8;
 
@@ -99,7 +101,214 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
   ];
 
   const handlePrintSop = () => {
-    window.print();
+    if (isPrinting) return;
+    setIsPrinting(true);
+    onShowToast('Menyiapkan dokumen SOP A4 untuk cetak / export PDF...', 'info');
+
+    setTimeout(() => {
+      try {
+        const printableElement = document.getElementById('printable-sop-booklet');
+        if (!printableElement) {
+          window.print();
+          setIsPrinting(false);
+          return;
+        }
+
+        const iframeId = 'sop-direct-print-frame';
+        let printFrame = document.getElementById(iframeId) as HTMLIFrameElement | null;
+        if (printFrame) {
+          try {
+            document.body.removeChild(printFrame);
+          } catch (e) {
+            console.warn('Cleanup iframe lama:', e);
+          }
+        }
+
+        printFrame = document.createElement('iframe');
+        printFrame.id = iframeId;
+        printFrame.style.position = 'fixed';
+        printFrame.style.top = '-9999px';
+        printFrame.style.left = '-9999px';
+        printFrame.style.width = '100%';
+        printFrame.style.height = '100%';
+        printFrame.style.border = 'none';
+        document.body.appendChild(printFrame);
+
+        const printableContent = printableElement.innerHTML;
+        const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
+
+        if (doc) {
+          const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+            .map(el => el.outerHTML)
+            .join('\n');
+
+          const fullHtml = `
+            <!DOCTYPE html>
+            <html lang="id">
+              <head>
+                <title>SOP Operasional - Manual Shipment, Multi-Store Fulfillment & Alteration Repair - PT Chocochips Apparel</title>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                ${headStyles}
+                <style>
+                  @page {
+                    size: A4 portrait;
+                    margin: 8mm 10mm;
+                  }
+                  *, *:before, *:after {
+                    box-sizing: border-box !important;
+                  }
+                  html, body {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #ffffff !important;
+                    color: #0f172a !important;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                    line-height: 1.4 !important;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                  }
+                  .no-print, button, .print\\:hidden, [class*="print:hidden"] {
+                    display: none !important;
+                  }
+                  #printable-sop-booklet {
+                    display: block !important;
+                    visibility: visible !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    margin: 0 auto !important;
+                    padding: 0 !important;
+                    color: #0f172a !important;
+                    background: #ffffff !important;
+                  }
+                  .sop-page {
+                    page-break-after: always !important;
+                    break-after: page !important;
+                    box-sizing: border-box !important;
+                    background: #ffffff !important;
+                    color: #0f172a !important;
+                    padding: 4mm 0 6mm 0 !important;
+                  }
+                  .sop-page:last-child {
+                    page-break-after: auto !important;
+                    break-after: auto !important;
+                  }
+                  .sop-box {
+                    border: 1px solid #cbd5e1 !important;
+                    border-radius: 6px !important;
+                    background: #f8fafc !important;
+                    color: #0f172a !important;
+                    padding: 8px 10px !important;
+                    margin-bottom: 8px !important;
+                    box-sizing: border-box !important;
+                  }
+                  .sop-table {
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    font-size: 10.5px !important;
+                    margin-top: 6px !important;
+                    margin-bottom: 8px !important;
+                  }
+                  .sop-table th, .sop-table td {
+                    border: 1px solid #cbd5e1 !important;
+                    padding: 5px 7px !important;
+                    text-align: left !important;
+                  }
+                  .sop-table th {
+                    background-color: #f1f5f9 !important;
+                    font-weight: 700 !important;
+                    color: #0f172a !important;
+                  }
+                  /* Critical Layout Classes */
+                  .flex { display: flex !important; }
+                  .flex-col { display: flex !important; flex-direction: column !important; }
+                  .flex-1 { flex: 1 1 0% !important; }
+                  .shrink-0 { flex-shrink: 0 !important; }
+                  .items-center { align-items: center !important; }
+                  .items-start { align-items: flex-start !important; }
+                  .items-end { align-items: flex-end !important; }
+                  .justify-between { justify-content: space-between !important; }
+                  .justify-center { justify-content: center !important; }
+                  .grid { display: grid !important; }
+                  .grid-cols-2 { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+                  .grid-cols-3 { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+                  .grid-cols-4 { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+                  .gap-1 { gap: 4px !important; }
+                  .gap-1\\.5 { gap: 6px !important; }
+                  .gap-2 { gap: 8px !important; }
+                  .gap-3 { gap: 12px !important; }
+                  .gap-4 { gap: 16px !important; }
+                  .space-y-1 > * + * { margin-top: 4px !important; }
+                  .space-y-1\\.5 > * + * { margin-top: 6px !important; }
+                  .space-y-2 > * + * { margin-top: 8px !important; }
+                  .space-y-3 > * + * { margin-top: 12px !important; }
+                  .space-y-4 > * + * { margin-top: 16px !important; }
+                  .text-center { text-align: center !important; }
+                  .text-right { text-align: right !important; }
+                  .text-left { text-align: left !important; }
+                  .font-bold { font-weight: 700 !important; }
+                  .font-extrabold { font-weight: 800 !important; }
+                  .font-black { font-weight: 900 !important; }
+                  .font-semibold { font-weight: 600 !important; }
+                  .font-medium { font-weight: 500 !important; }
+                  .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
+                  .border { border-width: 1px !important; }
+                  .border-2 { border-width: 2px !important; }
+                  .border-b { border-bottom-width: 1px !important; }
+                  .border-b-2 { border-bottom-width: 2px !important; }
+                  .border-t { border-top-width: 1px !important; }
+                  .border-t-2 { border-top-width: 2px !important; }
+                  .border-l { border-left-width: 1px !important; }
+                  .border-l-4 { border-left-width: 4px !important; }
+                  .rounded { border-radius: 4px !important; }
+                  .rounded-md { border-radius: 6px !important; }
+                  .rounded-lg { border-radius: 8px !important; }
+                  .rounded-xl { border-radius: 12px !important; }
+                  .rounded-full { border-radius: 9999px !important; }
+                  .w-full { width: 100% !important; }
+                  .h-14 { height: 56px !important; }
+                  .uppercase { text-transform: uppercase !important; }
+                  .tracking-wide { letter-spacing: 0.025em !important; }
+                  .tracking-wider { letter-spacing: 0.05em !important; }
+                  .tracking-widest { letter-spacing: 0.1em !important; }
+                  .tracking-tight { letter-spacing: -0.025em !important; }
+                  .leading-relaxed { line-height: 1.625 !important; }
+                  .leading-tight { line-height: 1.25 !important; }
+                  .list-decimal { list-style-type: decimal !important; }
+                  .list-inside { list-style-position: inside !important; }
+                </style>
+              </head>
+              <body>
+                <div id="printable-sop-booklet">
+                  ${printableContent}
+                </div>
+              </body>
+            </html>
+          `;
+
+          doc.open();
+          doc.write(fullHtml);
+          doc.close();
+
+          setTimeout(() => {
+            setIsPrinting(false);
+            if (printFrame && printFrame.contentWindow) {
+              printFrame.contentWindow.focus();
+              printFrame.contentWindow.print();
+            } else {
+              window.print();
+            }
+          }, 350);
+        } else {
+          setIsPrinting(false);
+          window.print();
+        }
+      } catch (err) {
+        console.error('Direct print SOP error:', err);
+        setIsPrinting(false);
+        window.print();
+      }
+    }, 60);
   };
 
   return (
@@ -123,25 +332,38 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
               height: auto !important;
               overflow: visible !important;
             }
-            body * {
-              visibility: hidden !important;
+            .fixed, [class*="fixed"], .overflow-y-auto, .overflow-hidden, [class*="overflow-"] {
+              position: static !important;
+              overflow: visible !important;
+              max-height: none !important;
+              height: auto !important;
+              inset: auto !important;
+              transform: none !important;
+              backdrop-filter: none !important;
+              box-shadow: none !important;
+              border: none !important;
+              background: transparent !important;
             }
-            #printable-sop-booklet, #printable-sop-booklet * {
-              visibility: visible !important;
+            header, nav, aside, footer, [role="navigation"], .no-print, .print\\:hidden, [class*="print:hidden"], button {
+              display: none !important;
             }
             #printable-sop-booklet {
               display: block !important;
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
+              visibility: visible !important;
+              opacity: 1 !important;
+              position: relative !important;
               width: 100% !important;
-              margin: 0 !important;
+              margin: 0 auto !important;
               padding: 0 !important;
               background: #ffffff !important;
               color: #0f172a !important;
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
               box-sizing: border-box !important;
               line-height: 1.4 !important;
+              z-index: 999999 !important;
+            }
+            #printable-sop-booklet * {
+              visibility: visible !important;
             }
             .sop-page {
               page-break-after: always !important;
@@ -713,10 +935,15 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
             <button
               type="button"
               onClick={handlePrintSop}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              disabled={isPrinting}
+              className={`p-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 ${
+                isPrinting
+                  ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
               title="Cetak SOP / Export PDF"
             >
-              <Printer className="w-4 h-4" />
+              {isPrinting ? <Loader2 className="w-4 h-4 animate-spin text-indigo-400" /> : <Printer className="w-4 h-4" />}
             </button>
 
             <button
@@ -1339,6 +1566,17 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
                 <p className="text-xs text-slate-300 max-w-xl mx-auto">
                   Dengan alur kerja ini, seluruh proses pengajuan, penarikan barang, pengemasan, dan pengiriman berjalan cepat, rapi, dan transparan untuk seluruh tim Chocochips.
                 </p>
+                <div className="pt-3 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handlePrintSop}
+                    disabled={isPrinting}
+                    className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer active:scale-95"
+                  >
+                    {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                    <span>Cetak Dokumen Resmi / Export PDF (A4)</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
