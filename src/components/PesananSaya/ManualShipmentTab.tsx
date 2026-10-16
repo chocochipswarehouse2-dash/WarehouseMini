@@ -43,6 +43,7 @@ import {
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
 import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, StockRealtimeItem } from '../../services/supabase';
+import { lookupProductBySku } from '../../utils/productLookup';
 import QRCode from 'qrcode';
 import {
   generateCustomerTransactionNumber,
@@ -2208,26 +2209,29 @@ _WMS Warehouse System_`;
 
       // 1. Resolve locations from Supabase stok_real_fisik
       skuStocksMap.forEach((stocks, cleanSku) => {
-        const activeWarehouse = stocks.filter(s => (s.sisa_stok ?? 0) > 0 && isWarehouseLocation(s.lokasi || '', s.area || ''));
+        const validLocStocks = stocks.filter(s => s.lokasi && s.lokasi !== '-' && s.lokasi !== 'KOSONG');
+        const activeWarehouse = validLocStocks.filter(s => (s.sisa_stok ?? 0) > 0 && isWarehouseLocation(s.lokasi || '', s.area || ''));
         if (activeWarehouse.length > 0) {
           activeWarehouse.sort((a, b) => (b.sisa_stok ?? 0) - (a.sisa_stok ?? 0));
           const formattedLoc = Array.from(new Set(activeWarehouse.map(l => l.lokasi).filter(Boolean))).join(', ');
           skuLocationMap.set(cleanSku, formattedLoc || activeWarehouse[0].lokasi || '-');
         } else {
-          const anyWarehouse = stocks.filter(s => isWarehouseLocation(s.lokasi || '', s.area || ''));
+          const anyWarehouse = validLocStocks.filter(s => isWarehouseLocation(s.lokasi || '', s.area || ''));
           if (anyWarehouse.length > 0) {
             const formattedLoc = Array.from(new Set(anyWarehouse.map(l => l.lokasi).filter(Boolean))).join(', ');
             skuLocationMap.set(cleanSku, formattedLoc || anyWarehouse[0].lokasi || '-');
-          } else if (stocks.length > 0) {
-            skuLocationMap.set(cleanSku, stocks[0].lokasi || '-');
+          } else if (validLocStocks.length > 0) {
+            const formattedLoc = Array.from(new Set(validLocStocks.map(l => l.lokasi).filter(Boolean))).join(', ');
+            skuLocationMap.set(cleanSku, formattedLoc || validLocStocks[0].lokasi || '-');
           }
         }
       });
 
-      // 2. Fallback to productCatalog if not found in stok_real_fisik
-      if (productCatalog && productCatalog.length > 0) {
-        allSkus.forEach(cleanSku => {
-          if (!skuLocationMap.has(cleanSku)) {
+      // 2. Fallback to productCatalog prop or lookupProductBySku (localStorage / master catalog)
+      allSkus.forEach(cleanSku => {
+        if (!skuLocationMap.has(cleanSku) || skuLocationMap.get(cleanSku) === '-') {
+          // Check productCatalog prop first
+          if (productCatalog && productCatalog.length > 0) {
             const prod = productCatalog.find(p => 
               (p.k && p.k.trim().toUpperCase() === cleanSku) || 
               ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku)
@@ -2243,8 +2247,24 @@ _WMS Warehouse System_`;
               }
             }
           }
-        });
-      }
+
+          // If still not found, check master product lookup (inspects localStorage wms_master_produk, etc.)
+          if (!skuLocationMap.has(cleanSku) || skuLocationMap.get(cleanSku) === '-') {
+            const lookup = lookupProductBySku(cleanSku, productCatalog || []);
+            if (lookup.found && lookup.masterItem) {
+              const m = lookup.masterItem;
+              if (m.lokasi && m.lokasi !== '-' && m.lokasi !== 'KOSONG') {
+                skuLocationMap.set(cleanSku, m.lokasi);
+              } else if (Array.isArray((m as any).locList) && (m as any).locList.length > 0) {
+                const locs = (m as any).locList.map((l: any) => typeof l === 'string' ? l : l.lokasi).filter(Boolean);
+                if (locs.length > 0) {
+                  skuLocationMap.set(cleanSku, locs.join(', '));
+                }
+              }
+            }
+          }
+        }
+      });
 
       // 3. Map enriched locations back onto order items
       return targetOrders.map(o => {
@@ -2255,7 +2275,9 @@ _WMS Warehouse System_`;
             const cleanSku = (it.sku || '').trim().toUpperCase();
             const foundLoc = skuLocationMap.get(cleanSku);
             const currentLoc = (it as any).lokasi;
-            const finalLoc = foundLoc || (currentLoc && currentLoc !== '-' ? currentLoc : '-');
+            const finalLoc = (foundLoc && foundLoc !== '-')
+              ? foundLoc
+              : (currentLoc && currentLoc !== '-' && currentLoc !== 'KOSONG' ? currentLoc : '-');
             return {
               ...it,
               lokasi: finalLoc,

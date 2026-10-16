@@ -1054,52 +1054,65 @@ export async function fetchStockForLocations(locations: string[]): Promise<Stock
  * Fetch real-time system stock by SKUs across all warehouse locations
  */
 export async function fetchStockForSkus(skus: string[]): Promise<StockRealtimeItem[]> {
-  if (!skus.length) return [];
+  if (!skus || !skus.length) return [];
   const cleanSkus = Array.from(new Set(skus.map((s) => s.trim().toUpperCase()).filter(Boolean)));
   if (cleanSkus.length === 0) return [];
   const cleanSkuSet = new Set(cleanSkus);
 
-  // 1. Check in-memory cache if ALL cleanSkus are present
+  const matchedItems: StockRealtimeItem[] = [];
+  const foundSkus = new Set<string>();
+
+  const addMatched = (items: StockRealtimeItem[]) => {
+    items.forEach(r => {
+      const clean = (r.sku || '').trim().toUpperCase();
+      if (cleanSkuSet.has(clean) && r.lokasi && r.lokasi !== '-' && r.lokasi !== 'KOSONG') {
+        matchedItems.push(r);
+        foundSkus.add(clean);
+      }
+    });
+  };
+
+  // 1. Check in-memory cache
   if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-    const cachedSkuSet = new Set(memoryStokFisikCache.map(r => (r.sku || '').toUpperCase()));
-    const allCached = cleanSkus.every(s => cachedSkuSet.has(s));
-    if (allCached) {
-      return memoryStokFisikCache.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
+    addMatched(memoryStokFisikCache);
+  }
+
+  // 2. Check local IndexedDB cache if any SKUs missing
+  if (foundSkus.size < cleanSkuSet.size) {
+    try {
+      const localStocks = await getAllInventoryStocksFromLocalDb();
+      if (localStocks && localStocks.length > 0) {
+        if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
+          memoryStokFisikCache = localStocks;
+          memoryStokFisikLastFetch = Date.now();
+        }
+        addMatched(localStocks);
+      }
+    } catch {}
+  }
+
+  // 3. Fallback to Supabase PostgREST for missing SKUs or full refresh
+  if (foundSkus.size < cleanSkuSet.size) {
+    try {
+      const missingSkus = cleanSkus.filter(s => !foundSkus.has(s));
+      const formattedSkus = missingSkus.map(s => `"${s.replace(/"/g, '""')}"`).join(',');
+      const queryParams = `sku=in.(${encodeURIComponent(formattedSkus)})&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`;
+      
+      const rows = await supabaseFetch<StockRealtimeItem[]>(
+        'stok_real_fisik',
+        'GET',
+        null,
+        queryParams
+      );
+      if (Array.isArray(rows) && rows.length > 0) {
+        addMatched(rows);
+      }
+    } catch (err) {
+      console.warn('Error fetching realtime stock by SKUs from Supabase:', err);
     }
   }
 
-  // 2. Check local IndexedDB cache if ALL cleanSkus are present
-  try {
-    const localStocks = await getAllInventoryStocksFromLocalDb();
-    if (localStocks && localStocks.length > 0) {
-      if (!memoryStokFisikCache || memoryStokFisikCache.length === 0) {
-        memoryStokFisikCache = localStocks;
-        memoryStokFisikLastFetch = Date.now();
-      }
-      const localSkuSet = new Set(localStocks.map(r => (r.sku || '').toUpperCase()));
-      const allLocal = cleanSkus.every(s => localSkuSet.has(s));
-      if (allLocal) {
-        return localStocks.filter(r => cleanSkuSet.has((r.sku || '').toUpperCase()) && isWarehouseLocation(r.lokasi || '', r.area || ''));
-      }
-    }
-  } catch {}
-
-  // 3. Fallback to Supabase PostgREST for the requested SKUs
-  try {
-    const skuParam = cleanSkus.map(s => `"${encodeURIComponent(s)}"`).join(',');
-    const rows = await supabaseFetch<StockRealtimeItem[]>(
-      'stok_real_fisik',
-      'GET',
-      null,
-      `sku=in.(${skuParam})&select=sku,nama_produk,size,lokasi,area,sisa_stok,updated_at`
-    );
-    if (Array.isArray(rows)) {
-      return rows.filter(r => isWarehouseLocation(r.lokasi || '', r.area || ''));
-    }
-  } catch (err) {
-    console.warn('Error fetching realtime stock by SKUs:', err);
-  }
-  return [];
+  return matchedItems;
 }
 
 /**
