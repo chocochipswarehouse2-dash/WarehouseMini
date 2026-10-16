@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShieldAlert, HelpCircle, Search, X, CheckCircle2, AlertCircle, MessageSquare,
   Copy, Check, Sparkles, RefreshCw, Plus, Edit2, Trash2, Pin, Eye, User,
-  Calendar, Filter, ChevronRight, Store, Layers, BookOpen, Clock, AlertTriangle, CheckSquare
+  Calendar, Filter, ChevronRight, Store, Layers, BookOpen, Clock, AlertTriangle, CheckSquare,
+  Database
 } from 'lucide-react';
 import { StoreFaqItem, StoreHelpTicket, StoreHelpTicketStatus, UserSession } from '../../types';
 import {
@@ -11,7 +12,8 @@ import {
   fetchStoreFaqs,
   saveStoreFaq,
   deleteStoreFaq,
-  syncInitialFaqsToSupabase
+  syncInitialFaqsToSupabase,
+  STORE_HELP_MIGRATION_SQL
 } from '../../services/storeHelpService';
 
 interface SuperadminKnowledgeHubModalProps {
@@ -171,13 +173,20 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
     });
   };
 
+  // Handler: Copy SQL Migration for Supabase
+  const handleCopyMigrationSql = () => {
+    navigator.clipboard.writeText(STORE_HELP_MIGRATION_SQL).then(() => {
+      onShowToast('Query SQL Migrasi skema Supabase berhasil disalin! Silakan jalankan di Supabase Dashboard -> SQL Editor.', 'success');
+    });
+  };
+
   // Handler: Sync Initial FAQs
   const handleSyncInitialFaqs = async () => {
     setIsSyncingFaqs(true);
     try {
       const res = await syncInitialFaqsToSupabase();
       if (res.success) {
-        onShowToast(res.message, 'success');
+        onShowToast(res.message, res.requiresMigration ? 'warning' : 'success');
         loadFaqs();
       } else {
         onShowToast(res.message, 'error');
@@ -209,7 +218,7 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
     try {
       const res = await saveStoreFaq(editingFaq as StoreFaqItem);
       if (res.success) {
-        onShowToast(res.message, 'success');
+        onShowToast(res.message, res.requiresMigration ? 'warning' : 'success');
         setIsFaqFormOpen(false);
         setEditingFaq(null);
         loadFaqs();
@@ -627,6 +636,16 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Button Salin SQL Migrasi Skema */}
+                  <button
+                    onClick={handleCopyMigrationSql}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-700 transition-colors shadow-xs"
+                    title="Salin query SQL ALTER TABLE untuk aktivasi kolom Store vs Admin di Supabase SQL Editor"
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    <span>Salin SQL Skema</span>
+                  </button>
+
                   {/* Button Sync Initial FAQs */}
                   <button
                     onClick={handleSyncInitialFaqs}
@@ -658,6 +677,30 @@ Tolong analisa alur sistem WMS saat ini, lalu rekomendasikan atau buatkan penyes
                     <span>Tambah FAQ Baru</span>
                   </button>
                 </div>
+              </div>
+
+              {/* Banner Info Skema Supabase */}
+              <div className="p-3 bg-linear-to-r from-amber-500/10 via-amber-50/50 to-indigo-500/10 dark:from-amber-950/30 dark:via-slate-900 dark:to-indigo-950/30 border border-amber-200/80 dark:border-amber-800/60 rounded-xl flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      Sinkronisasi Skema Supabase (Store vs Admin):
+                    </span>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px] truncate">
+                      Jika Supabase memunculkan error PGRST204 (kolom belum ada), sistem otomatis masuk ke Mode Kompatibilitas. Klik <strong>Salin SQL Skema</strong> lalu jalankan di Supabase Dashboard untuk aktivasi penuh.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleCopyMigrationSql}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shrink-0 flex items-center gap-1 shadow-xs transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>Salin SQL</span>
+                </button>
               </div>
 
               {/* FAQs Table / Cards */}

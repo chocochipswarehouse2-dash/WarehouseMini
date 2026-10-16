@@ -68,3 +68,7 @@ CREATE POLICY "Allow public all access store_help_tickets" ON public.store_help_
 CREATE INDEX IF NOT EXISTS idx_store_help_faq_category ON public.store_help_faq (category);
 CREATE INDEX IF NOT EXISTS idx_store_help_tickets_status ON public.store_help_tickets (status);
 CREATE INDEX IF NOT EXISTS idx_store_help_tickets_store ON public.store_help_tickets (store_name);
+
+-- Muat ulang schema cache PostgREST agar kolom baru langsung terbaca
+NOTIFY pgrst, 'reload schema';
+

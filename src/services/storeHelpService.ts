@@ -38,38 +38,108 @@ export async function fetchStoreFaqs(): Promise<StoreFaqItem[]> {
   return INITIAL_STORE_FAQS;
 }
 
-export async function saveStoreFaq(faq: StoreFaqItem): Promise<{ success: boolean; data?: StoreFaqItem; message: string }> {
-  try {
-    const isUpdate = Boolean(faq.id && !faq.id.startsWith('faq-'));
-    const payload = {
-      category: faq.category || 'manual_shipment',
-      question: faq.question.trim(),
-      answer: faq.answer.trim(),
-      target_audience: faq.target_audience || 'all',
-      answer_admin: faq.answer_admin?.trim() || null,
-      answer_store: faq.answer_store?.trim() || null,
-      action_steps_admin: faq.action_steps_admin || [],
-      action_steps_store: faq.action_steps_store || [],
-      button_badges_admin: faq.button_badges_admin || [],
-      button_badges_store: faq.button_badges_store || [],
-      admin_notes: faq.admin_notes?.trim() || null,
-      store_notes: faq.store_notes?.trim() || null,
-      keywords: faq.keywords || [],
-      button_badges: faq.button_badges || [],
-      action_steps: faq.action_steps || [],
-      image_url: faq.image_url || null,
-      is_pinned: Boolean(faq.is_pinned),
-      updated_at: new Date().toISOString()
-    };
+// SQL Query Migration untuk aktivasi kolom per-peran Store vs Admin
+export const STORE_HELP_MIGRATION_SQL = `-- ============================================================
+-- SQL MIGRASI SKEMA: TABEL STORE HELP FAQ (DUAL-PERSPECTIVE)
+-- ============================================================
+-- Tambah kolom khusus peran Store vs Admin
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS target_audience TEXT DEFAULT 'all';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS answer_admin TEXT;
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS answer_store TEXT;
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS action_steps_admin JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS action_steps_store JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS button_badges_admin JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS button_badges_store JSONB DEFAULT '[]';
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS admin_notes TEXT;
+ALTER TABLE public.store_help_faq ADD COLUMN IF NOT EXISTS store_notes TEXT;
 
+-- Muat ulang schema cache PostgREST agar kolom baru langsung aktif
+NOTIFY pgrst, 'reload schema';`;
+
+function isSchemaMissingColumnError(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('pgrst204') ||
+    msg.includes('schema cache') ||
+    msg.includes('action_steps_admin') ||
+    msg.includes('column')
+  );
+}
+
+export async function saveStoreFaq(
+  faq: StoreFaqItem
+): Promise<{ success: boolean; data?: StoreFaqItem; message: string; requiresMigration?: boolean }> {
+  const isUpdate = Boolean(faq.id && !faq.id.startsWith('faq-'));
+  const fullPayload = {
+    category: faq.category || 'manual_shipment',
+    question: faq.question.trim(),
+    answer: faq.answer.trim(),
+    target_audience: faq.target_audience || 'all',
+    answer_admin: faq.answer_admin?.trim() || null,
+    answer_store: faq.answer_store?.trim() || null,
+    action_steps_admin: faq.action_steps_admin || [],
+    action_steps_store: faq.action_steps_store || [],
+    button_badges_admin: faq.button_badges_admin || [],
+    button_badges_store: faq.button_badges_store || [],
+    admin_notes: faq.admin_notes?.trim() || null,
+    store_notes: faq.store_notes?.trim() || null,
+    keywords: faq.keywords || [],
+    button_badges: faq.button_badges || [],
+    action_steps: faq.action_steps || [],
+    image_url: faq.image_url || null,
+    is_pinned: Boolean(faq.is_pinned),
+    updated_at: new Date().toISOString()
+  };
+
+  const basePayload = {
+    category: faq.category || 'manual_shipment',
+    question: faq.question.trim(),
+    answer: faq.answer.trim(),
+    keywords: faq.keywords || [],
+    button_badges: faq.button_badges || [],
+    action_steps: faq.action_steps || [],
+    image_url: faq.image_url || null,
+    is_pinned: Boolean(faq.is_pinned),
+    updated_at: new Date().toISOString()
+  };
+
+  try {
     if (isUpdate) {
-      await supabaseFetch('store_help_faq', 'PATCH', payload, `id=eq.${faq.id}`);
+      await supabaseFetch('store_help_faq', 'PATCH', fullPayload, `id=eq.${faq.id}`);
       return { success: true, message: 'FAQ berhasil diperbarui' };
     } else {
-      const inserted = await supabaseFetch<StoreFaqItem[]>('store_help_faq', 'POST', [{ ...payload, created_at: new Date().toISOString() }]);
+      const inserted = await supabaseFetch<StoreFaqItem[]>('store_help_faq', 'POST', [
+        { ...fullPayload, created_at: new Date().toISOString() }
+      ]);
       return { success: true, data: inserted?.[0], message: 'FAQ baru berhasil ditambahkan' };
     }
   } catch (err: any) {
+    if (isSchemaMissingColumnError(err)) {
+      console.warn('[storeHelpService] Kolom peran belum ada di Supabase, menyimpan dengan payload dasar...');
+      try {
+        if (isUpdate) {
+          await supabaseFetch('store_help_faq', 'PATCH', basePayload, `id=eq.${faq.id}`);
+          return {
+            success: true,
+            requiresMigration: true,
+            message: 'FAQ berhasil diperbarui (Mode Kompatibilitas). Jalankan migrasi SQL di Supabase agar field spesifik Store vs Admin aktif.'
+          };
+        } else {
+          const inserted = await supabaseFetch<StoreFaqItem[]>('store_help_faq', 'POST', [
+            { ...basePayload, created_at: new Date().toISOString() }
+          ]);
+          return {
+            success: true,
+            data: inserted?.[0],
+            requiresMigration: true,
+            message: 'FAQ baru berhasil ditambahkan (Mode Kompatibilitas). Jalankan migrasi SQL di Supabase agar field spesifik Store vs Admin aktif.'
+          };
+        }
+      } catch (fallbackErr: any) {
+        console.error('[storeHelpService] Error saving fallback FAQ:', fallbackErr);
+        return { success: false, message: fallbackErr?.message || 'Gagal menyimpan FAQ ke database' };
+      }
+    }
     console.error('[storeHelpService] Error saving FAQ:', err);
     return { success: false, message: err?.message || 'Gagal menyimpan FAQ ke database' };
   }
@@ -98,7 +168,12 @@ export async function incrementFaqView(id: string): Promise<void> {
   } catch {}
 }
 
-export async function syncInitialFaqsToSupabase(): Promise<{ success: boolean; count: number; message: string }> {
+export async function syncInitialFaqsToSupabase(): Promise<{
+  success: boolean;
+  count: number;
+  message: string;
+  requiresMigration?: boolean;
+}> {
   try {
     const existing = await supabaseFetch<StoreFaqItem[]>('store_help_faq', 'GET', null, 'select=id,question');
     const existingMap = new Map<string, string>();
@@ -110,12 +185,14 @@ export async function syncInitialFaqsToSupabase(): Promise<{ success: boolean; c
 
     let updatedCount = 0;
     let insertedCount = 0;
+    let fallbackMode = false;
 
-    for (const f of INITIAL_STORE_FAQS) {
+    for (let i = 0; i < INITIAL_STORE_FAQS.length; i++) {
+      const f = INITIAL_STORE_FAQS[i];
       const qKey = f.question.trim().toLowerCase();
       const existingId = existingMap.get(qKey);
 
-      const payload = {
+      const fullPayload = {
         category: f.category,
         question: f.question,
         answer: f.answer,
@@ -137,19 +214,69 @@ export async function syncInitialFaqsToSupabase(): Promise<{ success: boolean; c
         updated_at: new Date().toISOString()
       };
 
-      if (existingId) {
-        // Update data jika sudah ada agar mendapatkan field per-peran terbaru
-        await supabaseFetch('store_help_faq', 'PATCH', payload, `id=eq.${existingId}`);
-        updatedCount++;
+      const basePayload = {
+        category: f.category,
+        question: f.question,
+        answer: f.answer,
+        keywords: f.keywords || [],
+        button_badges: f.button_badges || [],
+        action_steps: f.action_steps || [],
+        image_url: f.image_url || null,
+        view_count: f.view_count || 0,
+        is_pinned: Boolean(f.is_pinned),
+        updated_at: new Date().toISOString()
+      };
+
+      if (!fallbackMode) {
+        try {
+          if (existingId) {
+            await supabaseFetch('store_help_faq', 'PATCH', fullPayload, `id=eq.${existingId}`);
+            updatedCount++;
+          } else {
+            await supabaseFetch('store_help_faq', 'POST', [{ ...fullPayload, created_at: new Date().toISOString() }]);
+            insertedCount++;
+          }
+        } catch (err: any) {
+          if (isSchemaMissingColumnError(err)) {
+            console.warn('[storeHelpService] Kolom per-peran belum ada di database Supabase. Beralih ke Mode Kompatibilitas...');
+            fallbackMode = true;
+            // Retry this current item with basePayload
+            if (existingId) {
+              await supabaseFetch('store_help_faq', 'PATCH', basePayload, `id=eq.${existingId}`);
+              updatedCount++;
+            } else {
+              await supabaseFetch('store_help_faq', 'POST', [{ ...basePayload, created_at: new Date().toISOString() }]);
+              insertedCount++;
+            }
+          } else {
+            throw err;
+          }
+        }
       } else {
-        await supabaseFetch('store_help_faq', 'POST', [{ ...payload, created_at: new Date().toISOString() }]);
-        insertedCount++;
+        // Fallback mode already active
+        if (existingId) {
+          await supabaseFetch('store_help_faq', 'PATCH', basePayload, `id=eq.${existingId}`);
+          updatedCount++;
+        } else {
+          await supabaseFetch('store_help_faq', 'POST', [{ ...basePayload, created_at: new Date().toISOString() }]);
+          insertedCount++;
+        }
       }
+    }
+
+    if (fallbackMode) {
+      return {
+        success: true,
+        count: insertedCount + updatedCount,
+        requiresMigration: true,
+        message: `Berhasil sinkronisasi ${insertedCount + updatedCount} FAQ (Mode Kompatibilitas). Catatan: Tabel Supabase belum memiliki 9 kolom baru. Klik 'Salin SQL Skema' lalu jalankan di Supabase SQL Editor untuk aktivasi penuh.`
+      };
     }
 
     return {
       success: true,
       count: insertedCount + updatedCount,
+      requiresMigration: false,
       message: `Berhasil sinkronisasi FAQ: ${insertedCount} baru ditambahkan, ${updatedCount} panduan diperbarui dengan perspektif Store & Admin.`
     };
   } catch (err: any) {

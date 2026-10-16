@@ -137,6 +137,9 @@ const ALL_TABLES = [
   'wms_settings',
   'wms_katalog',
   'ig_live_orders',
+  // Store Help & Knowledge Hub
+  'store_help_faq',
+  'store_help_tickets',
 ];
 
 // Filter tabel berdasarkan flag --tables dan --skip

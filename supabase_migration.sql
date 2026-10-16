@@ -235,3 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_store_help_faq_category ON public.store_help_faq 
 CREATE INDEX IF NOT EXISTS idx_store_help_tickets_status ON public.store_help_tickets (status);
 CREATE INDEX IF NOT EXISTS idx_store_help_tickets_store ON public.store_help_tickets (store_name);
 
+-- Muat ulang schema cache PostgREST agar kolom baru langsung terbaca
+NOTIFY pgrst, 'reload schema';
+
+
