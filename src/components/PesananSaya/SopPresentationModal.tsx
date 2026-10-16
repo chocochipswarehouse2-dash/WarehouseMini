@@ -784,16 +784,16 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
         </div>
 
         {/* ------------------------------------------------------------- */}
-        {/* HALAMAN 4: CHECKLIST HARIAN & LEMBAR PENGESAHAN              */}
+        {/* HALAMAN 4: CHECKLIST OPERASIONAL HARIAN                       */}
         {/* ------------------------------------------------------------- */}
         <div className="sop-page space-y-4">
           <div className="text-[10px] font-mono text-slate-400 border-b border-slate-200 pb-1 flex justify-between">
             <span>CHOCOCHIPS WMS SOP OPERASIONAL</span>
-            <span>BAB 8 & LEMBAR PENGESAHAN RESMI</span>
+            <span>BAB 8: CHECKLIST OPERASIONAL HARIAN</span>
           </div>
 
           {/* BAB 8: CHECKLIST OPERASIONAL HARIAN */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
               <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">BAB 8</span>
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
@@ -850,52 +850,6 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
                     <span>Input nomor resi resmi ekspedisi dan kirimkan notifikasi WA ke customer via tombol <strong>💬 Kirim WA Customer</strong>.</span>
                   </li>
                 </ul>
-              </div>
-            </div>
-
-            {/* Golden Rules */}
-            <div className="sop-box bg-amber-50 border-amber-300 text-[10.5px] space-y-1">
-              <strong className="text-amber-950 font-bold block">⚠️ Ketentuan Kepatuhan & Golden Rules:</strong>
-              <div className="text-slate-700 text-[10px] space-y-0.5">
-                <div>1. <strong>Larangan Kirim Tanpa SJ Struk:</strong> Seluruh pakaian yang dikirim dari store WAJIB ditempeli Lembar 2 SJ Struk Thermal fisik.</div>
-                <div>2. <strong>Larangan Mengubah Alokasi Toko Lain:</strong> Store hanya berhak memproses item yang dialokasikan ke cabangnya sendiri.</div>
-                <div>3. <strong>Batas Waktu Input Resi:</strong> Seluruh resi pengiriman hari bersangkutan wajib diinput ke sistem sebelum pukul 18:00 WIB.</div>
-              </div>
-            </div>
-          </div>
-
-          {/* LEMBAR PENGESAHAN DOKUMEN RESMI */}
-          <div className="pt-4 border-t-2 border-slate-300 space-y-2">
-            <div className="text-center font-bold text-xs uppercase tracking-wider text-slate-900">
-              Lembar Pengesahan dan Validasi Dokumen SOP Operasional
-            </div>
-            <p className="text-[10px] text-center text-slate-500">
-              Dokumen SOP ini telah diperiksa dan disahkan sebagai acuan operasional resmi PT Chocochips Apparel.
-            </p>
-
-            <div className="grid grid-cols-3 gap-4 pt-3 text-center text-[10.5px]">
-              <div className="border border-slate-300 rounded p-3">
-                <div className="text-slate-500 text-[10px]">Disiapkan Oleh:</div>
-                <div className="h-14 flex items-end justify-center font-bold text-slate-900 border-b border-dotted border-slate-400 pb-1">
-                  Operational & WMS Specialist
-                </div>
-                <div className="text-[9.5px] text-slate-500 mt-1">Tim IT & WMS Operations</div>
-              </div>
-
-              <div className="border border-slate-300 rounded p-3">
-                <div className="text-slate-500 text-[10px]">Diperiksa Oleh:</div>
-                <div className="h-14 flex items-end justify-center font-bold text-slate-900 border-b border-dotted border-slate-400 pb-1">
-                  Warehouse & Inventory Manager
-                </div>
-                <div className="text-[9.5px] text-slate-500 mt-1">Gudang Utama Chocochips</div>
-              </div>
-
-              <div className="border border-slate-300 rounded p-3">
-                <div className="text-slate-500 text-[10px]">Disetujui Oleh:</div>
-                <div className="h-14 flex items-end justify-center font-bold text-slate-900 border-b border-dotted border-slate-400 pb-1">
-                  Director of Retail Operations
-                </div>
-                <div className="text-[9.5px] text-slate-500 mt-1">Management Chocochips</div>
               </div>
             </div>
           </div>
