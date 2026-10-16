@@ -90,21 +90,21 @@ interface AlterationRepairTabProps {
 
 // Store Courier Options (Kembali ke Store Asal)
 const STORE_COURIER_OPTIONS = [
-  'JNE Regular (free)',
-  'JNE YES (ditanggung cust)',
-  'GOSEND (ditanggung cust)',
-  'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)',
-  'Drop ke Store Terkait (Pick Up / Handover Store)',
+  'JNE Regular',
+  'JNE YES',
+  'GOSEND',
+  'Kurir Internal',
+  'Drop ke Store',
   '+ Ketik Jasa Kirim Lainnya (Manual)',
 ];
 
 // Customer Courier Options (Langsung ke Customer)
 const CUSTOMER_COURIER_OPTIONS = [
-  'JNE Regular (free)',
-  'JNE YES (ditanggung cust)',
-  'GOSEND (ditanggung cust)',
-  'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)',
-  'Drop ke Store Terkait (Pick Up / Handover Store)',
+  'JNE Regular',
+  'JNE YES',
+  'GOSEND',
+  'Kurir Internal',
+  'Drop ke Store',
   '+ Ketik Jasa Kirim Lainnya (Manual)',
 ];
 
@@ -180,9 +180,9 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [formCustomerHp, setFormCustomerHp] = useState<string>('');
   const [formCustomerAlamat, setFormCustomerAlamat] = useState<string>('');
   const [formTujuanPengembalian, setFormTujuanPengembalian] = useState<'customer' | 'store'>('store');
-  const [formJasaKirimStore, setFormJasaKirimStore] = useState<string>('Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)');
+  const [formJasaKirimStore, setFormJasaKirimStore] = useState<string>('Kurir Internal');
   const [formCustomJasaKirimStore, setFormCustomJasaKirimStore] = useState<string>('');
-  const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE Regular (free)');
+  const [formJasaKirimCustomer, setFormJasaKirimCustomer] = useState<string>('JNE Regular');
   const [formCustomJasaKirim, setFormCustomJasaKirim] = useState<string>('');
   const [formNotesPaket, setFormNotesPaket] = useState<string>('');
   const [formPerkiraanSelesai, setFormPerkiraanSelesai] = useState<string>('');

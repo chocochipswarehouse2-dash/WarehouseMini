@@ -400,12 +400,19 @@ export function resolveOrderFulfillmentStores(order: ManualShipmentOrder): {
   };
 }
 
+export function cleanJasaKirimName(name?: string): string {
+  if (!name) return '';
+  let cleaned = name.replace(/\s*\([^)]*\)/g, '').trim();
+  if (cleaned === 'Drop ke Store Terkait') return 'Drop ke Store';
+  return cleaned;
+}
+
 export const DEFAULT_JASA_KIRIM: string[] = [
-  'JNE Regular (free)',
-  'JNE YES (ditanggung cust)',
-  'GOSEND (ditanggung cust)',
-  'Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)',
-  'Drop ke Store Terkait (Pick Up / Handover Store)',
+  'JNE Regular',
+  'JNE YES',
+  'GOSEND',
+  'Kurir Internal',
+  'Drop ke Store',
 ];
 
 export async function fetchJasaKirimList(): Promise<string[]> {
@@ -414,11 +421,11 @@ export async function fetchJasaKirimList(): Promise<string[]> {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Check if cached list has legacy options (like SiCepat, Anteraja, etc.)
-        const hasLegacy = parsed.some(p => 
-          p === 'SiCepat REG' || p === 'Anteraja Regular' || p === 'J&T Express' || p === 'JNE Regular' || p === 'JNE Reguler' || p === 'Paxel'
-        );
-        if (!hasLegacy && parsed.length <= 10) return parsed;
+        const cleaned = Array.from(new Set(parsed.map(cleanJasaKirimName).filter(Boolean)));
+        if (cleaned.length > 0) {
+          localStorage.setItem('wms_cached_jasa_kirim', JSON.stringify(cleaned));
+          return cleaned;
+        }
       }
     }
   } catch {}

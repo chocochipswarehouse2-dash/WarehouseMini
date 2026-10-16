@@ -17,6 +17,7 @@ import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { WaStoreNoticeModal } from './WaStoreNoticeModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import { BulkUpdateResiModal } from './BulkUpdateResiModal';
+import { SopPresentationModal } from './SopPresentationModal';
 import { isRealAlterItem, hasRealAlterItems, getRealAlterItems, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
 import {
   fetchOutlets,
@@ -41,7 +42,7 @@ import {
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
-import { supabaseFetch } from '../../services/supabase';
+import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, StockRealtimeItem } from '../../services/supabase';
 import QRCode from 'qrcode';
 import {
   generateCustomerTransactionNumber,
@@ -73,6 +74,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [arReceiptOrder, setArReceiptOrder] = useState<ManualShipmentOrder | null>(null);
   const [sjAlterModalOrders, setSjAlterModalOrders] = useState<ManualShipmentOrder[] | null>(null);
   const [waNoticeModalOrder, setWaNoticeModalOrder] = useState<ManualShipmentOrder | null>(null);
+  const [isSopPresentationOpen, setIsSopPresentationOpen] = useState(false);
   const [filterStoreDirection, setFilterStoreDirection] = useState<'all' | 'outgoing' | 'incoming'>('all');
   const [alterActionData, setAlterActionData] = useState<{
     order: ManualShipmentOrder;
@@ -862,6 +864,11 @@ _WMS Warehouse System_`;
       });
       const reversed = [...cleaned].reverse();
       setOrders(reversed);
+
+      // Enrich location rack data asynchronously from Supabase stok_real_fisik and product catalog
+      enrichOrdersWithLocations(reversed).then(enriched => {
+        setOrders(enriched);
+      }).catch(err => console.warn('Async location enrichment failed:', err));
 
       // Pastikan nomor transaksi customer di form tidak bentrok dengan order yang baru di-load dari server
       setTransCustomer(current => {
@@ -2132,19 +2139,118 @@ _WMS Warehouse System_`;
     setSelectedOrders(newSet);
   };
 
-  const handlePrintPickingList = async () => {
-    if (selectedOrders.size === 0) {
+  /**
+   * Helper to fetch and attach real-time rack locations from Supabase stok_real_fisik & catalog
+   * for all items in the given list of ManualShipmentOrder
+   */
+  const enrichOrdersWithLocations = async (targetOrders: ManualShipmentOrder[]): Promise<ManualShipmentOrder[]> => {
+    if (!targetOrders || targetOrders.length === 0) return targetOrders;
+
+    const allSkus: string[] = [];
+    targetOrders.forEach(o => {
+      (o.items || []).forEach(it => {
+        if (it.sku) {
+          const cleanSku = it.sku.trim().toUpperCase();
+          if (cleanSku) allSkus.push(cleanSku);
+        }
+      });
+    });
+
+    if (allSkus.length === 0) return targetOrders;
+
+    try {
+      const stockItems = await fetchStockForSkus(allSkus);
+      
+      const skuLocationMap = new Map<string, string>();
+      const skuStocksMap = new Map<string, StockRealtimeItem[]>();
+
+      stockItems.forEach(stk => {
+        const cleanSku = (stk.sku || '').trim().toUpperCase();
+        if (!cleanSku) return;
+        if (!skuStocksMap.has(cleanSku)) {
+          skuStocksMap.set(cleanSku, []);
+        }
+        skuStocksMap.get(cleanSku)!.push(stk);
+      });
+
+      // 1. Resolve locations from Supabase stok_real_fisik
+      skuStocksMap.forEach((stocks, cleanSku) => {
+        const activeWarehouse = stocks.filter(s => (s.sisa_stok ?? 0) > 0 && isWarehouseLocation(s.lokasi || '', s.area || ''));
+        if (activeWarehouse.length > 0) {
+          activeWarehouse.sort((a, b) => (b.sisa_stok ?? 0) - (a.sisa_stok ?? 0));
+          const formattedLoc = Array.from(new Set(activeWarehouse.map(l => l.lokasi).filter(Boolean))).join(', ');
+          skuLocationMap.set(cleanSku, formattedLoc || activeWarehouse[0].lokasi || '-');
+        } else {
+          const anyWarehouse = stocks.filter(s => isWarehouseLocation(s.lokasi || '', s.area || ''));
+          if (anyWarehouse.length > 0) {
+            const formattedLoc = Array.from(new Set(anyWarehouse.map(l => l.lokasi).filter(Boolean))).join(', ');
+            skuLocationMap.set(cleanSku, formattedLoc || anyWarehouse[0].lokasi || '-');
+          } else if (stocks.length > 0) {
+            skuLocationMap.set(cleanSku, stocks[0].lokasi || '-');
+          }
+        }
+      });
+
+      // 2. Fallback to productCatalog if not found in stok_real_fisik
+      if (productCatalog && productCatalog.length > 0) {
+        allSkus.forEach(cleanSku => {
+          if (!skuLocationMap.has(cleanSku)) {
+            const prod = productCatalog.find(p => 
+              (p.k && p.k.trim().toUpperCase() === cleanSku) || 
+              ((p as any).sku && String((p as any).sku).trim().toUpperCase() === cleanSku)
+            );
+            if (prod) {
+              if (prod.lokasi && prod.lokasi !== '-' && prod.lokasi !== 'KOSONG') {
+                skuLocationMap.set(cleanSku, prod.lokasi);
+              } else if (Array.isArray((prod as any).locList) && (prod as any).locList.length > 0) {
+                const locs = (prod as any).locList.map((l: any) => typeof l === 'string' ? l : l.lokasi).filter(Boolean);
+                if (locs.length > 0) {
+                  skuLocationMap.set(cleanSku, locs.join(', '));
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // 3. Map enriched locations back onto order items
+      return targetOrders.map(o => ({
+        ...o,
+        items: (o.items || []).map(it => {
+          const cleanSku = (it.sku || '').trim().toUpperCase();
+          const foundLoc = skuLocationMap.get(cleanSku);
+          const currentLoc = (it as any).lokasi;
+          const finalLoc = foundLoc || (currentLoc && currentLoc !== '-' ? currentLoc : '-');
+          return {
+            ...it,
+            lokasi: finalLoc,
+          };
+        })
+      }));
+    } catch (err) {
+      console.warn('Gagal memuat lokasi rak untuk picking list:', err);
+      return targetOrders;
+    }
+  };
+
+  const handlePrintPickingList = async (singleOrder?: ManualShipmentOrder) => {
+    const itemsToPrint = singleOrder
+      ? [singleOrder]
+      : orders.filter(o => {
+          const k = getOrderKey(o);
+          return k && selectedOrders.has(k);
+        });
+
+    if (itemsToPrint.length === 0) {
       onShowToast('Pilih setidaknya satu pesanan untuk mencetak picking list', 'info');
       return;
     }
-    const itemsToPrint = orders.filter(o => {
-      const k = getOrderKey(o);
-      return k && selectedOrders.has(k);
-    });
-    if (itemsToPrint.length === 0) return;
+
+    setLoading(true);
+    const enrichedOrders = await enrichOrdersWithLocations(itemsToPrint);
     
     // Update status to diproses dan tandai picking list sudah dicetak
-    const orderIds = itemsToPrint.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
+    const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
     
     // Update local state immediately for instant responsive UI
     setOrders(prev => prev.map(o => {
@@ -2164,13 +2270,16 @@ _WMS Warehouse System_`;
     // Set payload cetak in-page (100% didukung di HP dan desktop)
     setPrintPayload({
       mode: 'PICKING',
-      orders: itemsToPrint,
+      orders: enrichedOrders,
       qrMap: {},
       timestamp: Date.now(),
     });
     
-    setSelectedOrders(new Set());
-    onShowToast(`Menyiapkan cetak ${itemsToPrint.length} picking list`, 'success');
+    if (!singleOrder) {
+      setSelectedOrders(new Set());
+    }
+    setLoading(false);
+    onShowToast(`Menyiapkan cetak ${enrichedOrders.length} picking list`, 'success');
   };
 
   const handlePrintAlterWorkOrder = async (target: ManualShipmentOrder | ManualShipmentOrder[]) => {
@@ -2180,8 +2289,11 @@ _WMS Warehouse System_`;
       return;
     }
 
+    setLoading(true);
+    const enrichedTargetList = await enrichOrdersWithLocations(targetList);
+
     // Update status to diproses for alteration orders
-    const orderIds = targetList.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
+    const orderIds = enrichedTargetList.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
     setOrders(prev => prev.map(o => {
       const id = o.no_pesanan || (o as any).id;
       if (orderIds.includes(id) || (o.no_pesanan && orderIds.includes(o.no_pesanan))) {
@@ -2198,7 +2310,7 @@ _WMS Warehouse System_`;
 
     // Generate QR Map for fast scanning on physical ticket
     const qrMap: Record<string, string> = {};
-    for (const o of targetList) {
+    for (const o of enrichedTargetList) {
       if (o.no_pesanan) {
         try {
           qrMap[o.no_pesanan] = await QRCode.toDataURL(o.no_pesanan, {
@@ -2214,13 +2326,14 @@ _WMS Warehouse System_`;
 
     setPrintPayload({
       mode: 'ALTER_WORK_ORDER',
-      orders: targetList,
+      orders: enrichedTargetList,
       qrMap,
       timestamp: Date.now(),
       spkPaperSize,
     });
 
-    onShowToast(`Menyiapkan cetak SPK Penjahit (${targetList.length} pesanan)`, 'success');
+    setLoading(false);
+    onShowToast(`Menyiapkan cetak SPK Penjahit (${enrichedTargetList.length} pesanan)`, 'success');
   };
 
   
@@ -3422,7 +3535,10 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
       return;
     }
 
-    const orderIds = itemsToPrint.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
+    setLoading(true);
+    const enrichedOrders = await enrichOrdersWithLocations(itemsToPrint);
+
+    const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
     
     // Update local state immediately to 'diproses'
     setOrders(prev => prev.map(o => {
@@ -3440,7 +3556,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     updateOrderPrintStatus(orderIds, 'label').catch(err => console.warn('Async print status error:', err));
 
     const qrMap: Record<string, string> = {};
-    for (const order of itemsToPrint) {
+    for (const order of enrichedOrders) {
       try {
         const qrDataUrl = await QRCode.toDataURL(order.no_pesanan || 'UNKNOWN', { 
           errorCorrectionLevel: 'M', 
@@ -3457,7 +3573,7 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
     // Set payload cetak in-page (100% didukung di HP / mobile dan desktop)
     setPrintPayload({
       mode: 'LABEL',
-      orders: itemsToPrint,
+      orders: enrichedOrders,
       qrMap,
       timestamp: Date.now(),
     });
@@ -4372,6 +4488,19 @@ _WMS Warehouse System_`;
                     {unassignedResiCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {/* Tombol Slide Presentasi SOP - Khusus Superadmin */}
+            {userIsAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsSopPresentationOpen(true)}
+                className="px-2.5 py-1.5 text-amber-800 dark:text-amber-200 hover:text-amber-950 bg-amber-100/80 dark:bg-amber-950/70 hover:bg-amber-200/80 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700/80 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs font-extrabold cursor-pointer"
+                title="Buka Slide Presentasi SOP Manual Shipment & Alteration (Khusus Superadmin)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Slide Presentasi SOP</span>
               </button>
             )}
 
@@ -6488,6 +6617,14 @@ _WMS Warehouse System_`;
         </div>
       )}
 
+      {/* Modal Slide Presentasi SOP - Khusus Superadmin */}
+      {isSopPresentationOpen && (
+        <SopPresentationModal
+          session={session}
+          onClose={() => setIsSopPresentationOpen(false)}
+          onShowToast={onShowToast}
+        />
+      )}
 
     </div>
 

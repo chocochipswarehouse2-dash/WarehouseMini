@@ -80,7 +80,7 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   const [noTelpPenerima, setNoTelpPenerima] = useState(
     tujuanPengembalian === 'customer' ? (order.no_telp_tujuan || '') : (order.no_telp_store || '')
   );
-  const [ekspedisiKembali, setEkspedisiKembali] = useState(order.jasa_kirim || 'JNE Regular (free)');
+  const [ekspedisiKembali, setEkspedisiKembali] = useState(order.jasa_kirim || 'JNE Regular');
   const [isCustomEkspedisi, setIsCustomEkspedisi] = useState(false);
   const [customEkspedisi, setCustomEkspedisi] = useState('');
   const [resiKembali, setResiKembali] = useState(order.no_resi || '');
@@ -567,11 +567,11 @@ ${catatanKirimKembali ? `📝 *Catatan:* ${catatanKirimKembali}\n` : ''}Produk s
                     }}
                     className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs"
                   >
-                    <option value="JNE Regular (free)">JNE Regular (free)</option>
-                    <option value="JNE YES (ditanggung cust)">JNE YES (ditanggung cust)</option>
-                    <option value="GOSEND (ditanggung cust)">GOSEND (ditanggung cust)</option>
-                    <option value="Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)">Kurir Internal (untuk opsi pilihan kirim kembali ke store asal)</option>
-                    <option value="Drop ke Store Terkait (Pick Up / Handover Store)">Drop ke Store Terkait (Pick Up / Handover Store)</option>
+                    <option value="JNE Regular">JNE Regular</option>
+                    <option value="JNE YES">JNE YES</option>
+                    <option value="GOSEND">GOSEND</option>
+                    <option value="Kurir Internal">Kurir Internal</option>
+                    <option value="Drop ke Store">Drop ke Store</option>
                     <option value="__custom__">+ Ketik Jasa Kirim Lainnya (Manual)</option>
                   </select>
                   {isCustomEkspedisi && (
