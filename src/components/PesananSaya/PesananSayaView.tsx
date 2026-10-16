@@ -168,7 +168,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
 
         {activeTab === 'manual_shipment' && (
           <div>
-             <ManualShipmentTab session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
+             <ManualShipmentTab key={session?.username || 'anonymous'} session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
           </div>
         )}
 

@@ -107,6 +107,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   const [alterActionData, setAlterActionData] = useState<{
     order: ManualShipmentOrder;
     actionType: AlterationActionType;
+    targetItems?: ManualShipmentItem[];
   } | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'card'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
   const [loading, setLoading] = useState(false);
@@ -838,6 +839,14 @@ _WMS Warehouse System_`;
           } catch (e) {
             console.warn('Could not auto-fetch user phone number', e);
           }
+        }
+      }
+
+      // 3. Resolve PIC Store name from user session if not set
+      if (!picStore && session) {
+        const candidatePic = session.name || getUserPersonName(session.username) || '';
+        if (candidatePic && isMounted) {
+          setPicStore(candidatePic);
         }
       }
     };
@@ -2157,6 +2166,11 @@ _WMS Warehouse System_`;
 
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
 
+  // Bersihkan pilihan pesanan jika berganti login/user, sub-tab, stage tab, atau filter arah store
+  useEffect(() => {
+    setSelectedOrders(new Set());
+  }, [session?.username, activeTab, stageTab, filterStoreDirection, filterOrderType, filterStatus]);
+
   const getOrderKey = (o: ManualShipmentOrder) => o.no_pesanan || (o as any).id || '';
 
   const toggleSelectOrder = (no_pesanan: string) => {
@@ -2297,18 +2311,25 @@ _WMS Warehouse System_`;
   const handlePrintPickingList = async (singleOrder?: ManualShipmentOrder) => {
     const itemsToPrint = singleOrder
       ? [singleOrder]
-      : orders.filter(o => {
+      : scopedOrders.filter(o => {
           const k = getOrderKey(o);
           return k && selectedOrders.has(k);
         });
 
     if (itemsToPrint.length === 0) {
-      onShowToast('Pilih setidaknya satu pesanan untuk mencetak picking list', 'info');
+      onShowToast('Pilih setidaknya satu pesanan yang tampil untuk mencetak picking list', 'info');
+      return;
+    }
+
+    // Validasi pesanan memiliki rincian item sebelum diproses cetak
+    const validOrdersToPrint = itemsToPrint.filter(o => ensureOrderItems(o).length > 0);
+    if (validOrdersToPrint.length === 0) {
+      onShowToast('Pesanan yang dipilih tidak memiliki rincian item produk untuk dipicking', 'warning');
       return;
     }
 
     setLoading(true);
-    const enrichedOrders = await enrichOrdersWithLocations(itemsToPrint);
+    const enrichedOrders = await enrichOrdersWithLocations(validOrdersToPrint);
     
     // Update status to diproses dan tandai picking list sudah dicetak
     const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
@@ -3186,7 +3207,18 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                   {isOrderIncomingFulfillment(order) && (
                     <button 
                       type="button"
-                      onClick={() => { setSelectedOrderDetails(null); setAlterActionData({ order, actionType: 'mark_sent_store' }); }}
+                      onClick={() => {
+                        setSelectedOrderDetails(null);
+                        const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'));
+                        const myStoreItems = userAssignedStore
+                          ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
+                          : storeItems;
+                        setAlterActionData({
+                          order,
+                          targetItems: myStoreItems.length > 0 ? myStoreItems : storeItems,
+                          actionType: 'mark_sent_store'
+                        });
+                      }}
                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center transition-colors cursor-pointer shadow-xs"
                       title="Tandai pesanan telah dikirim dari store ke warehouse"
                     >
@@ -5174,7 +5206,7 @@ _WMS Warehouse System_`;
       
       <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-900/50">
         {viewMode === 'table' ? (
-          <table className="min-w-full">
+          <table className="min-w-[1150px] w-full">
             <thead className="bg-white dark:bg-slate-800/90 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 backdrop-blur-xs">
               <tr>
                 {canAction && (
@@ -5193,13 +5225,13 @@ _WMS Warehouse System_`;
                 )}
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Order</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Date</th>
-                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Store / Pengirim</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal min-w-[140px]">Store / Pengirim</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Customer</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Ekspedisi</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Resi / Jadwal Store</th>
                 <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Status</th>
-                <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">Total Items</th>
-                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal">SJ DealPOS (MKT)</th>
+                <th scope="col" className="px-3 py-2 text-center text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal min-w-[100px]">Total Items</th>
+                <th scope="col" className="px-3 py-2 text-left text-[11px] font-semibold text-slate-700 dark:text-slate-300 capitalize tracking-normal min-w-[140px]">SJ DealPOS (MKT)</th>
                 <th scope="col" className="sticky right-0 z-20 px-3 py-2 text-right text-[11px] font-bold text-slate-700 dark:text-slate-300 capitalize tracking-normal min-w-[270px] pr-4 bg-slate-100/90 dark:bg-slate-900 shadow-[-6px_0_10px_-4px_rgba(0,0,0,0.08)] backdrop-blur-xs whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
@@ -5338,7 +5370,19 @@ _WMS Warehouse System_`;
                   </td>
                   <td className="px-3 py-2.5 align-top">
                     <div className="text-[11px] font-semibold text-slate-800 dark:text-white">{order.nama_pengirim}</div>
-                    {order.pic_store && <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">PIC: {order.pic_store}</div>}
+                    {(() => {
+                      const pic = order.pic_store || order.alteration_repair_data?.pic_pemohon || (order.submitted_by && !isSameStore(order.submitted_by, order.nama_pengirim) ? order.submitted_by : '');
+                      return (
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">PIC:</span>
+                          {pic ? (
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-200 dark:border-indigo-800/60">{pic}</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400 italic">Belum diisi</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {isOrderIncomingFulfillment(order) && (
                       <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/70 border border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-200 text-[9.5px] font-black">
                         <Truck className="w-3 h-3 text-orange-600 shrink-0" />
@@ -5648,7 +5692,17 @@ _WMS Warehouse System_`;
                       {isOrderIncomingFulfillment(order) && (
                         <button
                           type="button"
-                          onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
+                          onClick={() => {
+                            const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'));
+                            const myStoreItems = userAssignedStore
+                              ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
+                              : storeItems;
+                            setAlterActionData({
+                              order,
+                              targetItems: myStoreItems.length > 0 ? myStoreItems : storeItems,
+                              actionType: 'mark_sent_store'
+                            });
+                          }}
                           className="px-2 py-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-800 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
                           title="Tandai pesanan telah dikirim dari store ke warehouse"
                         >
@@ -5689,7 +5743,17 @@ _WMS Warehouse System_`;
                           if (action === 'spk') setArReceiptOrder(order);
                           if (action === 'sj_struk') setSjAlterModalOrders([order]);
                           if (action === 'notif_wa_store') handleSendWaStoreNoticeDirect(order);
-                          if (action === 'mark_sent') setAlterActionData({ order, actionType: 'mark_sent_store' });
+                          if (action === 'mark_sent') {
+                            const storeItems = (order.items || []).filter(it => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'));
+                            const myStoreItems = userAssignedStore
+                              ? storeItems.filter(it => isSameStore(it.fulfillment, userAssignedStore))
+                              : storeItems;
+                            setAlterActionData({
+                              order,
+                              targetItems: myStoreItems.length > 0 ? myStoreItems : storeItems,
+                              actionType: 'mark_sent_store'
+                            });
+                          }
                           if (action === 'mark_received') setAlterActionData({ order, actionType: 'mark_received_warehouse' });
                           if (action === 'complete_ship') setAlterActionData({ order, actionType: 'complete_and_ship' });
                           if (action === 'jadwal_store') handleOpenJadwalModal(order);
@@ -5849,7 +5913,19 @@ _WMS Warehouse System_`;
                       <div>
                         <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Pengirim</div>
                         <div className="text-xs font-semibold text-slate-800 dark:text-white">{order.nama_pengirim}</div>
-                        {order.pic_store && <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">PIC: {order.pic_store}</div>}
+                        {(() => {
+                          const effectivePic = order.pic_store || order.alteration_repair_data?.pic_pemohon || order.submitted_by;
+                          return effectivePic ? (
+                            <div className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1">
+                              <User className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <span>PIC: {effectivePic}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-amber-500 dark:text-amber-400 italic mt-0.5">
+                              PIC: Belum diisi
+                            </div>
+                          );
+                        })()}
                         {isOrderIncomingFulfillment(order) && (
                           <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/70 border border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-200 text-[9.5px] font-black">
                             <Truck className="w-3 h-3 text-orange-600 shrink-0" />
@@ -5908,7 +5984,7 @@ _WMS Warehouse System_`;
                             {isOrderIncomingFulfillment(order) && (
                               <button
                                 type="button"
-                                onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store' })}
+                                onClick={() => setAlterActionData({ order, actionType: 'mark_sent_store', targetItems: displayItems })}
                                 className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
                               >
                                 <Truck className="w-3 h-3" />
@@ -6429,6 +6505,7 @@ _WMS Warehouse System_`;
         <AlterationActionModal
           order={alterActionData.order}
           actionType={alterActionData.actionType}
+          targetItems={alterActionData.targetItems}
           session={session}
           onClose={() => setAlterActionData(null)}
           onSuccess={() => {

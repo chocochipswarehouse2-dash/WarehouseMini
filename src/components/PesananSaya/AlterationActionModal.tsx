@@ -27,6 +27,7 @@ export type AlterationActionType = 'mark_sent_store' | 'mark_received_warehouse'
 interface AlterationActionModalProps {
   order: ManualShipmentOrder;
   actionType: AlterationActionType;
+  targetItems?: ManualShipmentItem[];
   session?: any;
   onClose: () => void;
   onSuccess: (updatedOrder: ManualShipmentOrder) => void;
@@ -36,6 +37,7 @@ interface AlterationActionModalProps {
 export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   order,
   actionType,
+  targetItems,
   session,
   onClose,
   onSuccess,
@@ -44,16 +46,29 @@ export const AlterationActionModal: React.FC<AlterationActionModalProps> = ({
   const arData = order.alteration_repair_data || {} as any;
   const isAlterOrder = hasRealAlterItems(order);
 
-  // Prioritaskan Toko Fulfillment spesifik item jika tersedia (misal "Gading Serpong Tangerang"), baru nama pengirim
-  const itemFulfillmentStore = order.items?.find((it: any) => it.fulfillment && !it.fulfillment.toLowerCase().includes('marketplace'))?.fulfillment
-    || order.items?.[0]?.fulfillment
-    || (order.items?.[0] as any)?.toko_asal
-    || (order.items?.[0] as any)?.store_name
+  // Resolusi item spesifik yang relevan dengan tindakan ini (misal item yang difulfill dari store)
+  const relevantItems: ManualShipmentItem[] = useMemo(() => {
+    if (targetItems && targetItems.length > 0) return targetItems;
+    const all = Array.isArray(order.items) ? order.items : [];
+    if (actionType === 'mark_sent_store') {
+      const storeOnly = all.filter(it => {
+        const ful = (it.fulfillment || '').toLowerCase();
+        return ful && !ful.includes('marketplace') && !ful.includes('gudang');
+      });
+      if (storeOnly.length > 0) return storeOnly;
+    }
+    return all;
+  }, [targetItems, order.items, actionType]);
+
+  const activeItem = relevantItems[0] || order.items?.[0];
+  const itemFulfillmentStore = activeItem?.fulfillment
+    || (activeItem as any)?.toko_asal
+    || (activeItem as any)?.store_name
     || '';
 
   const storeName = arData.nama_asal || itemFulfillmentStore || order.nama_pengirim || 'Store';
-  const productName = order.items?.[0]?.nama_produk || 'Produk Pakaian';
-  const sku = order.items?.[0]?.sku || '-';
+  const productName = activeItem?.nama_produk || 'Produk Pakaian';
+  const sku = activeItem?.sku || '-';
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -316,8 +331,8 @@ ${catatanKirimKembali ? `📝 *Catatan:* ${catatanKirimKembali}\n` : ''}Produk s
                 {actionType === 'complete_and_ship' && 'Produk Selesai & Kirim Bukti Pengiriman'}
                 {actionType === 'mark_dealpos_received' && 'Konfirmasi Diterima di Store (DealPOS Received)'}
               </h3>
-              <p className="text-[11px] text-slate-500 font-mono">
-                No. Tiket: {order.no_pesanan} • {productName}
+              <p className="text-[11px] text-slate-500 font-mono truncate max-w-sm sm:max-w-md">
+                No. Tiket: {order.no_pesanan} • {relevantItems.map(i => i.nama_produk).filter(Boolean).join(', ') || productName}
               </p>
             </div>
           </div>
@@ -333,24 +348,41 @@ ${catatanKirimKembali ? `📝 *Catatan:* ${catatanKirimKembali}\n` : ''}Produk s
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
           {/* Ringkasan Barang */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 flex items-center justify-between gap-2">
-            <div>
-              <div className="font-bold text-slate-900 dark:text-white">{productName}</div>
-              <div className="text-[11px] text-slate-500">
-                SKU: {sku} • Toko: <strong>{storeName}</strong>
-              </div>
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                {actionType === 'mark_sent_store' ? 'Produk yang Dikirim oleh Store:' : 'Rincian Produk:'}
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                isAlterOrder
+                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                  : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+              }`}>
+                {arData.layanan_type
+                  ? arData.layanan_type.toUpperCase()
+                  : isAlterOrder
+                  ? 'ALTER & REPAIR'
+                  : 'MANUAL SHIPMENT'}
+              </span>
             </div>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-              isAlterOrder
-                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
-                : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-            }`}>
-              {arData.layanan_type
-                ? arData.layanan_type.toUpperCase()
-                : isAlterOrder
-                ? 'ALTER & REPAIR'
-                : 'MANUAL SHIPMENT'}
-            </span>
+
+            <div className="space-y-1.5">
+              {relevantItems.map((it, idx) => (
+                <div key={it.id || idx} className="flex justify-between items-start gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 first:border-0 first:pt-0">
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white leading-tight">
+                      {it.nama_produk}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      SKU: {it.sku} {it.size && it.size !== 'ALL' && it.size !== '-' ? `| Size: ${it.size}` : ''} • Toko: <strong className="text-blue-600 dark:text-blue-400">{it.fulfillment || storeName}</strong>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-800 dark:text-slate-200 shrink-0">
+                    x{it.qty || 1}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* ======================================================= */}

@@ -103,12 +103,593 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden print:p-0 print:bg-white print:static">
-      <div
-        className={`bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col transition-all duration-300 w-full overflow-hidden ${
-          isFullscreen ? 'fixed inset-0 rounded-none z-[10000]' : 'max-w-6xl max-h-[92vh] h-[850px]'
-        }`}
-      >
+    <>
+      {/* =======================================================================
+          PRINTABLE SOP BOOKLET / PDF EXPORT CONTAINER (A4 FORMAT)
+          Visible ONLY during @media print
+          ======================================================================= */}
+      <div id="printable-sop-booklet" className="hidden print:block w-full bg-white text-slate-900">
+        <style>{`
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 8mm 10mm;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #0f172a !important;
+              height: auto !important;
+              overflow: visible !important;
+            }
+            body * {
+              visibility: hidden !important;
+            }
+            #printable-sop-booklet, #printable-sop-booklet * {
+              visibility: visible !important;
+            }
+            #printable-sop-booklet {
+              display: block !important;
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #0f172a !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+              box-sizing: border-box !important;
+              line-height: 1.4 !important;
+            }
+            .sop-page {
+              page-break-after: always !important;
+              break-after: page !important;
+              box-sizing: border-box !important;
+              background: #ffffff !important;
+              color: #0f172a !important;
+              padding: 4mm 0 6mm 0 !important;
+            }
+            .sop-page:last-child {
+              page-break-after: auto !important;
+              break-after: auto !important;
+            }
+            .sop-box {
+              border: 1px solid #cbd5e1 !important;
+              border-radius: 6px !important;
+              background: #f8fafc !important;
+              color: #0f172a !important;
+              padding: 8px 10px !important;
+              margin-bottom: 8px !important;
+              box-sizing: border-box !important;
+            }
+            .sop-table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              font-size: 10.5px !important;
+              margin-top: 6px !important;
+              margin-bottom: 8px !important;
+            }
+            .sop-table th, .sop-table td {
+              border: 1px solid #cbd5e1 !important;
+              padding: 5px 7px !important;
+              text-align: left !important;
+            }
+            .sop-table th {
+              background-color: #f1f5f9 !important;
+              font-weight: 700 !important;
+              color: #0f172a !important;
+            }
+          }
+        `}</style>
+
+        {/* ------------------------------------------------------------- */}
+        {/* HALAMAN 1: COVER & TAHAP 1 - 2                                */}
+        {/* ------------------------------------------------------------- */}
+        <div className="sop-page space-y-4">
+          {/* Header Dokumen Resmi */}
+          <div className="border-b-2 border-indigo-600 pb-3 flex items-start justify-between">
+            <div>
+              <div className="text-[11px] font-black tracking-widest text-indigo-700 uppercase">CHOCOCHIPS APPAREL • WMS & STORE OPERATIONS</div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
+                STANDARD OPERATING PROCEDURE (SOP) OPERASIONAL
+              </h1>
+              <p className="text-xs text-slate-600 font-medium">
+                Pedoman Lengkap Pemrosesan Manual Shipment, Multi-Store Fulfillment, Modul Alteration / Repair & Panduan UI
+              </p>
+            </div>
+            <div className="text-right text-[10px] text-slate-500 font-mono border-l border-slate-300 pl-3 shrink-0">
+              <div><strong>No. Dokumen:</strong> SOP/OPS/WMS/2026/10</div>
+              <div><strong>Edisi / Revisi:</strong> 2.1 (Official Edition)</div>
+              <div><strong>Tgl Berlaku:</strong> 16 Oktober 2026</div>
+              <div><strong>Sasaran:</strong> Admin Pusat, Gudang, Store</div>
+            </div>
+          </div>
+
+          {/* BAB 1: TAHAP 1 - STORE INPUT PESANAN */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded">BAB 1</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Tahap 1: Store Input Pesanan Manual Shipment & Pendaftaran Sistem
+              </h2>
+            </div>
+            <p className="text-[11px] text-slate-700 leading-relaxed">
+              Seluruh permintaan pengiriman dari outlet store atau pesanan khusus wajib didaftarkan melalui form <strong>Pesanan Saya ➔ Manual Shipment</strong> oleh PIC Store yang bertugas.
+            </p>
+
+            <table className="sop-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '28%' }}>Komponen Form Input</th>
+                  <th>Deskripsi & Ketentuan Pengisian (Wajib)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>1. Toko Pemohon / Pengirim</strong></td>
+                  <td>Pilih cabang outlet asal pengajuan pesanan (contoh: <em>Central Park Jakarta</em>). Sistem mencatat PIC Store yang aktif.</td>
+                </tr>
+                <tr>
+                  <td><strong>2. Data Lengkap Customer</strong></td>
+                  <td>Nama Lengkap Penerima, Nomor WhatsApp Aktif (wajib bisa dihubungi kurir), dan Alamat Lengkap Pengiriman.</td>
+                </tr>
+                <tr>
+                  <td><strong>3. Ekspedisi & Tipe Kirim</strong></td>
+                  <td>Pilih kurir yang disepakati dengan customer: JNE YES / REG, GoSend / Grab Instant, Paxel, atau Pick Up Store.</td>
+                </tr>
+                <tr>
+                  <td><strong>4. Pilihan Tipe Layanan</strong></td>
+                  <td>Pilih salah satu: <em>Manual Shipment Standar</em>, <em>Layanan Alteration (Potong Panjang)</em>, atau <em>Layanan Repair</em>.</td>
+                </tr>
+                <tr>
+                  <td><strong>5. Item Produk & Catatan</strong></td>
+                  <td>Pilih SKU Produk, Ukuran (Size), Jumlah (Qty), dan Catatan Khusus (misal: detail potong 5 cm untuk alterasi).</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="grid grid-cols-3 gap-2 pt-1 text-[10.5px]">
+              <div className="sop-box">
+                <strong className="text-indigo-900 block mb-0.5">🆔 1. No. Invoice Unik Permanen</strong>
+                <span className="text-slate-600">Sistem menerbitkan ID unik permanen (contoh: <code className="font-bold text-indigo-700">MSCPJ-261014-A8JG</code>) sebagai nomor lacak global.</span>
+              </div>
+              <div className="sop-box">
+                <strong className="text-amber-900 block mb-0.5">📌 2. Status 'Perlu Diproses'</strong>
+                <span className="text-slate-600">Pesanan otomatis masuk antrean kerja Tab <strong>Perlu Diproses</strong> untuk ditindaklanjuti Gudang Pusat.</span>
+              </div>
+              <div className="sop-box">
+                <strong className="text-emerald-900 block mb-0.5">💬 3. WA Notif Toko Penyedia</strong>
+                <span className="text-slate-600">Jika item ditarik dari toko fisik lain, pesan WA Fonnte otomatis terkirim ke WhatsApp cabang penyedia.</span>
+              </div>
+            </div>
+          </div>
+
+          {/* BAB 2: TAHAP 2 - PEMROSESAN OLEH ADMIN & GUDANG PUSAT */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded">BAB 2</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Tahap 2: Pemrosesan Order oleh Tim Admin & Gudang Pusat
+              </h2>
+            </div>
+            <p className="text-[11px] text-slate-700 leading-relaxed">
+              Tim Admin dan Runner Gudang bertanggung jawab memproses pesanan di tab <strong>Perlu Diproses</strong> melalui 3 dokumen fisik:
+            </p>
+
+            <div className="grid grid-cols-3 gap-2 text-[10.5px]">
+              <div className="sop-box border-l-4 border-l-sky-500">
+                <strong className="text-slate-900 block font-bold mb-1">1. Cetak Picking List (A4)</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Petugas menekan tombol <strong>Cetak Picking List</strong> untuk mencetak lembar ambilan barang dari rak gudang / toko. Tertera SKU dan lokasi rak.
+                </p>
+              </div>
+              <div className="sop-box border-l-4 border-l-amber-500">
+                <strong className="text-slate-900 block font-bold mb-1">2. Cetak Label A6 Stiker</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Menekan tombol <strong>Cetak Label A6</strong> pada printer thermal. Stiker ditempel pada kemasan luar kardus/polybag paket pengiriman.
+                </p>
+              </div>
+              <div className="sop-box border-l-4 border-l-emerald-500">
+                <strong className="text-slate-900 block font-bold mb-1">3. Cetak SJ Struk Rangkap 2</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Menekan tombol <strong>Cetak SJ Struk</strong>: Lembar 1 untuk arsip toko, Lembar 2 ditempelkan pada fisik pakaian yang ditarik.
+                </p>
+              </div>
+            </div>
+
+            <div className="sop-box bg-indigo-50 border-indigo-200 text-[11px] leading-relaxed">
+              <strong className="text-indigo-900">📌 Prosedur Pengisian No. SJ DealPOS (Khusus Stok Gudang Utama / Marketplace):</strong>
+              <p className="text-slate-700 text-[10px] mt-0.5">
+                Untuk produk yang dipenuhi dari alokasi Gudang Utama, Admin menekan tombol <strong>+ Input SJ DealPOS</strong> dan mengisi nomor Surat Jalan DealPOS (contoh: <code className="font-bold text-indigo-800">26.10.00035</code>). Sistem otomatis mencatat pemotongan stok di DealPOS tanpa memerlukan kurir fisik antar-toko.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ------------------------------------------------------------- */}
+        {/* HALAMAN 2: TAHAP 3 & CASE STUDY 1 - 2                         */}
+        {/* ------------------------------------------------------------- */}
+        <div className="sop-page space-y-4">
+          <div className="text-[10px] font-mono text-slate-400 border-b border-slate-200 pb-1 flex justify-between">
+            <span>CHOCOCHIPS WMS SOP OPERASIONAL</span>
+            <span>BAB 3, BAB 4, & BAB 5</span>
+          </div>
+
+          {/* BAB 3: TAHAP 3 - PENGIRIMAN, INPUT RESI & WA CUSTOMER */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded">BAB 3</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Tahap 3: Pengiriman, Input Nomor Resi & Notifikasi WhatsApp Customer
+              </h2>
+            </div>
+            <p className="text-[11px] text-slate-700 leading-relaxed">
+              Setelah barang fisik tiba lengkap di meja packing dan diserahkan ke kurir ekspedisi, Admin wajib memperbarui data pengiriman:
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 text-[11px]">
+              <div className="sop-box space-y-1.5">
+                <strong className="text-slate-900 block border-b border-slate-200 pb-1">1. Prosedur Input Nomor Resi Resmi</strong>
+                <ol className="list-decimal list-inside text-slate-600 space-y-1 text-[10.5px]">
+                  <li>Admin menekan tombol <strong>+ Input Resi</strong> atau <strong>Update Resi Massal</strong>.</li>
+                  <li>Pilih nama ekspedisi resmi (JNE, GoSend, Paxel, Grab, J&T, dsb).</li>
+                  <li>Ketik nomor resi asli dari pihak ekspedisi.</li>
+                  <li>Status pesanan otomatis berubah menjadi <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 font-bold rounded">Dikirim</span>.</li>
+                </ol>
+              </div>
+
+              <div className="sop-box space-y-1.5">
+                <strong className="text-slate-900 block border-b border-slate-200 pb-1">2. Pengiriman Notifikasi WhatsApp Customer</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Klik tombol <strong>💬 Kirim WA Customer</strong>. Sistem membuka template pesan WhatsApp resmi yang otomatis memuat nomor resi dan nama customer:
+                </p>
+                <div className="p-2 bg-slate-100 border border-slate-300 rounded text-[9.5px] font-mono text-slate-800 space-y-0.5">
+                  <div className="font-bold text-emerald-700">Halo Sis [Nama Customer],</div>
+                  <div>Pesanan #[No. Invoice] di Chocochips telah dikirim via [Jasa Kirim]!</div>
+                  <div>No. Resi: <strong>[Nomor Resi Resmi]</strong></div>
+                  <div className="text-slate-500">Terima kasih telah berbelanja di Chocochips! ✨</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* BAB 4: CASE STUDY 1 - MULTI-STORE FULFILLMENT */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded">BAB 4</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Case Study 1: Multi-Store Fulfillment (Pemisahan Tugas Item Lintas Toko)
+              </h2>
+            </div>
+            <p className="text-[11px] text-slate-700 leading-relaxed">
+              Jika dalam 1 nomor invoice terdapat beberapa item produk yang diambil dari sumber alokasi berbeda (Gudang vs Toko Cabang):
+            </p>
+
+            <div className="sop-box bg-slate-50 border-slate-300 text-[10.5px] space-y-2">
+              <strong className="text-amber-900 block font-bold">Studi Kasus Riil: Order #MSCPJ-261014-A8JG (Pemohon: Central Park Jakarta)</strong>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="p-2 bg-white rounded border border-amber-300 space-y-1">
+                  <div className="font-bold text-amber-900">Item 1: Fernanda Top Cream (Marketplace / Gudang)</div>
+                  <div className="text-slate-600">• Alokasi dari stok Gudang Utama Pusat.</div>
+                  <div className="text-slate-600">• Admin Gudang menginput No. SJ DealPOS (<code className="text-indigo-700">26.10.00035</code>).</div>
+                  <div className="text-emerald-700 font-semibold">• Toko Central Park TIDAK PERLU mengirimkan barang ini dari toko fisik.</div>
+                </div>
+                <div className="p-2 bg-white rounded border border-blue-300 space-y-1">
+                  <div className="font-bold text-blue-900">Item 2: Yabell Dress Dark Red (By The Sea PIK)</div>
+                  <div className="text-slate-600">• Alokasi ditarik dari rak toko By The Sea PIK.</div>
+                  <div className="text-slate-600">• Notifikasi WA penarikan otomatis terkirim ke WhatsApp resmi store BTS.</div>
+                  <div className="text-blue-800 font-semibold">• Tim By The Sea PIK mencetak SJ Struk & menekan 'Kirim ke Gudang'.</div>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-600 italic">
+                *Prinsip Sistem: Toko pemohon dan toko penyedia hanya melihat tugas masing-masing. Tidak terjadi duplikasi pengiriman.
+              </p>
+            </div>
+          </div>
+
+          {/* BAB 5: CASE STUDY 2 - PENANGANAN STOK KOSONG / SOLD OUT */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-bold rounded">BAB 5</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Case Study 2: Penanganan Stok Kosong / Sold Out & Pengalihan Alokasi
+              </h2>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2 text-[10.5px]">
+              <div className="sop-box border-rose-200 space-y-1">
+                <strong className="text-rose-900 block font-bold">1. Tandai 'Sold Out'</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Jika produk di toko penyedia ternyata kosong atau reject fisik, staf toko menekan tombol <strong>Tandai Sold Out</strong> pada item tersebut.
+                </p>
+              </div>
+              <div className="sop-box border-amber-200 space-y-1">
+                <strong className="text-amber-900 block font-bold">2. Auto Alert WhatsApp</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Sistem otomatis mengirimkan pesan peringatan ke WA Admin Pusat: <em>"⚠️ STOK SOLD OUT untuk Order #MSCPJ-xxx. Mohon pengalihan alokasi."</em>
+                </p>
+              </div>
+              <div className="sop-box border-emerald-200 space-y-1">
+                <strong className="text-emerald-900 block font-bold">3. Admin Pindah Alokasi</strong>
+                <p className="text-slate-600 text-[10px]">
+                  Admin Pusat membuka <strong>Edit Pesanan</strong>, lalu mengalihkan alokasi toko ke cabang lain yang memiliki stok (misal: Senayan City). WA penarikan baru terkirim ke toko tujuan baru.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ------------------------------------------------------------- */}
+        {/* HALAMAN 3: CASE STUDY 3 & CASE STUDY 4                        */}
+        {/* ------------------------------------------------------------- */}
+        <div className="sop-page space-y-4">
+          <div className="text-[10px] font-mono text-slate-400 border-b border-slate-200 pb-1 flex justify-between">
+            <span>CHOCOCHIPS WMS SOP OPERASIONAL</span>
+            <span>BAB 6 & BAB 7</span>
+          </div>
+
+          {/* BAB 6: CASE STUDY 3 - MODUL ALTERATION & REPAIR */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-bold rounded">BAB 6</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Case Study 3: Modul Alteration & Repair (SPK Penjahit & QC Ukuran)
+              </h2>
+            </div>
+            <p className="text-[11px] text-slate-700 leading-relaxed">
+              Prosedur penanganan khusus pakaian yang membutuhkan pemotongan panjang, pengecilan ukuran, atau perbaikan kancing/resleting sebelum dikirim ke pelanggan.
+            </p>
+
+            {/* 7 Tahapan Alterasi */}
+            <div className="sop-box space-y-2">
+              <strong className="text-slate-900 text-xs block font-bold">Siklus 7 Tahapan Status Flow Alteration:</strong>
+              <div className="grid grid-cols-4 gap-1.5 text-[9.5px]">
+                <div className="p-1.5 bg-amber-50 border border-amber-300 rounded">
+                  <div className="font-bold text-amber-900">1. Diajukan</div>
+                  <div className="text-slate-600">Store input form + detail potong</div>
+                </div>
+                <div className="p-1.5 bg-blue-50 border border-blue-300 rounded">
+                  <div className="font-bold text-blue-900">2. Dikirim Store</div>
+                  <div className="text-slate-600">Fisik baju dikirim ke gudang</div>
+                </div>
+                <div className="p-1.5 bg-indigo-50 border border-indigo-300 rounded">
+                  <div className="font-bold text-indigo-900">3. Diterima Gudang</div>
+                  <div className="text-slate-600">Verifikasi fisik di gudang</div>
+                </div>
+                <div className="p-1.5 bg-purple-50 border border-purple-300 rounded">
+                  <div className="font-bold text-purple-900">4. Pengerjaan Jahit</div>
+                  <div className="text-slate-600">Proses jahit via SPK</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 text-[9.5px] pt-1">
+                <div className="p-1.5 bg-teal-50 border border-teal-300 rounded">
+                  <div className="font-bold text-teal-900">5. Selesai QC Ukuran</div>
+                  <div className="text-slate-600">Pemeriksaan cm potong & jahitan</div>
+                </div>
+                <div className="p-1.5 bg-sky-50 border border-sky-300 rounded">
+                  <div className="font-bold text-sky-900">6. Dikirim Kembali</div>
+                  <div className="text-slate-600">Kirim ke Customer / Store</div>
+                </div>
+                <div className="p-1.5 bg-emerald-50 border border-emerald-300 rounded">
+                  <div className="font-bold text-emerald-900">7. Selesai (Closed)</div>
+                  <div className="text-slate-600">Pesanan tuntas diterima</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-[10.5px]">
+              <div className="sop-box">
+                <strong className="text-slate-900 block font-bold mb-0.5">✂️ Cetak SPK Penjahit</strong>
+                <p className="text-slate-600 text-[10px]">Cetak lembar kerja penjahit (format A4 atau 100x150) lengkap dengan QR Code lacak dan instruksi cm pemotongan.</p>
+              </div>
+              <div className="sop-box">
+                <strong className="text-slate-900 block font-bold mb-0.5">💬 WA Update Progres</strong>
+                <p className="text-slate-600 text-[10px]">Sistem mengirim notifikasi WA berkala ke customer terkait perkembangan proses jahit hingga selesai QC.</p>
+              </div>
+              <div className="sop-box">
+                <strong className="text-slate-900 block font-bold mb-0.5">🛡️ Verifikasi Akhir QC</strong>
+                <p className="text-slate-600 text-[10px]">Petugas QC wajib mengukur ulang panjang baju dengan meteran kain sebelum baju dibungkus kembali.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* BAB 7: CASE STUDY 4 - PEMBATALAN ORDER & PANDUAN TOMBOL UI */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded">BAB 7</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Case Study 4: Pembatalan Order & Cheat Sheet Tombol Aksi UI
+              </h2>
+            </div>
+
+            <div className="sop-box bg-slate-50 border-slate-300 text-[10.5px] space-y-1 mb-2">
+              <strong className="text-slate-900 font-bold">Ketentuan Pembatalan (Cancel) & Penukaran:</strong>
+              <div className="text-slate-600 text-[10px]">
+                • <strong>Customer Batal:</strong> Admin menekan tombol <strong>Edit</strong> $\rightarrow$ Ubah status ke <strong>Batal</strong>. Order tidak lagi ditagihkan ke toko.<br />
+                • <strong>Penukaran Size:</strong> Wajib menerbitkan pesanan baru bertipe <strong>Repair / Penukaran</strong> agar riwayat mutasi stok fisik di rak tetap akurat.
+              </div>
+            </div>
+
+            <table className="sop-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '25%' }}>Tombol Aksi UI</th>
+                  <th style={{ width: '22%' }}>Format Cetak / Tipe</th>
+                  <th>Fungsi Operasional & Petunjuk Penggunaan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>📄 Cetak Picking List</strong></td>
+                  <td>Kertas HVS A4 Standar</td>
+                  <td>Mencetak daftar SKU & lokasi rak gudang untuk tim runner pengambil barang.</td>
+                </tr>
+                <tr>
+                  <td><strong>🏷️ Cetak Label A6</strong></td>
+                  <td>Stiker Thermal A6 (100x150)</td>
+                  <td>Ditempel pada kemasan luar kardus/plastik paket. Memuat alamat & barcode invoice.</td>
+                </tr>
+                <tr>
+                  <td><strong>🖨️ Cetak SJ Struk</strong></td>
+                  <td>Struk Thermal (Rangkap 2)</td>
+                  <td>Lembar 1 disimpan sebagai arsip fisik toko, Lembar 2 ditempelkan pada fisik pakaian.</td>
+                </tr>
+                <tr>
+                  <td><strong>✂️ Cetak SPK Penjahit</strong></td>
+                  <td>Kertas A4 / Thermal 100x150</td>
+                  <td>Lembar instruksi khusus penjahit dengan detail potong cm dan verifikasi QC.</td>
+                </tr>
+                <tr>
+                  <td><strong>+ Input SJ DealPOS</strong></td>
+                  <td>Modal Form Input No. SJ</td>
+                  <td>Mencatat nomor SJ DealPOS untuk pemotongan otomatis stok Gudang Utama (Marketplace).</td>
+                </tr>
+                <tr>
+                  <td><strong>💬 Kirim WA Customer</strong></td>
+                  <td>Integrasi WhatsApp Fonnte</td>
+                  <td>Mengirimkan notifikasi nomor resi pengiriman resmi secara langsung ke nomor customer.</td>
+                </tr>
+                <tr>
+                  <td><strong>🚚 Kirim ke Gudang</strong></td>
+                  <td>Konfirmasi Aksi Store</td>
+                  <td>Store penyedia mengonfirmasi bahwa fisik baju telah diserahkan ke kurir pengantar.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ------------------------------------------------------------- */}
+        {/* HALAMAN 4: CHECKLIST HARIAN & LEMBAR PENGESAHAN              */}
+        {/* ------------------------------------------------------------- */}
+        <div className="sop-page space-y-4">
+          <div className="text-[10px] font-mono text-slate-400 border-b border-slate-200 pb-1 flex justify-between">
+            <span>CHOCOCHIPS WMS SOP OPERASIONAL</span>
+            <span>BAB 8 & LEMBAR PENGESAHAN RESMI</span>
+          </div>
+
+          {/* BAB 8: CHECKLIST OPERASIONAL HARIAN */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">BAB 8</span>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                Checklist & Best Practices Operasional Harian
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-[10.5px]">
+              {/* Checklist Store */}
+              <div className="sop-box border-l-4 border-l-sky-500 space-y-2">
+                <strong className="text-sky-950 font-bold block border-b border-slate-200 pb-1">
+                  🏢 Checklist Harian Tim Outlet Store:
+                </strong>
+                <ul className="space-y-1.5 text-slate-700 text-[10px]">
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-sky-600 mt-0.5">☑</span>
+                    <span>Buka menu <strong>Pesanan Saya ➔ Manual Shipment</strong> setiap pagi (pukul 10:00) dan periksa pesan WA Fonnte penarikan barang.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-sky-600 mt-0.5">☑</span>
+                    <span>Tarik produk fisik dari rak toko sesuai daftar SKU, ukuran, dan jumlah yang tertera.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-sky-600 mt-0.5">☑</span>
+                    <span>Cetak <strong>SJ Struk Thermal Rangkap 2</strong> (Lembar 1 arsip toko, Lembar 2 ditempel pada polybag baju).</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-sky-600 mt-0.5">☑</span>
+                    <span>Serahkan barang ke kurir titipan dan tekan tombol <strong>🚚 Kirim ke Gudang</strong> di sistem.</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Checklist Admin */}
+              <div className="sop-box border-l-4 border-l-indigo-500 space-y-2">
+                <strong className="text-indigo-950 font-bold block border-b border-slate-200 pb-1">
+                  🛡️ Checklist Harian Tim Admin Pusat & Gudang:
+                </strong>
+                <ul className="space-y-1.5 text-slate-700 text-[10px]">
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-indigo-600 mt-0.5">☑</span>
+                    <span>Pantau tab <strong>Perlu Diproses</strong> dan cetak Picking List untuk runner gudang.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-indigo-600 mt-0.5">☑</span>
+                    <span>Verifikasi fisik pakaian yang tiba dari toko cabang dengan mencocokkan Lembar 2 SJ Struk Thermal.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-indigo-600 mt-0.5">☑</span>
+                    <span>Cetak <strong>Label A6 Stiker Thermal</strong> untuk ditempelkan pada kemasan paket luar.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold text-indigo-600 mt-0.5">☑</span>
+                    <span>Input nomor resi resmi ekspedisi dan kirimkan notifikasi WA ke customer via tombol <strong>💬 Kirim WA Customer</strong>.</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Golden Rules */}
+            <div className="sop-box bg-amber-50 border-amber-300 text-[10.5px] space-y-1">
+              <strong className="text-amber-950 font-bold block">⚠️ Ketentuan Kepatuhan & Golden Rules:</strong>
+              <div className="text-slate-700 text-[10px] space-y-0.5">
+                <div>1. <strong>Larangan Kirim Tanpa SJ Struk:</strong> Seluruh pakaian yang dikirim dari store WAJIB ditempeli Lembar 2 SJ Struk Thermal fisik.</div>
+                <div>2. <strong>Larangan Mengubah Alokasi Toko Lain:</strong> Store hanya berhak memproses item yang dialokasikan ke cabangnya sendiri.</div>
+                <div>3. <strong>Batas Waktu Input Resi:</strong> Seluruh resi pengiriman hari bersangkutan wajib diinput ke sistem sebelum pukul 18:00 WIB.</div>
+              </div>
+            </div>
+          </div>
+
+          {/* LEMBAR PENGESAHAN DOKUMEN RESMI */}
+          <div className="pt-4 border-t-2 border-slate-300 space-y-2">
+            <div className="text-center font-bold text-xs uppercase tracking-wider text-slate-900">
+              Lembar Pengesahan dan Validasi Dokumen SOP Operasional
+            </div>
+            <p className="text-[10px] text-center text-slate-500">
+              Dokumen SOP ini telah diperiksa dan disahkan sebagai acuan operasional resmi PT Chocochips Apparel.
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 pt-3 text-center text-[10.5px]">
+              <div className="border border-slate-300 rounded p-3">
+                <div className="text-slate-500 text-[10px]">Disiapkan Oleh:</div>
+                <div className="h-14 flex items-end justify-center font-bold text-slate-900 border-b border-dotted border-slate-400 pb-1">
+                  Operational & WMS Specialist
+                </div>
+                <div className="text-[9.5px] text-slate-500 mt-1">Tim IT & WMS Operations</div>
+              </div>
+
+              <div className="border border-slate-300 rounded p-3">
+                <div className="text-slate-500 text-[10px]">Diperiksa Oleh:</div>
+                <div className="h-14 flex items-end justify-center font-bold text-slate-900 border-b border-dotted border-slate-400 pb-1">
+                  Warehouse & Inventory Manager
+                </div>
+                <div className="text-[9.5px] text-slate-500 mt-1">Gudang Utama Chocochips</div>
+              </div>
+
+              <div className="border border-slate-300 rounded p-3">
+                <div className="text-slate-500 text-[10px]">Disetujui Oleh:</div>
+                <div className="h-14 flex items-end justify-center font-bold text-slate-900 border-b border-dotted border-slate-400 pb-1">
+                  Director of Retail Operations
+                </div>
+                <div className="text-[9.5px] text-slate-500 mt-1">Management Chocochips</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* =======================================================================
+          INTERACTIVE PRESENTATION MODAL (SCREEN ONLY)
+          ======================================================================= */}
+      <div className="fixed inset-0 z-[9999] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden print:hidden">
+        <div
+          className={`bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col transition-all duration-300 w-full overflow-hidden ${
+            isFullscreen ? 'fixed inset-0 rounded-none z-[10000]' : 'max-w-6xl max-h-[92vh] h-[850px]'
+          }`}
+        >
         {/* HEADER TOOLBAR */}
         <div className="px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -809,5 +1390,8 @@ export const SopPresentationModal: React.FC<SopPresentationModalProps> = ({
 
       </div>
     </div>
-  );
+  </>
+);
 };
+
+

@@ -438,13 +438,14 @@ html.dark {
     background-color: transparent !important;
   }
 
-  /* Isolasi area cetak Surat Jalan Struk Kasir (58mm / 80mm) */
+  /* Isolasi area cetak Surat Jalan Struk Kasir (58mm / 80mm) & Dokumen SOP */
   #printableSuratJalanKasir,
   #printableAlterationRepairReceipt,
   #manual-shipment-print-area,
   #printable-surat-jalan-area,
   #printable-koli-area,
-  #printable-sticker-area {
+  #printable-sticker-area,
+  #printable-sop-booklet {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
