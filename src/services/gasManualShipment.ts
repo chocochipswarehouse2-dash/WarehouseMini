@@ -844,8 +844,30 @@ export async function fetchManualShipments(): Promise<ManualShipmentOrder[]> {
       const isAlterationRepair = isArPrefix || hasValidArData(alteration_repair_data);
       const order_type = isAlterationRepair ? 'alteration_repair' : 'manual_shipment';
 
+      // Parse & normalize items array (bisa berupa Array, string JSON, atau flat properties)
+      let rawItems: any = item.items;
+      if (typeof rawItems === 'string' && rawItems.trim()) {
+        try {
+          rawItems = JSON.parse(rawItems);
+        } catch {}
+      }
+
+      let parsedItems: ManualShipmentItem[] = Array.isArray(rawItems) ? rawItems : [];
+
+      if (parsedItems.length === 0 && (item.sku || item.nama_produk)) {
+        parsedItems = [{
+          id: item.id || `item-1`,
+          sku: item.sku || '',
+          nama_produk: item.nama_produk || '',
+          size: item.size || 'Default',
+          qty: Number(item.qty) || 1,
+          fulfillment: item.nama_pengirim || '',
+        }];
+      }
+
       return {
         ...item,
+        items: parsedItems,
         order_type,
         notes_paket: notes,
         alteration_repair_data,

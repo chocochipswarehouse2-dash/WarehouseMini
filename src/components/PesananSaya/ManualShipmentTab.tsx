@@ -59,6 +59,33 @@ interface ManualShipmentViewProps {
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+export function ensureOrderItems(o: ManualShipmentOrder): ManualShipmentItem[] {
+  if (!o) return [];
+  let rawItems: any = o.items;
+  if (typeof rawItems === 'string' && rawItems.trim()) {
+    try {
+      rawItems = JSON.parse(rawItems);
+    } catch {}
+  }
+
+  if (Array.isArray(rawItems) && rawItems.length > 0) {
+    return rawItems;
+  }
+
+  if ((o as any).sku || (o as any).nama_produk) {
+    return [{
+      id: o.id || `${o.no_pesanan || 'item'}-1`,
+      sku: (o as any).sku || '',
+      nama_produk: (o as any).nama_produk || '',
+      size: (o as any).size || 'Default',
+      qty: Number((o as any).qty) || 1,
+      fulfillment: o.nama_pengirim || '',
+    }];
+  }
+
+  return [];
+}
+
 export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   session,
   productCatalog,
@@ -2148,7 +2175,8 @@ _WMS Warehouse System_`;
 
     const allSkus: string[] = [];
     targetOrders.forEach(o => {
-      (o.items || []).forEach(it => {
+      const items = ensureOrderItems(o);
+      items.forEach(it => {
         if (it.sku) {
           const cleanSku = it.sku.trim().toUpperCase();
           if (cleanSku) allSkus.push(cleanSku);
@@ -2156,7 +2184,12 @@ _WMS Warehouse System_`;
       });
     });
 
-    if (allSkus.length === 0) return targetOrders;
+    if (allSkus.length === 0) {
+      return targetOrders.map(o => ({
+        ...o,
+        items: ensureOrderItems(o),
+      }));
+    }
 
     try {
       const stockItems = await fetchStockForSkus(allSkus);
@@ -2214,22 +2247,28 @@ _WMS Warehouse System_`;
       }
 
       // 3. Map enriched locations back onto order items
-      return targetOrders.map(o => ({
-        ...o,
-        items: (o.items || []).map(it => {
-          const cleanSku = (it.sku || '').trim().toUpperCase();
-          const foundLoc = skuLocationMap.get(cleanSku);
-          const currentLoc = (it as any).lokasi;
-          const finalLoc = foundLoc || (currentLoc && currentLoc !== '-' ? currentLoc : '-');
-          return {
-            ...it,
-            lokasi: finalLoc,
-          };
-        })
-      }));
+      return targetOrders.map(o => {
+        const items = ensureOrderItems(o);
+        return {
+          ...o,
+          items: items.map(it => {
+            const cleanSku = (it.sku || '').trim().toUpperCase();
+            const foundLoc = skuLocationMap.get(cleanSku);
+            const currentLoc = (it as any).lokasi;
+            const finalLoc = foundLoc || (currentLoc && currentLoc !== '-' ? currentLoc : '-');
+            return {
+              ...it,
+              lokasi: finalLoc,
+            };
+          }),
+        };
+      });
     } catch (err) {
       console.warn('Gagal memuat lokasi rak untuk picking list:', err);
-      return targetOrders;
+      return targetOrders.map(o => ({
+        ...o,
+        items: ensureOrderItems(o),
+      }));
     }
   };
 
@@ -7309,7 +7348,10 @@ _WMS Warehouse System_`;
             (() => {
               const todayStr = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
               const totalOrders = printPayload.orders.length;
-              const totalAllQty = printPayload.orders.reduce((acc, o) => acc + (o.items || []).reduce((q, it) => q + (Number(it.qty) || 0), 0), 0);
+              const totalAllQty = printPayload.orders.reduce((acc, o) => {
+                const items = ensureOrderItems(o);
+                return acc + items.reduce((q, it) => q + (Number(it.qty) || 0), 0);
+              }, 0);
               const operatorName = session?.name || getUserPersonName(session?.username) || 'Petugas Gudang';
 
               return (
@@ -7357,9 +7399,10 @@ _WMS Warehouse System_`;
                     </thead>
                     <tbody>
                       {printPayload.orders.map((order, orderIdx) => {
-                        const rowCount = order.items?.length || 1;
+                        const items = ensureOrderItems(order);
+                        const rowCount = items.length || 1;
                         
-                        return (order.items || []).map((item, itemIdx) => (
+                        return items.map((item, itemIdx) => (
                           <tr key={`${order.no_pesanan}-${itemIdx}`}>
                             {/* Order-level merged columns */}
                             {itemIdx === 0 && (
