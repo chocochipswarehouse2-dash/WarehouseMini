@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table, GitFork
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table, GitFork, ShieldAlert
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -18,6 +18,9 @@ import { WaStoreNoticeModal } from './WaStoreNoticeModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import { BulkUpdateResiModal } from './BulkUpdateResiModal';
 import { SopPresentationModal } from './SopPresentationModal';
+import { StoreHelpModal } from './StoreHelpModal';
+import { SuperadminKnowledgeHubModal } from './SuperadminKnowledgeHubModal';
+import { fetchStoreHelpTickets } from '../../services/storeHelpService';
 import { isRealAlterItem, hasRealAlterItems, getRealAlterItems, orderNeedsResi, isKirimKeStoreOrder, isExternalCourier } from '../../utils/alterationUtils';
 import {
   fetchOutlets,
@@ -123,6 +126,25 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
       sessionStorage.setItem('manual_shipment_view_mode', mode);
     } catch {}
   };
+
+  // Help & Q&A Knowledge Hub
+  const [isStoreHelpOpen, setIsStoreHelpOpen] = useState(false);
+  const [isSuperadminHubOpen, setIsSuperadminHubOpen] = useState(false);
+  const [unansweredTicketsCount, setUnansweredTicketsCount] = useState(0);
+
+  const refreshUnansweredCount = () => {
+    if (userIsAdmin) {
+      fetchStoreHelpTickets().then(tickets => {
+        const count = (tickets || []).filter(t => t.status === 'unanswered').length;
+        setUnansweredTicketsCount(count);
+      }).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    refreshUnansweredCount();
+  }, [userIsAdmin]);
+
   const [loading, setLoading] = useState(false);
   const [outlets, setOutlets] = useState<OutletItem[]>([]);
 
@@ -6622,13 +6644,46 @@ _WMS Warehouse System_`;
           </button>
         </div>
 
-        {pengirim && (
-          <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Store: <strong className="text-slate-900 dark:text-white font-semibold">{pengirim}</strong></span>
-            {picStore && <span className="text-slate-400 text-[11px]">(PIC: {picStore})</span>}
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {pengirim && (
+            <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Store: <strong className="text-slate-900 dark:text-white font-semibold">{pengirim}</strong></span>
+              {picStore && <span className="text-slate-400 text-[11px]">(PIC: {picStore})</span>}
+            </div>
+          )}
+
+          {/* Tombol Bantuan Flow untuk Store & Admin */}
+          <button
+            type="button"
+            id="btn-store-help-flow"
+            onClick={() => setIsStoreHelpOpen(true)}
+            className="px-3 py-1.5 text-xs font-bold rounded-xl bg-linear-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Pusat Bantuan Flow & FAQ Pesanan Store (Tanya Jawab & Panduan Solusi)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+            <span>💡 Bantuan Flow</span>
+          </button>
+
+          {/* Tombol Hub Superadmin (Khusus Superadmin/Admin) */}
+          {userIsAdmin && (
+            <button
+              type="button"
+              id="btn-superadmin-hub"
+              onClick={() => setIsSuperadminHubOpen(true)}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-linear-to-r from-amber-500/15 via-orange-500/15 to-amber-500/15 hover:from-amber-500/25 hover:to-orange-500/25 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Hub Superadmin: Kelola Pertanyaan Store, Salin Prompt ke AI Developer & Kelola FAQ"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>🛡️ Hub Superadmin</span>
+              {unansweredTicketsCount > 0 && (
+                <span className="px-1.5 py-0.2 text-[10px] font-black rounded-full bg-rose-500 text-white animate-pulse">
+                  {unansweredTicketsCount}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="w-full">
@@ -7829,6 +7884,25 @@ _WMS Warehouse System_`;
         onConfirmCancel={handleConfirmCancelOrder}
         isSubmitting={isSubmittingCancel}
       />
+
+      {/* Modal Pusat Bantuan Store (FAQ & Tanya Jawab Alur) */}
+      <StoreHelpModal
+        isOpen={isStoreHelpOpen}
+        onClose={() => setIsStoreHelpOpen(false)}
+        session={session}
+        onShowToast={onShowToast}
+      />
+
+      {/* Modal Hub Superadmin (Eskalasi, Salin Prompt Developer, FAQ Sync) */}
+      {userIsAdmin && (
+        <SuperadminKnowledgeHubModal
+          isOpen={isSuperadminHubOpen}
+          onClose={() => setIsSuperadminHubOpen(false)}
+          session={session}
+          onShowToast={onShowToast}
+          onTicketsUpdated={refreshUnansweredCount}
+        />
+      )}
     </>
   );
 };

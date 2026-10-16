@@ -1383,4 +1383,54 @@ export interface RiwayatHandoverPaket {
   updated_at?: string;
 }
 
+// =============================================================================
+// STORE HELP & SUPERADMIN KNOWLEDGE / BACKLOG HUB TYPES
+// =============================================================================
+
+export interface StoreHelpBadge {
+  label: string;
+  color?: 'indigo' | 'rose' | 'amber' | 'emerald' | 'purple' | 'blue';
+  icon?: string;
+}
+
+export interface StoreHelpStep {
+  step: number;
+  title: string;
+  desc: string;
+}
+
+export interface StoreFaqItem {
+  id?: string;
+  category: 'manual_shipment' | 'alteration_repair' | 'multi_store' | 'resi_tracking' | 'stok_dealpos' | 'umum';
+  question: string;
+  answer: string;
+  keywords?: string[];
+  button_badges?: StoreHelpBadge[];
+  action_steps?: StoreHelpStep[];
+  image_url?: string;
+  view_count?: number;
+  is_pinned?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type StoreHelpTicketStatus = 'unanswered' | 'in_development' | 'resolved' | 'converted_to_faq';
+
+export interface StoreHelpTicket {
+  id?: string;
+  store_name: string;
+  pic_name?: string;
+  category?: string;
+  question: string;
+  detail?: string;
+  order_id?: string;
+  status?: StoreHelpTicketStatus;
+  ai_analysis?: string;
+  admin_notes?: string;
+  created_at?: string;
+  resolved_at?: string;
+  resolved_by?: string;
+}
+
+
 

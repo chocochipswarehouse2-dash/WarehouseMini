@@ -88,6 +88,8 @@ const ALL_MIGRATION_TABLES: Omit<TableMigrationItem, 'sourceCount' | 'targetCoun
   { name: 'outlet_config', label: '23. Konfigurasi Store Outlet (outlet_config)' },
   { name: 'wms_settings', label: '24. Pengaturan Global WMS & GAS (wms_settings)' },
   { name: 'ig_live_orders', label: '25. Pesanan IG Live (ig_live_orders)' },
+  { name: 'store_help_faq', label: '26. Basis Pengetahuan Store FAQ (store_help_faq)' },
+  { name: 'store_help_tickets', label: '27. Tiket & Eskalasi Store (store_help_tickets)' },
 ];
 
 export const SupabaseMigrationView: React.FC = () => {

@@ -75,6 +75,7 @@ import { SuratJalanAlterReceiptModal } from './SuratJalanAlterReceiptModal';
 import { AlterationActionModal, AlterationActionType } from './AlterationActionModal';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
+import { StoreHelpModal } from './StoreHelpModal';
 import { compressImage } from '../../utils/imageCompressor';
 import { uploadImageToGdrive } from '../../services/gdriveUpload';
 
@@ -167,6 +168,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [cameraModalItemIndex, setCameraModalItemIndex] = useState<number | null>(null);
   const [submittedSummaryOrder, setSubmittedSummaryOrder] = useState<ManualShipmentOrder | null>(null);
+  const [isStoreHelpOpen, setIsStoreHelpOpen] = useState(false);
 
   // Form Creation State
   const [formSource, setFormSource] = useState<AlterationSourceType>('store');
@@ -899,6 +901,17 @@ _WMS Warehouse & Alteration System_`;
               )}
             </button>
           )}
+
+          <button
+            type="button"
+            id="btn-alter-help-flow"
+            onClick={() => setIsStoreHelpOpen(true)}
+            className="px-3.5 py-1.5 text-xs font-bold bg-linear-to-r from-rose-500/10 via-purple-500/10 to-rose-500/10 hover:from-rose-500/20 hover:to-purple-500/20 text-rose-700 dark:text-rose-300 rounded-xl border border-rose-200 dark:border-rose-800 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Pusat Bantuan Flow Alterasi & Tanya Jawab"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+            <span>ðŸ’¡ Bantuan Flow</span>
+          </button>
         </div>
       </div>
 
@@ -2146,6 +2159,14 @@ Status submit telah berhasil dicatat di sistem WMS Chocochips. Terima kasih! ðŸ™
         photoUrl={previewPhotoUrl}
         onClose={() => setPreviewPhotoUrl(null)}
         title="Dokumentasi Foto Fisik Alterasi & Repair"
+      />
+
+      {/* Modal Pusat Bantuan Store (FAQ & Tanya Jawab Alur) */}
+      <StoreHelpModal
+        isOpen={isStoreHelpOpen}
+        onClose={() => setIsStoreHelpOpen(false)}
+        session={session}
+        onShowToast={onShowToast}
       />
     </div>
   );
