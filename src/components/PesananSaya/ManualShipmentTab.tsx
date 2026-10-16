@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table, GitFork
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -967,6 +967,37 @@ _WMS Warehouse System_`;
     }]);
   };
 
+  const handleSplitItem = (id: string) => {
+    setItems(prev => {
+      const targetIndex = prev.findIndex(i => i.id === id);
+      if (targetIndex === -1) return prev;
+      const target = prev[targetIndex];
+      const currentQty = Number(target.qty) || 1;
+      if (currentQty <= 1) return prev;
+
+      // Kurangi qty target sebanyak 1
+      const updatedTarget: ManualShipmentItem = {
+        ...target,
+        qty: currentQty - 1,
+      };
+
+      // Buat baris baru untuk 1 pc yang dipisah dengan fulfillment kosong agar bisa dipilih beda
+      const newItem: ManualShipmentItem = {
+        ...target,
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        qty: 1,
+        fulfillment: '',
+        no_sj_dealpos: '',
+        id_form_alter: '', // Kosongkan agar PIC Store dapat menginput ID Form Alter manual jika berbeda
+      };
+
+      const next = [...prev];
+      next.splice(targetIndex + 1, 0, newItem);
+      return next;
+    });
+    onShowToast('1 pcs produk berhasil dipisahkan ke baris baru. Silakan tentukan fulfillment yang berbeda.', 'info');
+  };
+
   const handleRemoveItem = (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
   };
@@ -974,12 +1005,10 @@ _WMS Warehouse System_`;
   const handleToggleItemAlteration = (id: string, checked: boolean) => {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
-        const isMarketplace = (item.fulfillment || '').toLowerCase().includes('marketplace');
-        const autoId = isMarketplace ? generateAutoMarketplaceAlterId() : '';
         return {
           ...item,
           needs_alteration: checked,
-          id_form_alter: checked ? (item.id_form_alter || autoId) : undefined,
+          id_form_alter: checked ? (item.id_form_alter || '') : undefined,
           layanan_type: checked ? (item.layanan_type || 'alteration') : undefined,
           alteration_status: checked ? (item.alteration_status || 'antrian') : undefined,
           kondisi: checked ? (item.kondisi || 'Kondisi baru / baik') : undefined,
@@ -993,16 +1022,7 @@ _WMS Warehouse System_`;
   const handleItemChange = (id: string, field: keyof ManualShipmentItem, value: any) => {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
-        const updated = { ...item, [field]: value };
-        if (field === 'fulfillment' && updated.needs_alteration) {
-          const isMarketplace = (String(value || '')).toLowerCase().includes('marketplace');
-          if (isMarketplace && (!updated.id_form_alter || !updated.id_form_alter.startsWith('ALT-MS-'))) {
-            updated.id_form_alter = generateAutoMarketplaceAlterId();
-          } else if (!isMarketplace && updated.id_form_alter?.startsWith('ALT-MS-')) {
-            updated.id_form_alter = '';
-          }
-        }
-        return updated;
+        return { ...item, [field]: value };
       }
       return item;
     }));
@@ -1132,9 +1152,8 @@ _WMS Warehouse System_`;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (it.needs_alteration) {
-        const isMarketplace = (it.fulfillment || '').toLowerCase().includes('marketplace');
-        if (!isMarketplace && (!it.id_form_alter || !it.id_form_alter.trim())) {
-          onShowToast(`Item #${i + 1} (${it.nama_produk || it.sku}): Pihak Store wajib mengisi No. ID Form Alter sesuai pendaftaran di Store`, 'warning');
+        if (!it.id_form_alter || !it.id_form_alter.trim()) {
+          onShowToast(`Item #${i + 1} (${it.nama_produk || it.sku}): No. ID Form Alter wajib diisi manual oleh Store (baik fulfillment Store maupun Marketplace)`, 'warning');
           return;
         }
         if (!it.alteration_detail || !it.alteration_detail.trim()) {
@@ -1356,8 +1375,8 @@ _WMS Warehouse System_`;
     setItems(prev => {
       const existing = prev.find(i => i.sku.toUpperCase() === sku.toUpperCase());
       if (existing) {
-        // Increment qty
-        return prev.map(i => i.sku.toUpperCase() === sku.toUpperCase() ? { ...i, qty: (Number(i.qty) || 0) + 1 } : i);
+        // Increment qty hanya pada baris pertama yang cocok
+        return prev.map(i => i.id === existing.id ? { ...i, qty: (Number(i.qty) || 0) + 1 } : i);
       }
       
       const displayNama = product.p || product.n || 'Unknown Product';
@@ -1871,6 +1890,17 @@ _WMS Warehouse System_`;
                           className="w-full rounded-md border border-slate-300 dark:border-slate-700 text-xs focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white py-1 px-2.5 font-bold"
                           required
                         />
+                        {Number(item.qty) > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleSplitItem(item.id)}
+                            className="mt-1.5 w-full flex items-center justify-center gap-1 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/80 px-1.5 py-1 rounded-md border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer shadow-2xs"
+                            title="Pisahkan 1 pcs ke baris baru agar bisa memilih fulfillment yang berbeda (contoh: 1 Marketplace, 1 Store)"
+                          >
+                            <GitFork className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <span>Split Fulfil</span>
+                          </button>
+                        )}
                       </div>
 
                       {/* Fulfillment */}
@@ -1935,9 +1965,7 @@ _WMS Warehouse System_`;
                         </label>
                         {item.needs_alteration && (
                           <span className="text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 px-2 py-0.5 rounded-full font-bold">
-                            {(item.fulfillment || '').toLowerCase().includes('marketplace')
-                              ? 'ID Auto WMS'
-                              : 'ID Manual Store'}
+                            No. ID Alter Wajib Diisi
                           </span>
                         )}
                       </div>
@@ -1946,46 +1974,25 @@ _WMS Warehouse System_`;
                         <div className="mt-2.5 p-3 bg-rose-50/60 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900/60 space-y-2.5 animate-in fade-in">
                           {/* ID Form Alter & Jenis Layanan */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {/* ID Form Alter: Auto for Marketplace, Manual for Store */}
+                            {/* ID Form Alter: Selalu Diisi Manual oleh Store untuk semua fulfillment */}
                             <div>
                               <div className="flex items-center justify-between mb-0.5">
                                 <label className="block text-[10px] font-bold text-rose-900 dark:text-rose-200">
-                                  No. ID Form Alter *
+                                  No. ID Form Alter Store *
                                 </label>
-                                {(item.fulfillment || '').toLowerCase().includes('marketplace') ? (
-                                  <span className="text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-400">
-                                    (Otomatis oleh WMS)
-                                  </span>
-                                ) : (
-                                  <span className="text-[9.5px] font-semibold text-amber-700 dark:text-amber-400">
-                                    (Diisi manual sesuai form store)
-                                  </span>
-                                )}
+                                <span className="text-[9.5px] font-semibold text-rose-600 dark:text-rose-400">
+                                  (Wajib diisi manual oleh tim Store)
+                                </span>
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="text"
                                   required
                                   value={item.id_form_alter || ''}
-                                  readOnly={(item.fulfillment || '').toLowerCase().includes('marketplace')}
                                   onChange={(e) => handleItemChange(item.id, 'id_form_alter', e.target.value)}
-                                  placeholder={(item.fulfillment || '').toLowerCase().includes('marketplace') ? 'ALT-MS-XXXXX' : 'Ketik No. ID Form Alter Store...'}
-                                  className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold shadow-2xs border ${
-                                    (item.fulfillment || '').toLowerCase().includes('marketplace')
-                                      ? 'bg-slate-100 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 cursor-not-allowed'
-                                      : 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-rose-300 dark:border-rose-700'
-                                  }`}
+                                  placeholder="Ketik No. ID Form Alter Store (Contoh: ALT-2610-001)..."
+                                  className="w-full px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold shadow-2xs border bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-rose-300 dark:border-rose-700 focus:outline-none focus:ring-1 focus:ring-rose-500"
                                 />
-                                {(item.fulfillment || '').toLowerCase().includes('marketplace') && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleItemChange(item.id, 'id_form_alter', generateAutoMarketplaceAlterId())}
-                                    title="Regenerate ID Alter"
-                                    className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold shrink-0 border border-indigo-200 cursor-pointer"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
                               </div>
                             </div>
 

@@ -564,7 +564,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
       }
     }
 
-    if (formSource === 'store' && !formIdFormAlter.trim()) {
+    if (!formIdFormAlter.trim()) {
       onShowToast('Store wajib mengisi No. ID Form Alter secara manual', 'error');
       return;
     }
@@ -600,9 +600,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
       const isWarehouseStock = formSource === 'warehouse';
       const initialStage: AlterationFlowStage = isWarehouseStock ? 'diterima_warehouse' : 'diajukan';
       const regNo = generateRegistrationNo(formSource, formOutlet);
-      const finalIdFormAlter = isWarehouseStock
-        ? (formIdFormAlter.trim() || generateAutoWarehouseId())
-        : formIdFormAlter.trim();
+      const finalIdFormAlter = formIdFormAlter.trim();
       const asalDisplayName = formOutlet || (session?.divisi || 'Store');
 
       const effectiveCourier = formTujuanPengembalian === 'customer'
@@ -951,9 +949,6 @@ _WMS Warehouse & Alteration System_`;
               type="button"
               onClick={() => {
                 setFormSource('warehouse');
-                if (!formIdFormAlter || !formIdFormAlter.startsWith('ALT-WH-')) {
-                  setFormIdFormAlter(generateAutoWarehouseId());
-                }
               }}
               className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-start gap-1 transition-all cursor-pointer text-left ${
                 formSource === 'warehouse'
@@ -973,47 +968,20 @@ _WMS Warehouse & Alteration System_`;
 
           {/* Form ID & Referensi */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            {formSource === 'store' ? (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
-                  <span>No. ID Form Alter (Diisi Manual oleh Store) *</span>
-                  <span className="text-[10px] font-semibold text-rose-500">Wajib Diisi Manual</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formIdFormAlter || ''}
-                  onChange={(e) => setFormIdFormAlter(e.target.value)}
-                  placeholder="Contoh: ALT/CP/2026/001 atau No. Form Fisik Store..."
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700/80 rounded-xl text-slate-900 dark:text-white font-mono font-bold focus:ring-2 focus:ring-rose-500 text-xs"
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-bold text-purple-900 dark:text-purple-300 mb-1 flex items-center justify-between">
-                  <span>No. ID Form Alter (Otomatis Sistem):</span>
-                  <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/60 px-1.5 py-0.5 rounded">
-                    AUTO-GENERATED
-                  </span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={formIdFormAlter || ''}
-                    className="w-full px-3 py-2 bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 rounded-xl text-purple-950 dark:text-purple-200 font-mono font-bold text-xs cursor-not-allowed"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setFormIdFormAlter(generateAutoWarehouseId())}
-                    className="p-2 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900 dark:hover:bg-purple-800 text-purple-700 dark:text-purple-200 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer"
-                    title="Generate Ulang ID"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center justify-between">
+                <span>No. ID Form Alter (Diisi Manual oleh Store) *</span>
+                <span className="text-[10px] font-semibold text-rose-500">Wajib Diisi Manual</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={formIdFormAlter || ''}
+                onChange={(e) => setFormIdFormAlter(e.target.value)}
+                placeholder="Contoh: ALT/CP/2026/001 atau No. Form Fisik Store..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700/80 rounded-xl text-slate-900 dark:text-white font-mono font-bold focus:ring-2 focus:ring-rose-500 text-xs"
+              />
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
