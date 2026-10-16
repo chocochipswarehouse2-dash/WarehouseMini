@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2
+  Package, Search, Plus, Trash2, Send, RefreshCw, Printer, AlertTriangle, Check, CheckCircle2, FileText, ChevronDown, QrCode, ShoppingBag, X, MapPin, Truck, History, Calendar, User, ArrowLeft, Copy, Clock, MessageCircle, ExternalLink, Store, FileCheck, Layers, AlertOctagon, RotateCcw, Ban, SendHorizonal, Scissors, Sparkles, Camera, Image as ImageIcon, Upload, Eye, Loader2, Mail, Filter, Cog, Play, CheckSquare, Building2, LayoutGrid, Table
 } from 'lucide-react';
 import { AlterationCameraModal } from './AlterationCameraModal';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
@@ -109,7 +109,20 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     actionType: AlterationActionType;
     targetItems?: ManualShipmentItem[];
   } | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => typeof window !== 'undefined' && window.innerWidth < 768 ? 'card' : 'table');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('manual_shipment_view_mode');
+      if (saved === 'table' || saved === 'card') return saved;
+    }
+    return 'card';
+  });
+
+  const handleSetViewMode = (mode: 'table' | 'card') => {
+    setViewMode(mode);
+    try {
+      sessionStorage.setItem('manual_shipment_view_mode', mode);
+    } catch {}
+  };
   const [loading, setLoading] = useState(false);
   const [outlets, setOutlets] = useState<OutletItem[]>([]);
 
@@ -2287,6 +2300,24 @@ _WMS Warehouse System_`;
           ...o,
           items: items.map(it => {
             const cleanSku = (it.sku || '').trim().toUpperCase();
+            const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim();
+            const fulLower = ful.toLowerCase();
+
+            // Jika fulfillment dari Store (bukan Marketplace / Gudang / Warehouse)
+            const isStoreFulfillment = ful && 
+              !fulLower.includes('marketplace') && 
+              !fulLower.includes('gudang') && 
+              !fulLower.includes('warehouse');
+
+            if (isStoreFulfillment) {
+              const storeCode = getStoreCode(ful) || ful;
+              return {
+                ...it,
+                lokasi: storeCode,
+              };
+            }
+
+            // Jika fulfillment Marketplace / Gudang, cari lokasi fisik penyimpanan rak gudang
             const foundLoc = skuLocationMap.get(cleanSku);
             const currentLoc = (it as any).lokasi;
             const finalLoc = (foundLoc && foundLoc !== '-')
@@ -2303,7 +2334,18 @@ _WMS Warehouse System_`;
       console.warn('Gagal memuat lokasi rak untuk picking list:', err);
       return targetOrders.map(o => ({
         ...o,
-        items: ensureOrderItems(o),
+        items: ensureOrderItems(o).map(it => {
+          const ful = (it.fulfillment || (it as any).toko_asal || (it as any).store_name || '').trim();
+          const fulLower = ful.toLowerCase();
+          const isStoreFulfillment = ful && 
+            !fulLower.includes('marketplace') && 
+            !fulLower.includes('gudang') && 
+            !fulLower.includes('warehouse');
+          return {
+            ...it,
+            lokasi: isStoreFulfillment ? (getStoreCode(ful) || ful) : (it.lokasi || '-'),
+          };
+        }),
       }));
     }
   };
@@ -4645,24 +4687,30 @@ _WMS Warehouse System_`;
             
             <div className="flex border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-xs">
               <button
-                onClick={() => setViewMode('table')}
-                className={`px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
-                  viewMode === 'table' 
-                    ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-400 font-bold' 
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                }`}
-              >
-                Tabel
-              </button>
-              <button
-                onClick={() => setViewMode('card')}
-                className={`px-2.5 py-1.5 text-xs font-semibold border-l border-slate-200 dark:border-slate-700 transition-colors cursor-pointer ${
+                type="button"
+                onClick={() => handleSetViewMode('card')}
+                className={`px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
                   viewMode === 'card' 
                     ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-400 font-bold' 
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                 }`}
+                title="Tampilan Kartu (Default Awal)"
               >
-                Kartu
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Kartu</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetViewMode('table')}
+                className={`px-2.5 py-1.5 text-xs font-semibold border-l border-slate-200 dark:border-slate-700 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  viewMode === 'table' 
+                    ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-400 font-bold' 
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                }`}
+                title="Tampilan Tabel"
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Tabel</span>
               </button>
             </div>
           </div>
@@ -7553,7 +7601,24 @@ _WMS Warehouse System_`;
 
                             {/* Item-level Lokasi Rak */}
                             <td className="border border-black p-1 text-center align-middle font-black text-[10px] bg-gray-50">
-                              {item.lokasi || '-'}
+                              {(() => {
+                                const ful = (item.fulfillment || (item as any).toko_asal || (item as any).store_name || '').trim();
+                                const fulLower = ful.toLowerCase();
+                                const isStoreFulfillment = ful && 
+                                  !fulLower.includes('marketplace') && 
+                                  !fulLower.includes('gudang') && 
+                                  !fulLower.includes('warehouse');
+
+                                if (isStoreFulfillment) {
+                                  const code = getStoreCode(ful) || ful;
+                                  return (
+                                    <span className="text-blue-900 font-black uppercase text-[10px]">
+                                      {code}
+                                    </span>
+                                  );
+                                }
+                                return item.lokasi || '-';
+                              })()}
                             </td>
 
                             {/* Item SKU & Nama */}
@@ -7563,6 +7628,18 @@ _WMS Warehouse System_`;
                               {item.size && (
                                 <div className="text-gray-600 italic text-[8px]">Var: {item.size}</div>
                               )}
+                              {(() => {
+                                const ful = (item.fulfillment || '').trim();
+                                const isStore = ful && !ful.toLowerCase().includes('marketplace') && !ful.toLowerCase().includes('gudang') && !ful.toLowerCase().includes('warehouse');
+                                if (isStore) {
+                                  return (
+                                    <div className="text-blue-700 font-bold text-[8px] mt-0.5">
+                                      Fulfill: {ful}
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                               {(item.needs_alteration || !!item.id_form_alter) && (
                                 <div className="text-rose-600 font-bold text-[8px] mt-0.5">Wajib Alterasi!</div>
                               )}
