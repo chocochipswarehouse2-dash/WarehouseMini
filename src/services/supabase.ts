@@ -5998,8 +5998,65 @@ export async function importMasterProdukBatch(
   const total = records.length;
   if (total === 0) return { success: true, totalUploaded: 0 };
 
-  const CHUNK_SIZE = 1000;
+  // 200 rows per chunk prevents PostgreSQL statement timeout (57014) on large JSONB payloads
+  const CHUNK_SIZE = 200;
   let uploaded = 0;
+
+  async function uploadSlice(slice: any[], fromIdx: number, attempt = 1): Promise<void> {
+    try {
+      const res = await fetch(`${supaUrl}/rest/v1/master_produk?on_conflict=sku`, {
+        method: 'POST',
+        headers: {
+          apikey: supaKey,
+          Authorization: `Bearer ${supaKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify(slice),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        
+        // If statement timeout (57014) or server 5xx error and chunk has > 40 items, auto-split in half!
+        if ((errText.includes('57014') || errText.includes('timeout') || res.status >= 500) && slice.length > 40) {
+          console.warn(`Timeout/error on batch (${fromIdx} - ${fromIdx + slice.length}), auto-splitting into smaller chunks...`);
+          const mid = Math.floor(slice.length / 2);
+          await uploadSlice(slice.slice(0, mid), fromIdx, 1);
+          await uploadSlice(slice.slice(mid), fromIdx + mid, 1);
+          return;
+        }
+
+        // Retry with backoff if attempts remain
+        if (attempt <= 3) {
+          console.warn(`Attempt ${attempt} failed for chunk (${fromIdx} - ${fromIdx + slice.length}), retrying...`);
+          await new Promise((resolve) => setTimeout(resolve, attempt * 600));
+          return uploadSlice(slice, fromIdx, attempt + 1);
+        }
+
+        throw new Error(`Gagal upload chunk (${fromIdx} - ${fromIdx + slice.length}): ${errText}`);
+      }
+
+      uploaded += slice.length;
+      const pct = Math.round((uploaded / total) * 100);
+      if (onProgress) {
+        onProgress(uploaded, total, Math.min(100, pct));
+      }
+    } catch (err: any) {
+      if ((err.message && (err.message.includes('57014') || err.message.includes('timeout'))) && slice.length > 40) {
+        console.warn(`Caught timeout on batch (${fromIdx} - ${fromIdx + slice.length}), auto-splitting...`);
+        const mid = Math.floor(slice.length / 2);
+        await uploadSlice(slice.slice(0, mid), fromIdx, 1);
+        await uploadSlice(slice.slice(mid), fromIdx + mid, 1);
+        return;
+      }
+      if (attempt <= 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 600));
+        return uploadSlice(slice, fromIdx, attempt + 1);
+      }
+      throw err;
+    }
+  }
 
   for (let i = 0; i < total; i += CHUNK_SIZE) {
     const chunk = records.slice(i, i + CHUNK_SIZE).map((r) => ({
@@ -6010,27 +6067,8 @@ export async function importMasterProdukBatch(
       price: typeof r.price === 'number' ? r.price : 0,
       dealpos_channels: r.dealpos_channels || {},
     }));
-    const res = await fetch(`${supaUrl}/rest/v1/master_produk?on_conflict=sku`, {
-      method: 'POST',
-      headers: {
-        apikey: supaKey,
-        Authorization: `Bearer ${supaKey}`,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates,return=minimal',
-      },
-      body: JSON.stringify(chunk),
-    });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Gagal upload chunk (${i} - ${i + chunk.length}): ${errText}`);
-    }
-
-    uploaded += chunk.length;
-    const pct = Math.round((uploaded / total) * 100);
-    if (onProgress) {
-      onProgress(uploaded, total, pct);
-    }
+    await uploadSlice(chunk, i);
   }
 
   // Clear local product caches so new dataset is freshly reloaded
