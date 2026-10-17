@@ -365,7 +365,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const loadChannelStocks = async (showToast = false, keyword?: string) => {
     setLoadingStock(true);
     try {
-      const liveStocks = await fetchRealtimeChannelStocksSupabase(keyword);
+      const liveStocks = await fetchRealtimeChannelStocksSupabase(keyword, showToast);
       hasInitialLoadedRef.current = true;
       if (liveStocks && liveStocks.length > 0) {
         setChannelStocks((prev) => {

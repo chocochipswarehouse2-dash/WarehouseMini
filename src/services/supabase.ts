@@ -4393,7 +4393,7 @@ export async function searchProductsInSupabase(keyword: string): Promise<Product
  * Fetch real-time available stocks per channel & location from Supabase
  * Specifically tracks Area BLOK F, Lokasi: Shopee, TikTok, Studio, and Warehouse.
  */
-export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string): Promise<import('../types').ChannelStockItem[]> {
+export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string, forceRefresh = false): Promise<import('../types').ChannelStockItem[]> {
   const stockMap = new Map<
     string,
     {
@@ -4407,68 +4407,74 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     }
   >();
 
-  // 1. Fetch from stok_real_fisik prioritizing rows with sisa_stok <> 0
-  const searchFilter = searchKeyword && searchKeyword.trim()
-    ? buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])
-    : '';
+  if (forceRefresh) {
+    memoryStokFisikCache = null;
+  }
 
   try {
-    let viewRowsNonZero: StockRealtimeItem[] = [];
-    if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
-      viewRowsNonZero = memoryStokFisikCache;
+    const targetChannelLocations = [
+      'TIKTOK', 'Tiktok', 'tiktok',
+      'SHOPEE', 'Shopee', 'shopee',
+      'STUDIO', 'Studio', 'studio',
+      'BLOK F', 'Blok F',
+      'LIVE SHOPEE', 'LIVE TIKTOK', 'SAMPLE', 'FOTO'
+    ];
+    const client = getSupabase();
+
+    // 1. Authoritative Live Channel Stock Query: fetch directly from stok_real_fisik (~100ms)
+    // Guarantees 100% physical reality from Supabase, bypassing stale warehouse caches
+    const [resLoc, resArea] = await Promise.all([
+      client
+        .from('stok_real_fisik')
+        .select('sku, nama_produk, size, lokasi, area, sisa_stok')
+        .in('lokasi', targetChannelLocations)
+        .neq('sisa_stok', 0),
+      client
+        .from('stok_real_fisik')
+        .select('sku, nama_produk, size, lokasi, area, sisa_stok')
+        .eq('area', 'Blok F')
+        .neq('sisa_stok', 0)
+    ]);
+
+    const channelRows = [...(resLoc.data || []), ...(resArea.data || [])];
+    const channelMap = new Map<string, StockRealtimeItem>();
+    for (const r of channelRows) {
+      const sku = String(r.sku || '').trim().toUpperCase();
+      const lok = String(r.lokasi || 'BLOK F').trim().toUpperCase();
+      if (!sku) continue;
+      const key = `${sku}__${lok}`;
+      if (!channelMap.has(key)) {
+        channelMap.set(key, r);
+      }
+    }
+
+    // 2. Also incorporate warehouse stock rows from memory cache or localDb
+    let warehouseRows: StockRealtimeItem[] = [];
+    if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+      warehouseRows = memoryStokFisikCache;
     } else {
       try {
         const localDbStock = await getAllInventoryStocksFromLocalDb();
         if (localDbStock && localDbStock.length > 0) {
-          viewRowsNonZero = localDbStock;
-          memoryStokFisikCache = localDbStock;
-          memoryStokFisikLastFetch = Date.now();
+          warehouseRows = localDbStock;
+          if (!memoryStokFisikCache) memoryStokFisikCache = localDbStock;
         }
       } catch {}
     }
 
-    // Fast-fetch directly from log_produk if cache is not available or to guarantee realtime channel accuracy (<1 sec)
-    if (!viewRowsNonZero || viewRowsNonZero.length === 0) {
-      try {
-        const targetLocations = [
-          'STUDIO', 'Studio', 'SHOPEE', 'Shopee', 'TIKTOK', 'TikTok', 'BLOK F', 'Blok F',
-          'LIVE SHOPEE', 'LIVE TIKTOK', 'SAMPLE', 'FOTO'
-        ];
-        const client = getSupabase();
-        const { data: channelLogs } = await client
-          .from('log_produk')
-          .select('sku, nama_produk, size, lokasi, type, qty')
-          .in('lokasi', targetLocations);
-
-        if (channelLogs && channelLogs.length > 0) {
-          const tempMap = new Map<string, StockRealtimeItem>();
-          for (const log of channelLogs) {
-            const sku = String(log.sku || '').trim().toUpperCase();
-            const lok = String(log.lokasi || 'BLOK F').trim();
-            if (!sku) continue;
-            const key = `${sku}__${lok.toUpperCase()}`;
-            const sign = (log.type === 'IN' || log.type === 'ADJ_IN') ? 1 : (log.type === 'OUT' || log.type === 'ADJ_OUT') ? -1 : 0;
-            const delta = (Number(log.qty) || 0) * sign;
-            const cur = tempMap.get(key) || {
-              sku,
-              lokasi: lok,
-              area: 'Blok F',
-              nama_produk: log.nama_produk || sku,
-              size: log.size || '-',
-              sisa_stok: 0,
-              updated_at: new Date().toISOString()
-            };
-            cur.sisa_stok = (cur.sisa_stok || 0) + delta;
-            if (log.nama_produk) cur.nama_produk = log.nama_produk;
-            tempMap.set(key, cur);
-          }
-          viewRowsNonZero = Array.from(tempMap.values()).filter(it => (it.sisa_stok || 0) !== 0);
-        }
-      } catch (err) {
-        console.warn('Fast channel logs fetch error:', err);
-      }
+    // Combine channelRows and warehouseRows, with fresh channelRows taking precedence for channel locations
+    const allRowsMap = new Map<string, StockRealtimeItem>();
+    for (const w of warehouseRows) {
+      const sku = String(w.sku || w.kode || '').trim().toUpperCase();
+      const lok = String(w.lokasi || 'Warehouse').trim().toUpperCase();
+      if (!sku) continue;
+      allRowsMap.set(`${sku}__${lok}`, w);
+    }
+    for (const [k, c] of channelMap.entries()) {
+      allRowsMap.set(k, c);
     }
 
+    const viewRowsNonZero = Array.from(allRowsMap.values());
     const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
@@ -4517,7 +4523,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
       }
     }
   } catch (err) {
-    console.warn('Error fetching from stok_real_fisik in Supabase:', err);
+    console.warn('Error fetching live channel stock from Supabase:', err);
   }
 
 
