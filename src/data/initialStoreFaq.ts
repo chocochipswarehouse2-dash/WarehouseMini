@@ -199,6 +199,43 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
   },
 
   {
+    id: 'faq-pic-store-target-selesai-alter',
+    category: 'alteration_repair',
+    question: 'Kenapa kolom PIC Store / SA kosong dan berapa estimasi target selesai alterasi/repair?',
+    answer: 'Kolom PIC Store / SA sengaja dikosongkan agar staf penginput wajib menuliskan nama aslinya sendiri demi akuntabilitas komunikasi. Target tanggal selesai pengerjaan otomatis diatur sistem ke +14 hari sejak tanggal pendaftaran.',
+    target_audience: 'all',
+
+    // PERSPEKTIF ADMIN GUDANG
+    answer_admin: 'Admin Gudang dan Penjahit membutuhkan nama asli PIC Store yang mengajukan alterasi/repair (bukan nama toko) agar jika terdapat kendala benang, kain, atau klarifikasi potongan, tim gudang dapat langsung menghubungi SA penanggung jawab melalui nomor WA yang dicantumkan. Target SLA standar pengerjaan gudang adalah 14 hari kerja sejak tiket didaftarkan.',
+    action_steps_admin: [
+      { step: 1, title: 'Buka Tiket Alteration & Repair', desc: 'Periksa kartu tiket di Tab Alteration & Repair. Lihat kolom PIC Store / SA.' },
+      { step: 2, title: 'Lihat PIC & No. WA', desc: 'Identitas nama staf SA dan nomor WA PIC tertera langsung pada rincian tiket.' },
+      { step: 3, title: 'Pantau Target Tanggal Selesai', desc: 'Gudang memprioritaskan pengerjaan sesuai target tanggal selesai (+14 hari dari submit).' }
+    ],
+    button_badges_admin: [
+      { label: 'PIC Store & Kontak WA', color: 'blue', icon: 'User' },
+      { label: 'Target: +14 Hari Submit', color: 'emerald', icon: 'Calendar' }
+    ],
+    admin_notes: 'ℹ️ Jika butuh klarifikasi pengerjaan, gunakan nomor WA PIC Store yang tertera di tiket alterasi.',
+
+    // PERSPEKTIF TIM STORE / OUTLET
+    answer_store: 'Kolom PIC Store / SA sengaja TIDAK diisi otomatis dengan nama toko agar Anda wajib mengetikkan nama asli Anda (nama staf / SA yang sedang menginput). Hal ini memastikan penjahit gudang tahu persis siapa yang harus dihubungi. Untuk estimasi waktu, sistem secara otomatis menetapkan Target Tanggal Selesai ke +14 hari (2 minggu) dari tanggal pendaftaran.',
+    action_steps_store: [
+      { step: 1, title: 'Ketik Nama Asli di Kolom PIC Store / SA', desc: 'Masukkan nama panggilan / lengkap Anda (contoh: "Siti - SA Shift Pagi") dan nomor WhatsApp aktif Anda.' },
+      { step: 2, title: 'Cek Target Tanggal Selesai', desc: 'Sistem otomatis mengisi tanggal selesai ke +14 hari dari hari ini. Anda bisa menyesuaikan jika ada permintaan khusus.' },
+      { step: 3, title: 'Submit Pendaftaran Tiket', desc: 'Klik Simpan & Daftarkan Tiket. Bukti pendaftaran beserta estimasi selesai akan otomatis terbit.' }
+    ],
+    button_badges_store: [
+      { label: 'PIC Store / SA * (Wajib Isi)', color: 'rose', icon: 'UserCheck' },
+      { label: 'Target Otomatis +14 Hari', color: 'emerald', icon: 'Clock' }
+    ],
+    store_notes: '💡 Jangan isi nama toko di kolom PIC; ketik nama pribadi Anda agar komunikasi antar store dan penjahit gudang lancar.',
+
+    keywords: ['pic store', 'sa', 'nama pic', 'nama sa', 'target selesai', '14 hari', '+14 hari', 'estimasi', 'alter', 'repair', 'sla', 'tenggat'],
+    view_count: 142
+  },
+
+  {
     id: 'faq-id-form-alter-manual',
     category: 'alteration_repair',
     question: 'No. ID Form Alter diisi apa dan oleh siapa? Apakah boleh dikosongkan?',
