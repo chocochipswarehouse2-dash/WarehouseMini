@@ -1718,7 +1718,7 @@ export default function App() {
         </button>
 
         {/* Main Content Area based on active navigation tab with Keep-Alive */}
-        <main className="flex-1 pb-16 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full max-w-7xl mx-auto">
+        <main className={`flex-1 pb-16 sm:pb-8 p-2 sm:p-4 lg:p-6 w-full ${activePage === 'inventory' ? 'max-w-full' : 'max-w-7xl mx-auto'}`}>
           {session && !canAccessPage(session, activePage) ? (
             <div className="min-h-[60vh] flex items-center justify-center p-4">
               <div className="max-w-md w-full bg-white dark:bg-[#101726] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center shadow-lg space-y-4">

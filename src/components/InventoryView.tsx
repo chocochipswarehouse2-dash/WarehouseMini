@@ -176,7 +176,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   }, [isLokasiExportModalOpen, stockVersion]);
 
   return (
-    <div className="space-y-4 max-w-[1600px] mx-auto p-2 sm:p-4 animate-in fade-in duration-150">
+    <div className="space-y-4 w-full animate-in fade-in duration-150">
       {/* ========================================================
           1. KPI CARDS HEADER (Stok Fisik Nyata Gudang)
           ======================================================== */}
