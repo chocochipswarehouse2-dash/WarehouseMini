@@ -3140,6 +3140,13 @@ export async function verifySupabaseLogin(
 
   // Hash password for comparison (SHA-256 with universal fallback)
   let hashedPass = cleanPass;
+  if (cleanPass) {
+    try {
+      hashedPass = await computeSha256(cleanPass);
+    } catch (err) {
+      console.warn('computeSha256 error:', err);
+    }
+  }
 
   // 1. Direct check in Supabase wms_users table (supports Username or NIK)
   try {
@@ -3164,15 +3171,15 @@ export async function verifySupabaseLogin(
         (u.nik && u.nik.toLowerCase() === 'wh0001');
 
       // Password verification
-      // Match SHA-256, plaintext, or common defaults for superadmins
-      const isMatch =
-        !u.password ||
-        !cleanPass ||
-        u.password === hashedPass ||
-        u.password === cleanPass ||
-        (u.password === '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' &&
-          (cleanPass === '123456' || cleanPass === 'admin123')) ||
-        (isUserSuper && (cleanPass === 'admin123' || cleanPass === '123456'));
+      // A password is valid ONLY if input is not empty and matches plaintext or SHA-256 hash in DB.
+      // If DB has no password recorded at all, fallback to default '123456'.
+      const isMatch = Boolean(
+        cleanPass &&
+        (
+          (u.password && (u.password === cleanPass || u.password === hashedPass)) ||
+          (!u.password && cleanPass === '123456')
+        )
+      );
 
       if (!isMatch) {
         return {
@@ -3246,14 +3253,13 @@ export async function verifySupabaseLogin(
       localDefault.username.toLowerCase() === 'admin2' ||
       localDefault.username.toLowerCase() === 'warehouse';
 
-    const isMatch =
-      !localDefault.password ||
-      !cleanPass ||
-      localDefault.password === cleanPass ||
-      localDefault.password === hashedPass ||
-      cleanPass === '123456' ||
-      cleanPass === 'admin123' ||
-      (isUserSuper && (cleanPass === 'admin123' || cleanPass === '123456'));
+    const isMatch = Boolean(
+      cleanPass &&
+      (
+        (localDefault.password && (localDefault.password === cleanPass || localDefault.password === hashedPass)) ||
+        (!localDefault.password && cleanPass === '123456')
+      )
+    );
 
     if (isMatch) {
       return {
