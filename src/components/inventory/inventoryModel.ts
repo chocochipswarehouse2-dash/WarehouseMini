@@ -44,10 +44,16 @@ export const ALL_AREAS: AreaFilterType[] = ['ALL', 'GUDANG', 'STORE', 'ONLINE', 
 export type InventorySortOption =
   | 'NAME_ASC'
   | 'NAME_DESC'
+  | 'KATEGORI_ASC'
+  | 'KATEGORI_DESC'
   | 'SIZE_ASC'
   | 'SIZE_DESC'
   | 'SKU_ASC'
   | 'SKU_DESC'
+  | 'AREA_ASC'
+  | 'AREA_DESC'
+  | 'QTY_DESC'
+  | 'QTY_ASC'
   | 'LOC_ASC'
   | 'LOC_DESC'
   | 'FISIK_DESC'
@@ -78,6 +84,7 @@ export interface LocEntry {
 export interface CatalogBase {
   sku: string;
   produk: string;
+  kategori: string;
   size: string;
   sizeOrder: number;
   pLower: string;
@@ -171,6 +178,10 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
   if (!rawName) return null;
   const produk = cleanProductName(rawName) || rawName;
 
+  // Kategori: dari master produk DealPOS
+  const rawCat = String(item.kategori || item.category || (item as any).c || (item as any).jenis || '').trim();
+  const kategori = rawCat && rawCat !== '-' && rawCat !== 'Apparel' ? rawCat : (rawCat || 'CLOTHING');
+
   // Size: ukuran master -> akhiran SKU -> '-'
   let size = extractCleanSizeToken(String(item.s || (item as any).size || ''));
   if (!size || size === '-') size = extractSizeFromSku(sku);
@@ -208,11 +219,12 @@ function parseCatalogItem(item: ProductItem): CatalogBase | null {
   return {
     sku,
     produk,
+    kategori,
     size,
     sizeOrder: getSizeOrder(size),
     pLower,
     skuLower,
-    headSearch: `${pLower} ${skuLower} ${size.toLowerCase()}`,
+    headSearch: `${pLower} ${skuLower} ${kategori.toLowerCase()} ${size.toLowerCase()}`,
     dp,
     dpTotal,
     channels,
@@ -730,4 +742,282 @@ export function buildInventoryLocationCsv(rows: InventoryLocationRow[]): string 
   }
   return '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
 }
+
+// ========================================================
+// PRODUCT PER AREA MODEL (PRODUK & AREA - DRILL DOWN RAK)
+// ========================================================
+export interface AreaLocationEntry {
+  lokasi: string;
+  qty: number;
+  neg: boolean;
+}
+
+export interface InventoryAreaRow {
+  id: string; // `${sku}__${area}`
+  sku: string;
+  produk: string;
+  size: string;
+  sizeOrder: number;
+  kategori: string;
+  area: string;
+  qty: number;
+  locations: AreaLocationEntry[];
+  locStr: string;
+  pLower: string;
+  skuLower: string;
+  kategoriLower: string;
+  areaLower: string;
+  search: string;
+  active: boolean;
+  isNeg: boolean;
+}
+
+export function composeAreaRows(
+  bases: CatalogBase[],
+  stockBySku: Map<string, StockRealtimeItem[]>
+): InventoryAreaRow[] {
+  const out: InventoryAreaRow[] = [];
+  const catalogMap = new Map<string, CatalogBase>();
+  for (let i = 0; i < bases.length; i++) {
+    catalogMap.set(bases[i].sku, bases[i]);
+  }
+
+  const seenSkus = new Set<string>();
+
+  // 1. Process all SKUs that have physical stock records
+  stockBySku.forEach((stockRows, sku) => {
+    if (!sku || !isListableSku(sku)) return;
+    seenSkus.add(sku);
+
+    const base = catalogMap.get(sku);
+    const rawProduk = base?.produk || stockRows[0]?.nama_produk || sku;
+    const produk = cleanProductName(rawProduk) || rawProduk;
+    let size = base?.size || extractCleanSizeToken(stockRows[0]?.size || '');
+    if (!size || size === '-') size = extractSizeFromSku(sku);
+    if (!size || size === '-' || size.toUpperCase() === 'DEFAULT') size = 'ALL';
+
+    const kategori = base?.kategori || stockRows[0]?.kategori || (stockRows[0] as any)?.category || 'CLOTHING';
+    const sizeOrder = getSizeOrder(size);
+    const pLower = produk.toLowerCase();
+    const skuLower = sku.toLowerCase();
+    const kategoriLower = kategori.toLowerCase();
+
+    // Group locations by Area
+    const areaMap = new Map<string, { totalQty: number; locs: AreaLocationEntry[] }>();
+
+    for (let i = 0; i < stockRows.length; i++) {
+      const r = stockRows[i];
+      const q = Number(r.sisa_stok) || 0;
+      if (q === 0) continue;
+      const lokasi = String(r.lokasi || '').trim();
+      if (!lokasi || lokasi === '-') continue;
+
+      let area = getAreaFromLokasi(lokasi, r.area);
+      if (area === 'Kolian') area = 'Koli';
+
+      let entry = areaMap.get(area);
+      if (!entry) {
+        entry = { totalQty: 0, locs: [] };
+        areaMap.set(area, entry);
+      }
+      entry.totalQty += q;
+      entry.locs.push({ lokasi, qty: q, neg: q < 0 });
+    }
+
+    // Sort areas by business priority: Blok F, Warehouse, Perbaikan, Koli, Aksesoris, Transit, Anomali
+    const areaPriority: Record<string, number> = {
+      'Blok F': 1,
+      'Warehouse': 2,
+      'Perbaikan': 3,
+      'Koli': 4,
+      'Aksesoris': 5,
+      'Transit': 6,
+      'Anomali': 7,
+    };
+
+    const sortedAreas = Array.from(areaMap.entries()).sort((a, b) => {
+      const pA = areaPriority[a[0]] ?? 99;
+      const pB = areaPriority[b[0]] ?? 99;
+      return pA - pB;
+    });
+
+    for (let i = 0; i < sortedAreas.length; i++) {
+      const [area, data] = sortedAreas[i];
+      data.locs.sort((a, b) => b.qty - a.qty || a.lokasi.localeCompare(b.lokasi));
+      const locStr = data.locs.map((l) => `${l.lokasi} (${l.qty})`).join(', ');
+      const areaLower = area.toLowerCase();
+
+      out.push({
+        id: `${sku}__${area}`,
+        sku,
+        produk,
+        size,
+        sizeOrder,
+        kategori,
+        area,
+        qty: data.totalQty,
+        locations: data.locs,
+        locStr,
+        pLower,
+        skuLower,
+        kategoriLower,
+        areaLower,
+        search: `${pLower} ${skuLower} ${kategoriLower} ${size.toLowerCase()} ${areaLower} ${locStr.toLowerCase()}`,
+        active: data.totalQty !== 0,
+        isNeg: data.totalQty < 0,
+      });
+    }
+  });
+
+  // 2. Also include catalog products that currently have 0 physical stock
+  for (let i = 0; i < bases.length; i++) {
+    const base = bases[i];
+    if (seenSkus.has(base.sku)) continue;
+    seenSkus.add(base.sku);
+
+    const area = 'Warehouse';
+    const areaLower = area.toLowerCase();
+    out.push({
+      id: `${base.sku}__${area}`,
+      sku: base.sku,
+      produk: base.produk,
+      size: base.size,
+      sizeOrder: base.sizeOrder,
+      kategori: base.kategori,
+      area,
+      qty: 0,
+      locations: [],
+      locStr: '-',
+      pLower: base.pLower,
+      skuLower: base.skuLower,
+      kategoriLower: base.kategori.toLowerCase(),
+      areaLower,
+      search: `${base.pLower} ${base.skuLower} ${base.kategori.toLowerCase()} ${base.size.toLowerCase()} ${areaLower}`,
+      active: false,
+      isNeg: false,
+    });
+  }
+
+  return out;
+}
+
+export function sortAreaRows(rows: InventoryAreaRow[], option: InventorySortOption): InventoryAreaRow[] {
+  const sorted = rows.slice();
+  const byName = (a: InventoryAreaRow, b: InventoryAreaRow): number =>
+    cmpStr(a.pLower, b.pLower) || a.sizeOrder - b.sizeOrder || cmpStr(a.areaLower, b.areaLower) || cmpStr(a.skuLower, b.skuLower);
+
+  switch (option) {
+    case 'NAME_ASC':
+      return sorted.sort(byName);
+    case 'NAME_DESC':
+      return sorted.sort((a, b) => cmpStr(b.pLower, a.pLower) || cmpStr(b.skuLower, a.skuLower));
+    case 'KATEGORI_ASC':
+      return sorted.sort((a, b) => cmpStr(a.kategoriLower, b.kategoriLower) || byName(a, b));
+    case 'KATEGORI_DESC':
+      return sorted.sort((a, b) => cmpStr(b.kategoriLower, a.kategoriLower) || byName(a, b));
+    case 'SIZE_ASC':
+      return sorted.sort((a, b) => a.sizeOrder - b.sizeOrder || byName(a, b));
+    case 'SIZE_DESC':
+      return sorted.sort((a, b) => b.sizeOrder - a.sizeOrder || byName(a, b));
+    case 'SKU_ASC':
+      return sorted.sort((a, b) => cmpStr(a.skuLower, b.skuLower) || cmpStr(a.areaLower, b.areaLower));
+    case 'SKU_DESC':
+      return sorted.sort((a, b) => cmpStr(b.skuLower, a.skuLower) || cmpStr(a.areaLower, b.areaLower));
+    case 'AREA_ASC':
+      return sorted.sort((a, b) => cmpStr(a.areaLower, b.areaLower) || byName(a, b));
+    case 'AREA_DESC':
+      return sorted.sort((a, b) => cmpStr(b.areaLower, a.areaLower) || byName(a, b));
+    case 'QTY_DESC':
+    case 'FISIK_DESC':
+      return sorted.sort((a, b) => b.qty - a.qty || byName(a, b));
+    case 'QTY_ASC':
+    case 'FISIK_ASC':
+      return sorted.sort((a, b) => a.qty - b.qty || byName(a, b));
+    case 'LOC_ASC':
+      return sorted.sort((a, b) => cmpStr(a.locStr, b.locStr) || byName(a, b));
+    case 'LOC_DESC':
+      return sorted.sort((a, b) => cmpStr(b.locStr, a.locStr) || byName(a, b));
+    default:
+      return sorted.sort(byName);
+  }
+}
+
+export interface InventoryAreaFilter {
+  query: string;
+  selectedArea?: string; // 'ALL' or 'Warehouse', 'Blok F', 'Perbaikan', 'Koli', etc.
+  onlyActive?: boolean;
+}
+
+export function filterAreaRows(rows: InventoryAreaRow[], f: InventoryAreaFilter): InventoryAreaRow[] {
+  const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const selArea = f.selectedArea && f.selectedArea !== 'ALL' ? f.selectedArea.toLowerCase() : null;
+
+  const out: InventoryAreaRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (f.onlyActive && !r.active) continue;
+    if (selArea && r.areaLower !== selArea && !r.areaLower.includes(selArea)) continue;
+
+    let ok = true;
+    for (let k = 0; k < keywords.length; k++) {
+      if (!r.search.includes(keywords[k])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) out.push(r);
+  }
+  return out;
+}
+
+export interface InventoryAreaStats {
+  skuCount: number;
+  totalFisik: number;
+  areaRowCount: number;
+  activeLocationsCount: number;
+}
+
+export function computeAreaStats(rows: InventoryAreaRow[]): InventoryAreaStats {
+  const skus = new Set<string>();
+  const locs = new Set<string>();
+  let totalFisik = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    skus.add(r.sku);
+    totalFisik += r.qty;
+    for (let j = 0; j < r.locations.length; j++) {
+      if (r.locations[j].qty > 0) {
+        locs.add(r.locations[j].lokasi);
+      }
+    }
+  }
+
+  return {
+    skuCount: skus.size,
+    totalFisik,
+    areaRowCount: rows.length,
+    activeLocationsCount: locs.size,
+  };
+}
+
+export function buildAreaInventoryCsv(rows: InventoryAreaRow[]): string {
+  const headers = ['KATEGORI', 'NAMA_PRODUK', 'SIZE', 'SKU', 'AREA', 'QTY_FISIK', 'RINCIAN_LOKASI'];
+  const lines: string[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const cells: Array<string | number> = [
+      csvText(r.kategori),
+      csvText(r.produk),
+      csvText(r.size || '-'),
+      csvText(r.sku),
+      csvText(r.area),
+      r.qty,
+      csvText(r.locStr || '-'),
+    ];
+    lines[i] = cells.join(',');
+  }
+  return '\uFEFF' + headers.join(',') + '\n' + lines.join('\n');
+}
+
 

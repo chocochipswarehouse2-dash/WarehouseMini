@@ -14,36 +14,29 @@ import {
   ChevronDown,
   X,
   Boxes,
-  SlidersHorizontal,
 } from 'lucide-react';
 import type { ProductItem, UserSession } from '../types';
 import { hasPermission } from '../services/permissions';
 import { InventoryLokasiExportModal } from './InventoryLokasiExportModal';
 import {
   buildCatalogBases,
+  composeAreaRows,
+  filterAreaRows,
+  sortAreaRows,
+  computeAreaStats,
+  buildAreaInventoryCsv,
   composeRows,
-  filterRows,
-  sortRows,
-  computeStats,
-  buildInventoryCsv,
-  composeLocationRows,
-  sortLocationRows,
-  filterLocationRows,
-  buildInventoryLocationCsv,
-  toggleArea,
-  areaLabel,
   ALL_AREAS,
   type AreaFilterType,
   type InventorySortOption,
-  type InventoryRow,
-  type InventoryLocationRow,
+  type InventoryAreaRow,
 } from './inventory/inventoryModel';
 import {
   useInventoryStock,
   getStockBySku,
   flattenStock,
 } from './inventory/useInventoryStock';
-import { InventoryList, type InventoryViewMode } from './inventory/InventoryList';
+import { InventoryList } from './inventory/InventoryList';
 import { InventoryDetailDrawer } from './inventory/InventoryDetailDrawer';
 
 export interface InventoryViewProps {
@@ -53,6 +46,16 @@ export interface InventoryViewProps {
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   onRefreshCatalog?: (forceRefresh?: boolean) => Promise<void> | void;
 }
+
+const AVAILABLE_AREAS = [
+  { id: 'ALL', label: 'Semua Area' },
+  { id: 'Warehouse', label: 'Warehouse' },
+  { id: 'Blok F', label: 'Blok F' },
+  { id: 'Koli', label: 'Koli' },
+  { id: 'Perbaikan', label: 'Perbaikan' },
+  { id: 'Aksesoris', label: 'Aksesoris' },
+  { id: 'Transit', label: 'Transit' },
+];
 
 export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   session,
@@ -68,59 +71,9 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearch = useDeferredValue(searchQuery);
 
-  const [onlyActive, setOnlyActive] = useState(false);
-  const [onlySelisih, setOnlySelisih] = useState(false);
+  const [selectedArea, setSelectedArea] = useState<string>('ALL');
+  const [onlyActive, setOnlyActive] = useState(true);
   const [sortOption, setSortOption] = useState<InventorySortOption>('NAME_ASC');
-
-  // View Mode: 'LOCATION' (Per Lokasi Supabase) vs 'SKU' (Ringkasan Agregat)
-  const [viewMode, setViewMode] = useState<InventoryViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('wms_inventory_view_mode');
-      if (saved === 'LOCATION' || saved === 'SKU') return saved;
-    } catch {}
-    return 'LOCATION';
-  });
-
-  const handleSetViewMode = (mode: InventoryViewMode) => {
-    setViewMode(mode);
-    try {
-      localStorage.setItem('wms_inventory_view_mode', mode);
-    } catch {}
-  };
-
-  // Multiselect Area filter
-  const [activeAreas, setActiveAreas] = useState<AreaFilterType[]>(() => {
-    try {
-      const saved = localStorage.getItem('wms_filter_areas_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [...ALL_AREAS];
-  });
-  const [isAreaDropdownOpen, setIsAreaDropdownOpen] = useState(false);
-  const areaDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close area dropdown on outside click
-  useEffect(() => {
-    if (!isAreaDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (areaDropdownRef.current && !areaDropdownRef.current.contains(e.target as Node)) {
-        setIsAreaDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isAreaDropdownOpen]);
-
-  const handleToggleArea = (code: AreaFilterType) => {
-    const next = toggleArea(activeAreas, code);
-    setActiveAreas(next);
-    try {
-      localStorage.setItem('wms_filter_areas_v2', JSON.stringify(next));
-    } catch {}
-  };
 
   // 3. Selected SKU for Detail Drawer
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
@@ -140,55 +93,43 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     return buildCatalogBases(productCatalog);
   }, [productCatalog]);
 
-  // Step B: Join with physical stock map
-  const allRows = useMemo(() => {
-    // stockVersion triggers re-evaluation when stockBySku updates
+  // Step B: Compose Product per Area Rows (Kategori | Nama Produk | Size | SKU | Area | Qty)
+  const allAreaRows = useMemo(() => {
+    void stockVersion;
+    const map = getStockBySku();
+    return composeAreaRows(catalogBases, map);
+  }, [catalogBases, stockVersion]);
+
+  // Step C: Filter Area Rows
+  const filteredAreaRows = useMemo(() => {
+    return filterAreaRows(allAreaRows, {
+      query: deferredSearch,
+      selectedArea,
+      onlyActive,
+    });
+  }, [allAreaRows, deferredSearch, selectedArea, onlyActive]);
+
+  // Step D: Sort Area Rows
+  const sortedAreaRows = useMemo(() => {
+    return sortAreaRows(filteredAreaRows, sortOption);
+  }, [filteredAreaRows, sortOption]);
+
+  // Step E: KPI Stats (calculated strictly on filtered physical rows)
+  const stats = useMemo(() => {
+    return computeAreaStats(filteredAreaRows);
+  }, [filteredAreaRows]);
+
+  // For Detail Drawer (when operator wants full SKU audit)
+  const allSkuRows = useMemo(() => {
     void stockVersion;
     const map = getStockBySku();
     return composeRows(catalogBases, map);
   }, [catalogBases, stockVersion]);
 
-  // Step C: Filter by query, active, selisih (Mode SKU)
-  const filteredRows = useMemo(() => {
-    return filterRows(allRows, {
-      query: deferredSearch,
-      onlyActive,
-      onlySelisih,
-    });
-  }, [allRows, deferredSearch, onlyActive, onlySelisih]);
-
-  // Step D: Sort (Mode SKU)
-  const sortedRows = useMemo(() => {
-    return sortRows(filteredRows, sortOption);
-  }, [filteredRows, sortOption]);
-
-  // Step B2: Location Rows pipeline (Mode Per Lokasi - Mirip Supabase stok_real_fisik)
-  const allLocationRows = useMemo(() => {
-    return composeLocationRows(allRows);
-  }, [allRows]);
-
-  const filteredLocationRows = useMemo(() => {
-    return filterLocationRows(allLocationRows, {
-      query: deferredSearch,
-      onlyActive,
-      onlySelisih,
-    });
-  }, [allLocationRows, deferredSearch, onlyActive, onlySelisih]);
-
-  const sortedLocationRows = useMemo(() => {
-    return sortLocationRows(filteredLocationRows, sortOption);
-  }, [filteredLocationRows, sortOption]);
-
-  // Step E: KPI Stats (calculated on filtered rows for live response)
-  const stats = useMemo(() => {
-    return computeStats(filteredRows);
-  }, [filteredRows]);
-
-  // Find currently selected row object for Drawer
   const selectedRow = useMemo(() => {
     if (!selectedSku) return null;
-    return allRows.find((r) => r.sku === selectedSku) || null;
-  }, [allRows, selectedSku]);
+    return allSkuRows.find((r) => r.sku === selectedSku) || null;
+  }, [allSkuRows, selectedSku]);
 
   // 6. Manual Refresh handler
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -208,46 +149,27 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     }
   };
 
-  // 7. CSV Export
+  // 7. CSV Export (Product per Area format)
   const canExportData = hasPermission(session, 'action_export_data');
   const handleExportCsv = () => {
-    if (viewMode === 'LOCATION') {
-      if (!sortedLocationRows.length) {
-        if (onNotify) onNotify('Tidak ada data lokasi yang bisa diekspor.', 'warning');
-        return;
-      }
-      const csv = buildInventoryLocationCsv(sortedLocationRows);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `WMS_INVENTORY_LOKASI_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      if (onNotify) onNotify(`File CSV per lokasi berhasil diunduh (${sortedLocationRows.length} baris)!`, 'success');
-      return;
-    }
-
-    if (!sortedRows.length) {
+    if (!sortedAreaRows.length) {
       if (onNotify) onNotify('Tidak ada data yang bisa diekspor.', 'warning');
       return;
     }
-    const csv = buildInventoryCsv(sortedRows, activeAreas);
+    const csv = buildAreaInventoryCsv(sortedAreaRows);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `WMS_INVENTORY_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `WMS_INVENTORY_AREA_${selectedArea.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    if (onNotify) onNotify(`File CSV berhasil diunduh (${sortedRows.length} SKU)!`, 'success');
+    if (onNotify) onNotify(`File CSV berhasil diunduh (${sortedAreaRows.length} baris area)!`, 'success');
   };
 
-  // Stock list snapshot for Lokasi Export Modal (only flattened when modal is open)
+  // Stock list snapshot for Lokasi Export Modal
   const exportStockSnapshot = useMemo(() => {
     if (!isLokasiExportModalOpen) return [];
     return flattenStock();
@@ -256,14 +178,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   return (
     <div className="space-y-4 max-w-[1600px] mx-auto p-2 sm:p-4 animate-in fade-in duration-150">
       {/* ========================================================
-          1. KPI CARDS HEADER (Stok Fisik vs DealPOS)
+          1. KPI CARDS HEADER (Stok Fisik Nyata Gudang)
           ======================================================== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         {/* KPI 1: Total SKU */}
         <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
             <span>TOTAL SKU TERDATA</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
               <Layers className="w-4 h-4" />
             </div>
           </div>
@@ -272,11 +194,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <span className="text-xs font-normal text-slate-400">SKU</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 truncate">
-            {allRows.length !== stats.skuCount ? `Difilter dari ${allRows.length.toLocaleString('id-ID')} total` : 'Seluruh master produk'}
+            {catalogBases.length !== stats.skuCount ? `Difilter dari ${catalogBases.length.toLocaleString('id-ID')} master SKU` : 'Seluruh master produk'}
           </div>
         </div>
 
-        {/* KPI 2: Total Fisik Gudang */}
+        {/* KPI 2: Total Fisik Gudang (Pcs) */}
         <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
             <span>TOTAL FISIK GUDANG</span>
@@ -289,79 +211,60 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             <span className="text-xs font-normal text-slate-400">pcs</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 truncate">
-            Stok fisik nyata di rak gudang
+            Total barang fisik nyata di rak gudang
           </div>
         </div>
 
-        {/* KPI 3: Total DealPOS */}
+        {/* KPI 3: Total Baris Area */}
         <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>TOTAL DEALPOS</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center">
-              <Package className="w-4 h-4" />
+            <span>BARIS AREA TERCATAT</span>
+            <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center">
+              <Boxes className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
-            {stats.totalDp.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">pcs</span>
+          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">
+            {stats.areaRowCount.toLocaleString('id-ID')}{' '}
+            <span className="text-xs font-normal text-slate-400">baris</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1 truncate">
-            Total sistem DealPOS (5 area)
+            Alokasi stok produk per area
           </div>
         </div>
 
-        {/* KPI 4: Selisih (Fisik - DealPOS) */}
-        <div
-          onClick={() => setOnlySelisih((prev) => !prev)}
-          className={`p-3.5 rounded-2xl border transition-all cursor-pointer shadow-xs ${
-            onlySelisih
-              ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/30'
-              : 'bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 hover:border-amber-300'
-          }`}
-          title="Klik untuk memfilter hanya SKU yang memiliki selisih"
-        >
+        {/* KPI 4: Titik Rak Terisi */}
+        <div className="p-3.5 rounded-2xl border bg-white dark:bg-[#131d31] border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">
-            <span>SELISIH FISIK vs DP</span>
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-              stats.totalSelisih === 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
-            }`}>
-              {stats.totalSelisih === 0 ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            <span>TITIK RAK TERISI</span>
+            <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center">
+              <MapPin className="w-4 h-4" />
             </div>
           </div>
-          <div className={`text-xl sm:text-2xl font-black font-mono ${
-            stats.totalSelisih === 0
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : stats.totalSelisih > 0
-              ? 'text-amber-600 dark:text-amber-400'
-              : 'text-rose-600 dark:text-rose-400'
-          }`}>
-            {stats.totalSelisih > 0 ? `+${stats.totalSelisih.toLocaleString('id-ID')}` : stats.totalSelisih.toLocaleString('id-ID')}{' '}
-            <span className="text-xs font-normal text-slate-400">pcs</span>
+          <div className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 font-mono">
+            {stats.activeLocationsCount.toLocaleString('id-ID')}{' '}
+            <span className="text-xs font-normal text-slate-400">titik rak</span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 truncate flex items-center justify-between">
-            <span>{stats.skuSelisih.toLocaleString('id-ID')} SKU berbeda</span>
-            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-              {onlySelisih ? '✓ Difilter' : 'Klik filter'}
-            </span>
+          <div className="text-[11px] text-slate-400 mt-1 truncate">
+            Lokasi rak fisik aktif dengan stok &gt; 0
           </div>
         </div>
       </div>
 
       {/* ========================================================
-          2. TOOLBAR (Search, Quick Filters, Area Multiselect, Actions)
+          2. TOOLBAR (Search, Filter Area, Ada Stok, Actions)
           ======================================================== */}
       <div className="bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           {/* Search Input */}
-          <div className="relative w-full lg:flex-1 lg:min-w-[240px]">
+          <div className="relative w-full lg:flex-1 lg:min-w-[260px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               id="inputSearchInventory"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari Nama Produk / SKU / Lokasi Rak..."
-              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+              placeholder="Cari Kategori / Nama Produk / SKU / Area / Lokasi Rak..."
+              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium transition-all"
             />
             {searchQuery && (
               <button
@@ -376,36 +279,6 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
 
           {/* Quick Filter Toggles & Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* VIEW MODE TOGGLE (Per Lokasi vs Ringkasan SKU) */}
-            <div className="inline-flex items-center p-0.5 bg-slate-100 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 rounded-xl shrink-0">
-              <button
-                type="button"
-                onClick={() => handleSetViewMode('LOCATION')}
-                className={`px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
-                  viewMode === 'LOCATION'
-                    ? 'bg-amber-500 text-black shadow-xs font-black'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold'
-                }`}
-                title="Tampilkan per baris lokasi fisik rak (mirip stok fisik di Supabase)"
-              >
-                <MapPin className="w-3.5 h-3.5" />
-                <span>Per Lokasi</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetViewMode('SKU')}
-                className={`px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
-                  viewMode === 'SKU'
-                    ? 'bg-amber-500 text-black shadow-xs font-black'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold'
-                }`}
-                title="Tampilkan 1 baris per SKU produk (agregat)"
-              >
-                <Boxes className="w-3.5 h-3.5" />
-                <span>Ringkasan SKU</span>
-              </button>
-            </div>
-
             {/* ADA STOK FILTER */}
             <button
               type="button"
@@ -415,80 +288,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                   ? 'bg-amber-500 text-black border-amber-500 shadow-xs'
                   : 'bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
               }`}
-              title="Tampilkan hanya produk yang memiliki stok (fisik atau DealPOS)"
+              title="Tampilkan hanya produk yang memiliki stok fisik di rak"
             >
               <Package className="w-3.5 h-3.5" />
               <span>ADA STOK</span>
             </button>
-
-            {/* HANYA SELISIH FILTER */}
-            <button
-              type="button"
-              onClick={() => setOnlySelisih((prev) => !prev)}
-              className={`px-3 py-2 text-xs font-extrabold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
-                onlySelisih
-                  ? 'bg-rose-500 text-white border-rose-500 shadow-xs'
-                  : 'bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-              }`}
-              title="Tampilkan hanya produk dengan perbedaan antara fisik dan DealPOS"
-            >
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>HANYA SELISIH</span>
-            </button>
-
-            {/* MULTISELECT FILTER AREA */}
-            <div className="relative" ref={areaDropdownRef}>
-              <button
-                type="button"
-                onClick={() => setIsAreaDropdownOpen(!isAreaDropdownOpen)}
-                className="px-3 py-2 text-xs font-extrabold bg-slate-50 dark:bg-[#0E1420] hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 border border-slate-200 dark:border-slate-800 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                title="Pilih area data yang diaktifkan"
-              >
-                <Filter className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[130px]">{areaLabel(activeAreas)}</span>
-                <ChevronDown className="w-3 h-3 opacity-60" />
-              </button>
-
-              {isAreaDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-50 p-2 text-xs space-y-1 animate-in fade-in duration-100">
-                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
-                    Area yang Ditampilkan
-                  </div>
-                  <label
-                    onClick={() => handleToggleArea('ALL')}
-                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer font-bold text-slate-800 dark:text-slate-200"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={activeAreas.includes('ALL')}
-                      onChange={() => {}}
-                      className="rounded text-amber-500 accent-amber-500"
-                    />
-                    <span>SEMUA AREA</span>
-                  </label>
-                  {(['GUDANG', 'STORE', 'ONLINE', 'OFFLINE'] as AreaFilterType[]).map((code) => (
-                    <label
-                      key={code}
-                      onClick={() => handleToggleArea(code)}
-                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={activeAreas.includes('ALL') || activeAreas.includes(code)}
-                        onChange={() => {}}
-                        className="rounded text-amber-500 accent-amber-500"
-                      />
-                      <span>
-                        {code === 'GUDANG' && 'GUDANG UTAMA (5 AREA)'}
-                        {code === 'STORE' && 'STORE (15 CABANG)'}
-                        {code === 'ONLINE' && 'ONLINE (MARKETPLACE)'}
-                        {code === 'OFFLINE' && 'OFFLINE (WH / QC / GA / LOG)'}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
 
             {/* LOKASI & PRINT MODAL BUTTON */}
             <button
@@ -508,7 +312,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                 type="button"
                 onClick={handleExportCsv}
                 className="px-3 py-2 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                title="Unduh hasil inventori sebagai file CSV"
+                title="Unduh hasil inventori per area sebagai file CSV"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">CSV</span>
@@ -528,6 +332,30 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
                 {isRefreshing || phase === 'syncing' ? 'SYNCING...' : 'REFRESH'}
               </span>
             </button>
+          </div>
+        </div>
+
+        {/* Area Filter Tabs (Semua, Warehouse, Blok F, Koli, Perbaikan, Aksesoris, Transit) */}
+        <div className="flex items-center gap-1 overflow-x-auto py-1 border-t border-slate-100 dark:border-slate-800/80">
+          <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
+            <Filter className="w-3 h-3 text-amber-500" />
+            <span>Filter Area:</span>
+          </span>
+          <div className="flex items-center gap-1">
+            {AVAILABLE_AREAS.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setSelectedArea(a.id)}
+                className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer shrink-0 ${
+                  selectedArea === a.id
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#0E1420] dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {a.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -582,44 +410,32 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
             Memuat data inventori dari Supabase &amp; IndexedDB...
           </span>
         </div>
-      ) : (viewMode === 'LOCATION' ? sortedLocationRows.length === 0 : sortedRows.length === 0) ? (
+      ) : sortedAreaRows.length === 0 ? (
         <div className="py-16 text-center space-y-2 bg-white dark:bg-[#161F30] border border-slate-200 dark:border-slate-800 rounded-2xl">
           <Boxes className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
           <div className="text-sm font-bold text-slate-700 dark:text-slate-300">
             Tidak Ada Produk yang Sesuai Filter
           </div>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Coba bersihkan kata kunci pencarian atau matikan filter &ldquo;Ada Stok&rdquo; / &ldquo;Hanya Selisih&rdquo;.
+            Coba bersihkan kata kunci pencarian atau matikan filter &ldquo;Ada Stok&rdquo; / ubah filter area.
           </p>
         </div>
       ) : (
         <InventoryList
-          viewMode={viewMode}
-          rows={sortedRows}
-          locationRows={sortedLocationRows}
+          rows={sortedAreaRows}
           sort={sortOption}
           onSort={setSortOption}
           onOpen={setSelectedSku}
           onLoc={handleOpenLokasiExport}
-          resetKey={`${viewMode}_${deferredSearch}_${onlyActive}_${onlySelisih}_${sortOption}`}
+          resetKey={`${selectedArea}_${deferredSearch}_${onlyActive}_${sortOption}`}
         />
       )}
 
       {/* Bottom status note */}
       <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 px-2 gap-1">
         <span>
-          {viewMode === 'LOCATION' ? (
-            <>
-              Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedLocationRows.length.toLocaleString('id-ID')}</strong> baris lokasi fisik rak (dari{' '}
-              <strong className="text-slate-700 dark:text-slate-300 font-mono">{allLocationRows.length.toLocaleString('id-ID')}</strong> total baris rak,{' '}
-              <strong className="text-slate-700 dark:text-slate-300 font-mono">{allRows.length.toLocaleString('id-ID')}</strong> SKU master). Klik baris untuk detail kartu stok.
-            </>
-          ) : (
-            <>
-              Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedRows.length.toLocaleString('id-ID')}</strong> dari{' '}
-              <strong className="text-slate-700 dark:text-slate-300 font-mono">{allRows.length.toLocaleString('id-ID')}</strong> SKU master produk. Klik baris untuk detail perbandingan channel.
-            </>
-          )}
+          Menampilkan <strong className="text-slate-700 dark:text-slate-300 font-mono">{sortedAreaRows.length.toLocaleString('id-ID')}</strong> baris produk per area (dari{' '}
+          <strong className="text-slate-700 dark:text-slate-300 font-mono">{stats.skuCount.toLocaleString('id-ID')}</strong> total SKU fisik). Klik baris produk untuk melihat rincian titik rak dan qty.
         </span>
         <span className="text-[10px]">
           Virtual Rendering Aktif · 60 FPS
@@ -627,11 +443,11 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       </div>
 
       {/* ========================================================
-          5. DETAIL DRAWER (Per-SKU 5-Area & Channel Breakdown)
+          5. DETAIL DRAWER (Per-SKU Audit & Mutasi History)
           ======================================================== */}
       <InventoryDetailDrawer
         row={selectedRow}
-        areas={activeAreas}
+        areas={[...ALL_AREAS]}
         onClose={() => setSelectedSku(null)}
         onLoc={(loc) => {
           setSelectedSku(null);

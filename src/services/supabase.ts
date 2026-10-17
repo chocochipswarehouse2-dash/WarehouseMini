@@ -4032,6 +4032,7 @@ export function extractProductFromRow(row: Record<string, any>): ProductItem | n
     s: size,
     size: size,
     category,
+    kategori: category,
     lokasi,
     price,
     stokMap,
