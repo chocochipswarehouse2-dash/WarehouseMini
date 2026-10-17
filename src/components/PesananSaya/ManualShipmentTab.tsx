@@ -1145,6 +1145,12 @@ _WMS Warehouse System_`;
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validasi otorisasi: Store tidak boleh mengedit pesanan yang sudah ada
+    if (editingOrder && !userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang memiliki izin mengedit pesanan.', 'error');
+      return;
+    }
+
     // Validasi Kelengkapan Data Pengirim & PIC
     if (!pengirim || !pengirim.trim()) {
       onShowToast('Nama Pengirim (Store) wajib dipilih/diisi', 'warning');
@@ -3390,6 +3396,20 @@ _Pemberitahuan otomatis WMS Warehouse System_`;
                       )}
                     </>
                   )}
+                  {!userIsAdmin && order.status !== 'batal' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedOrderDetails(null);
+                        setIsStoreHelpOpen(true);
+                      }}
+                      className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 font-semibold rounded-lg text-xs border border-amber-300 dark:border-amber-800 flex items-center transition-colors cursor-pointer"
+                      title="Butuh pembatalan pesanan? Ajukan ke Admin Gudang via Pusat Bantuan"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                      Ajukan Batal ke Admin
+                    </button>
+                  )}
                 </div>
 
                 {/* Section Jadwal Pengiriman ke Store (Khusus Kirim ke Store) */}
@@ -3846,9 +3866,9 @@ _WMS Warehouse System_`;
   };
 
   const handleEdit = (order: ManualShipmentOrder) => {
-    // Validasi otorisasi Store: Store tidak boleh mengedit pesanan milik Store lain
-    if (!userIsAdmin && userAssignedStore && order.nama_pengirim.toLowerCase().trim() !== userAssignedStore.toLowerCase().trim()) {
-      onShowToast(`Anda tidak memiliki izin mengedit pesanan dari ${order.nama_pengirim}. Akun Anda terdaftar sebagai ${userAssignedStore}.`, 'error');
+    // Validasi otorisasi: Hanya Admin Gudang / Superadmin yang memiliki izin mengedit pesanan
+    if (!userIsAdmin) {
+      onShowToast('Akses dibatasi: Hanya Admin Gudang / Superadmin yang berhak mengedit pesanan. Jika ada kesalahan data, silakan ajukan ke Admin via Pusat Bantuan.', 'error');
       return;
     }
     setEditingOrder(order);
@@ -3879,6 +3899,10 @@ _WMS Warehouse System_`;
   };
 
   const handleDelete = async (no_pesanan: string) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang memiliki izin menghapus pesanan.', 'error');
+      return;
+    }
     if (!confirm(`Yakin ingin menghapus pesanan ${no_pesanan}?`)) return;
     setLoading(true);
     const success = await deleteManualShipment(no_pesanan);
@@ -3902,6 +3926,10 @@ _WMS Warehouse System_`;
     notes: string,
     sendWa: boolean
   ) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang berhak membatalkan pesanan. Store silakan ajukan permohonan pembatalan ke Admin.', 'error');
+      return;
+    }
     setIsSubmittingCancel(true);
     try {
       const actor = session?.name || getUserPersonName(session?.username) || 'Admin';
@@ -5917,10 +5945,32 @@ _WMS Warehouse System_`;
                               actionType: 'mark_sent_store'
                             });
                           }
-                          if (action === 'mark_received') setAlterActionData({ order, actionType: 'mark_received_warehouse' });
-                          if (action === 'complete_ship') setAlterActionData({ order, actionType: 'complete_and_ship' });
-                          if (action === 'jadwal_store') handleOpenJadwalModal(order);
+                          if (action === 'mark_received') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak menandai penerimaan di warehouse.', 'error');
+                              return;
+                            }
+                            setAlterActionData({ order, actionType: 'mark_received_warehouse' });
+                          }
+                          if (action === 'complete_ship') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak menyelesaikan pengiriman akhir.', 'error');
+                              return;
+                            }
+                            setAlterActionData({ order, actionType: 'complete_and_ship' });
+                          }
+                          if (action === 'jadwal_store') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak mengatur jadwal kirim ke store.', 'error');
+                              return;
+                            }
+                            handleOpenJadwalModal(order);
+                          }
                           if (action === 'mark_diproses') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak memproses pesanan.', 'error');
+                              return;
+                            }
                             updateShipmentStatus(order.no_pesanan!, 'diproses').then(ok => {
                               if (ok) {
                                 onShowToast('Status pesanan diubah ke Sedang Diproses', 'success');
@@ -5929,10 +5979,18 @@ _WMS Warehouse System_`;
                             });
                           }
                           if (action === 'edit') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang memiliki izin mengedit pesanan.', 'error');
+                              return;
+                            }
                             handleEdit(order);
                             setActiveTab('form');
                           }
                           if (action === 'sj_dealpos') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak menginput SJ DealPOS.', 'error');
+                              return;
+                            }
                             setSjModalData({
                               order,
                               noSj: (order.items || []).find(it => it.no_sj_dealpos)?.no_sj_dealpos || '',
@@ -5940,17 +5998,38 @@ _WMS Warehouse System_`;
                             });
                           }
                           if (action === 'kirim_wa_alter') handleSendAlterWaFonnte(order);
-                          if (action === 'cancel') setCancelModalOrder(order);
-                          if (action === 'resi') handleUpdateResi(order.no_pesanan!);
-                          if (action === 'delete') handleDelete(order.no_pesanan!);
+                          if (action === 'cancel') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Pembatalan pesanan hanya dapat dilakukan oleh Admin Gudang / Superadmin.', 'error');
+                              return;
+                            }
+                            setCancelModalOrder(order);
+                          }
+                          if (action === 'resi') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin yang dapat memperbarui nomor resi.', 'error');
+                              return;
+                            }
+                            handleUpdateResi(order.no_pesanan!);
+                          }
+                          if (action === 'delete') {
+                            if (!userIsAdmin) {
+                              onShowToast('Akses ditolak: Hanya Admin yang dapat menghapus pesanan.', 'error');
+                              return;
+                            }
+                            handleDelete(order.no_pesanan!);
+                          }
+                          if (action === 'help_cancel') {
+                            setIsStoreHelpOpen(true);
+                          }
                           e.target.value = ''; // reset after selection
                         }}
                         defaultValue=""
                       >
                         <option value="" disabled>Lainnya</option>
-                        <option value="edit">✏️ Edit Pesanan</option>
-                        <option value="jadwal_store">📅 Jadwal Kirim Store</option>
-                        {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
+                        {userIsAdmin && <option value="edit">✏️ Edit Pesanan</option>}
+                        {userIsAdmin && <option value="jadwal_store">📅 Jadwal Kirim Store</option>}
+                        {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
                           <option value="mark_diproses">▶️ Mulai Proses</option>
                         )}
                         {(hasRealAlterItems(order)) && (
@@ -5961,24 +6040,27 @@ _WMS Warehouse System_`;
                         )}
                         {hasRealAlterItems(order) && (
                           <>
-                            <option value="spk">Cetak SPK Gudang</option>
+                            {userIsAdmin && <option value="spk">Cetak SPK Gudang</option>}
                             {order.alteration_repair_data?.status_flow === 'diajukan' && (
                               <option value="mark_sent">Tandai Dikirim Store</option>
                             )}
-                            {(order.alteration_repair_data?.status_flow === 'dikirim_store' || order.alteration_repair_data?.status_flow === 'diajukan') && (
+                            {userIsAdmin && (order.alteration_repair_data?.status_flow === 'dikirim_store' || order.alteration_repair_data?.status_flow === 'diajukan') && (
                               <option value="mark_received">Tandai Diterima Warehouse</option>
                             )}
-                            {(order.alteration_repair_data?.status_flow === 'dalam_pengerjaan' || order.alteration_repair_data?.status_flow === 'selesai_qc') && (
+                            {userIsAdmin && (order.alteration_repair_data?.status_flow === 'dalam_pengerjaan' || order.alteration_repair_data?.status_flow === 'selesai_qc') && (
                               <option value="complete_ship">Input Bukti Kirim & Selesai</option>
                             )}
                           </>
                         )}
-                        <option value="sj_dealpos">Input SJ DealPOS</option>
+                        {userIsAdmin && <option value="sj_dealpos">Input SJ DealPOS</option>}
                         {userIsAdmin && <option value="resi">Update Resi</option>}
-                        {order.status !== 'batal' && (
+                        {userIsAdmin && order.status !== 'batal' && (
                           <option value="cancel">🚫 Batalkan Pesanan</option>
                         )}
-                        <option value="delete">🗑️ Hapus Pesanan</option>
+                        {userIsAdmin && <option value="delete">🗑️ Hapus Pesanan</option>}
+                        {!userIsAdmin && order.status !== 'batal' && (
+                          <option value="help_cancel">🆘 Ajukan Batal ke Admin</option>
+                        )}
                       </select>
                     </div>
                   </td>
@@ -6517,8 +6599,18 @@ _WMS Warehouse System_`;
                             if (action === 'spk') setArReceiptOrder(order);
                             if (action === 'sj_struk') setSjAlterModalOrders([order]);
                             if (action === 'notif_wa_store') handleSendWaStoreNoticeDirect(order);
-                            if (action === 'jadwal_store') handleOpenJadwalModal(order);
+                            if (action === 'jadwal_store') {
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Hanya Admin yang dapat mengatur jadwal kirim ke store.', 'error');
+                                return;
+                              }
+                              handleOpenJadwalModal(order);
+                            }
                             if (action === 'mark_diproses') {
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak memproses pesanan.', 'error');
+                                return;
+                              }
                               updateShipmentStatus(order.no_pesanan!, 'diproses').then(ok => {
                                 if (ok) {
                                   onShowToast('Status pesanan diubah ke Sedang Diproses', 'success');
@@ -6527,20 +6619,49 @@ _WMS Warehouse System_`;
                               });
                             }
                             if (action === 'edit') {
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang memiliki izin mengedit pesanan.', 'error');
+                                return;
+                              }
                               handleEdit(order);
                               setActiveTab('form');
                             }
                             if (action === 'sj_dealpos') {
-                            setSjModalData({
-                              order,
-                              noSj: (order.items || []).find(it => it.no_sj_dealpos)?.no_sj_dealpos || '',
-                              applyToAllMarketplace: true
-                            });
-                          }
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak menginput SJ DealPOS.', 'error');
+                                return;
+                              }
+                              setSjModalData({
+                                order,
+                                noSj: (order.items || []).find(it => it.no_sj_dealpos)?.no_sj_dealpos || '',
+                                applyToAllMarketplace: true
+                              });
+                            }
                             if (action === 'kirim_wa_alter') handleSendAlterWaFonnte(order);
-                            if (action === 'cancel') setCancelModalOrder(order);
-                            if (action === 'resi') handleUpdateResi(order.no_pesanan!);
-                            if (action === 'delete') handleDelete(order.no_pesanan!);
+                            if (action === 'cancel') {
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Pembatalan pesanan hanya dapat dilakukan oleh Admin Gudang / Superadmin.', 'error');
+                                return;
+                              }
+                              setCancelModalOrder(order);
+                            }
+                            if (action === 'resi') {
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Hanya Admin yang dapat memperbarui nomor resi.', 'error');
+                                return;
+                              }
+                              handleUpdateResi(order.no_pesanan!);
+                            }
+                            if (action === 'delete') {
+                              if (!userIsAdmin) {
+                                onShowToast('Akses ditolak: Hanya Admin yang dapat menghapus pesanan.', 'error');
+                                return;
+                              }
+                              handleDelete(order.no_pesanan!);
+                            }
+                            if (action === 'help_cancel') {
+                              setIsStoreHelpOpen(true);
+                            }
                             e.target.value = ''; // reset after selection
                           }}
                           defaultValue=""
@@ -6551,8 +6672,8 @@ _WMS Warehouse System_`;
                           )}
                           <option value="notif_wa_store">📲 Notif WA Store</option>
                           {!isStoreUser && <option value="print">Print Label A6</option>}
-                          <option value="jadwal_store">📅 Atur Jadwal Store</option>
-                          {order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
+                          {userIsAdmin && <option value="jadwal_store">📅 Atur Jadwal Store</option>}
+                          {userIsAdmin && order.status !== 'diproses' && order.status !== 'dikirim' && order.status !== 'selesai' && order.status !== 'batal' && (
                             <option value="mark_diproses">▶️ Mulai Proses</option>
                           )}
                           {hasRealAlterItems(order) && (
@@ -6564,12 +6685,15 @@ _WMS Warehouse System_`;
                           {hasRealAlterItems(order) && (
                             <option value="spk">Cetak SPK</option>
                           )}
-                          <option value="edit">Edit</option>
+                          {userIsAdmin && <option value="edit">✏️ Edit</option>}
                           {userIsAdmin && <option value="resi">Update Resi</option>}
-                          {order.status !== 'batal' && (
+                          {userIsAdmin && order.status !== 'batal' && (
                             <option value="cancel">🚫 Batalkan Pesanan (Simpan Histori)</option>
                           )}
-                          <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>
+                          {userIsAdmin && <option value="delete">🗑️ Hapus Pesanan (Permanen)</option>}
+                          {!userIsAdmin && order.status !== 'batal' && (
+                            <option value="help_cancel">🆘 Ajukan Batal ke Admin</option>
+                          )}
                         </select>
                       </div>
                     </div>
