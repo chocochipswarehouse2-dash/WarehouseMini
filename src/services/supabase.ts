@@ -1305,12 +1305,72 @@ export interface LocationPurgePreviewResult {
 }
 
 /**
+ * Fetches distinct location strings recorded across Supabase (stok_real_fisik, log_produk, localDb)
+ */
+export async function fetchDistinctDatabaseLocations(): Promise<string[]> {
+  const locSet = new Set<string>();
+
+  // 1. Check local DB snapshot
+  try {
+    const localStocks = await getAllInventoryStocksFromLocalDb();
+    if (localStocks && localStocks.length > 0) {
+      localStocks.forEach((s) => {
+        if (s.lokasi) locSet.add(s.lokasi.trim());
+      });
+    }
+  } catch {}
+
+  // 2. Fetch from stok_real_fisik
+  try {
+    const client = getSupabase();
+    const { data: stockLocs } = await client
+      .from('stok_real_fisik')
+      .select('lokasi');
+    if (stockLocs && stockLocs.length > 0) {
+      stockLocs.forEach((r) => {
+        if (r.lokasi) locSet.add(r.lokasi.trim());
+      });
+    }
+  } catch (e) {
+    console.warn('Error fetching distinct locations from stok_real_fisik:', e);
+  }
+
+  // 3. Fetch recent distinct locations from log_produk
+  try {
+    const client = getSupabase();
+    const { data: recentLogs } = await client
+      .from('log_produk')
+      .select('lokasi')
+      .order('id', { ascending: false })
+      .limit(1000);
+    if (recentLogs && recentLogs.length > 0) {
+      recentLogs.forEach((r) => {
+        if (r.lokasi) locSet.add(r.lokasi.trim());
+      });
+    }
+  } catch (e) {
+    console.warn('Error fetching recent locations from log_produk:', e);
+  }
+
+  return Array.from(locSet).filter(Boolean);
+}
+
+/**
  * Fetches an impact preview of what will be affected before purging logs for locations
  */
 export async function fetchLocationPurgePreview(
   locations: string[]
 ): Promise<LocationPurgePreviewResult> {
-  const cleanLocs = Array.from(new Set(locations.map((l) => (l || '').trim().toUpperCase()).filter(Boolean)));
+  const expandedLocs = new Set<string>();
+  locations.forEach((l) => {
+    const raw = (l || '').trim();
+    if (!raw) return;
+    expandedLocs.add(raw);
+    expandedLocs.add(raw.toUpperCase());
+    expandedLocs.add(raw.toLowerCase());
+    expandedLocs.add(raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
+  });
+  const cleanLocs = Array.from(expandedLocs).filter(Boolean);
   if (cleanLocs.length === 0) {
     return {
       locations: [],
@@ -1416,7 +1476,16 @@ export async function purgeLogsByLocations(
   operatorName: string = 'Superadmin',
   deletePendingSo: boolean = true
 ): Promise<PurgeLogsResult> {
-  const cleanLocs = Array.from(new Set(locations.map((l) => (l || '').trim().toUpperCase()).filter(Boolean)));
+  const expandedLocs = new Set<string>();
+  locations.forEach((l) => {
+    const raw = (l || '').trim();
+    if (!raw) return;
+    expandedLocs.add(raw);
+    expandedLocs.add(raw.toUpperCase());
+    expandedLocs.add(raw.toLowerCase());
+    expandedLocs.add(raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
+  });
+  const cleanLocs = Array.from(expandedLocs).filter(Boolean);
   if (cleanLocs.length === 0) {
     return {
       success: false,

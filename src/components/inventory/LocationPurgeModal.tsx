@@ -29,6 +29,7 @@ import {
   fetchLocationPurgePreview,
   purgeLogsByLocations,
   LocationPurgePreviewResult,
+  fetchDistinctDatabaseLocations,
 } from '../../services/supabase';
 
 interface LocationPurgeModalProps {
@@ -49,6 +50,30 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
   allExistingLocations = [],
 }) => {
   const userIsSuperadmin = isSuperadmin(session);
+
+  // Database locations state (loaded dynamically when modal opens)
+  const [dbLocations, setDbLocations] = useState<string[]>([]);
+  const [isLoadingDbLocations, setIsLoadingDbLocations] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    setIsLoadingDbLocations(true);
+    fetchDistinctDatabaseLocations()
+      .then((locs) => {
+        if (isMounted && locs && locs.length > 0) {
+          setDbLocations(locs);
+        }
+      })
+      .catch((e) => console.warn('Gagal memuat daftar lokasi database:', e))
+      .finally(() => {
+        if (isMounted) setIsLoadingDbLocations(false);
+      });
+  }, [isOpen]);
+
+  const effectiveLocations = useMemo(() => {
+    return Array.from(new Set([...dbLocations, ...allExistingLocations].filter(Boolean)));
+  }, [dbLocations, allExistingLocations]);
 
   // Selection state
   const [mode, setMode] = useState<LocationPurgeSelection['mode']>('range');
@@ -80,9 +105,9 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
         singleLocation,
         customInput,
       },
-      allExistingLocations
+      effectiveLocations
     );
-  }, [mode, blockKey, fromRange, toRange, singleLocation, customInput, allExistingLocations]);
+  }, [mode, blockKey, fromRange, toRange, singleLocation, customInput, effectiveLocations]);
 
   // Reset preview when locations change
   useEffect(() => {
@@ -426,11 +451,11 @@ export const LocationPurgeModal: React.FC<LocationPurgeModalProps> = ({
                     className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-rose-500 uppercase"
                   />
                 </div>
-                {allExistingLocations.length > 0 && (
+                {effectiveLocations.length > 0 && (
                   <div>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400">Rak aktif terdeteksi: </span>
                     <div className="flex flex-wrap gap-1 mt-1 max-h-20 overflow-y-auto">
-                      {allExistingLocations.slice(0, 15).map((l) => (
+                      {effectiveLocations.slice(0, 15).map((l) => (
                         <button
                           key={l}
                           type="button"

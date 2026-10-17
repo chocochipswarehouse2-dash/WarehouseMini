@@ -119,9 +119,11 @@ export function parseBlockLocations(
       }
     });
   } else if (key === 'BLOK_F') {
-    ['TIKTOK', 'SHOPEE', 'STUDIO'].forEach((b) => locSet.add(b));
-    upperExisting.forEach((loc) => {
-      if (loc.includes('TIKTOK') || loc.includes('SHOPEE') || loc.includes('STUDIO') || loc.includes('BLOK F')) {
+    ['TIKTOK', 'SHOPEE', 'STUDIO', 'Tiktok', 'Shopee', 'Studio', 'tiktok', 'shopee', 'studio'].forEach((b) => locSet.add(b));
+    existingLocations.forEach((rawLoc) => {
+      const loc = (rawLoc || '').trim();
+      const up = loc.toUpperCase();
+      if (up.includes('TIKTOK') || up.includes('SHOPEE') || up.includes('STUDIO') || up.includes('BLOK F')) {
         locSet.add(loc);
       }
     });

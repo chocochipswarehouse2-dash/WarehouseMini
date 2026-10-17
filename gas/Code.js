@@ -335,17 +335,21 @@ function handleWhatsAppScan(payload) {
     }
     
     var metaMap = {};
-    if (uniqueSkus.length > 0 && uniqueSkus.length <= 50) {
+    if (uniqueSkus.length > 0) {
       try {
-        var inClause = uniqueSkus.map(function(itemSku) { 
-          return '"' + itemSku.replace(/"/g, '""') + '"'; 
-        }).join(',');
-        var metaResults = supabaseApiFetch('master_produk?sku=in.(' + encodeURIComponent(inClause) + ')&select=sku,nama_produk,size', 'GET');
-        if (metaResults && metaResults.length > 0) {
-          for (var m = 0; m < metaResults.length; m++) {
-            var metaRow = metaResults[m];
-            if (metaRow && metaRow.sku) {
-              metaMap[metaRow.sku.toUpperCase()] = metaRow;
+        var metaChunkSize = 40;
+        for (var mi = 0; mi < uniqueSkus.length; mi += metaChunkSize) {
+          var skuSlice = uniqueSkus.slice(mi, mi + metaChunkSize);
+          var inClause = skuSlice.map(function(itemSku) { 
+            return '"' + itemSku.replace(/"/g, '""') + '"'; 
+          }).join(',');
+          var metaResults = supabaseApiFetch('master_produk?sku=in.(' + encodeURIComponent(inClause) + ')&select=sku,nama_produk,size', 'GET');
+          if (metaResults && metaResults.length > 0) {
+            for (var m = 0; m < metaResults.length; m++) {
+              var metaRow = metaResults[m];
+              if (metaRow && metaRow.sku) {
+                metaMap[metaRow.sku.toUpperCase()] = metaRow;
+              }
             }
           }
         }
