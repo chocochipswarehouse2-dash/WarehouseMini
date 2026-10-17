@@ -255,6 +255,8 @@ export function getSupabaseClient(): SupabaseClient {
   return supabaseInstance;
 }
 
+export const getSupabase = getSupabaseClient;
+
 export function getAreaFromLokasi(lokasi: string, area?: string): string {
   const l = (lokasi || '').trim().toUpperCase();
   if (!l) return area || 'Warehouse';
@@ -1322,10 +1324,11 @@ export async function fetchDistinctDatabaseLocations(): Promise<string[]> {
 
   // 2. Fetch from stok_real_fisik
   try {
-    const client = getSupabase();
+    const client = getSupabaseClient();
     const { data: stockLocs } = await client
       .from('stok_real_fisik')
-      .select('lokasi');
+      .select('lokasi')
+      .limit(10000);
     if (stockLocs && stockLocs.length > 0) {
       stockLocs.forEach((r) => {
         if (r.lokasi) locSet.add(r.lokasi.trim());
@@ -1337,7 +1340,7 @@ export async function fetchDistinctDatabaseLocations(): Promise<string[]> {
 
   // 3. Fetch recent distinct locations from log_produk
   try {
-    const client = getSupabase();
+    const client = getSupabaseClient();
     const { data: recentLogs } = await client
       .from('log_produk')
       .select('lokasi')
@@ -4419,7 +4422,7 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       'BLOK F', 'Blok F',
       'LIVE SHOPEE', 'LIVE TIKTOK', 'SAMPLE', 'FOTO'
     ];
-    const client = getSupabase();
+    const client = getSupabaseClient();
 
     // 1. Authoritative Live Channel Stock Query: fetch directly from stok_real_fisik (~100ms)
     // Guarantees 100% physical reality from Supabase, bypassing stale warehouse caches
@@ -4428,12 +4431,14 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
         .from('stok_real_fisik')
         .select('sku, nama_produk, size, lokasi, area, sisa_stok')
         .in('lokasi', targetChannelLocations)
-        .neq('sisa_stok', 0),
+        .neq('sisa_stok', 0)
+        .limit(10000),
       client
         .from('stok_real_fisik')
         .select('sku, nama_produk, size, lokasi, area, sisa_stok')
         .eq('area', 'Blok F')
         .neq('sisa_stok', 0)
+        .limit(10000)
     ]);
 
     const channelRows = [...(resLoc.data || []), ...(resArea.data || [])];
