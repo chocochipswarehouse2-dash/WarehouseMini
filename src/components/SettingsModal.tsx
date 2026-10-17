@@ -18,6 +18,8 @@ import {
   Trash2,
   Edit2,
   Key,
+  Eye,
+  EyeOff,
   Shield,
   RefreshCw,
   Volume2,
@@ -235,6 +237,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isPermissionFormOpen, setIsPermissionFormOpen] = useState<boolean>(false);
+
+  // Quick Password Change Modal
+  const [passwordChangeUser, setPasswordChangeUser] = useState<LocalUserRecord | null>(null);
+  const [quickPassword, setQuickPassword] = useState<string>('');
+  const [showQuickPass, setShowQuickPass] = useState<boolean>(false);
+  const [isSavingQuickPass, setIsSavingQuickPass] = useState<boolean>(false);
+  const [showEditPassword, setShowEditPassword] = useState<boolean>(false);
+  const [showAddPassword, setShowAddPassword] = useState<boolean>(false);
 
   // Role Templates State
   const [roleList, setRoleList] = useState<LocalRole[]>([]);
@@ -771,18 +781,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     playSuccessBeep();
   };
 
+  const handleQuickPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordChangeUser) return;
+    const cleanPass = quickPassword.trim();
+    if (!cleanPass) {
+      onNotify('Password baru tidak boleh kosong!', 'warning');
+      return;
+    }
+    setIsSavingQuickPass(true);
+    try {
+      const res = await saveWmsUserToSupabase({
+        ...passwordChangeUser,
+        password: cleanPass,
+      }, passwordChangeUser.username);
+
+      if (res.success) {
+        onNotify(`Password untuk akun "${passwordChangeUser.username}" berhasil diubah dan disimpan!`, 'success');
+        playSuccessBeep();
+        setPasswordChangeUser(null);
+        setQuickPassword('');
+        await loadUsersFromSupabase();
+      } else {
+        onNotify(`Gagal mengubah password: ${res.message || 'Terjadi kesalahan'}`, 'error');
+        playErrorBeep();
+      }
+    } catch (err: any) {
+      onNotify(`Error mengubah password: ${err?.message || 'Terjadi kesalahan'}`, 'error');
+      playErrorBeep();
+    } finally {
+      setIsSavingQuickPass(false);
+    }
+  };
+
   const handleEditUser = (idx: number) => {
     const u = userList[idx];
     setEditingIndex(idx);
     setNewUsername(u.username);
     setNewName(u.name || u.username);
     setNewPassword('');
+    setShowEditPassword(false);
     setNewNik(u.nik || '');
     setNewPhone(u.phone || (u as any).no_hp || (u.permissions as any)?.phone || '');
     setNewEmail(u.email || (u.permissions as any)?.email || '');
     setNewStoreCode(u.store_code || (u.permissions as any)?.store_code || '');
     setNewStoreName(u.store_name || (u.permissions as any)?.store_name || '');
     const userRole = u.role || 'Operator';
+    setNewRole(userRole);
     const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[userRole] || ROLE_DEFAULT_PERMISSIONS['Operator'] || {};
     const cleanUserPerms = { ...(u.permissions || {}) };
     delete (cleanUserPerms as any).store_code;
@@ -804,7 +849,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleDeleteUser = (idx: number) => {
     const target = userList[idx];
     if (target.username.toLowerCase() === 'admin' || target.username.toLowerCase() === 'superadmin') {
-      onNotify('User admin master tidak dapat dihapus!', 'warning');
+      onNotify('User admin master sistem diproteksi dan tidak dapat dihapus!', 'warning');
+      return;
+    }
+    if (session && session.username.toLowerCase() === target.username.toLowerCase()) {
+      onNotify('Anda tidak dapat menghapus akun yang sedang Anda gunakan saat ini (Akun Anda)!', 'warning');
       return;
     }
     setSettingsConfirmDialog({
@@ -1536,13 +1585,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
                           Password
                         </label>
-                        <input
-                          type="text"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder={editingIndex !== null ? "Kosongkan jika tidak diubah" : "Default: 123456"}
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showAddPassword ? "text" : "password"}
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="Default: 123456"
+                            className="w-full px-3 py-2 pr-9 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowAddPassword(!showAddPassword)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            title={showAddPassword ? "Sembunyikan" : "Lihat Password"}
+                          >
+                            {showAddPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
@@ -1851,15 +1910,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                          Password
+                          Password (Kosongkan jika tidak diubah)
                         </label>
-                        <input
-                          type="text"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder={editingIndex !== null ? "Kosongkan jika tidak diubah" : "Default: 123456"}
-                          className="w-full px-3 py-2 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showEditPassword ? "text" : "password"}
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="Ketik password baru disini..."
+                            className="w-full px-3 py-2 pr-9 bg-white dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEditPassword(!showEditPassword)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            title={showEditPassword ? "Sembunyikan" : "Lihat Password"}
+                          >
+                            {showEditPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
@@ -2156,7 +2225,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-2 shrink-0">
+                        <div className="flex items-center justify-end gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
                           <span
                             className={`text-[10px] px-2 py-0.5 rounded-lg font-extrabold uppercase ${
                               usr.role === 'Superadmin' || usr.role === 'All'
@@ -2169,20 +2238,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                           <button
                             type="button"
+                            onClick={() => {
+                              setPasswordChangeUser(usr);
+                              setQuickPassword('');
+                              setShowQuickPass(false);
+                            }}
+                            title="Ganti Password Akun Ini"
+                            className="px-2.5 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg flex items-center gap-1 cursor-pointer border border-amber-200 dark:border-amber-800/60"
+                          >
+                            <Key className="w-3 h-3 text-amber-500" />
+                            <span>Ganti Pass</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => handleEditUser(idx)}
-                            title="Edit Role & Izin"
+                            title="Edit Data User, Role & Izin"
                             className="px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg flex items-center gap-1 cursor-pointer border border-blue-200 dark:border-blue-800/60"
                           >
                             <Edit2 className="w-3 h-3" />
-                            <span>Edit Izin</span>
+                            <span>Edit Akun & Izin</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => handleDeleteUser(idx)}
-                            title="Hapus User"
-                            disabled={usr.username.toLowerCase() === 'admin' || usr.username.toLowerCase() === 'superadmin'}
-                            className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg disabled:opacity-20 cursor-pointer"
+                            title={
+                              usr.username.toLowerCase() === 'admin' || usr.username.toLowerCase() === 'superadmin'
+                                ? 'Akun admin master diproteksi & tidak dapat dihapus demi keamanan'
+                                : isCurrentUser
+                                ? 'Tidak dapat menghapus akun yang sedang Anda gunakan saat ini (Akun Anda)'
+                                : 'Hapus User'
+                            }
+                            disabled={
+                              usr.username.toLowerCase() === 'admin' ||
+                              usr.username.toLowerCase() === 'superadmin' ||
+                              isCurrentUser
+                            }
+                            className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -3415,6 +3508,89 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 {isLoadingOutlets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 <span>Simpan Store & Kontak</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+    {/* Modal Popup Ganti Password Cepat */}
+    {passwordChangeUser && (
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setPasswordChangeUser(null);
+        }}
+        className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#131d31] rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4">
+            <div className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-amber-500" />
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  Ganti Password
+                </h3>
+                <p className="text-[11px] text-slate-400 font-mono">
+                  @{passwordChangeUser.username} ({passwordChangeUser.name || passwordChangeUser.username})
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPasswordChangeUser(null)}
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleQuickPasswordChange} className="space-y-4">
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                Password Baru:
+              </label>
+              <div className="relative">
+                <input
+                  type={showQuickPass ? 'text' : 'password'}
+                  required
+                  autoFocus
+                  value={quickPassword}
+                  onChange={(e) => setQuickPassword(e.target.value)}
+                  placeholder="Ketik password baru disini..."
+                  className="w-full px-3 py-2.5 pr-10 bg-slate-50 dark:bg-[#0f172a] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowQuickPass(!showQuickPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  title={showQuickPass ? "Sembunyikan" : "Lihat Password"}
+                >
+                  {showQuickPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Password akan langsung disimpan ke Cloud Database Supabase secara instan.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setPasswordChangeUser(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingQuickPass || !quickPassword.trim()}
+                className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Save className={`w-3.5 h-3.5 ${isSavingQuickPass ? 'animate-spin' : ''}`} />
+                <span>{isSavingQuickPass ? 'Menyimpan...' : 'Simpan Password Baru'}</span>
               </button>
             </div>
           </form>
