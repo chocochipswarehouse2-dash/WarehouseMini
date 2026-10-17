@@ -1,5 +1,5 @@
 import { getLocalUsers } from '../utils/localStore';
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
 import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import {
   FileText, Info,
@@ -210,6 +210,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [searchHistory, setSearchHistory] = useState<string>('');
   const [channelStocks, setChannelStocks] = useState<ChannelStockItem[]>([]);
   const [loadingStock, setLoadingStock] = useState<boolean>(false);
+  const hasInitialLoadedRef = useRef<boolean>(false);
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const [activeComboIndex, setActiveComboIndex] = useState<number>(-1);
   const [inputSearchTerm, setInputSearchTerm] = useState<{ [id: string]: string }>({});
@@ -365,6 +366,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     setLoadingStock(true);
     try {
       const liveStocks = await fetchRealtimeChannelStocksSupabase(keyword);
+      hasInitialLoadedRef.current = true;
       if (liveStocks && liveStocks.length > 0) {
         setChannelStocks((prev) => {
           const map = new Map<string, ChannelStockItem>();
@@ -378,20 +380,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           });
         });
         if (showToast) onShowToast(`Berhasil memuat ${liveStocks.length} data stok real-time dari Database!`, 'success');
-      } else if (productCatalog && productCatalog.length > 0 && channelStocks.length === 0) {
-        // Fallback to catalog if no stock logs yet
-        const mapped: ChannelStockItem[] = productCatalog.map((p) => ({
-          sku: p.k || '',
-          produk: p.p || p.k || '',
-          size: p.s || 'ALL',
-          locStr: p.lokasi || 'Warehouse',
-          studioQty: p.stokStudio || 0,
-          shpQty: p.stokShp || 0,
-          ttkQty: p.stokTtk || 0,
-          whQty: 0,
-          totalQty: Math.max(0, (p.stokMap !== undefined ? Number(p.stokMap) : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0)))),
-        }));
-        setChannelStocks(mapped);
+      } else {
+        if (!keyword) {
+          setChannelStocks([]);
+        }
+        if (showToast) onShowToast('Stok real-time diperbarui (tidak ada stok di channel ini)', 'info');
       }
     } catch (err) {
       console.warn('Error loading real stock from Supabase:', err);
@@ -529,9 +522,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     };
   }, []);
 
-  // Synchronize when catalog updates if channelStocks is still empty
+  // Synchronize when catalog updates if channelStocks is still empty and not yet initialized
   useEffect(() => {
-    if (channelStocks.length === 0 && productCatalog && productCatalog.length > 0) {
+    if (!hasInitialLoadedRef.current && channelStocks.length === 0 && productCatalog && productCatalog.length > 0) {
       loadChannelStocks();
     }
   }, [productCatalog]);
@@ -2225,8 +2218,23 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
                   </tr>
                 ) : filteredStocks.length === 0 ? (
                   <tr>
-                    <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-6 text-center text-slate-400 italic text-xs">
-                      Tidak ada stok pada filter ini
+                    <td colSpan={selectedChannel === 'ALL' ? 6 : 3} className="p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
+                      <div className="flex flex-col items-center justify-center gap-1.5 py-2">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">
+                          {selectedChannel === 'STUDIO'
+                            ? '📍 Stok Studio Kosong (0 Pcs)'
+                            : selectedChannel === 'SHOPEE'
+                            ? '🧡 Stok Shopee Kosong (0 Pcs)'
+                            : selectedChannel === 'TIKTOK'
+                            ? '🖤 Stok TikTok Kosong (0 Pcs)'
+                            : 'Stok Kosong pada Filter Ini'}
+                        </span>
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                          {deferredSearchStock.trim()
+                            ? `Tidak ditemukan produk yang cocok dengan "${deferredSearchStock}"`
+                            : 'Belum ada barang fisik yang tercatat di channel/lokasi ini.'}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ) : (

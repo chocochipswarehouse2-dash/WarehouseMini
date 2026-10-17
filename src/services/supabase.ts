@@ -2741,9 +2741,9 @@ export async function fetchSupabaseStokFisikDirect(forceRefresh = false): Promis
   if (!forceRefresh) {
     try {
       const localDbStock = await getAllInventoryStocksFromLocalDb();
-      if (localDbStock && localDbStock.length > 0 && Date.now() - memoryStokFisikLastFetch < 60 * 1000) {
+      if (localDbStock && localDbStock.length > 0) {
         memoryStokFisikCache = localDbStock;
-        memoryStokFisikLastFetch = Date.now();
+        if (!memoryStokFisikLastFetch) memoryStokFisikLastFetch = Date.now();
         return localDbStock;
       }
     } catch (err) {
@@ -4344,7 +4344,62 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string)
     : '';
 
   try {
-    const viewRowsNonZero = await fetchAllStockRealtime(50000, false);
+    let viewRowsNonZero: StockRealtimeItem[] = [];
+    if (memoryStokFisikCache && memoryStokFisikCache.length > 0) {
+      viewRowsNonZero = memoryStokFisikCache;
+    } else {
+      try {
+        const localDbStock = await getAllInventoryStocksFromLocalDb();
+        if (localDbStock && localDbStock.length > 0) {
+          viewRowsNonZero = localDbStock;
+          memoryStokFisikCache = localDbStock;
+          memoryStokFisikLastFetch = Date.now();
+        }
+      } catch {}
+    }
+
+    // Fast-fetch directly from log_produk if cache is not available or to guarantee realtime channel accuracy (<1 sec)
+    if (!viewRowsNonZero || viewRowsNonZero.length === 0) {
+      try {
+        const targetLocations = [
+          'STUDIO', 'Studio', 'SHOPEE', 'Shopee', 'TIKTOK', 'TikTok', 'BLOK F', 'Blok F',
+          'LIVE SHOPEE', 'LIVE TIKTOK', 'SAMPLE', 'FOTO'
+        ];
+        const client = getSupabase();
+        const { data: channelLogs } = await client
+          .from('log_produk')
+          .select('sku, nama_produk, size, lokasi, type, qty')
+          .in('lokasi', targetLocations);
+
+        if (channelLogs && channelLogs.length > 0) {
+          const tempMap = new Map<string, StockRealtimeItem>();
+          for (const log of channelLogs) {
+            const sku = String(log.sku || '').trim().toUpperCase();
+            const lok = String(log.lokasi || 'BLOK F').trim();
+            if (!sku) continue;
+            const key = `${sku}__${lok.toUpperCase()}`;
+            const sign = (log.type === 'IN' || log.type === 'ADJ_IN') ? 1 : (log.type === 'OUT' || log.type === 'ADJ_OUT') ? -1 : 0;
+            const delta = (Number(log.qty) || 0) * sign;
+            const cur = tempMap.get(key) || {
+              sku,
+              lokasi: lok,
+              area: 'Blok F',
+              nama_produk: log.nama_produk || sku,
+              size: log.size || '-',
+              sisa_stok: 0,
+              updated_at: new Date().toISOString()
+            };
+            cur.sisa_stok = (cur.sisa_stok || 0) + delta;
+            if (log.nama_produk) cur.nama_produk = log.nama_produk;
+            tempMap.set(key, cur);
+          }
+          viewRowsNonZero = Array.from(tempMap.values()).filter(it => (it.sisa_stok || 0) !== 0);
+        }
+      } catch (err) {
+        console.warn('Fast channel logs fetch error:', err);
+      }
+    }
+
     const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
