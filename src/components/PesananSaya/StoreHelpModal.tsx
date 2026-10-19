@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   HelpCircle, Search, X, ChevronDown, ChevronUp, Sparkles, Send, CheckCircle2,
   AlertCircle, MessageSquare, ArrowRight, GitFork, Scissors, AlertTriangle,
-  Printer, Truck, FileText, Trash2, Building2, Store, Package, Layers, ThumbsUp, Check
+  Printer, Truck, FileText, Trash2, Building2, Store, Package, Layers, ThumbsUp, Check, RefreshCw
 } from 'lucide-react';
 import { StoreFaqItem, UserSession } from '../../types';
 import { isSuperadmin } from '../../services/permissions';
@@ -154,6 +154,10 @@ export const StoreHelpModal: React.FC<StoreHelpModalProps> = ({
       case 'FileText': return <FileText className="w-3 h-3 text-amber-600 dark:text-amber-400" />;
       case 'Trash2': return <Trash2 className="w-3 h-3 text-rose-600 dark:text-rose-400" />;
       case 'Building2': return <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
+      case 'RefreshCw': return <RefreshCw className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />;
+      case 'Sparkles': return <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />;
+      case 'Search': return <Search className="w-3 h-3 text-blue-600 dark:text-blue-400" />;
+      case 'HelpCircle': return <HelpCircle className="w-3 h-3 text-amber-600 dark:text-amber-400" />;
       default: return <Store className="w-3 h-3 text-slate-600 dark:text-slate-400" />;
     }
   };

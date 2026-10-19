@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Scissors,
   Wrench,
@@ -78,11 +78,14 @@ import { PhotoLightboxModal } from './PhotoLightboxModal';
 import { StoreHelpModal } from './StoreHelpModal';
 import { compressImage } from '../../utils/imageCompressor';
 import { uploadImageToGdrive } from '../../services/gdriveUpload';
+import { partialSearchMatch } from '../../utils/sortUtils';
+import { searchActiveProductsLive } from '../../services/supabase';
 
 interface AlterationRepairTabProps {
   session: UserSession | null;
   productCatalog: ProductItem[];
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  onRefreshCatalog?: () => Promise<void> | void;
   orders?: ManualShipmentOrder[];
   onOrdersUpdated?: () => void;
   onOrderSaved?: (savedOrder: ManualShipmentOrder) => void;
@@ -148,6 +151,7 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   session,
   productCatalog,
   onShowToast,
+  onRefreshCatalog,
   orders: propOrders,
   onOrdersUpdated,
   onOrderSaved,
@@ -157,6 +161,10 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [outlets, setOutlets] = useState<OutletItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
+  const [liveAlterResults, setLiveAlterResults] = useState<{ [itemIdx: number]: ProductItem[] }>({});
+  const [isSearchingAlterLive, setIsSearchingAlterLive] = useState<{ [itemIdx: number]: boolean }>({});
+  const liveSearchTimers = useRef<{ [itemIdx: number]: any }>({});
 
   // Modals state
   const [sjStrukModalOrder, setSjStrukModalOrder] = useState<ManualShipmentOrder | null>(null);
@@ -337,6 +345,38 @@ export const AlterationRepairTab: React.FC<AlterationRepairTabProps> = ({
 
     return combined;
   }, [productCatalog, extraCatalogProducts]);
+
+  const getCatalogMatchesForItem = (catalogSearch: string | undefined) => {
+    if (!catalogSearch) return [];
+    const cleanQ = catalogSearch.trim();
+    if (!cleanQ) return [];
+    return allCatalogProducts.filter((p) =>
+      partialSearchMatch(
+        cleanQ,
+        p.k || (p as any).sku,
+        p.n || p.p || (p as any).nama_produk || (p as any).deskripsi,
+        p.size || p.s,
+        p.category || (p as any).kategori
+      )
+    );
+  };
+
+  const handleSearchLiveForItem = (itemIdx: number, q: string) => {
+    if (liveSearchTimers.current[itemIdx]) {
+      clearTimeout(liveSearchTimers.current[itemIdx]);
+    }
+    setIsSearchingAlterLive((prev) => ({ ...prev, [itemIdx]: true }));
+    liveSearchTimers.current[itemIdx] = setTimeout(async () => {
+      try {
+        const liveItems = await searchActiveProductsLive(q);
+        setLiveAlterResults((prev) => ({ ...prev, [itemIdx]: liveItems }));
+      } catch {
+        setLiveAlterResults((prev) => ({ ...prev, [itemIdx]: [] }));
+      } finally {
+        setIsSearchingAlterLive((prev) => ({ ...prev, [itemIdx]: false }));
+      }
+    }, 300);
+  };
 
   // Load Outlets
   useEffect(() => {
@@ -1375,22 +1415,47 @@ _WMS Warehouse & Alteration System_`;
                       <span>Metode Identifikasi Produk:</span>
                     </label>
                     <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleUpdateItem(idx, {
-                            isManualProduct: false,
-                          })
-                        }
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                          !item.isManualProduct
-                            ? 'bg-rose-500 text-white shadow-2xs'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                      >
-                        <Search className="w-3 h-3" />
-                        <span>Cari Katalog ({allCatalogProducts.length})</span>
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateItem(idx, {
+                              isManualProduct: false,
+                            })
+                          }
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                            !item.isManualProduct
+                              ? 'bg-rose-500 text-white shadow-2xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          <Search className="w-3 h-3" />
+                          <span>Cari Katalog ({allCatalogProducts.length})</span>
+                        </button>
+                        {onRefreshCatalog && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (isSyncingCatalog) return;
+                              setIsSyncingCatalog(true);
+                              try {
+                                await onRefreshCatalog();
+                                onShowToast('Katalog produk berhasil disinkronkan!', 'success');
+                              } catch {
+                                onShowToast('Gagal menyinkronkan katalog.', 'error');
+                              } finally {
+                                setIsSyncingCatalog(false);
+                              }
+                            }}
+                            disabled={isSyncingCatalog}
+                            className="px-2 py-1 rounded-lg text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Sinkronkan katalog produk terbaru dari database"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isSyncingCatalog ? 'animate-spin' : ''}`} />
+                            <span>{isSyncingCatalog ? '...' : 'Sinkron'}</span>
+                          </button>
+                        )}
+                      </div>
 
                       <button
                         type="button"
@@ -1433,13 +1498,30 @@ _WMS Warehouse & Alteration System_`;
                         <input
                           type="text"
                           value={item.catalogSearch || ''}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const val = e.target.value;
                             handleUpdateItem(idx, {
-                              catalogSearch: e.target.value,
+                              catalogSearch: val,
                               showDropdown: true,
-                            })
-                          }
-                          onFocus={() => handleUpdateItem(idx, { showDropdown: true })}
+                            });
+                            const cleanQ = val.trim();
+                            if (cleanQ.length >= 2) {
+                              const matches = getCatalogMatchesForItem(val);
+                              if (matches.length === 0) {
+                                handleSearchLiveForItem(idx, cleanQ);
+                              }
+                            }
+                          }}
+                          onFocus={() => {
+                            handleUpdateItem(idx, { showDropdown: true });
+                            const cleanQ = (item.catalogSearch || '').trim();
+                            if (cleanQ.length >= 2) {
+                              const matches = getCatalogMatchesForItem(item.catalogSearch);
+                              if (matches.length === 0) {
+                                handleSearchLiveForItem(idx, cleanQ);
+                              }
+                            }
+                          }}
                           placeholder={`Ketik SKU / Nama produk #${idx + 1} untuk dropsearch...`}
                           className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-medium text-xs focus:border-rose-500 focus:outline-none shadow-2xs"
                         />
@@ -1460,67 +1542,89 @@ _WMS Warehouse & Alteration System_`;
                       </div>
 
                       {/* Floating Dropdown */}
-                      {item.showDropdown && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
-                          <div className="sticky top-0 bg-slate-100 dark:bg-slate-950 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center select-none">
-                            <span>Pilih Produk ({allCatalogProducts.filter((p) => {
-                              if (!item.catalogSearch) return true;
-                              const q = item.catalogSearch.toLowerCase();
-                              return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
-                            }).length})</span>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateItem(idx, { showDropdown: false })}
-                              className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
-                            >
-                              Tutup [×]
-                            </button>
-                          </div>
+                      {item.showDropdown && (() => {
+                        const localMatches = getCatalogMatchesForItem(item.catalogSearch);
+                        const liveMatches = liveAlterResults[idx] || [];
+                        const isSearching = isSearchingAlterLive[idx] || false;
+                        const displayMatches = localMatches.length > 0 ? localMatches.slice(0, 25) : liveMatches.slice(0, 25);
+                        const isLive = localMatches.length === 0 && liveMatches.length > 0;
 
-                          {allCatalogProducts
-                            .filter((p) => {
-                              if (!item.catalogSearch) return true;
-                              const q = item.catalogSearch.toLowerCase().trim();
-                              return (
-                                (p.n || p.p || '').toLowerCase().includes(q) ||
-                                (p.k || '').toLowerCase().includes(q) ||
-                                (p.category || '').toLowerCase().includes(q)
-                              );
-                            })
-                            .slice(0, 20)
-                            .map((p, pIdx) => (
+                        return (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
+                            <div className="sticky top-0 bg-slate-100 dark:bg-slate-950 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center select-none border-b border-slate-200 dark:border-slate-800 z-10">
+                              <div className="flex items-center gap-1.5">
+                                {isLive ? (
+                                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>Stok Gudang Live ({displayMatches.length})</span>
+                                  </span>
+                                ) : (
+                                  <span>Pilih Produk ({localMatches.length > 0 ? localMatches.length : displayMatches.length})</span>
+                                )}
+                                {isSearching && <Loader2 className="w-3 h-3 animate-spin text-rose-500 ml-1" />}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateItem(idx, { showDropdown: false })}
+                                className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                              >
+                                Tutup [×]
+                              </button>
+                            </div>
+
+                            {displayMatches.map((p, pIdx) => (
                               <div
-                                key={`${p.k}_${p.size || ''}_${pIdx}`}
+                                key={`${p.k || (p as any).sku}_${p.size || p.s || ''}_${pIdx}`}
                                 onClick={() => handleSelectItemCatalog(idx, p)}
                                 className="p-2.5 hover:bg-rose-50 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors"
                               >
                                 <div className="space-y-0.5 pr-2">
                                   <div className="font-bold text-slate-800 dark:text-white text-xs">
-                                    {p.n || p.p || 'Produk Pakaian'}
+                                    {p.n || p.p || (p as any).nama_produk || (p as any).deskripsi || 'Produk Pakaian'}
                                   </div>
-                                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                                    <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">{p.k}</span>
-                                    {p.size && p.size !== '-' && <span>• Size: <strong>{String(p.size)}</strong></span>}
-                                    {p.category && <span>• {String(p.category)}</span>}
+                                  <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+                                    <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">{p.k || (p as any).sku}</span>
+                                    {(p.size || p.s) && (p.size !== '-' && p.s !== '-') && (
+                                      <span>• Size: <strong>{String(p.size || p.s)}</strong></span>
+                                    )}
+                                    {(p.category || (p as any).kategori) && (
+                                      <span>• {String(p.category || (p as any).kategori)}</span>
+                                    )}
+                                    {p.lokasi && (
+                                      <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono text-slate-600 dark:text-slate-400">
+                                        📍 {p.lokasi}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
-                                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950 px-2 py-1 rounded-lg shrink-0">
-                                  Pilih
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {isLive && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                      Live
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950 px-2 py-1 rounded-lg">
+                                    Pilih
+                                  </span>
+                                </div>
                               </div>
                             ))}
 
-                          {allCatalogProducts.filter((p) => {
-                            if (!item.catalogSearch) return true;
-                            const q = item.catalogSearch.toLowerCase();
-                            return (p.n || p.p || '').toLowerCase().includes(q) || (p.k || '').toLowerCase().includes(q);
-                          }).length === 0 && (
-                            <div className="p-3 text-center text-slate-400 text-xs">
-                              Tidak ditemukan produk untuk &ldquo;{item.catalogSearch}&rdquo;. Silakan klik tombol <strong>Produk Seri Lama / Non-Katalog</strong> di atas untuk mengisi deskripsi produk secara manual.
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            {isSearching && displayMatches.length === 0 && (
+                              <div className="p-4 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+                                <span>Mencari di stok gudang live...</span>
+                              </div>
+                            )}
+
+                            {!isSearching && displayMatches.length === 0 && (
+                              <div className="p-3 text-center text-slate-400 text-xs">
+                                Tidak ditemukan produk untuk &ldquo;{item.catalogSearch}&rdquo;. Silakan klik tombol <strong>Produk Seri Lama / Non-Katalog</strong> di atas untuk mengisi deskripsi produk secara manual.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

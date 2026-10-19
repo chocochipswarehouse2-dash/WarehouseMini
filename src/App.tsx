@@ -756,11 +756,14 @@ export default function App() {
         // Blocking fetch if no local data or manual refresh requested
         await fetchFromSupabase(forceRefresh);
       } else {
-        // Non-blocking background sync (SWR): check if last sync was > 30 mins ago to prevent wasteful egress
+        // Non-blocking background sync (SWR): check if last sync was > 30 mins ago or missing physical stock sync
         const lastSync = Number(localStorage.getItem('wms_master_products_last_sync') || '0');
+        const hasV2Catalog = localStorage.getItem('wms_catalog_v2_synced') === 'true';
         const THIRTY_MINS = 30 * 60 * 1000;
-        if (Date.now() - lastSync > THIRTY_MINS) {
-          fetchFromSupabase(false).catch((err) => {
+        if (!hasV2Catalog || Date.now() - lastSync > THIRTY_MINS) {
+          fetchFromSupabase(true).then(() => {
+            try { localStorage.setItem('wms_catalog_v2_synced', 'true'); } catch {}
+          }).catch((err) => {
             console.warn('Background sync error:', err);
           });
         }
@@ -1934,6 +1937,7 @@ export default function App() {
                     session={session}
                     productCatalog={productDatabase}
                     onShowToast={showToast}
+                    onRefreshCatalog={() => loadProducts(true)}
                   />
               )}
               {activePage === 'pusat_resolusi' && (

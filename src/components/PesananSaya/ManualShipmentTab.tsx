@@ -45,7 +45,7 @@ import {
 } from '../../services/gasManualShipment';
 import { clearDeltaSyncCache } from '../../services/gasSync';
 import { sendFonnteMessage, getFonnteConfig } from '../../services/whatsapp';
-import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, StockRealtimeItem } from '../../services/supabase';
+import { supabaseFetch, fetchStockForSkus, isWarehouseLocation, StockRealtimeItem, searchActiveProductsLive, fetchMasterProductsFromSupabase } from '../../services/supabase';
 import { lookupProductBySku } from '../../utils/productLookup';
 import QRCode from 'qrcode';
 import {
@@ -61,6 +61,7 @@ interface ManualShipmentViewProps {
   session: UserSession | null;
   productCatalog: ProductItem[];
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  onRefreshCatalog?: () => Promise<void> | void;
 }
 
 export function ensureOrderItems(o: ManualShipmentOrder): ManualShipmentItem[] {
@@ -94,9 +95,30 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
   session,
   productCatalog,
   onShowToast,
+  onRefreshCatalog,
 }) => {
   const userIsAdmin = isSuperadmin(session);
   const canAction = true; // Selalu aktifkan pemilihan & multi-choice untuk semua pengguna
+
+  const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
+
+  const handleSyncCatalog = async () => {
+    if (isSyncingCatalog) return;
+    setIsSyncingCatalog(true);
+    try {
+      if (onRefreshCatalog) {
+        await onRefreshCatalog();
+      } else {
+        await fetchMasterProductsFromSupabase(50000, true);
+      }
+      onShowToast('Katalog produk berhasil disinkronkan!', 'success');
+    } catch (err) {
+      console.warn('Sync catalog error:', err);
+      onShowToast('Gagal menyinkronkan katalog.', 'error');
+    } finally {
+      setIsSyncingCatalog(false);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<'form' | 'alteration_repair' | 'rekap'>('form');
   const [filterOrderType, setFilterOrderType] = useState<'all' | 'manual_shipment' | 'manual_with_alter' | 'alteration_repair'>('all');
@@ -1394,33 +1416,48 @@ _WMS Warehouse System_`;
     setItems([]);
   };
 
-  const handleScanProduct = (sku: string) => {
-    const product = productCatalog.find(p => p.k.toUpperCase() === sku.toUpperCase());
+  const handleScanProduct = async (sku: string) => {
+    const cleanSku = (sku || '').trim().toUpperCase();
+    if (!cleanSku) return;
+
+    let product = productCatalog.find(p => (p.k || (p as any).sku || '').toUpperCase() === cleanSku);
     if (!product) {
-      onShowToast(`SKU ${sku} tidak terdaftar!`, 'error');
+      // Live fallback lookup in Supabase if not present in local cache
+      try {
+        const liveItems = await searchActiveProductsLive(cleanSku);
+        if (liveItems && liveItems.length > 0) {
+          product = liveItems.find(p => (p.k || (p as any).sku || '').toUpperCase() === cleanSku) || liveItems[0];
+        }
+      } catch (err) {
+        console.warn('Live lookup error for SKU:', cleanSku, err);
+      }
+    }
+
+    if (!product) {
+      onShowToast(`SKU ${cleanSku} tidak terdaftar di database!`, 'error');
       return;
     }
 
     setItems(prev => {
-      const existing = prev.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+      const existing = prev.find(i => i.sku.toUpperCase() === product!.k.toUpperCase());
       if (existing) {
         // Increment qty hanya pada baris pertama yang cocok
         return prev.map(i => i.id === existing.id ? { ...i, qty: (Number(i.qty) || 0) + 1 } : i);
       }
       
-      const displayNama = product.p || product.n || 'Unknown Product';
-      const displaySize = product.s && product.s !== 'ALL' ? ` - ${product.s}` : '';
+      const displayNama = product!.p || (product as any).nama_produk || product!.n || 'Unknown Product';
+      const displaySize = product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? ` - ${product!.s}` : '';
       const fullName = `${displayNama}${displaySize}`;
       return [...prev, {
         id: `item-${Date.now()}`,
         nama_produk: fullName,
-        sku: product.k,
+        sku: product!.k,
         qty: 1,
         fulfillment: '',
-        size: product.s && product.s !== 'ALL' ? product.s : ''
+        size: product!.s && product!.s !== 'ALL' && product!.s !== 'Default' ? product!.s : ''
       }];
     });
-    onShowToast(`Berhasil menambahkan ${product.p || product.n || product.k}`, 'success');
+    onShowToast(`Berhasil menambahkan ${product.p || (product as any).nama_produk || product.n || product.k}`, 'success');
   };
 
   const renderForm = () => (
@@ -1863,9 +1900,21 @@ _WMS Warehouse System_`;
                 <ShoppingBag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 Item Pesanan
               </span>
-              <span className="text-[11px] font-semibold text-slate-500">
-                {items.length} Baris Produk
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSyncCatalog}
+                  disabled={isSyncingCatalog}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer shadow-2xs"
+                  title="Sinkronkan katalog produk terbaru dari database"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingCatalog ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingCatalog ? 'Sinkronisasi...' : `${productCatalog.length} Produk`}</span>
+                </button>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {items.length} Baris Produk
+                </span>
+              </div>
             </h3>
 
             {/* Scan / Add Product */}
@@ -6820,6 +6869,7 @@ _WMS Warehouse System_`;
             session={session}
             productCatalog={productCatalog}
             onShowToast={onShowToast}
+            onRefreshCatalog={handleSyncCatalog}
             orders={orders}
             onOrdersUpdated={loadOrders}
             onOrderSaved={() => {

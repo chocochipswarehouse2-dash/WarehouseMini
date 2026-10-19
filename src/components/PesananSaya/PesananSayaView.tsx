@@ -11,6 +11,7 @@ interface PesananSayaViewProps {
   session: UserSession | null;
   productCatalog: ProductItem[];
   onShowToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  onRefreshCatalog?: () => Promise<void> | void;
 }
 
 type TabType = 'dashboard' | 'manual_shipment' | 'shopee' | 'iglive' | 'tiktok' | 'website' | 'woocommerce' | 'lazada';
@@ -34,6 +35,7 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
   session,
   productCatalog,
   onShowToast,
+  onRefreshCatalog,
 }) => {
   const userIsAdmin = isSuperadmin(session);
   
@@ -168,7 +170,13 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
 
         {activeTab === 'manual_shipment' && (
           <div>
-             <ManualShipmentTab key={session?.username || 'anonymous'} session={session} productCatalog={productCatalog} onShowToast={onShowToast} />
+              <ManualShipmentTab 
+                key={session?.username || 'anonymous'} 
+                session={session} 
+                productCatalog={productCatalog} 
+                onShowToast={onShowToast} 
+                onRefreshCatalog={onRefreshCatalog}
+              />
           </div>
         )}
 

@@ -4234,6 +4234,12 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
           allStok = await getAllInventoryStocksFromLocalDb();
         } catch {}
       }
+      // If local cache is empty, fetch positive physical stock directly from Supabase
+      if (!allStok || allStok.length === 0) {
+        try {
+          allStok = await fetchSupabaseStokFisikDirect(forceRefresh);
+        } catch {}
+      }
       if (!allStok || allStok.length === 0) return;
 
       for (const r of allStok) {
@@ -4243,9 +4249,31 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
         if (!sku) continue;
 
         let item = productsMap.get(sku);
-        // If product is NOT in master_produk (DealPOS CSV), do not inject placeholder into master catalog.
-        // Uncataloged physical stocks are detected and resolved via Anomaly Hub.
-        if (!item) continue;
+        // If product is NOT in master_produk but has real physical stock in warehouse with a valid name,
+        // create a valid catalog item so it can be picked, searched, and ordered.
+        if (!item) {
+          const rawName = String(r.nama_produk || '').trim();
+          if (rawName && rawName.toUpperCase() !== sku) {
+            const cleanName = cleanProductName(rawName);
+            item = {
+              k: sku,
+              sku: sku,
+              p: cleanName,
+              nama_produk: cleanName,
+              s: r.size || 'Default',
+              size: r.size || 'Default',
+              category: r.category || 'Physical Stock',
+              kategori: r.category || 'Physical Stock',
+              lokasi: r.lokasi ? String(r.lokasi).trim() : '',
+              price: 0,
+              stokMap: Number(r.sisa_stok || 0),
+              locList: r.lokasi ? [{ lokasi: String(r.lokasi).trim(), qty: Number(r.sisa_stok || 0) }] : [],
+            };
+            productsMap.set(sku, item);
+          } else {
+            continue;
+          }
+        }
 
         if (item && r.lokasi) {
           const locClean = String(r.lokasi).trim();
@@ -4375,6 +4403,7 @@ export async function searchProductsInSupabase(keyword: string): Promise<Product
 
   const foundMap = new Map<string, ProductItem>();
   const searchTargets = [
+    { table: 'stok_real_fisik', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk', 'lokasi']).substring(1)}&limit=40` },
     { table: 'master_produk', filter: `${buildFuzzySearchQuery(cleanQ, ['sku', 'nama_produk', 'kategori']).substring(1)}&limit=40` },
   ];
 
@@ -4391,12 +4420,91 @@ export async function searchProductsInSupabase(keyword: string): Promise<Product
           }
         }
       } catch {
-        // Silently skip non-existent tables
+        // Silently skip non-existent tables or timeouts
       }
     })
   );
 
   return Array.from(foundMap.values()).filter((it) => !isDummyProduct(it));
+}
+
+/**
+ * Ultra-fast live search on active physical warehouse stock & master products
+ * Used as responsive live fallback in PhysicalScanInput and ManualShipment / Alteration tabs
+ */
+export async function searchActiveProductsLive(keyword: string): Promise<ProductItem[]> {
+  const cleanQ = (keyword || '').trim();
+  if (!cleanQ || cleanQ.length < 2) return [];
+
+  const foundMap = new Map<string, ProductItem>();
+  const { url: supaUrl, key: supaKey } = getStoredSupabaseConfig();
+  const encoded = encodeURIComponent(`%${cleanQ}%`);
+
+  try {
+    // 1. Fast search on stok_real_fisik (instant response < 300ms)
+    const r1 = await fetch(
+      `${supaUrl}/rest/v1/stok_real_fisik?select=sku,nama_produk,size,lokasi,sisa_stok&or=(nama_produk.ilike.${encoded},sku.ilike.${encoded})&limit=30`,
+      {
+        headers: {
+          apikey: supaKey,
+          Authorization: 'Bearer ' + supaKey,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    if (r1.ok) {
+      const rows = await r1.json();
+      if (Array.isArray(rows)) {
+        for (const r of rows) {
+          const sku = String(r.sku || '').trim().toUpperCase();
+          if (!sku || foundMap.has(sku)) continue;
+          const cleanName = cleanProductName(r.nama_produk || sku);
+          foundMap.set(sku, {
+            k: sku,
+            sku: sku,
+            p: cleanName,
+            nama_produk: cleanName,
+            s: r.size || 'Default',
+            size: r.size || 'Default',
+            category: 'Physical Stock',
+            kategori: 'Physical Stock',
+            lokasi: r.lokasi ? String(r.lokasi).trim() : '',
+            stokMap: Number(r.sisa_stok || 0),
+            price: 0,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Live search on stok_real_fisik error:', err);
+  }
+
+  // 2. Exact or prefix SKU search on master_produk (fast indexed scan)
+  try {
+    const r2 = await fetch(
+      `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&sku=ilike.${encodeURIComponent(`${cleanQ}%`)}&limit=15`,
+      {
+        headers: {
+          apikey: supaKey,
+          Authorization: 'Bearer ' + supaKey,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    if (r2.ok) {
+      const rows = await r2.json();
+      if (Array.isArray(rows)) {
+        for (const r of rows) {
+          const item = extractProductFromRow(r);
+          if (item && !isDummyProduct(item) && !foundMap.has(item.k)) {
+            foundMap.set(item.k, item);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return Array.from(foundMap.values());
 }
 
 /**
