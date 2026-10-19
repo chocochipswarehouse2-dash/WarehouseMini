@@ -4579,14 +4579,6 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     let warehouseRows: StockRealtimeItem[] = [];
     if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
       warehouseRows = memoryStokFisikCache;
-    } else {
-      try {
-        const localDbStock = await getAllInventoryStocksFromLocalDb();
-        if (localDbStock && localDbStock.length > 0) {
-          warehouseRows = localDbStock;
-          if (!memoryStokFisikCache) memoryStokFisikCache = localDbStock;
-        }
-      } catch {}
     }
 
     // Combine channelRows and relevant warehouseRows, with fresh channelRows taking precedence for channel locations
@@ -4656,53 +4648,51 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     console.warn('Error fetching live channel stock from Supabase:', err);
   }
 
+  // 3. Fetch Master Produk to enrich product names ONLY when user is actively searching
+  if (searchKeyword && searchKeyword.trim().length >= 2) {
+    try {
+      const masterQuery = `select=sku,nama_produk,nama,size,ukuran${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&limit=50`;
+      const masterRows = await supabaseFetch<any[]>('master_produk', 'GET', null, masterQuery);
+      if (masterRows && Array.isArray(masterRows)) {
+        for (const m of masterRows) {
+          const sku = String(m.sku || '').trim().toUpperCase();
+          if (!sku) continue;
+          const nama = String(m.nama_produk || m.nama || sku).trim();
+          let size = String(m.size || m.ukuran || '').trim();
+          if (!size || size === '-') {
+            if (sku.endsWith('XXL')) size = 'XXL';
+            else if (sku.endsWith('XL')) size = 'XL';
+            else if (sku.endsWith('XS')) size = 'XS';
+            else if (sku.endsWith('L')) size = 'L';
+            else if (sku.endsWith('M')) size = 'M';
+            else if (sku.endsWith('S')) size = 'S';
+            else size = 'ALL';
+          }
 
-  // 3. Fetch Master Produk to enrich product names & include products with 0 stock
-  try {
-    const masterQuery = searchKeyword && searchKeyword.trim()
-      ? `select=sku,nama_produk,nama,size,ukuran${buildFuzzySearchQuery(searchKeyword, ['sku', 'nama_produk'])}&limit=100`
-      : 'select=sku,nama_produk,nama,size,ukuran&limit=3000';
+          if (!stockMap.has(sku)) {
+            stockMap.set(sku, {
+              sku,
+              produk: nama,
+              size: size || 'ALL',
+              locations: new Map(),
+            });
+          } else {
+            const entry = stockMap.get(sku)!;
+            if (nama && nama !== sku) entry.produk = nama;
+            if (size && size !== '-' && (!entry.size || entry.size === 'ALL' || entry.size === '-')) entry.size = size;
+          }
 
-    const masterRows = await supabaseFetch<any[]>('master_produk', 'GET', null, masterQuery);
-    if (masterRows && Array.isArray(masterRows)) {
-      for (const m of masterRows) {
-        const sku = String(m.sku || '').trim().toUpperCase();
-        if (!sku) continue;
-        const nama = String(m.nama_produk || m.nama || sku).trim();
-        let size = String(m.size || m.ukuran || '').trim();
-        if (!size || size === '-') {
-          if (sku.endsWith('XXL')) size = 'XXL';
-          else if (sku.endsWith('XL')) size = 'XL';
-          else if (sku.endsWith('XS')) size = 'XS';
-          else if (sku.endsWith('L')) size = 'L';
-          else if (sku.endsWith('M')) size = 'M';
-          else if (sku.endsWith('S')) size = 'S';
-          else size = 'ALL';
-        }
-
-        if (!stockMap.has(sku)) {
-          stockMap.set(sku, {
-            sku,
-            produk: nama,
-            size: size || 'ALL',
-            locations: new Map(),
-          });
-        } else {
+          // If dealpos_channels or explicit stock columns exist in master_produk
           const entry = stockMap.get(sku)!;
-          if (nama && nama !== sku) entry.produk = nama;
-          if (size && size !== '-' && (!entry.size || entry.size === 'ALL' || entry.size === '-')) entry.size = size;
-        }
-
-        // If dealpos_channels or explicit stock columns exist in master_produk
-        const entry = stockMap.get(sku)!;
-        if (m.dealpos_channels && typeof m.dealpos_channels === 'object') {
-          if (m.dealpos_channels.STUDIO !== undefined) entry.directStudio = Number(m.dealpos_channels.STUDIO) || 0;
-          if (m.dealpos_channels.SHOPEE !== undefined) entry.directShp = Number(m.dealpos_channels.SHOPEE) || 0;
-          if (m.dealpos_channels.TIKTOK !== undefined) entry.directTtk = Number(m.dealpos_channels.TIKTOK) || 0;
+          if (m.dealpos_channels && typeof m.dealpos_channels === 'object') {
+            if (m.dealpos_channels.STUDIO !== undefined) entry.directStudio = Number(m.dealpos_channels.STUDIO) || 0;
+            if (m.dealpos_channels.SHOPEE !== undefined) entry.directShp = Number(m.dealpos_channels.SHOPEE) || 0;
+            if (m.dealpos_channels.TIKTOK !== undefined) entry.directTtk = Number(m.dealpos_channels.TIKTOK) || 0;
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // 4. Transform into structured ChannelStockItem list
   const channelStockList: import('../types').ChannelStockItem[] = [];

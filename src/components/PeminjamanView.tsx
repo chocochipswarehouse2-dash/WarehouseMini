@@ -67,10 +67,7 @@ import {
 } from '../utils/localStore';
 import { savePendingOfflinePeminjaman } from '../services/localDb';
 import {
-  sortAlphabeticalAndSize,
   fuzzySearchMultiple,
-  fuzzySearch,
-  partialSearchMatch,
   extractSizeFromSku,
   formatProductNameWithSize,
   cleanProductName,
@@ -592,28 +589,31 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Memoized fast lookup maps and datalist options (Zero-lag, 0ms input delay)
   const { productOptionsList, skuLookupMap, nameLookupMap } = useMemo(() => {
-    const skuMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
-
-    // Fast indexed catalog dictionary
-    const catDict = new Map<string, ProductItem>();
-    (productCatalog || []).forEach((p) => {
-      if (!p || isDummyProduct(p)) return;
-      const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
-      if (!k || isCorruptedSku(k)) return;
-      catDict.set(k, p);
-    });
+    type ProductOptionItem = {
+      sku: string;
+      produk: string;
+      size: string;
+      lokasi: string;
+      stok: number;
+      whQty: number;
+      studioQty: number;
+      shpQty: number;
+      ttkQty: number;
+      _s: string;
+    };
+    const skuMap = new Map<string, ProductOptionItem>();
 
     // 1. Process ChannelStocks first (direct realtime from stok_real_fisik)
     channelStocks.forEach((cs) => {
       const skuUpper = (cs.sku || '').toUpperCase().trim();
       if (!skuUpper || isCorruptedSku(skuUpper) || isDummyProduct({ k: skuUpper, p: cs.produk } as any)) return;
       
-      const catItem = catDict.get(skuUpper);
+      const catItem = catalogLookupMap.get(skuUpper);
       const cleanName = resolveProductName(skuUpper, cs.produk, catItem);
       const cleanSize = resolveProductDisplaySize(skuUpper, cs.size, catItem?.s) || 'ALL';
 
       const total = typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0));
-      const itemData = {
+      const itemData: ProductOptionItem = {
         sku: skuUpper,
         produk: cleanName,
         size: cleanSize,
@@ -623,6 +623,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         studioQty: cs.studioQty || 0,
         shpQty: cs.shpQty || 0,
         ttkQty: cs.ttkQty || 0,
+        _s: `${skuUpper} ${cleanName} ${cleanSize}`.toLowerCase(),
       };
       skuMap.set(skuUpper, itemData);
     });
@@ -640,9 +641,11 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       if (existing) {
         if ((existing.produk === skuUpper || existing.produk.length > cleanName.length) && cleanName !== skuUpper) {
           existing.produk = cleanName;
+          existing._s = `${skuUpper} ${cleanName} ${existing.size}`.toLowerCase();
         }
         if ((!existing.size || existing.size === 'ALL' || existing.size === '-') && cleanSize !== 'ALL') {
           existing.size = cleanSize;
+          existing._s = `${skuUpper} ${existing.produk} ${cleanSize}`.toLowerCase();
         }
         return;
       }
@@ -654,7 +657,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             ? Number(p.stokMap)
             : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0)));
 
-      const itemData = {
+      const itemData: ProductOptionItem = {
         sku: skuUpper,
         produk: cleanName,
         size: cleanSize,
@@ -664,19 +667,27 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         studioQty: p.stokStudio || 0,
         shpQty: p.stokShp || 0,
         ttkQty: p.stokTtk || 0,
+        _s: `${skuUpper} ${cleanName} ${cleanSize}`.toLowerCase(),
       };
       skuMap.set(skuUpper, itemData);
     });
 
-    // Fast array creation with standard fast comparison (no localeCompare blocking main thread)
-    const list = Array.from(skuMap.values()).sort((a, b) => {
-      if (b.stok !== a.stok) return b.stok - a.stok;
-      const pA = a.produk.toLowerCase();
-      const pB = b.produk.toLowerCase();
-      return pA < pB ? -1 : pA > pB ? 1 : 0;
-    });
+    // Partition items: items with stock first (small subset, ~200 items), then zero stock items
+    // NO heavy 500,000 string comparison sort over 25,000 items!
+    const withStock: ProductOptionItem[] = [];
+    const withoutStock: ProductOptionItem[] = [];
+    for (const item of skuMap.values()) {
+      if (item.stok > 0) {
+        withStock.push(item);
+      } else {
+        withoutStock.push(item);
+      }
+    }
+    withStock.sort((a, b) => b.stok - a.stok);
+    const list = [...withStock, ...withoutStock];
+
     return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: skuMap };
-  }, [productCatalog, channelStocks]);
+  }, [productCatalog, channelStocks, catalogLookupMap]);
 
   // Select a product from suggestions, Enter key, or barcode scanner
   const selectProduct = (
@@ -743,23 +754,18 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     });
   };
 
-  // Fast custom dropdown renderer inside form with keyboard navigation
-  const renderSuggestions = (itemId: string, currentVal: string, isSelected?: boolean) => {
-    if (focusedItemId !== itemId || !currentVal.trim() || isSelected) return null;
+  // Ultra-fast cached suggestions helper (0 allocations in search loop, capped at 30 items)
+  const getSuggestions = (currentVal: string) => {
     const lower = currentVal.trim().toLowerCase();
+    if (!lower) return [];
     const keywords = lower.split(/\s+/).filter(Boolean);
-
-    // Fast multi-keyword filter with early termination cap to 30 items
     const suggestions: typeof productOptionsList = [];
+
     for (let i = 0; i < productOptionsList.length; i++) {
       const p = productOptionsList[i];
-      const pSku = p.sku.toLowerCase();
-      const pName = p.produk.toLowerCase();
-      const pSize = (p.size || '').toLowerCase();
       let match = true;
       for (let j = 0; j < keywords.length; j++) {
-        const kw = keywords[j];
-        if (!pSku.includes(kw) && !pName.includes(kw) && !pSize.includes(kw)) {
+        if (!p._s.includes(keywords[j])) {
           match = false;
           break;
         }
@@ -770,6 +776,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       }
     }
 
+    // Sort ONLY the 30 matched items
     suggestions.sort((a, b) => {
       const aStarts = a.produk.toLowerCase().startsWith(lower) || a.sku.toLowerCase().startsWith(lower);
       const bStarts = b.produk.toLowerCase().startsWith(lower) || b.sku.toLowerCase().startsWith(lower);
@@ -777,6 +784,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       if (!aStarts && bStarts) return 1;
       return 0;
     });
+
+    return suggestions;
+  };
+
+  // Fast custom dropdown renderer inside form with keyboard navigation
+  const renderSuggestions = (itemId: string, currentVal: string, isSelected?: boolean) => {
+    if (focusedItemId !== itemId || !currentVal.trim() || isSelected) return null;
+    const suggestions = getSuggestions(currentVal);
 
     if (suggestions.length === 0) {
       return (
@@ -860,29 +875,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   // Keyboard navigation handler for Combobox input
   const handleProductInputKeyDown = (e: React.KeyboardEvent, itemId: string, currentVal: string) => {
     const trimmed = currentVal.trim();
-    const lower = trimmed.toLowerCase();
-    const keywords = lower.split(/\s+/).filter(Boolean);
     const upper = trimmed.toUpperCase();
-
-    const suggestions: typeof productOptionsList = [];
-    for (let i = 0; i < productOptionsList.length; i++) {
-      const p = productOptionsList[i];
-      const pSku = p.sku.toLowerCase();
-      const pName = p.produk.toLowerCase();
-      const pSize = (p.size || '').toLowerCase();
-      let match = true;
-      for (let j = 0; j < keywords.length; j++) {
-        const kw = keywords[j];
-        if (!pSku.includes(kw) && !pName.includes(kw) && !pSize.includes(kw)) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        suggestions.push(p);
-        if (suggestions.length >= 30) break;
-      }
-    }
+    const suggestions = getSuggestions(currentVal);
 
     if (e.key === 'ArrowDown') {
       if (suggestions.length > 0) {
@@ -1196,7 +1190,10 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   // Filter channel stocks
   const deferredSearchStock = useDeferredValue(searchStock);
   const filteredStocks = useMemo(() => {
-    const filtered = channelStocks.filter((it) => {
+    const sTerm = deferredSearchStock.trim().toLowerCase();
+    const sKeywords = sTerm ? sTerm.split(/\s+/).filter(Boolean) : [];
+
+    return channelStocks.filter((it) => {
       // Channel / Area filter
       if (selectedChannel === 'STUDIO') {
         if (it.studioQty <= 0) return false;
@@ -1205,32 +1202,34 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       } else if (selectedChannel === 'TIKTOK') {
         if (it.ttkQty <= 0) return false;
       } else if (selectedChannel === 'ALL') {
-        if ((it.studioQty <= 0) && (it.shpQty <= 0) && (it.ttkQty <= 0) && ((it.totalQty || 0) <= 0)) return false;
+        if (it.studioQty <= 0 && it.shpQty <= 0 && it.ttkQty <= 0 && (it.totalQty || 0) <= 0) return false;
       }
 
       // Search query filter (Multi-keyword partial matching)
-      if (!deferredSearchStock.trim()) return true;
-      return partialSearchMatch(deferredSearchStock, it.sku, it.produk, it.size, it.locStr);
+      if (sKeywords.length === 0) return true;
+      const combined = `${it.sku} ${it.produk} ${it.size} ${it.locStr}`.toLowerCase();
+      return sKeywords.every((kw) => combined.includes(kw));
     });
-    
-    return sortAlphabeticalAndSize<ChannelStockItem>(filtered, (i) => i.produk || i.sku || '', (i) => i.size || '');
   }, [channelStocks, selectedChannel, deferredSearchStock]);
 
   // Filter history records
   const deferredSearchHistory = useDeferredValue(searchHistory);
   const filteredHistory = useMemo(() => {
-    if (!deferredSearchHistory.trim()) return records;
+    const q = deferredSearchHistory.trim().toLowerCase();
+    if (!q) return records;
+    const keywords = q.split(/\s+/).filter(Boolean);
+    if (!keywords.length) return records;
+
     return records.filter((rec) => {
-      const itemTexts = rec.items.map((it) => `${it.produk} ${it.sku} ${it.size} ${it.lokasi}`);
-      return partialSearchMatch(
-        deferredSearchHistory,
-        rec.noPeminjaman,
-        rec.namaPeminjam,
-        rec.keperluan,
-        rec.tglPinjam,
-        rec.status,
-        ...itemTexts
-      );
+      let combined = `${rec.noPeminjaman || ''} ${rec.namaPeminjam || ''} ${rec.keperluan || ''} ${rec.tglPinjam || ''} ${rec.status || ''}`;
+      if (Array.isArray(rec.items)) {
+        for (let i = 0; i < rec.items.length; i++) {
+          const it = rec.items[i];
+          combined += ` ${it.produk || ''} ${it.sku || ''} ${it.size || ''} ${it.lokasi || ''}`;
+        }
+      }
+      const combinedLower = combined.toLowerCase();
+      return keywords.every((kw) => combinedLower.includes(kw));
     });
   }, [records, deferredSearchHistory]);
 
