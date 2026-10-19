@@ -478,10 +478,18 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [showEditProductDropdown, setShowEditProductDropdown] = useState<boolean>(false);
 
   const editCatalogSuggestions = useMemo(() => {
-    if (!editProductSearch.trim() || editProductSearch.trim().length < 2) return [];
-    return productCatalog.filter((prod: any) => 
-      fuzzySearchMultiple(editProductSearch.trim(), [prod.nama_produk as string, prod.sku as string, prod.nama as string, prod.size as string])
-    ).slice(0, 8);
+    const q = editProductSearch.trim();
+    if (!q || q.length < 2) return [];
+    const results: any[] = [];
+    for (let i = 0; i < (productCatalog || []).length; i++) {
+      const prod: any = productCatalog[i];
+      if (!prod) continue;
+      if (fuzzySearchMultiple(q, [prod.nama_produk as string, prod.sku as string, prod.nama as string, prod.size as string])) {
+        results.push(prod);
+        if (results.length >= 8) break;
+      }
+    }
+    return results;
   }, [productCatalog, editProductSearch]);
 
   // Load SPS records and real-time stocks from Supabase on mount & set up realtime listener
