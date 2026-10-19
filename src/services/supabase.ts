@@ -4567,7 +4567,15 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       }
     }
 
-    // 2. Also incorporate warehouse stock rows from memory cache or localDb
+    // 2. Also incorporate warehouse stock rows from memory cache or localDb ONLY for relevant SKUs (channel SKUs or search keyword)
+    const channelSkus = new Set<string>();
+    for (const r of channelRows) {
+      const sku = String(r.sku || '').trim().toUpperCase();
+      if (sku) channelSkus.add(sku);
+    }
+
+    const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
+
     let warehouseRows: StockRealtimeItem[] = [];
     if (!forceRefresh && memoryStokFisikCache && memoryStokFisikCache.length > 0) {
       warehouseRows = memoryStokFisikCache;
@@ -4581,12 +4589,16 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       } catch {}
     }
 
-    // Combine channelRows and warehouseRows, with fresh channelRows taking precedence for channel locations
+    // Combine channelRows and relevant warehouseRows, with fresh channelRows taking precedence for channel locations
     const allRowsMap = new Map<string, StockRealtimeItem>();
     for (const w of warehouseRows) {
       const sku = String(w.sku || w.kode || '').trim().toUpperCase();
-      const lok = String(w.lokasi || 'Warehouse').trim().toUpperCase();
       if (!sku) continue;
+      // High-performance filter: only include warehouse rows if SKU exists in channels or matches search filter
+      if (!channelSkus.has(sku) && (!searchFilterUpper || (!sku.includes(searchFilterUpper) && !String(w.nama_produk || w.nama || '').toUpperCase().includes(searchFilterUpper)))) {
+        continue;
+      }
+      const lok = String(w.lokasi || 'Warehouse').trim().toUpperCase();
       allRowsMap.set(`${sku}__${lok}`, w);
     }
     for (const [k, c] of channelMap.entries()) {
@@ -4594,7 +4606,6 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     }
 
     const viewRowsNonZero = Array.from(allRowsMap.values());
-    const searchFilterUpper = searchKeyword ? searchKeyword.trim().toUpperCase() : '';
 
     if (viewRowsNonZero && Array.isArray(viewRowsNonZero) && viewRowsNonZero.length > 0) {
       for (const r of viewRowsNonZero) {
@@ -4770,10 +4781,12 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     });
   }
 
-  // Sort: Items with available stock first, then alphabetically
+  // Sort: Items with available stock first, then alphabetically (fast string comparison)
   channelStockList.sort((a, b) => {
     if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
-    return a.produk.localeCompare(b.produk);
+    const nA = a.produk.toLowerCase();
+    const nB = b.produk.toLowerCase();
+    return nA < nB ? -1 : nA > nB ? 1 : 0;
   });
 
   return channelStockList;
@@ -4853,9 +4866,10 @@ export async function updatePeminjamanInSupabase(record: PeminjamanRecord): Prom
   }
 }
 
-export async function fetchPeminjamanFromSupabase(): Promise<PeminjamanRecord[]> {
+export async function fetchPeminjamanFromSupabase(limit = 100): Promise<PeminjamanRecord[]> {
   try {
-    const data = await supabaseFetch<any[]>('peminjaman', 'GET', null, 'select=*&order=created_at.desc');
+    const query = limit ? `select=*&order=created_at.desc&limit=${limit}` : 'select=*&order=created_at.desc';
+    const data = await supabaseFetch<any[]>('peminjaman', 'GET', null, query);
 
     if (data && Array.isArray(data)) {
       const groups = new Map<string, any>();

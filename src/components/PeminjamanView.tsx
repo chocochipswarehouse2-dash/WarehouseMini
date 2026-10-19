@@ -216,6 +216,27 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   const [inputSearchTerm, setInputSearchTerm] = useState<{ [id: string]: string }>({});
   const [realtimeSkuStocks, setRealtimeSkuStocks] = useState<Record<string, StockRealtimeItem[]>>({});
 
+  // Fast O(1) lookup dictionary for product catalog
+  const catalogLookupMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    (productCatalog || []).forEach((p) => {
+      if (!p) return;
+      const k = String(p.k || (p as any).sku || '').trim().toUpperCase();
+      if (k) map.set(k, p);
+    });
+    return map;
+  }, [productCatalog]);
+
+  // Fast O(1) lookup dictionary for channel stocks
+  const channelStockSkuMap = useMemo(() => {
+    const map = new Map<string, ChannelStockItem>();
+    channelStocks.forEach((cs) => {
+      const k = (cs.sku || '').toUpperCase().trim();
+      if (k) map.set(k, cs);
+    });
+    return map;
+  }, [channelStocks]);
+
   // Helper to extract warehouse locations with stock > 0
   const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
     const cleanSku = String(sku || '').trim().toUpperCase();
@@ -253,8 +274,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       return sorted;
     }
 
-    // 2. Check channelStocks if available
-    const csMatch = channelStocks.find((cs) => (cs.sku || '').toUpperCase().trim() === cleanSku);
+    // 2. Check channelStocks if available (O(1) map lookup)
+    const csMatch = channelStockSkuMap.get(cleanSku);
     if (csMatch && (csMatch.whQty || 0) > 0 && csMatch.whLocStr) {
       const parts = csMatch.whLocStr
         .split(/[,/;\n|]+/)
@@ -287,7 +308,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       });
     }
 
-    const catMatch = productCatalog.find((p) => (p.k || '').trim().toUpperCase() === cleanSku);
+    const catMatch = catalogLookupMap.get(cleanSku);
     if (catMatch && Array.isArray(catMatch.locList)) {
       catMatch.locList.forEach((itemLoc) => {
         if (typeof itemLoc === 'object' && itemLoc && itemLoc.lokasi) {
@@ -361,8 +382,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       .catch((err) => console.warn('Gagal memuat stok lokasi realtime peminjaman:', err));
   }, [formSkusKey]);
   
+  const isFetchingChannelStocksRef = useRef<boolean>(false);
+
   // Load real channel stocks from Supabase
   const loadChannelStocks = async (showToast = false, keyword?: string) => {
+    if (isFetchingChannelStocksRef.current && !keyword && !showToast) return;
+    isFetchingChannelStocksRef.current = true;
     setLoadingStock(true);
     try {
       const liveStocks = await fetchRealtimeChannelStocksSupabase(keyword, showToast);
@@ -376,7 +401,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           liveStocks.forEach((it) => map.set(it.sku.toUpperCase(), it));
           return Array.from(map.values()).sort((a, b) => {
             if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
-            return a.produk.localeCompare(b.produk);
+            const pA = a.produk.toLowerCase();
+            const pB = b.produk.toLowerCase();
+            return pA < pB ? -1 : pA > pB ? 1 : 0;
           });
         });
         if (showToast) onShowToast(`Berhasil memuat ${liveStocks.length} data stok real-time dari Database!`, 'success');
@@ -390,6 +417,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       console.warn('Error loading real stock from Supabase:', err);
       if (showToast) onShowToast('Gagal memuat stok real Database', 'error');
     } finally {
+      isFetchingChannelStocksRef.current = false;
       setLoadingStock(false);
     }
   };
@@ -400,7 +428,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     try {
       onRefreshCatalog();
       await loadChannelStocks(true);
-      const data = await fetchPeminjamanFromSupabase();
+      const data = await fetchPeminjamanFromSupabase(100);
       if (data && data.length > 0) {
         setRecords(data);
       }
@@ -462,8 +490,8 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   useEffect(() => {
     let isMounted = true;
     
-    // Initial fetch
-    fetchPeminjamanFromSupabase().then((d) => {
+    // Initial fetch (100 recent records)
+    fetchPeminjamanFromSupabase(100).then((d) => {
       if (isMounted && d && d.length > 0) setRecords(d);
     });
     loadChannelStocks();
@@ -473,7 +501,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     let pendingSkus = new Set<string>();
 
     const handlePeminjamanChange = () => {
-      fetchPeminjamanFromSupabase().then((d) => {
+      fetchPeminjamanFromSupabase(100).then((d) => {
         if (isMounted && d && d.length > 0) setRecords(d);
       });
     };
@@ -492,7 +520,9 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
             deltaRows.forEach((it) => map.set(it.sku.toUpperCase(), it));
             return Array.from(map.values()).sort((a, b) => {
               if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
-              return a.produk.localeCompare(b.produk);
+              const pA = a.produk.toLowerCase();
+              const pB = b.produk.toLowerCase();
+              return pA < pB ? -1 : pA > pB ? 1 : 0;
             });
           });
         }
@@ -524,7 +554,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Synchronize when catalog updates if channelStocks is still empty and not yet initialized
   useEffect(() => {
-    if (!hasInitialLoadedRef.current && channelStocks.length === 0 && productCatalog && productCatalog.length > 0) {
+    if (!hasInitialLoadedRef.current && !isFetchingChannelStocksRef.current && channelStocks.length === 0 && productCatalog && productCatalog.length > 0) {
       loadChannelStocks();
     }
   }, [productCatalog]);
@@ -563,7 +593,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
   // Memoized fast lookup maps and datalist options (Zero-lag, 0ms input delay)
   const { productOptionsList, skuLookupMap, nameLookupMap } = useMemo(() => {
     const skuMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
-    const nameMap = new Map<string, { sku: string; produk: string; size: string; lokasi: string; stok: number; whQty: number; studioQty: number; shpQty: number; ttkQty: number }>();
 
     // Fast indexed catalog dictionary
     const catDict = new Map<string, ProductItem>();
@@ -596,10 +625,6 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         ttkQty: cs.ttkQty || 0,
       };
       skuMap.set(skuUpper, itemData);
-      if (itemData.produk) {
-        nameMap.set(itemData.produk.toLowerCase().trim(), itemData);
-        nameMap.set(`${itemData.produk.toLowerCase()} ${itemData.size.toLowerCase()}`.trim(), itemData);
-      }
     });
 
     // 2. Merge with productCatalog (from master_produk / catalog)
@@ -641,17 +666,16 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         ttkQty: p.stokTtk || 0,
       };
       skuMap.set(skuUpper, itemData);
-      if (itemData.produk) {
-        nameMap.set(itemData.produk.toLowerCase().trim(), itemData);
-        nameMap.set(`${itemData.produk.toLowerCase()} ${itemData.size.toLowerCase()}`.trim(), itemData);
-      }
     });
 
+    // Fast array creation with standard fast comparison (no localeCompare blocking main thread)
     const list = Array.from(skuMap.values()).sort((a, b) => {
       if (b.stok !== a.stok) return b.stok - a.stok;
-      return a.produk.localeCompare(b.produk);
+      const pA = a.produk.toLowerCase();
+      const pB = b.produk.toLowerCase();
+      return pA < pB ? -1 : pA > pB ? 1 : 0;
     });
-    return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: nameMap };
+    return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: skuMap };
   }, [productCatalog, channelStocks]);
 
   // Select a product from suggestions, Enter key, or barcode scanner
@@ -725,20 +749,34 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const lower = currentVal.trim().toLowerCase();
     const keywords = lower.split(/\s+/).filter(Boolean);
 
-    // Multi-keyword filter + cap to 30 items
-    const suggestions = productOptionsList
-      .filter((p) => {
-        const text = `${p.sku} ${p.produk} ${p.size}`.toLowerCase();
-        return keywords.every((kw) => text.includes(kw));
-      })
-      .sort((a, b) => {
-        const aStarts = a.produk.toLowerCase().startsWith(lower) || a.sku.toLowerCase().startsWith(lower);
-        const bStarts = b.produk.toLowerCase().startsWith(lower) || b.sku.toLowerCase().startsWith(lower);
-        if (aStarts && !bStarts) return -1;
-        if (!aStarts && bStarts) return 1;
-        return 0;
-      })
-      .slice(0, 30);
+    // Fast multi-keyword filter with early termination cap to 30 items
+    const suggestions: typeof productOptionsList = [];
+    for (let i = 0; i < productOptionsList.length; i++) {
+      const p = productOptionsList[i];
+      const pSku = p.sku.toLowerCase();
+      const pName = p.produk.toLowerCase();
+      const pSize = (p.size || '').toLowerCase();
+      let match = true;
+      for (let j = 0; j < keywords.length; j++) {
+        const kw = keywords[j];
+        if (!pSku.includes(kw) && !pName.includes(kw) && !pSize.includes(kw)) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        suggestions.push(p);
+        if (suggestions.length >= 30) break;
+      }
+    }
+
+    suggestions.sort((a, b) => {
+      const aStarts = a.produk.toLowerCase().startsWith(lower) || a.sku.toLowerCase().startsWith(lower);
+      const bStarts = b.produk.toLowerCase().startsWith(lower) || b.sku.toLowerCase().startsWith(lower);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+      return 0;
+    });
 
     if (suggestions.length === 0) {
       return (
@@ -826,12 +864,25 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const keywords = lower.split(/\s+/).filter(Boolean);
     const upper = trimmed.toUpperCase();
 
-    const suggestions = productOptionsList
-      .filter((p) => {
-        const text = `${p.sku} ${p.produk} ${p.size}`.toLowerCase();
-        return keywords.every((kw) => text.includes(kw));
-      })
-      .slice(0, 30);
+    const suggestions: typeof productOptionsList = [];
+    for (let i = 0; i < productOptionsList.length; i++) {
+      const p = productOptionsList[i];
+      const pSku = p.sku.toLowerCase();
+      const pName = p.produk.toLowerCase();
+      const pSize = (p.size || '').toLowerCase();
+      let match = true;
+      for (let j = 0; j < keywords.length; j++) {
+        const kw = keywords[j];
+        if (!pSku.includes(kw) && !pName.includes(kw) && !pSize.includes(kw)) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        suggestions.push(p);
+        if (suggestions.length >= 30) break;
+      }
+    }
 
     if (e.key === 'ArrowDown') {
       if (suggestions.length > 0) {
@@ -1185,12 +1236,14 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
   // Calculate totals
   const totalStockItems = filteredStocks.length;
-  const totalStockPcs = filteredStocks.reduce((acc, curr) => {
-    if (selectedChannel === 'STUDIO') return acc + curr.studioQty;
-    if (selectedChannel === 'SHOPEE') return acc + curr.shpQty;
-    if (selectedChannel === 'TIKTOK') return acc + curr.ttkQty;
-    return acc + curr.studioQty + curr.shpQty + curr.ttkQty;
-  }, 0);
+  const totalStockPcs = useMemo(() => {
+    return filteredStocks.reduce((acc, curr) => {
+      if (selectedChannel === 'STUDIO') return acc + curr.studioQty;
+      if (selectedChannel === 'SHOPEE') return acc + curr.shpQty;
+      if (selectedChannel === 'TIKTOK') return acc + curr.ttkQty;
+      return acc + curr.studioQty + curr.shpQty + curr.ttkQty;
+    }, 0);
+  }, [filteredStocks, selectedChannel]);
 
   // WhatsApp Message Generator
   const generateWaMessage = (record: PeminjamanRecord, type: 'personal' | 'grup', customPhone?: string) => {
