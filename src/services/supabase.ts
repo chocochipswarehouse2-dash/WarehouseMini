@@ -4506,11 +4506,26 @@ export async function searchActiveProductsLive(keyword: string): Promise<Product
   return Array.from(foundMap.values());
 }
 
+let memoryChannelStocksCache: {
+  data: import('../types').ChannelStockItem[];
+  timestamp: number;
+} | null = null;
+
 /**
  * Fetch real-time available stocks per channel & location from Supabase
  * Specifically tracks Area BLOK F, Lokasi: Shopee, TikTok, Studio, and Warehouse.
  */
 export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string, forceRefresh = false): Promise<import('../types').ChannelStockItem[]> {
+  if (forceRefresh) {
+    memoryStokFisikCache = null;
+    memoryChannelStocksCache = null;
+  }
+
+  // Fast cache hit (30s) for non-filtered queries to prevent redundant Supabase calls and thread lock
+  if (!searchKeyword && !forceRefresh && memoryChannelStocksCache && Date.now() - memoryChannelStocksCache.timestamp < 30000) {
+    return memoryChannelStocksCache.data;
+  }
+
   const stockMap = new Map<
     string,
     {
@@ -4523,10 +4538,6 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
       directTtk?: number;
     }
   >();
-
-  if (forceRefresh) {
-    memoryStokFisikCache = null;
-  }
 
   try {
     const targetChannelLocations = [
@@ -4778,6 +4789,13 @@ export async function fetchRealtimeChannelStocksSupabase(searchKeyword?: string,
     const nB = b.produk.toLowerCase();
     return nA < nB ? -1 : nA > nB ? 1 : 0;
   });
+
+  if (!searchKeyword && channelStockList.length > 0) {
+    memoryChannelStocksCache = {
+      data: channelStockList,
+      timestamp: Date.now(),
+    };
+  }
 
   return channelStockList;
 }

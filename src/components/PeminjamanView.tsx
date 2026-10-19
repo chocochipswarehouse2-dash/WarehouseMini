@@ -414,6 +414,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
       console.warn('Error loading real stock from Supabase:', err);
       if (showToast) onShowToast('Gagal memuat stok real Database', 'error');
     } finally {
+      hasInitialLoadedRef.current = true;
       isFetchingChannelStocksRef.current = false;
       setLoadingStock(false);
     }
@@ -587,107 +588,51 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     );
   };
 
-  // Memoized fast lookup maps and datalist options (Zero-lag, 0ms input delay)
-  const { productOptionsList, skuLookupMap, nameLookupMap } = useMemo(() => {
-    type ProductOptionItem = {
-      sku: string;
-      produk: string;
-      size: string;
-      lokasi: string;
-      stok: number;
-      whQty: number;
-      studioQty: number;
-      shpQty: number;
-      ttkQty: number;
-      _s: string;
+  type ProductOptionItem = {
+    sku: string;
+    produk: string;
+    size: string;
+    lokasi: string;
+    stok: number;
+    whQty: number;
+    studioQty: number;
+    shpQty: number;
+    ttkQty: number;
+    _s?: string;
+  };
+
+  // Ultra-fast O(1) resolution of product option from channel stocks or product catalog
+  const getProductOptionBySku = (rawSku: string): ProductOptionItem | null => {
+    const skuUpper = (rawSku || '').trim().toUpperCase();
+    if (!skuUpper) return null;
+    const cs = channelStockSkuMap.get(skuUpper);
+    const cat = catalogLookupMap.get(skuUpper);
+    if (!cs && !cat) return null;
+
+    const cleanName = resolveProductName(skuUpper, cs?.produk || cat?.p, cat);
+    const cleanSize = resolveProductDisplaySize(skuUpper, cs?.size, cat?.s) || 'ALL';
+    const total = cs
+      ? (typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0)))
+      : (cat?.stokMap !== undefined ? Number(cat.stokMap) : ((cat?.stokStudio || 0) + (cat?.stokShp || 0) + (cat?.stokTtk || 0)));
+
+    return {
+      sku: skuUpper,
+      produk: cleanName,
+      size: cleanSize,
+      lokasi: cs?.whLocStr || cs?.locStr || cat?.lokasi || 'Warehouse',
+      stok: Math.max(0, total || 0),
+      whQty: cs?.whQty || 0,
+      studioQty: cs?.studioQty || cat?.stokStudio || 0,
+      shpQty: cs?.shpQty || cat?.stokShp || 0,
+      ttkQty: cs?.ttkQty || cat?.stokTtk || 0,
+      _s: `${skuUpper} ${cleanName} ${cleanSize}`.toLowerCase(),
     };
-    const skuMap = new Map<string, ProductOptionItem>();
+  };
 
-    // 1. Process ChannelStocks first (direct realtime from stok_real_fisik)
-    channelStocks.forEach((cs) => {
-      const skuUpper = (cs.sku || '').toUpperCase().trim();
-      if (!skuUpper || isCorruptedSku(skuUpper) || isDummyProduct({ k: skuUpper, p: cs.produk } as any)) return;
-      
-      const catItem = catalogLookupMap.get(skuUpper);
-      const cleanName = resolveProductName(skuUpper, cs.produk, catItem);
-      const cleanSize = resolveProductDisplaySize(skuUpper, cs.size, catItem?.s) || 'ALL';
-
-      const total = typeof cs.totalQty === 'number' ? cs.totalQty : ((cs.whQty || 0) + (cs.studioQty || 0) + (cs.shpQty || 0) + (cs.ttkQty || 0));
-      const itemData: ProductOptionItem = {
-        sku: skuUpper,
-        produk: cleanName,
-        size: cleanSize,
-        lokasi: cs.whLocStr || cs.locStr || 'Warehouse',
-        stok: Math.max(0, total),
-        whQty: cs.whQty || 0,
-        studioQty: cs.studioQty || 0,
-        shpQty: cs.shpQty || 0,
-        ttkQty: cs.ttkQty || 0,
-        _s: `${skuUpper} ${cleanName} ${cleanSize}`.toLowerCase(),
-      };
-      skuMap.set(skuUpper, itemData);
-    });
-
-    // 2. Merge with productCatalog (from master_produk / catalog)
-    (productCatalog || []).forEach((p) => {
-      if (!p || isDummyProduct(p)) return;
-      const skuUpper = (p.k || (p as any).sku || '').toUpperCase().trim();
-      if (!skuUpper || isCorruptedSku(skuUpper)) return;
-      
-      const cleanName = resolveProductName(skuUpper, p.p, p);
-      const cleanSize = resolveProductDisplaySize(skuUpper, p.s) || 'ALL';
-
-      const existing = skuMap.get(skuUpper);
-      if (existing) {
-        if ((existing.produk === skuUpper || existing.produk.length > cleanName.length) && cleanName !== skuUpper) {
-          existing.produk = cleanName;
-          existing._s = `${skuUpper} ${cleanName} ${existing.size}`.toLowerCase();
-        }
-        if ((!existing.size || existing.size === 'ALL' || existing.size === '-') && cleanSize !== 'ALL') {
-          existing.size = cleanSize;
-          existing._s = `${skuUpper} ${existing.produk} ${cleanSize}`.toLowerCase();
-        }
-        return;
-      }
-
-      // If channelStocks has loaded and SKU is not in channelStocks, physical stock is 0
-      const stok = channelStocks.length > 0
-        ? 0
-        : (p.stokMap !== undefined
-            ? Number(p.stokMap)
-            : ((p.stokStudio || 0) + (p.stokShp || 0) + (p.stokTtk || 0)));
-
-      const itemData: ProductOptionItem = {
-        sku: skuUpper,
-        produk: cleanName,
-        size: cleanSize,
-        lokasi: p.lokasi || 'Warehouse',
-        stok: Math.max(0, stok || 0),
-        whQty: 0,
-        studioQty: p.stokStudio || 0,
-        shpQty: p.stokShp || 0,
-        ttkQty: p.stokTtk || 0,
-        _s: `${skuUpper} ${cleanName} ${cleanSize}`.toLowerCase(),
-      };
-      skuMap.set(skuUpper, itemData);
-    });
-
-    // Partition items: items with stock first (small subset, ~200 items), then zero stock items
-    // NO heavy 500,000 string comparison sort over 25,000 items!
-    const withStock: ProductOptionItem[] = [];
-    const withoutStock: ProductOptionItem[] = [];
-    for (const item of skuMap.values()) {
-      if (item.stok > 0) {
-        withStock.push(item);
-      } else {
-        withoutStock.push(item);
-      }
-    }
-    withStock.sort((a, b) => b.stok - a.stok);
-    const list = [...withStock, ...withoutStock];
-
-    return { productOptionsList: list, skuLookupMap: skuMap, nameLookupMap: skuMap };
-  }, [productCatalog, channelStocks, catalogLookupMap]);
+  const hasSkuInLookup = (sku: string): boolean => {
+    const skuUpper = (sku || '').trim().toUpperCase();
+    return Boolean(skuUpper && (channelStockSkuMap.has(skuUpper) || catalogLookupMap.has(skuUpper)));
+  };
 
   // Select a product from suggestions, Enter key, or barcode scanner
   const selectProduct = (
@@ -738,10 +683,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
 
     // Direct O(1) matching against SKU map ONLY for complete SKU / Barcode scans (minimum 4 characters)
     // NEVER match 1-3 characters (e.g. 'X') and NEVER auto-match against product names on typing!
-    if (upper.length >= 4 && skuLookupMap.has(upper)) {
-      const matched = skuLookupMap.get(upper)!;
-      selectProduct(itemId, matched);
-      return;
+    if (upper.length >= 4 && hasSkuInLookup(upper)) {
+      const matched = getProductOptionBySku(upper);
+      if (matched) {
+        selectProduct(itemId, matched);
+        return;
+      }
     }
 
     // User is actively typing / searching text (e.g. "x", "xerina", etc.)
@@ -754,35 +701,72 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     });
   };
 
-  // Ultra-fast cached suggestions helper (0 allocations in search loop, capped at 30 items)
-  const getSuggestions = (currentVal: string) => {
+  // Ultra-fast on-demand suggestions helper (stops early at 25 items, zero startup lag)
+  const getSuggestions = (currentVal: string): ProductOptionItem[] => {
     const lower = currentVal.trim().toLowerCase();
     if (!lower) return [];
     const keywords = lower.split(/\s+/).filter(Boolean);
-    const suggestions: typeof productOptionsList = [];
+    if (keywords.length === 0) return [];
 
-    for (let i = 0; i < productOptionsList.length; i++) {
-      const p = productOptionsList[i];
+    const suggestions: ProductOptionItem[] = [];
+    const seenSkus = new Set<string>();
+
+    // 1. Search in channelStocks first (items with physical presence in Live/Blok F)
+    for (let i = 0; i < channelStocks.length; i++) {
+      const cs = channelStocks[i];
+      const skuUpper = (cs.sku || '').toUpperCase().trim();
+      if (!skuUpper || isCorruptedSku(skuUpper) || seenSkus.has(skuUpper)) continue;
+
+      const pName = cs.produk || '';
+      const text = `${skuUpper} ${pName} ${cs.size || ''}`.toLowerCase();
       let match = true;
       for (let j = 0; j < keywords.length; j++) {
-        if (!p._s.includes(keywords[j])) {
+        if (!text.includes(keywords[j])) {
           match = false;
           break;
         }
       }
       if (match) {
-        suggestions.push(p);
-        if (suggestions.length >= 30) break;
+        seenSkus.add(skuUpper);
+        const opt = getProductOptionBySku(skuUpper);
+        if (opt) suggestions.push(opt);
+        if (suggestions.length >= 25) break;
       }
     }
 
-    // Sort ONLY the 30 matched items
+    // 2. Search in productCatalog if we need more suggestions, stopping as soon as we reach 25 items
+    if (suggestions.length < 25 && productCatalog && productCatalog.length > 0) {
+      for (let i = 0; i < productCatalog.length; i++) {
+        const p = productCatalog[i];
+        if (!p || isDummyProduct(p)) continue;
+        const skuUpper = String(p.k || (p as any).sku || '').trim().toUpperCase();
+        if (!skuUpper || isCorruptedSku(skuUpper) || seenSkus.has(skuUpper)) continue;
+
+        const pName = String(p.p || (p as any).nama || '');
+        const text = `${skuUpper} ${pName} ${p.s || ''}`.toLowerCase();
+        let match = true;
+        for (let j = 0; j < keywords.length; j++) {
+          if (!text.includes(keywords[j])) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          seenSkus.add(skuUpper);
+          const opt = getProductOptionBySku(skuUpper);
+          if (opt) suggestions.push(opt);
+          if (suggestions.length >= 25) break;
+        }
+      }
+    }
+
+    // Sort the matched suggestions so exact/prefix matches appear first
     suggestions.sort((a, b) => {
       const aStarts = a.produk.toLowerCase().startsWith(lower) || a.sku.toLowerCase().startsWith(lower);
       const bStarts = b.produk.toLowerCase().startsWith(lower) || b.sku.toLowerCase().startsWith(lower);
       if (aStarts && !bStarts) return -1;
       if (!aStarts && bStarts) return 1;
-      return 0;
+      return (b.stok || 0) - (a.stok || 0);
     });
 
     return suggestions;
@@ -896,9 +880,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         return;
       }
       // 2. Exact SKU match (e.g. barcode scanner ended with Enter):
-      if (skuLookupMap.has(upper)) {
-        selectProduct(itemId, skuLookupMap.get(upper)!);
-        return;
+      if (hasSkuInLookup(upper)) {
+        const matched = getProductOptionBySku(upper);
+        if (matched) {
+          selectProduct(itemId, matched);
+          return;
+        }
       }
       // 3. If there are filtered suggestions, pick the first one on Enter:
       if (suggestions.length > 0) {
@@ -918,10 +905,12 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     const upper = trimmed.toUpperCase();
 
     // If exact SKU in lookup map and length >= 4, ensure it's selected
-    if (upper.length >= 4 && skuLookupMap.has(upper)) {
-      const matched = skuLookupMap.get(upper)!;
-      selectProduct(itemId, matched);
-      return;
+    if (upper.length >= 4 && hasSkuInLookup(upper)) {
+      const matched = getProductOptionBySku(upper);
+      if (matched) {
+        selectProduct(itemId, matched);
+        return;
+      }
     }
     // No fuzzy substring match on blur!
   };
