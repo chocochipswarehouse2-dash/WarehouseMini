@@ -4137,7 +4137,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
             let retries = 3;
             while (retries > 0) {
               try {
-                const r = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&order=sku.asc&limit=${pageSize}&offset=${off}`, {
+                const r = await fetch(`${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&order=sku.asc&limit=${pageSize}&offset=${off}`, {
                   headers: {
                     apikey: supaKey,
                     Authorization: 'Bearer ' + supaKey,
@@ -4466,10 +4466,9 @@ export async function searchActiveProductsLive(keyword: string): Promise<Product
             nama_produk: cleanName,
             s: r.size || 'Default',
             size: r.size || 'Default',
-            category: 'Physical Stock',
-            kategori: 'Physical Stock',
-            lokasi: r.lokasi ? String(r.lokasi).trim() : '',
-            stokMap: Number(r.sisa_stok || 0),
+            category: 'Pakaian',
+            kategori: 'Pakaian',
+            lokasi: '',
             price: 0,
           });
         }
@@ -4482,7 +4481,7 @@ export async function searchActiveProductsLive(keyword: string): Promise<Product
   // 2. Exact or prefix SKU search on master_produk (fast indexed scan)
   try {
     const r2 = await fetch(
-      `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price,dealpos_channels&sku=ilike.${encodeURIComponent(`${cleanQ}%`)}&limit=15`,
+      `${supaUrl}/rest/v1/master_produk?select=sku,nama_produk,kategori,size,price&sku=ilike.${encodeURIComponent(`${cleanQ}%`)}&limit=25`,
       {
         headers: {
           apikey: supaKey,

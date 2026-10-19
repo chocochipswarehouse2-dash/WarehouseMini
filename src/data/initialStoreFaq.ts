@@ -313,34 +313,33 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     category: 'manual_shipment',
     is_pinned: true,
     question: 'Kenapa nama atau SKU produk tidak muncul saat diketik di kolom item pesanan / alterasi?',
-    answer: 'Pencarian produk di WMS mendukung pencarian fleksibel (nama produk, SKU, varian ukuran, dan lokasi rak fisik). Jika produk baru belum terbaca di memori browser lokal, sistem menyediakan tombol "Sinkronkan" katalog serta pencarian live ke stok gudang.',
+    answer: 'Input pesanan Manual Shipment dan Alteration membutuhkan seluruh daftar produk master lengkap (nama dan SKU). Lokasi rak fisik dan stok gudang tidak ditampilkan saat input pesanan karena baru diperlukan nanti pada tahap Picking List oleh tim gudang.',
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin Gudang dapat memverifikasi ketersediaan produk di master katalog DealPOS maupun stok fisik rak gudang (stok_real_fisik). WMS secara otomatis mencari produk baik di memori browser maupun pencarian live langsung ke database stok gudang. Jika ada artikel baru diunggah di database, klik tombol "Sinkronkan" pada kartu Item Pesanan untuk memperbarui katalog instan.',
+    answer_admin: 'Admin Gudang bertugas memastikan master produk lengkap di database. Input item pesanan oleh Store difokuskan pada identitas produk (nama, SKU, size). Informasi lokasi rak gudang dan stok fisik sengaja tidak dimunculkan di form pesanan Store agar proses entri cepat dan bersih, karena alokasi lokasi rak fisik diatur terpisah pada antrean Tugas Picking Gudang. Jika ada artikel baru diunggah di master, klik tombol "Sinkronkan" untuk memuat daftar produk terbaru.',
     action_steps_admin: [
-      { step: 1, title: 'Ketik Minimal 2 Huruf', desc: 'Ketik minimal 2 karakter pada kolom pencarian (misal: nama artikel "MAXTON" atau SKU "F26..."). Sistem akan mencari secara otomatis.' },
-      { step: 2, title: 'Lihat Badge [Live / Stok Gudang]', desc: 'Jika produk belum tersimpan di memori browser, sistem otomatis melakukan pencarian live ke stok gudang dengan badge "Live / Stok Gudang".' },
-      { step: 3, title: 'Klik Tombol [Sinkronkan]', desc: 'Jika ada produk baru ditambahkan hari ini, klik tombol "Sinkronkan" di samping header Item Pesanan untuk mendownload ulang seluruh katalog.' }
+      { step: 1, title: 'Ketik Minimal 2 Huruf', desc: 'Ketik minimal 2 karakter pada kolom pencarian (misal: "MAXTON" atau SKU "F26..."). Sistem akan mencari dari seluruh daftar produk master.' },
+      { step: 2, title: 'Pilih Produk dari Daftar', desc: 'Pilih artikel sesuai nama dan ukuran. Informasi rak fisik akan otomatis ditentukan saat diteruskan ke Tugas Picking.' },
+      { step: 3, title: 'Klik Tombol [Sinkronkan]', desc: 'Jika ada produk baru ditambahkan di master katalog, klik tombol "Sinkronkan" di samping header Item Pesanan untuk memperbarui daftar produk.' }
     ],
     button_badges_admin: [
-      { label: 'Sinkronkan Katalog', color: 'indigo', icon: 'RefreshCw' },
-      { label: 'Badge: Live Stok Gudang', color: 'emerald', icon: 'Sparkles' }
+      { label: 'Sinkronkan Katalog', color: 'indigo', icon: 'RefreshCw' }
     ],
-    admin_notes: 'ℹ️ Semua produk yang memiliki stok di rak gudang fisik (stok_real_fisik) otomatis dapat dicari dan dipilih pada Manual Shipment maupun Alteration & Repair.',
+    admin_notes: 'ℹ️ Seluruh produk master otomatis dapat dicari saat input pesanan. Penentuan lokasi rak fisik dilakukan pada tahap Picking List.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Untuk Tim Store, jika Anda mengetik nama produk atau SKU namun belum muncul di saran pilihan, ada 3 solusi mudah: (1) Pastikan mengetik minimal 2 huruf dan periksa ejaan; (2) Klik tombol "Sinkronkan" jika produk baru rilis dan belum tersimpan di browser Anda; (3) Khusus Alteration/Repair, jika produk merupakan koleksi lama, gunakan tombol "Produk Seri Lama / Non-Katalog".',
+    answer_store: 'Untuk Tim Store, Anda hanya perlu memilih nama pakaian dan ukuran yang dipesan customer. Anda tidak perlu mengetahui lokasi rak gudang tempat barang disimpan, karena pencarian rak fisik akan diatur oleh tim picker gudang di Tugas Picking. Jika nama barang belum muncul, pastikan mengetik minimal 2 huruf atau klik tombol "Sinkronkan".',
     action_steps_store: [
-      { step: 1, title: 'Ketik Kata Kunci & Tunggu 1 Detik', desc: 'Ketik nama baju (misal "MAXTON" atau "DARLENE") di kolom scan. Sistem akan otomatis mencari ke database stok gudang.' },
-      { step: 2, title: 'Klik Tombol [Sinkronkan]', desc: 'Jika produk baru rilis dan belum muncul, klik tombol kecil "Sinkronkan" di samping tulisan Item Pesanan untuk memuat data pakaian terbaru.' },
-      { step: 3, title: 'Gunakan [Scan Langsung SKU] atau [Seri Lama]', desc: 'Pada Manual Shipment, tekan Enter untuk input langsung SKU. Pada Alteration, klik tombol oranye "Produk Seri Lama / Non-Katalog" untuk isi deskripsi manual.' }
+      { step: 1, title: 'Ketik Nama Produk / SKU', desc: 'Ketik nama baju (misal "MAXTON" atau "DARLENE") di kolom scan/cari. Sistem akan menampilkan daftar produk yang cocok.' },
+      { step: 2, title: 'Klik Tombol [Sinkronkan] Jika Belum Muncul', desc: 'Jika produk baru rilis dan belum muncul di browser Anda, klik tombol "Sinkronkan" di samping header Item Pesanan untuk mengunduh daftar produk terbaru.' },
+      { step: 3, title: 'Khusus Alteration (Koleksi Lama)', desc: 'Jika pakaian yang di-alter merupakan koleksi lama yang tidak terdaftar di katalog, klik tombol "Produk Seri Lama / Non-Katalog" untuk mengisi deskripsi manual.' }
     ],
     button_badges_store: [
       { label: 'Sinkronkan (Katalog)', color: 'blue', icon: 'RefreshCw' },
       { label: 'Produk Seri Lama', color: 'amber', icon: 'HelpCircle' }
     ],
-    store_notes: '💡 Tips Store: Tombol "Sinkronkan" sangat berguna jika Anda membuka web setelah ada update produk baru dari tim gudang / kasir.',
+    store_notes: '💡 Tips Store: Anda cukup fokus memilih nama produk & SKU yang benar. Tim gudang yang akan mencari lokasi raknya saat proses picking.',
 
     keywords: ['tidak muncul', 'produk tidak ada', 'cari produk', 'sku hilang', 'maxton', 'darlene', 'katalog kosong', 'dropsearch', 'sinkronkan', 'katalog', 'live'],
     view_count: 210

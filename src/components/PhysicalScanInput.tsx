@@ -79,7 +79,7 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
     cleanVal && products.some(p => (p.k || (p as any).sku || '').toUpperCase() === cleanVal.toUpperCase())
   );
 
-  // Local suggestions with multi-field fallback
+  // Local suggestions with multi-field fallback (nama produk, SKU, size, category)
   const localSuggestions = useMemo(() => {
     if (!cleanVal || isExactSku) return [];
     return products
@@ -89,8 +89,7 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
           p.k || (p as any).sku,
           p.p || (p as any).nama_produk || p.n,
           p.s || (p as any).size,
-          p.category || (p as any).kategori,
-          p.lokasi
+          p.category || (p as any).kategori
         )
       )
       .slice(0, 25);
@@ -131,7 +130,6 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
     if (!isFocused || !cleanVal || isExactSku) return null;
 
     const displaySuggestions = localSuggestions.length > 0 ? localSuggestions : liveResults;
-    const isLive = localSuggestions.length === 0 && liveResults.length > 0;
 
     if (displaySuggestions.length === 0 && !isSearchingLive) {
       if (cleanVal.length < 2) return null;
@@ -156,23 +154,16 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
       >
         <div className="sticky top-0 bg-slate-100/95 dark:bg-[#111827]/95 backdrop-blur-xs px-3.5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center border-b border-slate-200 dark:border-slate-800 z-10 select-none">
           <div className="flex items-center gap-1.5">
-            {isLive ? (
-              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                <Globe className="w-3 h-3" />
-                Hasil Pencarian Online ({liveResults.length})
-              </span>
-            ) : (
-              <span>Hasil Pencarian ({displaySuggestions.length})</span>
-            )}
-            {isSearchingLive && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+            <span>Daftar Produk ({displaySuggestions.length})</span>
+            {isSearchingLive && <Loader2 className="w-3 h-3 animate-spin text-slate-400 ml-1" />}
           </div>
           <span className="text-[9px] lowercase font-medium text-slate-400">Swipe untuk scroll • Ketuk untuk pilih</span>
         </div>
 
         {isSearchingLive && displaySuggestions.length === 0 && (
           <div className="p-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-            <span>Mencari di database server...</span>
+            <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+            <span>Mencari di katalog produk...</span>
           </div>
         )}
 
@@ -204,26 +195,24 @@ export const PhysicalScanInput: React.FC<PhysicalScanInputProps> = ({ onScan, pr
                 selectSuggestion(s.k);
               }
             }}
-            className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-emerald-50 dark:active:bg-emerald-950/40 cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 flex justify-between items-center transition-colors select-none"
+            className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 active:bg-rose-50 dark:active:bg-rose-950/40 cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-0 flex justify-between items-center transition-colors select-none"
           >
             <div className="min-w-0 pr-2 pointer-events-none">
               <div className="font-bold text-slate-800 dark:text-slate-200 text-sm whitespace-normal break-words leading-tight">
-                {s.p || (s as any).nama_produk || s.n} {s.s && s.s !== 'ALL' && s.s !== 'Default' ? `(Size: ${s.s})` : ''}
+                {s.p || (s as any).nama_produk || s.n} {s.s && s.s !== 'ALL' && s.s !== 'Default' && s.s !== '-' ? `(Size: ${s.s})` : ''}
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1 flex items-center gap-2 flex-wrap">
                 <span>SKU: <strong className="text-slate-700 dark:text-slate-300">{s.k}</strong></span>
-                {s.lokasi && s.lokasi !== '-' && (
-                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[10px] font-mono">
-                    📍 {s.lokasi}
-                  </span>
-                )}
-                {isLive && (
-                  <span className="bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold">
-                    Stok Gudang
+                {s.category && (
+                  <span className="text-[10px] text-slate-400 font-sans">
+                    • {String(s.category)}
                   </span>
                 )}
               </div>
             </div>
+            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/80 px-2 py-1 rounded-lg shrink-0">
+              Pilih
+            </span>
           </div>
         ))}
       </div>
